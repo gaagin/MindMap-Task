@@ -456,18 +456,21 @@ export default function TaskDetailsPanel({
       </div>
 
       {/* Dangerous/Root operations */}
-      {node.parentId !== null && (
+      {(node.parentId !== null || node.isFloating) && (
         <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/60">
           <button
             onClick={() => {
-              if (confirm('Удалить эту ветку mindmap вместе с дочерними?')) {
+              const confirmMsg = node.isContainer 
+                ? 'Удалить контейнер и все задачи внутри него?' 
+                : 'Удалить эту ветку mindmap вместе с дочерними?';
+              if (confirm(confirmMsg)) {
                 onDeleteNode(node.id);
                 onClose();
               }
             }}
             className="w-full flex items-center justify-center gap-2 py-2 border border-rose-250 dark:border-rose-950 text-rose-600 bg-rose-50/50 hover:bg-rose-50 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
           >
-            <Trash2 className="w-3.5 h-3.5" /> Удалить текущую ветвь задач
+            <Trash2 className="w-3.5 h-3.5" /> {node.isContainer ? 'Удалить контейнер и задачи внутри' : 'Удалить текущую ветвь задач'}
           </button>
         </div>
       )}

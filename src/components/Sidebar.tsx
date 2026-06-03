@@ -4,6 +4,7 @@ import {
   FolderPlus, 
   ChevronRight, 
   ChevronDown, 
+  ChevronLeft,
   Trash2, 
   Edit, 
   Plus, 
@@ -339,31 +340,39 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 w-72 flex flex-col z-40 transform transition-transform duration-300 ease-out lg:translate-x-0 lg:static lg:h-full shrink-0 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed inset-y-0 left-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 w-72 flex flex-col z-40 transform transition-all duration-300 ease-out shrink-0 ${
+          isOpen 
+            ? 'translate-x-0 lg:translate-x-0 lg:static lg:h-full lg:w-72 opacity-100' 
+            : '-translate-x-full lg:-translate-x-full lg:w-0 lg:border-r-0 lg:p-0 overflow-hidden lg:opacity-0'
         }`}
       >
         {/* Header */}
         <div className="h-16 px-5 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-sm shadow-indigo-200 dark:shadow-none">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-sm shadow-indigo-200 dark:shadow-none shrink-0 animate-pulse-subtle">
               M
             </div>
-            <div>
-              <h1 className="text-sm font-semibold tracking-tight text-slate-800 dark:text-slate-100 font-sans">
+            <div className="truncate">
+              <h1 className="text-sm font-semibold tracking-tight text-slate-800 dark:text-slate-100 font-sans truncate">
                 Интеллект-Карты
               </h1>
-              <p className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400 font-semibold tracking-wider">
+              <p className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400 font-semibold tracking-wider truncate">
                 ЗАДАЧИ & ПРОЕКТЫ
               </p>
             </div>
           </div>
-          {/* Close button on mobile */}
+          {/* Close button that works on both desktop and mobile */}
           <button 
             onClick={onClose}
-            className="p-1 px-[5px] rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 lg:hidden"
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer transition-colors"
+            title="Свернуть панель"
           >
-            <X className="w-5 h-5" />
+            <span className="hidden lg:inline">
+              <ChevronLeft className="w-5 h-5 animate-bounce-horizontal" />
+            </span>
+            <span className="lg:hidden">
+              <X className="w-5 h-5" />
+            </span>
           </button>
         </div>
 

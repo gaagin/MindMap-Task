@@ -24,6 +24,10 @@ export interface TaskNode {
   collapsed?: boolean; // Optional state to collapse/hide sub-branches
   dueDate?: string; // Optional due date string (YYYY-MM-DD)
   progress?: number; // Optional progress percentage (0 to 100)
+  isFloating?: boolean; // Optional flag for independent floating nodes
+  isContainer?: boolean; // Optional flag for a container box node
+  width?: number; // Optional custom width (for containers)
+  height?: number; // Optional custom height (for containers)
 }
 
 export interface Project {

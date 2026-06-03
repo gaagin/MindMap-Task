@@ -9,7 +9,9 @@ import {
   ListTodo,
   FileText,
   Trash2,
-  Trash
+  Trash,
+  SlidersHorizontal,
+  X
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority } from './types';
 import { loadWorkspace, saveWorkspace, generateId } from './utils';
@@ -21,8 +23,8 @@ export default function App() {
   // Load initial state
   const [state, setState] = useState<WorkspaceState>(() => loadWorkspace());
   
-  // Sidebar open on desktop by default, closed on mobile to maximize room
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Sidebar closed by default as per user preference
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Selected task node for detail panel
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -37,6 +39,15 @@ export default function App() {
 
   // Search keyword for filtering
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Advanced Filtering Panel and states
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [filterTag, setFilterTag] = useState<string>('all');
+  const [filterDueDate, setFilterDueDate] = useState<string>('all');
+  const [filterAttachments, setFilterAttachments] = useState<string>('all');
+  const [filterNotes, setFilterNotes] = useState<string>('all');
 
   // Canvas zoom & pan view attributes
   const [panX, setPanX] = useState(0);
@@ -73,8 +84,6 @@ export default function App() {
     const handleResize = () => {
       if (window.innerWidth < 1024) {
         setSidebarOpen(false);
-      } else {
-        setSidebarOpen(true);
       }
     };
     handleResize(); // run once on boot
@@ -242,18 +251,56 @@ export default function App() {
   // ----- TASK NODE CANVAS OPERATIONS -----
   const activeNodes = state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : [];
 
-  // Single node drag updating coordinates (high performance fallback)
+  // Single node drag updating coordinates with simultaneous movement of all descendant nodes
   const handleUpdateNodeCoordinates = (id: string, x: number, y: number) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
-    setState(prev => ({
-      ...prev,
-      nodes: {
-        ...prev.nodes,
-        [pid]: prev.nodes[pid].map(n => n.id === id ? { ...n, x, y } : n)
-      }
-    }));
+    setState(prev => {
+      const projectNodes = prev.nodes[pid] || [];
+      const targetNode = projectNodes.find(n => n.id === id);
+      if (!targetNode) return prev;
+
+      const dx = x - targetNode.x;
+      const dy = y - targetNode.y;
+
+      // If no actual changes, bypass to prevent unwanted re-renders
+      if (dx === 0 && dy === 0) return prev;
+
+      // Recursive / iterative check to see if a candidate is a descendant of the dragged node
+      const isDescendant = (candidateId: string): boolean => {
+        if (candidateId === id) return true;
+        let currentId: string | null = candidateId;
+        let iterations = 0;
+        while (currentId !== null && iterations < 100) {
+          iterations++;
+          const current = projectNodes.find(n => n.id === currentId);
+          if (!current) break;
+          if (current.parentId === id) return true;
+          currentId = current.parentId;
+        }
+        return false;
+      };
+
+      const updatedProjectNodes = projectNodes.map(n => {
+        if (isDescendant(n.id)) {
+          return {
+            ...n,
+            x: n.id === id ? x : n.x + dx,
+            y: n.id === id ? y : n.y + dy
+          };
+        }
+        return n;
+      });
+
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: updatedProjectNodes
+        }
+      };
+    });
   };
 
   // Update node parent for nesting structure (dynamic hierarchy re-assignment)
@@ -273,8 +320,40 @@ export default function App() {
         ...prev.nodes,
         [pid]: currentNodes.map(n => {
           if (n.id === id) {
+            // Calculate non-overlapping coordinates if re-parented to a non-container task node
+            let targetX = n.x;
+            let targetY = n.y;
+            
+            if (parent && !parent.isContainer) {
+              const isLeft = parent.x < 0 || (parent.x === 0 && (currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id).length % 2 !== 0));
+              targetX = parent.x + (isLeft ? -250 : 250);
+              
+              const siblings = currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id);
+              if (siblings.length > 0) {
+                const k = siblings.length;
+                const sign = k % 2 === 0 ? 1 : -1;
+                const factor = Math.floor((k + 1) / 2);
+                targetY = parent.y + factor * 95 * sign;
+              } else {
+                targetY = parent.y;
+              }
+            } else if (parent && parent.isContainer) {
+              const W = parent.width || 520;
+              const H = parent.height || 400;
+              const siblings = currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id);
+              const k = siblings.length;
+              const columns = 2;
+              const col = k % columns;
+              const row = Math.floor(k / columns);
+              
+              targetX = parent.x + (col === 0 ? -115 : 115);
+              targetY = parent.y - (H / 2) + 75 + row * 95;
+            }
+
             return {
               ...n,
+              x: Math.round(targetX),
+              y: Math.round(targetY),
               parentId: newParentId,
               color: parentColor || n.color
             };
@@ -297,18 +376,18 @@ export default function App() {
     if (!parent) return;
 
     // Organic layout coordinate calculations
-    let newX = 240;
-    let newY = 0;
+    let newX = parent.x + 240;
+    let newY = parent.y;
 
     if (parent.parentId === null) {
-      // Branch is branching directly off the root node. We balance sides left vs right!
+      // Branch is branching directly off the root node or a floating node. We balance sides left vs right!
       const siblingCount = currentNodes.filter(n => n.parentId === parentId).length;
       const isLeft = siblingCount % 2 !== 0;
-      newX = isLeft ? -260 : 260;
+      newX = parent.x + (isLeft ? -260 : 260);
       
       // cascade vertical index
       const sign = siblingCount % 4 < 2 ? -1 : 1;
-      newY = (Math.floor(siblingCount / 2) + 1) * 90 * sign;
+      newY = parent.y + (Math.floor(siblingCount / 2) + 1) * 90 * sign;
     } else {
       // Branching off a sub-node: inherit left vs right direction perfectly to avoid overlay overlap
       const isParentLeft = parent.x < 0;
@@ -345,6 +424,83 @@ export default function App() {
 
     // Auto select new node so user can rename instantly! 🚀
     setSelectedNodeId(newChild.id);
+  };
+
+  // Add a fully independent floating node anywhere on the canvas
+  const handleAddFloatingNode = (x: number, y: number, parentId: string | null = null) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const isInsideContainer = parentId !== null;
+
+    const newFloatingNode: TaskNode = {
+      id: 'node-' + generateId(),
+      projectId: pid,
+      text: isInsideContainer ? 'Новая подзадача' : 'Плавающая задача',
+      x: Math.round(x),
+      y: Math.round(y),
+      parentId: parentId, // can be a container or branch root
+      isFloating: !isInsideContainer,
+      priority: 'none',
+      tags: isInsideContainer ? ['Контейнер'] : ['Плавающая'],
+      notes: isInsideContainer 
+        ? 'Вы создали эту задачу непосредственно в сфокусированном контейнере.'
+        : 'Это полностью независимая задача, свободная от основной ветви. Вы можете свободно перемещать её по холсту, а также добавлять к ней дочерние подзадачи через кнопку "+".',
+      completed: false,
+      files: [],
+      color: isInsideContainer ? '#3b82f6' : '#10b981' // Blue inside container, green otherwise
+    };
+
+    setState(prev => ({
+      ...prev,
+      nodes: {
+        ...prev.nodes,
+        [pid]: [...currentNodes, newFloatingNode]
+      }
+    }));
+
+    // Auto select the new floating node so user can rename instantly!
+    setSelectedNodeId(newFloatingNode.id);
+  };
+
+  // Add a fully independent styled container box anywhere on the canvas
+  const handleAddContainerNode = (x: number, y: number) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const newContainerNode: TaskNode = {
+      id: 'node-' + generateId(),
+      projectId: pid,
+      text: 'Новый Контейнер',
+      x: Math.round(x),
+      y: Math.round(y),
+      parentId: null, // independent root
+      isFloating: true,
+      isContainer: true,
+      priority: 'none',
+      tags: ['Контейнер'],
+      notes: 'Это визуальный контейнер. Поместите в него другие задачи (перетащите их внутрь контейнера и удерживайте полсекунды для авто-привязки). Перемещая контейнер, вы будете двигать и все находящиеся в нём задачи, а при сворачивании контейнера они скроются.',
+      completed: false,
+      files: [],
+      color: '#f59e0b' // Amber/orange default for container
+    };
+
+    setState(prev => ({
+      ...prev,
+      nodes: {
+        ...prev.nodes,
+        [pid]: [...currentNodes, newContainerNode]
+      }
+    }));
+
+    // Auto select the new container node so user can rename instantly!
+    setSelectedNodeId(newContainerNode.id);
   };
 
   // Recursive deletion of subnodes to avoid orphan paths in mapping svg
@@ -424,14 +580,102 @@ export default function App() {
   };
 
   // ----- SEARCH & HIGHLIGHT -----
-  const searchedIds = searchQuery.trim()
-    ? activeNodes
-        .filter(n => 
-          n.text.toLowerCase().includes(searchQuery.toLowerCase()) || 
-          n.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())) ||
-          n.notes.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-        .map(n => n.id)
+  const isNodeMatched = (node: TaskNode): boolean => {
+    // 1. Text search (text, tags, notes)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const textMatches = node.text.toLowerCase().includes(q);
+      const tagMatches = (node.tags || []).some(t => t.toLowerCase().includes(q));
+      const notesMatches = (node.notes || "").toLowerCase().includes(q);
+      if (!textMatches && !tagMatches && !notesMatches) {
+        return false;
+      }
+    }
+
+    // 2. Status filter
+    if (filterStatus === "completed" && !node.completed) return false;
+    if (filterStatus === "active" && node.completed) return false;
+
+    // 3. Priority filter
+    if (filterPriority !== "all" && node.priority !== filterPriority) return false;
+
+    // 4. Tag filter
+    if (filterTag !== "all" && !(node.tags || []).includes(filterTag)) return false;
+
+    // 5. Due date filter
+    if (filterDueDate !== "all") {
+      const hasDue = !!node.dueDate;
+      if (filterDueDate === "has_due_date" && !hasDue) return false;
+      if (filterDueDate === "no_due_date" && hasDue) return false;
+
+      if (filterDueDate === "overdue" || filterDueDate === "today" || filterDueDate === "this_week") {
+        if (!hasDue) return false;
+        
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const nodeDate = new Date(node.dueDate!);
+        nodeDate.setHours(0, 0, 0, 0);
+        
+        const diffTime = nodeDate.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (filterDueDate === "overdue") {
+          const isOverdue = diffDays < 0 && !node.completed;
+          if (!isOverdue) return false;
+        } else if (filterDueDate === "today") {
+          if (diffDays !== 0) return false;
+        } else if (filterDueDate === "this_week") {
+          if (diffDays < 0 || diffDays > 7) return false;
+        }
+      }
+    }
+
+    // 6. Attachments filter
+    if (filterAttachments === "has_files" && (!node.files || node.files.length === 0)) return false;
+    if (filterAttachments === "no_files" && (node.files && node.files.length > 0)) return false;
+
+    // 7. Notes filter
+    if (filterNotes === "has_notes" && (!node.notes || node.notes.trim() === "")) return false;
+    if (filterNotes === "no_notes" && (node.notes && node.notes.trim() !== "")) return false;
+
+    return true;
+  };
+
+  const isAnyFilterActive = 
+    filterStatus !== "all" || 
+    filterPriority !== "all" || 
+    filterTag !== "all" || 
+    filterDueDate !== "all" || 
+    filterAttachments !== "all" || 
+    filterNotes !== "all" || 
+    searchQuery.trim() !== "";
+
+  const activeFilterCount = [
+    filterStatus !== "all",
+    filterPriority !== "all",
+    filterTag !== "all",
+    filterDueDate !== "all",
+    filterAttachments !== "all",
+    filterNotes !== "all",
+    searchQuery.trim() !== "",
+  ].filter(Boolean).length;
+
+  const handleClearAllFilters = () => {
+    setFilterStatus("all");
+    setFilterPriority("all");
+    setFilterTag("all");
+    setFilterDueDate("all");
+    setFilterAttachments("all");
+    setFilterNotes("all");
+    setSearchQuery("");
+  };
+
+  const allAvailableTags = Array.from(
+    new Set(activeNodes.flatMap(n => n.tags || []))
+  ).filter(Boolean);
+
+  const searchedIds = isAnyFilterActive
+    ? activeNodes.filter(n => isNodeMatched(n)).map(n => n.id)
     : [];
 
   const handleSelectSearchedNode = (nodeId: string) => {
@@ -595,6 +839,27 @@ export default function App() {
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
             </div>
 
+            {/* Advanced Filters Button */}
+            <button
+              onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
+              className={`p-1.5 select-none hover:scale-[1.02] border rounded-lg flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-all duration-200 ${
+                isAnyFilterActive 
+                  ? 'border-indigo-500 dark:border-indigo-400 ring-2 ring-indigo-505/20 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400' 
+                  : isFilterPanelOpen
+                    ? 'border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-850 text-slate-800 dark:text-slate-100'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100/70'
+              }`}
+              title="Фильтрация по параметрам"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Фильтры</span>
+              {isAnyFilterActive && (
+                <span className="bg-indigo-600 text-white dark:bg-indigo-500 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
             {/* Micro search results list box if search query is set */}
             {searchQuery.trim().length > 0 && (
               <div className="absolute top-15 right-24 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl p-2 w-72 max-h-56 overflow-y-auto z-50">
@@ -645,6 +910,106 @@ export default function App() {
           </div>
         </header>
 
+        {/* Collapsible advanced filters subheader panel */}
+        {isFilterPanelOpen && (
+          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-6 py-3 flex flex-wrap items-center gap-4 text-xs z-10 transition-all duration-300 animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Статус:</span>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 dark:text-slate-300 min-w-[95px]"
+              >
+                <option value="all">Все</option>
+                <option value="active">Активные</option>
+                <option value="completed">Выполненные</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Приоритет:</span>
+              <select
+                value={filterPriority}
+                onChange={(e) => setFilterPriority(e.target.value)}
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 dark:text-slate-300 min-w-[110px]"
+              >
+                <option value="all">Все</option>
+                <option value="none">Без приоритета</option>
+                <option value="low">Низкий</option>
+                <option value="medium">Средний</option>
+                <option value="high">Высокий</option>
+                <option value="urgent">Критический</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Теги:</span>
+              <select
+                value={filterTag}
+                onChange={(e) => setFilterTag(e.target.value)}
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 dark:text-slate-300 max-w-[150px]"
+              >
+                <option value="all">Все теги</option>
+                {allAvailableTags.map(tag => (
+                  <option key={tag} value={tag}>#{tag}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Срок:</span>
+              <select
+                value={filterDueDate}
+                onChange={(e) => setFilterDueDate(e.target.value)}
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 dark:text-slate-300 min-w-[125px]"
+              >
+                <option value="all">Любой срок</option>
+                <option value="overdue">Просрочено</option>
+                <option value="today">Сегодня</option>
+                <option value="this_week">На этой неделе</option>
+                <option value="has_due_date">С дедлайном</option>
+                <option value="no_due_date">Без дедлайна</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Файлы:</span>
+              <select
+                value={filterAttachments}
+                onChange={(e) => setFilterAttachments(e.target.value)}
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 dark:text-slate-300 min-w-[95px]"
+              >
+                <option value="all">Все</option>
+                <option value="has_files">С файлами</option>
+                <option value="no_files">Без файлов</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Заметки:</span>
+              <select
+                value={filterNotes}
+                onChange={(e) => setFilterNotes(e.target.value)}
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 dark:text-slate-300 min-w-[95px]"
+              >
+                <option value="all">Все</option>
+                <option value="has_notes">С заметками</option>
+                <option value="no_notes">Без заметок</option>
+              </select>
+            </div>
+
+            {isAnyFilterActive && (
+              <button
+                onClick={handleClearAllFilters}
+                className="ml-auto text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 font-semibold flex items-center gap-1 cursor-pointer hover:underline py-1 px-2 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors border border-transparent hover:border-rose-200"
+              >
+                <X className="w-3.5 h-3.5" />
+                Сбросить
+              </button>
+            )}
+          </div>
+        )}
+
         {/* The Mind Map Interactive Canvas Frame. Occupies 100% space! */}
         <div className="flex-1 w-full h-full relative bg-[#FAFBFD] dark:bg-slate-950/20">
           
@@ -658,6 +1023,8 @@ export default function App() {
               onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
               onUpdateNodeParent={handleUpdateNodeParent}
               onAddChildNode={handleAddChildNode}
+              onAddFloatingNode={handleAddFloatingNode}
+              onAddContainerNode={handleAddContainerNode}
               onDeleteNode={handleDeleteNode}
               onToggleNodeCompleted={handleToggleNodeCompleted}
               onToggleNodeCollapse={handleToggleNodeCollapse}
@@ -670,6 +1037,13 @@ export default function App() {
               setZoom={setZoom}
               onOpenSidebar={() => setSidebarOpen(true)}
               onOpenDrawer={() => setIsDrawerOpen(true)}
+              filterStatus={filterStatus}
+              filterPriority={filterPriority}
+              filterTag={filterTag}
+              filterDueDate={filterDueDate}
+              filterAttachments={filterAttachments}
+              filterNotes={filterNotes}
+              searchQuery={searchQuery}
             />
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
@@ -679,17 +1053,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Quick onboarding instruction card bottom right on desktop */}
-          <div className="absolute bottom-4 right-4 hidden lg:flex bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-4 max-w-[280px] border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg flex-col gap-2 pointer-events-none select-none z-10 transition-opacity">
-            <h4 className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
-              💡 Интерактив
-            </h4>
-            <ul className="text-xs text-slate-500 dark:text-slate-400 space-y-1 font-sans">
-              <li>• Зажмите фон ЛКМ и тяните для панорамирования.</li>
-              <li>• Тащите карточки мышкои для кастомнои сетки.</li>
-              <li>• Нажмите + под карточкой для подзадачи.</li>
-            </ul>
-          </div>
+
         </div>
 
         {/* Task Properties slide-out drawer displays only on explicit open clicking Eye button */}
