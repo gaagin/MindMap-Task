@@ -13,7 +13,8 @@ import {
   SlidersHorizontal,
   X,
   Kanban,
-  Network
+  Network,
+  Smartphone
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants } from './utils';
@@ -21,6 +22,7 @@ import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
 import KanbanView from './components/KanbanView';
+import MobileListView from './components/MobileListView';
 
 export default function App() {
   // Load initial state
@@ -57,8 +59,8 @@ export default function App() {
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
 
-  // View Mode: 'canvas' or 'kanban'
-  const [viewMode, setViewMode] = useState<'canvas' | 'kanban'>('canvas');
+  // View Mode: 'canvas' or 'kanban' or 'mobile-list'
+  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list'>('canvas');
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
@@ -658,6 +660,44 @@ export default function App() {
     setSelectedNodeId(newTargetNode.id);
   };
 
+  // Create a new task originating from the Mobile list view (TickTick style)
+  const handleCreateMobileTask = (text: string, tags: string[], priority: Priority, dueDate?: string, parentId?: string | null) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const parentNode = parentId ? currentNodes.find(n => n.id === parentId) : null;
+    const parentX = parentNode ? parentNode.x : 350;
+    const parentY = parentNode ? parentNode.y : 350;
+
+    const newTargetNode: TaskNode = {
+      id: 'node-' + generateId(),
+      projectId: pid,
+      text,
+      x: parentX + (Math.random() - 0.5) * 120 + 100,
+      y: parentY + (Math.random() - 0.5) * 120 + 80,
+      parentId: parentId || null,
+      isFloating: parentId ? false : true,
+      priority,
+      tags,
+      notes: '',
+      completed: false,
+      files: [],
+      dueDate,
+      color: parentNode ? parentNode.color : '#6366f1'
+    };
+
+    setState(prev => ({
+      ...prev,
+      nodes: {
+        ...prev.nodes,
+        [pid]: [...currentNodes, newTargetNode]
+      }
+    }));
+  };
+
   // Single node attribute editor update
   const handleUpdateNode = (updatedNode: TaskNode) => {
     const pid = state.activeProjectId;
@@ -1045,6 +1085,20 @@ export default function App() {
                   <Kanban className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Канбан</span>
                 </button>
+                <button
+                  id="view-mode-mobile-btn"
+                  type="button"
+                  onClick={() => setViewMode('mobile-list')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                    viewMode === 'mobile-list'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+                  title="Мобильный список (TickTick)"
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Мобильный</span>
+                </button>
               </div>
             )}
 
@@ -1185,7 +1239,26 @@ export default function App() {
         <div className="flex-1 w-full h-full relative bg-[#FAFBFD] dark:bg-slate-950/20">
           
           {state.activeProjectId ? (
-            viewMode === 'kanban' ? (
+            viewMode === 'mobile-list' ? (
+              <MobileListView
+                nodes={activeNodes}
+                tagCategories={state.tagCategories || []}
+                activeProjectId={state.activeProjectId}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={(id) => {
+                  setSelectedNodeId(id);
+                  if (id) {
+                    setIsDrawerOpen(true);
+                  } else {
+                    setIsDrawerOpen(false);
+                  }
+                }}
+                onUpdateNode={handleUpdateNode}
+                onDeleteNode={handleDeleteNode}
+                onCreateTask={handleCreateMobileTask}
+                onCreateTagCategory={handleCreateTagCategory}
+              />
+            ) : viewMode === 'kanban' ? (
               <KanbanView
                 nodes={activeNodes}
                 tagCategories={state.tagCategories || []}

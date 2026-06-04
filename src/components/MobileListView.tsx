@@ -1,0 +1,844 @@
+import React, { useState, useMemo } from 'react';
+import { 
+  Check, 
+  Trash2, 
+  Plus, 
+  Calendar, 
+  Flag, 
+  Tag, 
+  FileText, 
+  Clock, 
+  ChevronRight, 
+  CheckCircle, 
+  Circle, 
+  ChevronDown, 
+  Search, 
+  Filter, 
+  SlidersHorizontal, 
+  Sparkles, 
+  AlertCircle, 
+  ExternalLink,
+  FolderMinus,
+  CheckSquare,
+  ListFilter,
+  CheckCircle2,
+  CalendarCheck
+} from 'lucide-react';
+import { TaskNode, Priority, TagCategory } from '../types';
+import { generateId } from '../utils';
+
+interface MobileListViewProps {
+  nodes: TaskNode[];
+  tagCategories: TagCategory[];
+  activeProjectId: string;
+  selectedNodeId: string | null;
+  onSelectNode: (id: string | null) => void;
+  onUpdateNode: (node: TaskNode) => void;
+  onDeleteNode: (id: string) => void;
+  onCreateTask: (text: string, tags: string[], priority: Priority, dueDate?: string, parentId?: string | null) => void;
+  onCreateTagCategory?: (name: string, color: string) => void;
+}
+
+interface TaskTreeItem {
+  node: TaskNode;
+  children: TaskTreeItem[];
+}
+
+export default function MobileListView({
+  nodes,
+  tagCategories = [],
+  activeProjectId,
+  selectedNodeId,
+  onSelectNode,
+  onUpdateNode,
+  onDeleteNode,
+  onCreateTask,
+}: MobileListViewProps) {
+  // Inbox / State filters
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed' | 'today' | 'overdue'>('active');
+  const [priorityFilter, setPriorityFilter] = useState<string>('all');
+  const [tagFilter, setTagFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Quick task input states (TickTick experience)
+  const [newTaskText, setNewTaskText] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState<Priority>('none');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [newTaskTags, setNewTaskTags] = useState<string[]>([]);
+  
+  // Inline edit state
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+
+  // Local state for expanded / collapsed parent tree items (TickTick style folders)
+  const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
+
+  // Local subtask creation input states mapping parentTaskId -> input text
+  const [newSubtaskTexts, setNewSubtaskTexts] = useState<Record<string, string>>({});
+
+  // Priority metadata for colors and icons
+  const priorities: { value: Priority; label: string; bg: string; border: string; text: string }[] = [
+    { value: 'none', label: 'Без приоритета', bg: 'bg-slate-50 dark:bg-slate-800', border: 'border-slate-200 dark:border-slate-700', text: 'text-slate-500 dark:text-slate-400' },
+    { value: 'low', label: 'Низкий', bg: 'bg-sky-50/10 dark:bg-sky-500/10', border: 'border-sky-200 dark:border-sky-800/40', text: 'text-sky-600 dark:text-sky-450' },
+    { value: 'medium', label: 'Средний', bg: 'bg-amber-50/10 dark:bg-amber-500/10', border: 'border-amber-200 dark:border-amber-800/40', text: 'text-amber-600 dark:text-amber-450' },
+    { value: 'high', label: 'Высокий', bg: 'bg-orange-50/10 dark:bg-orange-500/10', border: 'border-orange-200 dark:border-orange-850/40', text: 'text-orange-600 dark:text-orange-450' },
+    { value: 'urgent', label: 'Срочный', bg: 'bg-rose-50/10 dark:bg-rose-500/10', border: 'border-rose-200 dark:border-rose-800/40', text: 'text-rose-600 dark:text-rose-450' }
+  ];
+
+  // Map priorities array to easy helper
+  const priorityMap = useMemo(() => {
+    return priorities.reduce((acc, p) => {
+      acc[p.value] = p;
+      return acc;
+    }, {} as Record<Priority, typeof priorities[0]>);
+  }, []);
+
+  // Pre-calculate full children mappings for badges and nested checklists
+  const { nodeChildrenCountMap, nodeChildrenCompletedCountMap, childrenByParentId } = useMemo(() => {
+    const countMap: Record<string, number> = {};
+    const completedMap: Record<string, number> = {};
+    const byParentMap: Record<string, TaskNode[]> = {};
+
+    nodes.forEach(n => {
+      if (n.parentId) {
+        countMap[n.parentId] = (countMap[n.parentId] || 0) + 1;
+        if (n.completed) {
+          completedMap[n.parentId] = (completedMap[n.parentId] || 0) + 1;
+        }
+        if (!byParentMap[n.parentId]) {
+          byParentMap[n.parentId] = [];
+        }
+        byParentMap[n.parentId].push(n);
+      }
+    });
+
+    return {
+      nodeChildrenCountMap: countMap,
+      nodeChildrenCompletedCountMap: completedMap,
+      childrenByParentId: byParentMap
+    };
+  }, [nodes]);
+
+  // Quick Task Creation handler
+  const handleAddTaskSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTaskText.trim()) return;
+
+    onCreateTask(
+      newTaskText.trim(),
+      newTaskTags,
+      newTaskPriority,
+      newTaskDueDate || undefined,
+      null // Level 1 main task
+    );
+
+    // Reset fields
+    setNewTaskText('');
+    setNewTaskPriority('none');
+    setNewTaskDueDate('');
+    setNewTaskTags([]);
+  };
+
+  // Quick Subtask Creation handler
+  const handleAddSubtaskSubmit = (parentId: string, text: string) => {
+    if (!text.trim()) return;
+    onCreateTask(
+      text.trim(),
+      [], // Empty tags initially
+      'none', // No priority initially
+      undefined, // No due date initially
+      parentId
+    );
+    // Erase input for this parent
+    setNewSubtaskTexts(prev => ({ ...prev, [parentId]: '' }));
+  };
+
+  // Toggle node completion status locally with TickTick checklist behavior
+  const handleToggleCompleted = (node: TaskNode) => {
+    onUpdateNode({
+      ...node,
+      completed: !node.completed,
+    });
+  };
+
+  const handleUpdatePriority = (node: TaskNode, priority: Priority) => {
+    onUpdateNode({
+      ...node,
+      priority,
+    });
+  };
+
+  const handleUpdateDueDate = (node: TaskNode, date: string) => {
+    onUpdateNode({
+      ...node,
+      dueDate: date || undefined,
+    });
+  };
+
+  const handleStartInlineEdit = (node: TaskNode) => {
+    setEditingNodeId(node.id);
+    setEditingText(node.text);
+  };
+
+  const handleSaveInlineEdit = (node: TaskNode) => {
+    if (editingText.trim()) {
+      onUpdateNode({
+        ...node,
+        text: editingText.trim(),
+      });
+    }
+    setEditingNodeId(null);
+  };
+
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    return d.toISOString().split('T')[0];
+  }, []);
+
+  // Filter existing active user nodes
+  const filteredNodes = useMemo(() => {
+    return nodes.filter(n => {
+      // Exclude container nodes since we focus on tasks here!
+      if (n.isContainer) return false;
+
+      // Tab logic
+      if (activeTab === 'active' && n.completed) return false;
+      if (activeTab === 'completed' && !n.completed) return false;
+      if (activeTab === 'today') {
+        if (n.completed) return false;
+        if (n.dueDate !== todayStr) return false;
+      }
+      if (activeTab === 'overdue') {
+        if (n.completed) return false;
+        if (!n.dueDate || n.dueDate >= todayStr) return false;
+      }
+
+      // Priority criteria
+      if (priorityFilter !== 'all' && n.priority !== priorityFilter) return false;
+
+      // Tags criteria
+      if (tagFilter !== 'all' && !n.tags?.includes(tagFilter)) return false;
+
+      // Text search criteria
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const matchesText = n.text?.toLowerCase().includes(query);
+        const matchesNotes = n.notes?.toLowerCase().includes(query);
+        const matchesTags = n.tags?.some(t => t.toLowerCase().includes(query));
+        if (!matchesText && !matchesNotes && !matchesTags) return false;
+      }
+
+      return true;
+    });
+  }, [nodes, activeTab, priorityFilter, tagFilter, searchQuery, todayStr]);
+
+  // Grouping options as a clean, nested structure!
+  const taskTreeRoots = useMemo(() => {
+    // 1. Map of IDs -> tree items
+    const itemMap = new Map<string, TaskTreeItem>();
+
+    // Prepare sort properties for tasks (TickTick priorities and due dates)
+    const priorityWeight = { urgent: 4, high: 3, medium: 2, low: 1, none: 0 };
+    const sortedNodes = [...filteredNodes].sort((a, b) => {
+      if (a.completed !== b.completed) {
+        return a.completed ? 1 : -1;
+      }
+      const weightA = priorityWeight[a.priority] || 0;
+      const weightB = priorityWeight[b.priority] || 0;
+      if (weightA !== weightB) {
+        return weightB - weightA; // Higher weight first
+      }
+      if (a.dueDate && b.dueDate) {
+        return a.dueDate.localeCompare(b.dueDate);
+      }
+      if (a.dueDate) return -1;
+      if (b.dueDate) return 1;
+      return a.text.localeCompare(b.text);
+    });
+
+    sortedNodes.forEach(node => {
+      itemMap.set(node.id, { node, children: [] });
+    });
+
+    const roots: TaskTreeItem[] = [];
+
+    // 2. Nest children correctly if parent is also visible, otherwise treat as Root
+    sortedNodes.forEach(node => {
+      const currentItem = itemMap.get(node.id)!;
+      if (node.parentId && itemMap.has(node.parentId)) {
+        const parentItem = itemMap.get(node.parentId)!;
+        parentItem.children.push(currentItem);
+      } else {
+        roots.push(currentItem);
+      }
+    });
+
+    return roots;
+  }, [filteredNodes]);
+
+  // Aggregate stats (Tasks, not container nodes)
+  const totalCount = nodes.filter(n => !n.isContainer).length;
+  const completedCount = nodes.filter(n => !n.isContainer && n.completed).length;
+  const activeCount = totalCount - completedCount;
+  const todayCount = nodes.filter(n => !n.isContainer && !n.completed && n.dueDate === todayStr).length;
+  const overdueCount = nodes.filter(n => !n.isContainer && !n.completed && n.dueDate && n.dueDate < todayStr).length;
+
+  // Toggle tag selection for quick input
+  const handleToggleTagInNewTask = (tag: string) => {
+    setNewTaskTags(prev => 
+      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const toggleParentCollapse = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCollapsedParents(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Recursive element renderer for nestable tasks
+  const renderTreeItem = (item: TaskTreeItem, depth: number = 0): React.ReactNode => {
+    const { node, children } = item;
+    const pMeta = priorityMap[node.priority] || priorityMap.none;
+    const isSelected = selectedNodeId === node.id;
+    const isEditing = editingNodeId === node.id;
+    const isCollapsed = !!collapsedParents[node.id];
+    const allDirectChildren = childrenByParentId[node.id] || [];
+
+    // Subtask styling offset and container card margin
+    const mlClass = depth > 0 ? 'ml-5 md:ml-8 mt-1.5' : 'mt-2';
+
+    return (
+      <div key={node.id} className={`${mlClass} flex flex-col`}>
+        <div
+          id={`mobile-task-card-${node.id}`}
+          className={`border rounded-xl p-3 transition-all flex flex-col gap-2 relative ${
+            isSelected 
+              ? 'bg-indigo-55/10 border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900/40' 
+              : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800'
+          } ${node.completed ? 'opacity-70' : ''}`}
+        >
+          {/* Connector guide line for nested subtasks */}
+          {depth > 0 && (
+            <div className="absolute left-[-16px] top-6 w-[16px] h-4 border-l-2 border-b-2 border-slate-250 dark:border-slate-800 rounded-bl-lg pointer-events-none" />
+          )}
+
+          <div className="flex items-start gap-2.5 justify-between">
+            {/* Tick Checkbox & title container */}
+            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+              {/* Expand/Collapse Toggle if there are sub-elements in the list */}
+              {children.length > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => toggleParentCollapse(node.id, e)}
+                  className="p-1 mt-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
+                  title={isCollapsed ? "Развернуть подзадачи" : "Свернуть подзадачи"}
+                >
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+                </button>
+              )}
+
+              {/* Checkbox button */}
+              <button
+                type="button"
+                onClick={() => handleToggleCompleted(node)}
+                className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-all ${
+                  node.completed
+                    ? 'bg-emerald-500 border-emerald-500 text-white'
+                    : `border-slate-300 hover:border-indigo-500 dark:border-slate-700`
+                }`}
+                title={node.completed ? 'Восстановить' : 'Завершить'}
+                style={!node.completed ? { borderColor: pMeta.value !== 'none' ? pMeta.text.replace('text-', '') : undefined } : undefined}
+              >
+                {node.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+              </button>
+
+              {/* Core Text Label */}
+              <div className="min-w-0 flex-1">
+                {isEditing ? (
+                  <div className="flex gap-1.5 items-center">
+                    <input
+                      type="text"
+                      value={editingText}
+                      onChange={(e) => setEditingText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveInlineEdit(node);
+                        if (e.key === 'Escape') setEditingNodeId(null);
+                      }}
+                      className="w-full bg-slate-100 dark:bg-slate-800 border border-indigo-500 rounded px-2 py-1 text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-indigo-500"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSaveInlineEdit(node)}
+                      className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded"
+                    >
+                      ОК
+                    </button>
+                  </div>
+                ) : (
+                  <div 
+                    className="text-sm font-semibold text-slate-800 dark:text-slate-200 cursor-pointer pr-2 break-words"
+                    onClick={() => {
+                      onSelectNode(node.id);
+                    }}
+                  >
+                    <span className={node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''}>
+                      {node.text}
+                    </span>
+                  </div>
+                )}
+
+                {/* Auxiliary items metadata details bar */}
+                <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[11px] text-slate-400 font-mono">
+                  {/* Priority banner */}
+                  {node.priority !== 'none' && (
+                    <span className={`px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase border ${pMeta.bg} ${pMeta.border} ${pMeta.text}`}>
+                      {node.priority}
+                    </span>
+                  )}
+
+                  {/* Due date indicator */}
+                  {node.dueDate && (
+                    <span className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded-md border ${
+                      !node.completed && node.dueDate < todayStr
+                        ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30 dark:text-rose-400'
+                        : 'bg-slate-55/10 border-slate-205 dark:bg-slate-800 dark:border-slate-750 text-slate-500 dark:text-slate-400'
+                    }`}>
+                      <Calendar className="w-3 h-3" />
+                      <span>{node.dueDate}</span>
+                    </span>
+                  )}
+
+                  {/* Tag Category chips */}
+                  {node.tags && node.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {node.tags.map(t => (
+                        <span key={t} className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 border border-indigo-100/60 dark:border-indigo-900/20 text-[9.5px] rounded-sm font-sans font-medium">
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Attachment Notes info */}
+                  {node.notes && (
+                    <span className="flex items-center gap-1 text-slate-400" title="Есть заметки">
+                      <FileText className="w-3 h-3" />
+                      <span className="truncate max-w-[120px] font-sans italic text-[10.5px]">
+                        {node.notes}
+                      </span>
+                    </span>
+                  )}
+
+                  {/* Subtasks Progress tag (TickTick style) */}
+                  {nodeChildrenCountMap[node.id] > 0 && (
+                    <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400 font-sans font-bold bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px]">
+                      <span>Подзадачи:</span>
+                      <span className="text-indigo-600 dark:text-indigo-400">{nodeChildrenCompletedCountMap[node.id] || 0}/{nodeChildrenCountMap[node.id]}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Micro Controls Action Panel */}
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleStartInlineEdit(node)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-55/40 dark:hover:bg-slate-800 cursor-pointer"
+                title="Редактировать текст"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Вы действительно хотите удалить эту задачу и все её подзадачи?')) {
+                    onDeleteNode(node.id);
+                  }
+                }}
+                className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/25 cursor-pointer"
+                title="Удалить задачу"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectNode(node.id === selectedNodeId ? null : node.id);
+                }}
+                className={`p-1.5 rounded-lg border cursor-pointer transition-all ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white border-transparent'
+                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+                title={isSelected ? "Свернуть свойства" : "Свойства и список подзадач"}
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Inline Expanded Manager for attributes, dates, and direct child tasks checklist */}
+          {isSelected && (
+            <div className="mt-2.5 pt-2.5 border-t border-slate-150 dark:border-slate-800/80 space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Приоритет:</span>
+                  <div className="flex gap-1 mt-1 flex-wrap">
+                    {(['none', 'low', 'medium', 'high', 'urgent'] as Priority[]).map((pr) => {
+                      const active = node.priority === pr;
+                      return (
+                        <button
+                          key={pr}
+                          type="button"
+                          onClick={() => handleUpdatePriority(node, pr)}
+                          className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded cursor-pointer border ${
+                            active 
+                              ? 'bg-slate-900 border-transparent text-white dark:bg-white dark:text-black' 
+                              : 'bg-slate-55 mb-1 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-705 dark:text-slate-400'
+                          }`}
+                        >
+                          {pr}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Срок выполнения:</span>
+                  <input
+                    type="date"
+                    value={node.dueDate || ''}
+                    onChange={(e) => handleUpdateDueDate(node, e.target.value)}
+                    className="mt-1 w-full bg-slate-55/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-1 text-xs text-slate-800 dark:text-slate-100 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Subtask checklist with quick add input for absolute TickTick experience */}
+              <div className="pt-2.5 border-t border-slate-150 dark:border-slate-800/50">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Список подзадач:</span>
+                  <span className="text-[9.5px] font-mono text-slate-500">
+                    Всего подзадач: {allDirectChildren.length}
+                  </span>
+                </div>
+
+                {allDirectChildren.length > 0 && (
+                  <div className="max-h-[160px] overflow-y-auto space-y-1 mb-2 bg-slate-55/40 dark:bg-slate-850 p-2 rounded-lg divide-y divide-slate-100 dark:divide-slate-800/40">
+                    {allDirectChildren.map((child) => (
+                      <div key={child.id} className="flex items-center justify-between py-1 first:pt-0 last:pb-0 gap-2 text-xs">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCompleted(child)}
+                            className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-all ${
+                              child.completed
+                                ? 'bg-emerald-500 border-emerald-500 text-white'
+                                : 'border-slate-300 dark:border-slate-700'
+                            }`}
+                          >
+                            {child.completed && <Check className="w-2.5 h-2.5 stroke-[2.5]" />}
+                          </button>
+                          <span className={`truncate min-w-0 ${child.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-700 dark:text-slate-300 font-medium'}`}>
+                            {child.text}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm('Удалить подзадачу?')) onDeleteNode(child.id);
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Subtask inline quick add text box */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const subVal = newSubtaskTexts[node.id] || '';
+                    if (!subVal.trim()) return;
+                    handleAddSubtaskSubmit(node.id, subVal);
+                  }}
+                  className="flex gap-2"
+                >
+                  <input
+                    type="text"
+                    value={newSubtaskTexts[node.id] || ''}
+                    onChange={(e) => setNewSubtaskTexts(prev => ({ ...prev, [node.id]: e.target.value }))}
+                    placeholder="Добавить новую подзадачу..."
+                    className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!(newSubtaskTexts[node.id] || '').trim()}
+                    className="px-3 py-1 bg-indigo-600 disabled:opacity-40 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg cursor-pointer transition-all"
+                  >
+                    Добавить
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Display child items list recursively */}
+        {children.length > 0 && !isCollapsed && (
+          <div className="space-y-1">
+            {children.map(childItem => renderTreeItem(childItem, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div id="mobile-ticktick-view" className="w-full h-full flex flex-col bg-slate-50 dark:bg-slate-950">
+      
+      {/* Mobile-Adapted Dashboard Header */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 shrink-0 transition-all">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="p-1 px-2 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold text-xs uppercase tracking-wider">
+                Быстрый список (TickTick Style)
+              </span>
+            </div>
+            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 mt-1 flex items-center gap-1.5 font-sans">
+              Клиент мобильного планирования
+            </h2>
+            <p className="text-xs text-slate-400">
+              Компактный дизайн с крупными элементами управления для удобной работы со смартфонов и планшетов
+            </p>
+          </div>
+
+          {/* Core Stats Overview block */}
+          <div className="grid grid-cols-4 gap-1.5 max-w-sm w-full font-mono text-center">
+            <div className="bg-slate-50 dark:bg-slate-850 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
+              <p className="text-[10px] text-slate-400">Активно</p>
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{activeCount}</p>
+            </div>
+            <div className="bg-rose-50 dark:bg-rose-950/20 p-1.5 rounded-lg border border-rose-100/40 dark:border-rose-900/10">
+              <p className="text-[10px] text-rose-500">Просроч.</p>
+              <p className="text-xs font-bold text-rose-600 dark:text-rose-400">{overdueCount}</p>
+            </div>
+            <div className="bg-indigo-50 dark:bg-indigo-950/20 p-1.5 rounded-lg border border-indigo-100/40 dark:border-indigo-900/10">
+              <p className="text-[10px] text-indigo-500">Сегодня</p>
+              <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{todayCount}</p>
+            </div>
+            <div className="bg-emerald-50 dark:bg-emerald-950/20 p-1.5 rounded-lg border border-emerald-100/40 dark:border-emerald-900/10">
+              <p className="text-[10px] text-emerald-500">Закрыто</p>
+              <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{completedCount}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Selection Row like TickTick */}
+        <div className="flex gap-2 mt-4 overflow-x-auto pb-1 scrollbar-thin">
+          {[
+            { id: 'active', label: 'В работе', count: activeCount },
+            { id: 'today', label: 'По плану сегодня', count: todayCount, icon: Clock },
+            { id: 'overdue', label: 'Просрочено', count: overdueCount, color: 'text-rose-505' },
+            { id: 'completed', label: 'Выполненные', count: completedCount },
+            { id: 'all', label: 'Все задачи', count: totalCount }
+          ].map((tab) => {
+            const isTabActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setActiveTab(tab.id as any);
+                  onSelectNode(null);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all ${
+                  isTabActive 
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:text-slate-950 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
+                }`}
+              >
+                {tab.icon && <tab.icon className="w-3.5 h-3.5" />}
+                <span>{tab.label}</span>
+                <span className={`px-1 rounded-sm text-[9px] ${isTabActive ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Advanced filters & text search block */}
+      <div className="p-3 bg-slate-100/50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800/80 shrink-0 grid grid-cols-1 md:grid-cols-3 gap-2">
+        <div className="relative">
+          <span className="absolute left-2.5 top-2.5 text-slate-400">
+            <Search className="w-3.5 h-3.5" />
+          </span>
+          <input
+            id="mobile-search-input"
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Быстрый поиск по названию/тегам..."
+            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        </div>
+
+        {/* Priority options selector */}
+        <div className="relative">
+          <span className="absolute left-2.5 top-2.5 text-slate-400">
+            <Flag className="w-3.5 h-3.5" />
+          </span>
+          <select
+            id="mobile-priority-select"
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+          >
+            <option value="all">Любой приоритет</option>
+            <option value="urgent">Срочно 🔥</option>
+            <option value="high">Высокий 🔴</option>
+            <option value="medium">Средний 🟡</option>
+            <option value="low">Низкий 🔵</option>
+            <option value="none">Без приоритета ⚪</option>
+          </select>
+        </div>
+
+        {/* Tag choice selector */}
+        <div className="relative">
+          <span className="absolute left-2.5 top-2.5 text-slate-400">
+            <Tag className="w-3.5 h-3.5" />
+          </span>
+          <select
+            id="mobile-tag-select"
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+          >
+            <option value="all">Все теги</option>
+            {/* Flatten all tag values from categories */}
+            {tagCategories.flatMap(c => c.tags || []).map(tag => (
+              <option key={tag} value={tag}>#{tag}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Main interactive Tasks container */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        {taskTreeRoots.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 px-6 text-center text-slate-400 h-full">
+            <div className="w-12 h-12 bg-slate-100 dark:bg-slate-850 rounded-full flex items-center justify-center mb-3">
+              <CheckSquare className="w-6 h-6 text-slate-400" />
+            </div>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Список пуст</p>
+            <p className="text-xs text-slate-400 mt-1 max-w-xs">
+              Нет задач соответствующих фильтрам. Добавьте первую задачу с помощью простой мобильной панели ниже!
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1 pb-4">
+            {taskTreeRoots.map(item => renderTreeItem(item, 0))}
+          </div>
+        )}
+      </div>
+
+      {/* Modern Quick Task Creator - Fixed Mobile Pane at the bottom (TickTick essence!) */}
+      <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0 shadow-lg select-none">
+        <form onSubmit={handleAddTaskSubmit} className="space-y-3">
+          <div className="flex items-center gap-2">
+            <input
+              id="mobile-quick-task-text"
+              type="text"
+              value={newTaskText}
+              onChange={(e) => setNewTaskText(e.target.value)}
+              placeholder="Новая главная задача..."
+              className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            
+            <button
+              id="mobile-quick-task-submit"
+              type="submit"
+              disabled={!newTaskText.trim()}
+              className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl transition-all shadow-xs cursor-pointer shrink-0"
+              title="Добавить"
+            >
+              <Plus className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          </div>
+
+          {/* Context Options panel (Priority, Date, Tags selection) */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+              
+              {/* Priority Select inside input frame */}
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700">
+                <Flag className="w-3.5 h-3.5 text-indigo-500" />
+                <select
+                  id="mobile-quick-priority"
+                  value={newTaskPriority}
+                  onChange={(e) => setNewTaskPriority(e.target.value as Priority)}
+                  className="bg-transparent border-none text-[11px] font-bold text-slate-600 dark:text-slate-350 focus:outline-none cursor-pointer"
+                >
+                  <option value="none">Приоритет: нет</option>
+                  <option value="low">Приоритет: Низкий</option>
+                  <option value="medium">Приоритет: Средний</option>
+                  <option value="high">Приоритет: Высокий</option>
+                  <option value="urgent">Приоритет: Срочно</option>
+                </select>
+              </div>
+
+              {/* Date Select inside input frame */}
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700">
+                <Calendar className="w-3.5 h-3.5 text-emerald-500" />
+                <input
+                  id="mobile-quick-date"
+                  type="date"
+                  value={newTaskDueDate}
+                  onChange={(e) => setNewTaskDueDate(e.target.value)}
+                  className="bg-transparent border-none text-[11px] text-slate-600 dark:text-slate-350 focus:outline-none focus:ring-0 w-[110px]"
+                />
+              </div>
+
+            </div>
+
+            {/* Quick tags selection selector */}
+            {tagCategories.length > 0 && (
+              <div className="flex gap-1 max-w-[200px] overflow-x-auto pb-0.5 scrollbar-none select-none">
+                {tagCategories.flatMap(c => c.tags || []).slice(0, 5).map(tag => {
+                  const isSelected = newTaskTags.includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => handleToggleTagInNewTask(tag)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap cursor-pointer border transition-all ${
+                        isSelected
+                          ? 'bg-indigo-600 border-transparent text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      #{tag}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </form>
+      </div>
+
+    </div>
+  );
+}
