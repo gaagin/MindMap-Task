@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Check, 
   Trash2, 
@@ -59,7 +59,58 @@ export default function MobileListView({
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [mobileSearchIndex, setMobileSearchIndex] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
+
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const query = searchQuery.toLowerCase();
+    return nodes.filter(n => {
+      const matchesText = n.text?.toLowerCase().includes(query);
+      const matchesNotes = n.notes?.toLowerCase().includes(query) || false;
+      const matchesTags = n.tags?.some(t => t.toLowerCase().includes(query)) || false;
+      return matchesText || matchesNotes || matchesTags;
+    });
+  }, [nodes, searchQuery]);
+
+  const handleNextMobileSearchMatch = () => {
+    if (searchResults.length <= 1) return;
+    const nextIdx = (mobileSearchIndex + 1) % searchResults.length;
+    setMobileSearchIndex(nextIdx);
+    const nextMatch = searchResults[nextIdx];
+    onSelectNode(nextMatch.id);
+    
+    setTimeout(() => {
+      const el = document.getElementById(`mobile-task-card-${nextMatch.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 80);
+  };
+
+  // Auto focus and scroll to first found node on mobile search query change
+  useEffect(() => {
+    if (searchQuery.trim() && searchResults.length > 0) {
+      setMobileSearchIndex(0);
+      const firstMatch = searchResults[0];
+      onSelectNode(firstMatch.id);
+      
+      // Expand parent of selected node if collapsed, so it is visible in the tree
+      const parentId = firstMatch.parentId;
+      if (parentId && collapsedParents[parentId]) {
+        setCollapsedParents(prev => ({ ...prev, [parentId]: false }));
+      }
+
+      setTimeout(() => {
+        const el = document.getElementById(`mobile-task-card-${firstMatch.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 80);
+    } else {
+      setMobileSearchIndex(0);
+    }
+  }, [searchQuery]);
   
   // Quick task input states (TickTick experience)
   const [newTaskText, setNewTaskText] = useState('');
@@ -739,25 +790,47 @@ export default function MobileListView({
       {/* Advanced filters & text search block (Highly compressed with toggling selects) */}
       <div className="p-2 bg-slate-100/50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800/80 shrink-0 space-y-1.5">
         <div className="flex items-center gap-1.5">
-          <div className="relative flex-1">
-            <span className="absolute left-2 top-2.5 text-slate-400 pointer-events-none">
-              <Search className="w-3 h-3" />
-            </span>
-            <input
-              id="mobile-search-input"
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Поиск по названию или тегам..."
-              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-6 pr-6 py-1 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            {searchQuery && (
+          <div className="relative flex-1 flex items-center gap-1.5">
+            <div className="relative flex-1">
+              <span className="absolute left-2 top-2.5 text-slate-400 pointer-events-none">
+                <Search className="w-3 h-3" />
+              </span>
+              <input
+                id="mobile-search-input"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Поиск по названию или тегам..."
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-6 pr-14 py-1 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              {searchQuery && (
+                <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
+                  {searchResults.length > 0 && (
+                    <span className="text-[10px] text-slate-400/80 font-mono font-medium select-none pointer-events-none">
+                      {mobileSearchIndex + 1}/{searchResults.length}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold w-4 h-4 flex items-center justify-center rounded-full"
+                    title="Очистить поиск"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {searchResults.length > 1 && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-1.5 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold w-5 h-5 flex items-center justify-center rounded-full hover:bg-slate-105-dark"
+                onClick={handleNextMobileSearchMatch}
+                className="p-1 px-1.5 rounded-lg border bg-indigo-50 border-indigo-200 dark:bg-indigo-950/45 dark:border-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold cursor-pointer shrink-0 transition-all flex items-center gap-0.5 shadow-xs"
+                title="Перейти к следующей задаче"
               >
-                ×
+                <span>След.</span>
+                <ChevronRight className="w-3 h-3" />
               </button>
             )}
           </div>
@@ -878,29 +951,29 @@ export default function MobileListView({
           </div>
 
           {/* Context Options panel (Priority, Date, Tags selection) */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+          <div className="flex flex-col gap-2 pt-1 xs:flex-row xs:items-center xs:justify-between">
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
               
               {/* Priority Select inside input frame */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700">
-                <Flag className="w-3.5 h-3.5 text-indigo-500" />
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700 max-w-[130px] shrink-0 min-w-0">
+                <Flag className="w-3.5 h-3.5 text-indigo-505 shrink-0" />
                 <select
                   id="mobile-quick-priority"
                   value={newTaskPriority}
                   onChange={(e) => setNewTaskPriority(e.target.value as Priority)}
-                  className="bg-transparent border-none text-[11px] font-bold text-slate-600 dark:text-slate-350 focus:outline-none cursor-pointer"
+                  className="bg-transparent border-none text-[11px] font-bold text-slate-600 dark:text-slate-350 focus:outline-none cursor-pointer w-full"
                 >
                   <option value="none">Приоритет: нет</option>
-                  <option value="low">Приоритет: Низкий</option>
-                  <option value="medium">Приоритет: Средний</option>
-                  <option value="high">Приоритет: Высокий</option>
-                  <option value="urgent">Приоритет: Срочно</option>
+                  <option value="low">Низкий 🔵</option>
+                  <option value="medium">Средний 🟡</option>
+                  <option value="high">Высокий 🔴</option>
+                  <option value="urgent">Срочно 🔥</option>
                 </select>
               </div>
 
               {/* Date Select inside input frame */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700">
-                <Calendar className="w-3.5 h-3.5 text-emerald-500" />
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700 shrink-0">
+                <Calendar className="w-3.5 h-3.5 text-emerald-555 shrink-0" />
                 <input
                   id="mobile-quick-date"
                   type="date"

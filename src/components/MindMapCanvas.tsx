@@ -1537,45 +1537,32 @@ export default function MindMapCanvas({
         </div>
       </div>
 
-      <div className="absolute bottom-4 left-4 z-10 flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1.5 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md">
+      <div className="absolute bottom-4 left-2 right-2 sm:right-auto sm:left-4 z-10 flex flex-wrap items-center justify-center sm:justify-start gap-1 sm:gap-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-1.5 sm:p-2 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md max-w-[calc(100vw-16px)] sm:max-w-none">
         <button
           onClick={handleZoomIn}
           title="Приблизить"
-          className="p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+          className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
         <button
           onClick={handleZoomOut}
           title="Отдалить"
-          className="p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+          className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
-        <div className="w-[1px] h-5 bg-slate-200 dark:bg-slate-800 mx-1" />
+        <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
         <button
           onClick={handleRecenter}
           title="По центру"
-          className="p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium cursor-pointer"
+          className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium cursor-pointer shrink-0"
         >
           <Maximize2 className="w-4 h-4" />
           <span className="hidden sm:inline">Сбросить</span>
         </button>
-        <div className="w-[1px] h-5 bg-slate-200 dark:bg-slate-800 mx-1" />
-        <button
-          onClick={() => setPriorityViewActive(!priorityViewActive)}
-          title="Подсветить и сфокусироваться на приоритетных задачах"
-          className={`px-3 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1.5 text-xs font-semibold select-none cursor-pointer border ${
-            priorityViewActive 
-              ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-400 border-amber-300 dark:border-amber-805 shadow-sm' 
-              : 'text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 border-transparent hover:border-slate-200 dark:hover:border-slate-850'
-          }`}
-        >
-          <Zap className={`w-3.5 h-3.5 ${priorityViewActive ? 'fill-amber-500 text-amber-500 animate-pulse' : ''}`} />
-          <span>Важность</span>
-        </button>
 
-        <div className="w-[1px] h-5 bg-slate-200 dark:bg-slate-800 mx-1" />
+        <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
         <button
           onClick={() => {
             let cx = 0;
@@ -1589,8 +1576,8 @@ export default function MindMapCanvas({
             const y = Math.round(-panY / zoom);
             onAddFloatingNode(x, y, focusedContainerId);
           }}
-          title={focusedContainerId ? "Создать новую задачу внутри текущего контейнера" : "Создать независимую плавающую задачу по центру холста (или дважды кликните на пустом месте)"}
-          className="px-3 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1.5 text-xs font-semibold select-none cursor-pointer border text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 border-transparent hover:border-emerald-200 dark:hover:border-emerald-900/40"
+          title={focusedContainerId ? "Создать новую задачу внутри текущего контейнера" : "Создать независимую плавующую задачу по центру холста (или дважды кликните на пустом месте)"}
+          className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 border-transparent hover:border-emerald-200 dark:hover:border-emerald-900/40 shrink-0"
         >
           <PlusCircle className="w-3.5 h-3.5 text-emerald-500" />
           <span className="hidden sm:inline">{focusedContainerId ? 'Создать задачу' : 'Плавающая задача'}</span>
@@ -1599,7 +1586,7 @@ export default function MindMapCanvas({
 
         {!focusedContainerId && (
           <>
-            <div className="w-[1px] h-5 bg-slate-200 dark:bg-slate-800 mx-1" />
+            <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
             <button
               onClick={() => {
                 const x = Math.round(-panX / zoom);
@@ -1607,7 +1594,7 @@ export default function MindMapCanvas({
                 onAddContainerNode(x, y);
               }}
               title="Создать контейнер. В него можно вкладывать другие задачи для совместного перемещения и свертывания"
-              className="px-3 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1.5 text-xs font-semibold select-none cursor-pointer border text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-350 hover:bg-amber-50 dark:hover:bg-amber-950/20 border-transparent hover:border-amber-200 dark:hover:border-amber-900/40"
+              className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-350 hover:bg-amber-50 dark:hover:bg-amber-950/20 border-transparent hover:border-amber-200 dark:hover:border-amber-900/40 shrink-0"
             >
               <span>📦</span>
               <span className="hidden sm:inline">Создать контейнер</span>

@@ -14,7 +14,8 @@ import {
   X,
   Kanban,
   Network,
-  Smartphone
+  Smartphone,
+  ChevronRight
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants } from './utils';
@@ -44,6 +45,7 @@ export default function App() {
 
   // Search keyword for filtering
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
 
   // Advanced Filtering Panel and states
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
@@ -874,8 +876,39 @@ export default function App() {
     if (node) {
       setPanX(-node.x * zoom);
       setPanY(-node.y * zoom);
+
+      // Auto-scroll Kanban or Mobile views if active
+      setTimeout(() => {
+        const kanbanCard = document.getElementById(`kanban-card-${nodeId}`);
+        if (kanbanCard) {
+          kanbanCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        const mobileCard = document.getElementById(`mobile-task-card-${nodeId}`);
+        if (mobileCard) {
+          mobileCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 80);
     }
   };
+
+  const handleNextSearchMatch = () => {
+    if (searchedIds.length <= 1) return;
+    const nextIdx = (currentSearchIndex + 1) % searchedIds.length;
+    setCurrentSearchIndex(nextIdx);
+    handleSelectSearchedNode(searchedIds[nextIdx]);
+  };
+
+  // Auto focus first found node on search query change
+  useEffect(() => {
+    if (searchQuery.trim().length > 0) {
+      if (searchedIds.length > 0) {
+        setCurrentSearchIndex(0);
+        handleSelectSearchedNode(searchedIds[0]);
+      }
+    } else {
+      setCurrentSearchIndex(0);
+    }
+  }, [searchQuery, state.activeProjectId]);
 
 
   // ----- DATA PERSISTENCE IMPORT & EXPORT -----
@@ -925,7 +958,7 @@ export default function App() {
   const selectedNode = activeNodes.find(n => n.id === selectedNodeId) || null;
 
   return (
-    <div className="flex h-screen overflow-hidden text-slate-900 bg-white dark:bg-slate-950 dark:text-slate-100 font-sans transition-colors duration-150">
+    <div className="flex h-screen h-[100dvh] overflow-hidden text-slate-900 bg-white dark:bg-slate-950 dark:text-slate-100 font-sans transition-colors duration-150">
       
       {/* Sidebar drawer handles folders/projects */}
       <Sidebar
@@ -985,15 +1018,37 @@ export default function App() {
           <div className="flex items-center gap-3">
             
             {/* Elegant micro search input */}
-            <div className="relative hidden md:block">
-              <input
-                type="text"
-                placeholder="Поиск по задачам и тегам..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-56 leading-none py-1.5 pl-8 pr-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100"
-              />
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+            <div className="relative hidden md:flex items-center gap-1.5">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Поиск по задачам и тегам..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-56 leading-none py-1.5 pl-8 pr-12 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
+                />
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                
+                {/* Micro Counter Indicator */}
+                {searchQuery.trim().length > 0 && (
+                  <span className="absolute right-2 top-2 text-[10px] text-slate-400/80 font-mono font-medium select-none pointer-events-none">
+                    {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
+                  </span>
+                )}
+              </div>
+
+              {/* Next Match button */}
+              {searchedIds.length > 1 && (
+                <button
+                  type="button"
+                  onClick={handleNextSearchMatch}
+                  title="Перейти к следующей найденной задаче"
+                  className="flex items-center gap-1 py-1 px-2 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 hover:bg-indigo-150 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold rounded-lg transition-all cursor-pointer shadow-xs"
+                >
+                  <span>Следующая</span>
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              )}
             </div>
 
             {/* Advanced Filters Button */}
