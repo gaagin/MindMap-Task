@@ -29,8 +29,21 @@ export default function App() {
   // Load initial state
   const [state, setState] = useState<WorkspaceState>(() => loadWorkspace());
   
-  // Sidebar closed by default as per user preference
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Sidebar visibility state, persisted to prevent unexpected collapses
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_sidebar_open');
+      if (saved !== null) return saved === 'true';
+    } catch (e) {
+      console.error('Failed to parse sidebar open state:', e);
+    }
+    // Default open on desktop, closed on mobile/tablet
+    return typeof window !== 'undefined' ? window.innerWidth >= 1024 : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('task_mindmap_sidebar_open', String(sidebarOpen));
+  }, [sidebarOpen]);
   
   // Selected task node for detail panel
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -89,16 +102,16 @@ export default function App() {
     localStorage.setItem('task_mindmap_dark', String(darkMode));
   }, [darkMode]);
 
-  // Adjust sidebar on startup based on screen width
+  // Adjust sidebar on startup based on screen width ONLY on initial load if no preference is saved
   useEffect(() => {
-    const handleResize = () => {
+    const saved = localStorage.getItem('task_mindmap_sidebar_open');
+    if (saved === null) {
       if (window.innerWidth < 1024) {
         setSidebarOpen(false);
+      } else {
+        setSidebarOpen(true);
       }
-    };
-    handleResize(); // run once on boot
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    }
   }, []);
 
   // Back up history before doing node modifications
@@ -150,6 +163,11 @@ export default function App() {
     setZoom(1);
     setSelectedNodeId(null);
     setSearchQuery('');
+    
+    // Automatically close the sidebar overlay drawer on mobile/tablet screen widths
+    if (window.innerWidth < 1024) {
+      setSidebarOpen(false);
+    }
   };
 
   // ----- FOLDER OPERATIONS -----

@@ -22,7 +22,8 @@ import {
   CheckSquare,
   ListFilter,
   CheckCircle2,
-  CalendarCheck
+  CalendarCheck,
+  GripVertical
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { generateId } from '../utils';
@@ -142,6 +143,110 @@ export default function MobileListView({
     return false;
   };
 
+  // Custom pointer drag handlers for fully-supported mobile touch drag & drop
+  const activePointerId = React.useRef<number | null>(null);
+  
+  const handlePointerDown = (e: React.PointerEvent, id: string) => {
+    if (e.button !== 0) return; // Only drag with left click / touch
+    
+    const target = e.currentTarget as HTMLElement;
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch (err) {}
+    activePointerId.current = e.pointerId;
+    setDraggedNodeId(id);
+    setDragOverNodeId(null);
+    
+    e.stopPropagation();
+  };
+
+  const handlePointerMove = (e: React.PointerEvent, id: string) => {
+    if (draggedNodeId !== id) return;
+    if (activePointerId.current !== e.pointerId) return;
+
+    // Utilize elementFromPoint to find custom drag Target under the point
+    const elementUnderPointer = document.elementFromPoint(e.clientX, e.clientY);
+    if (!elementUnderPointer) {
+      if (dragOverNodeId !== null) {
+        setDragOverNodeId(null);
+      }
+      return;
+    }
+
+    // Check if hovering over the de-nesting root zone
+    const rootDropzone = elementUnderPointer.closest('[id="mobile-task-root-dropzone"]');
+    if (rootDropzone) {
+      if (dragOverNodeId !== 'background_root_zone') {
+        setDragOverNodeId('background_root_zone');
+      }
+      return;
+    }
+
+    const cardElement = elementUnderPointer.closest('[id^="mobile-task-card-"]');
+    if (cardElement) {
+      const targetId = cardElement.getAttribute('id')?.replace('mobile-task-card-', '') || null;
+      
+      if (targetId && targetId !== id && !isDescendant(targetId, id)) {
+        if (dragOverNodeId !== targetId) {
+          setDragOverNodeId(targetId);
+        }
+      } else {
+        if (dragOverNodeId !== null) {
+          setDragOverNodeId(null);
+        }
+      }
+    } else {
+      if (dragOverNodeId !== null) {
+        setDragOverNodeId(null);
+      }
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent, id: string) => {
+    if (draggedNodeId !== id) return;
+    activePointerId.current = null;
+    
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch (err) {}
+
+    const targetId = dragOverNodeId;
+    
+    // Clear states
+    setDraggedNodeId(null);
+    setDragOverNodeId(null);
+
+    if (targetId === 'background_root_zone') {
+      const draggedNode = nodes.find(n => n.id === id);
+      if (draggedNode && draggedNode.parentId !== null) {
+        onUpdateNode({
+          ...draggedNode,
+          parentId: null,
+          isFloating: true,
+        });
+      }
+    } else if (targetId && targetId !== id && !isDescendant(targetId, id)) {
+      const draggedNode = nodes.find(n => n.id === id);
+      if (draggedNode && draggedNode.parentId !== targetId) {
+        onUpdateNode({
+          ...draggedNode,
+          parentId: targetId,
+          isFloating: false,
+        });
+      }
+    }
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent, id: string) => {
+    if (draggedNodeId !== id) return;
+    activePointerId.current = null;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch (err) {}
+    setDraggedNodeId(null);
+    setDragOverNodeId(null);
+  };
+
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData('text/plain', id);
     setDraggedNodeId(id);
@@ -153,11 +258,18 @@ export default function MobileListView({
     if (draggedNodeId === id || isDescendant(id, draggedNodeId || '')) {
       return;
     }
-    setDragOverNodeId(id);
+    if (dragOverNodeId !== id) {
+      setDragOverNodeId(id);
+    }
   };
 
   const handleDragLeaveCard = (e: React.DragEvent) => {
     e.preventDefault();
+    setDragOverNodeId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedNodeId(null);
     setDragOverNodeId(null);
   };
 
@@ -440,12 +552,13 @@ export default function MobileListView({
           onDragStart={(e) => handleDragStart(e, node.id)}
           onDragOver={(e) => handleDragOverCard(e, node.id)}
           onDragLeave={handleDragLeaveCard}
+          onDragEnd={handleDragEnd}
           onDrop={(e) => handleDropOnCard(e, node.id)}
-          className={`border rounded-xl p-1.5 px-2.5 transition-all flex flex-col gap-1 relative cursor-grab active:cursor-grabbing select-none ${
+          className={`border rounded-xl p-1.5 px-2.5 transition-[background-color,border-color,opacity,box-shadow] duration-150 flex flex-col gap-1 relative select-none ${
             draggedNodeId === node.id
-              ? 'opacity-30 border-2 border-dashed border-indigo-400 bg-slate-50 dark:bg-slate-950'
+              ? 'pointer-events-none opacity-30 border-dashed border-indigo-400 bg-slate-50 dark:bg-slate-950'
               : dragOverNodeId === node.id
-                ? 'border-2 border-dashed border-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/40 ring-2 ring-indigo-500/15 scale-[1.01] shadow-sm'
+                ? 'border-dashed border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/30 ring-2 ring-indigo-500/30 shadow-md'
                 : isSelected 
                   ? 'bg-indigo-55/10 border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900/40' 
                   : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800'
@@ -465,266 +578,320 @@ export default function MobileListView({
             </div>
           )}
 
-          <div className="flex items-center gap-2 justify-between">
-            {/* Tick Checkbox & title container */}
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              {/* Expand/Collapse Toggle if there are sub-elements in the list */}
-              {children.length > 0 && (
-                <button
-                  type="button"
-                  onClick={(e) => toggleParentCollapse(node.id, e)}
-                  className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
-                  title={isCollapsed ? "Развернуть подзадачи" : "Свернуть подзадачи"}
-                >
-                  <ChevronDown className={`w-3 h-3 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
-                </button>
-              )}
-
-              {/* Checkbox button */}
-              <button
-                type="button"
-                onClick={() => handleToggleCompleted(node)}
-                className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 cursor-pointer transition-all ${
-                  node.completed
-                    ? 'bg-emerald-500 border-emerald-500 text-white'
-                    : `border-slate-300 hover:border-indigo-500 dark:border-slate-700`
-                }`}
-                title={node.completed ? 'Восстановить' : 'Завершить'}
-                style={!node.completed ? { borderColor: pMeta.value !== 'none' ? pMeta.text.replace('text-', '') : undefined } : undefined}
+          {/* Flex Container linking Drag handle with card content */}
+          <div className="flex items-start gap-1 w-full relative">
+            {/* Grip handle outside the pointer-events-none area */}
+            {!isEditing && (
+              <div
+                onPointerDown={(e) => handlePointerDown(e, node.id)}
+                onPointerMove={(e) => handlePointerMove(e, node.id)}
+                onPointerUp={(e) => handlePointerUp(e, node.id)}
+                onPointerCancel={(e) => handlePointerCancel(e, node.id)}
+                className="p-1 text-slate-350 dark:text-slate-650 hover:text-indigo-500 dark:hover:text-indigo-400 cursor-grab active:cursor-grabbing transition-colors shrink-0 mt-0.5 select-none touch-none"
+                style={{ touchAction: 'none' }}
+                title="Удерживайте для перемещения"
               >
-                {node.completed && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-              </button>
+                <GripVertical className="w-3.5 h-3.5" />
+              </div>
+            )}
 
-              {/* Core Text Label */}
-              <div className="min-w-0 flex-1">
-                {isEditing ? (
-                  <div className="flex gap-1 items-center">
-                    <input
-                      type="text"
-                      value={editingText}
-                      onChange={(e) => setEditingText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveInlineEdit(node);
-                        if (e.key === 'Escape') setEditingNodeId(null);
-                      }}
-                      className="w-full bg-slate-100 dark:bg-slate-800 border border-indigo-500 rounded px-1.5 py-0.5 text-[11px] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-indigo-500"
-                      autoFocus
-                    />
+            {/* Pointer Events Wrapper to prevent drag-flicker on inner children */}
+            <div className={`flex-1 flex flex-col gap-1 min-w-0 ${draggedNodeId !== null ? 'pointer-events-none' : ''}`}>
+
+              <div className="flex items-center gap-2 justify-between">
+                {/* Tick Checkbox & title container */}
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  {/* Expand/Collapse Toggle if there are sub-elements in the list */}
+                  {children.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => handleSaveInlineEdit(node)}
-                      className="px-1.5 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] rounded"
+                      onClick={(e) => toggleParentCollapse(node.id, e)}
+                      className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
+                      title={isCollapsed ? "Развернуть подзадачи" : "Свернуть подзадачи"}
                     >
-                      ОК
+                      <ChevronDown className={`w-3 h-3 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
                     </button>
-                  </div>
-                ) : (
-                  <div 
-                    className="text-[12.5px] font-semibold text-slate-800 dark:text-slate-200 cursor-pointer pr-1.5 break-words flex items-center flex-wrap gap-1.5"
-                    onClick={() => {
-                      onSelectNode(node.id);
-                    }}
+                  )}
+
+                  {/* Checkbox button */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleCompleted(node)}
+                    className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 cursor-pointer transition-all ${
+                      node.completed
+                        ? 'bg-emerald-500 border-emerald-500 text-white'
+                        : `border-slate-300 hover:border-indigo-500 dark:border-slate-700`
+                    }`}
+                    title={node.completed ? 'Восстановить' : 'Завершить'}
+                    style={!node.completed ? { borderColor: pMeta.value !== 'none' ? pMeta.text.replace('text-', '') : undefined } : undefined}
                   >
-                    <span className={node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal font-sans' : 'font-sans'}>
-                      {node.text}
-                    </span>
+                    {node.completed && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                  </button>
 
-                    {/* Highly compressed inline metadata on main line to avoid extra height lines */}
-                    <div className="inline-flex items-center gap-1.5 text-[9.5px] font-mono select-none">
-                      {node.priority !== 'none' && (
-                        <span className={`px-1 rounded-sm font-bold text-[9px] uppercase border ${pMeta.bg} ${pMeta.border} ${pMeta.text}`}>
-                          {node.priority}
-                        </span>
-                      )}
-
-                      {node.dueDate && (
-                        <span className={`flex items-center gap-1 px-1 rounded-sm border ${
-                          !node.completed && node.dueDate < todayStr
-                            ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30'
-                            : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700'
-                        }`}>
-                          <span>{node.dueDate}</span>
-                        </span>
-                      )}
-
-                      {nodeChildrenCountMap[node.id] > 0 && (
-                        <span className="text-indigo-600 dark:text-indigo-400 font-sans font-bold bg-slate-100 dark:bg-slate-800 px-1 rounded text-[9px]">
-                          {nodeChildrenCompletedCountMap[node.id] || 0}/{nodeChildrenCountMap[node.id]}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Micro Controls Action Panel */}
-            <div className="flex items-center gap-0.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => handleStartInlineEdit(node)}
-                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-md hover:bg-slate-55/40 dark:hover:bg-slate-800 cursor-pointer"
-                title="Редактировать текст"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.confirm('Вы действительно хотите удалить эту задачу и все её подзадачи?')) {
-                    onDeleteNode(node.id);
-                  }
-                }}
-                className="p-1 text-slate-400 hover:text-rose-500 rounded-md hover:bg-rose-50/50 dark:hover:bg-rose-950/25 cursor-pointer"
-                title="Удалить задачу"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectNode(node.id === selectedNodeId ? null : node.id);
-                }}
-                className={`p-1 rounded-md border cursor-pointer transition-all ${
-                  isSelected
-                    ? 'bg-indigo-650 text-white border-transparent'
-                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
-                }`}
-                title={isSelected ? "Свернуть свойства" : "Свойства и список подзадач"}
-              >
-                <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-
-          {/* Subtags listed in details line when NOT editing */}
-          {(!isEditing && ((node.tags && node.tags.length > 0) || node.notes)) && (
-            <div className="flex flex-wrap items-center gap-1.5 ml-6.5 text-[10px] text-slate-400 font-mono">
-              {node.tags && node.tags.map(t => (
-                <span key={t} className="px-1 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-500 border border-indigo-100/40 text-[9px] rounded-sm font-sans">
-                  #{t}
-                </span>
-              ))}
-              {node.notes && (
-                <span className="flex items-center gap-1 font-sans italic max-w-[150px] truncate text-[10px]">
-                  <FileText className="w-2.5 h-2.5 shrink-0" />
-                  <span className="truncate">{node.notes}</span>
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Inline Expanded Manager for attributes, dates, and direct child tasks checklist */}
-          {isSelected && (
-            <div className="mt-2.5 pt-2.5 border-t border-slate-150 dark:border-slate-800/80 space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Приоритет:</span>
-                  <div className="flex gap-1 mt-1 flex-wrap">
-                    {(['none', 'low', 'medium', 'high', 'urgent'] as Priority[]).map((pr) => {
-                      const active = node.priority === pr;
-                      return (
-                        <button
-                          key={pr}
-                          type="button"
-                          onClick={() => handleUpdatePriority(node, pr)}
-                          className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded cursor-pointer border ${
-                            active 
-                              ? 'bg-slate-900 border-transparent text-white dark:bg-white dark:text-black' 
-                              : 'bg-slate-55 mb-1 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-705 dark:text-slate-400'
-                          }`}
-                        >
-                          {pr}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Срок выполнения:</span>
-                  <input
-                    type="date"
-                    value={node.dueDate || ''}
-                    onChange={(e) => handleUpdateDueDate(node, e.target.value)}
-                    className="mt-1 w-full bg-slate-55/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-1 text-xs text-slate-800 dark:text-slate-100 outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Subtask checklist with quick add input for absolute TickTick experience */}
-              <div className="pt-2.5 border-t border-slate-150 dark:border-slate-800/50">
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Список подзадач:</span>
-                  <span className="text-[9.5px] font-mono text-slate-500">
-                    Всего подзадач: {allDirectChildren.length}
-                  </span>
-                </div>
-
-                {allDirectChildren.length > 0 && (
-                  <div className="max-h-[160px] overflow-y-auto space-y-1 mb-2 bg-slate-55/40 dark:bg-slate-850 p-2 rounded-lg divide-y divide-slate-100 dark:divide-slate-800/40">
-                    {allDirectChildren.map((child) => (
-                      <div key={child.id} className="flex items-center justify-between py-1 first:pt-0 last:pb-0 gap-2 text-xs">
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleCompleted(child)}
-                            className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-all ${
-                              child.completed
-                                ? 'bg-emerald-500 border-emerald-500 text-white'
-                                : 'border-slate-300 dark:border-slate-700'
-                            }`}
-                          >
-                            {child.completed && <Check className="w-2.5 h-2.5 stroke-[2.5]" />}
-                          </button>
-                          <span className={`truncate min-w-0 ${child.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-700 dark:text-slate-300 font-medium'}`}>
-                            {child.text}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm('Удалить подзадачу?')) onDeleteNode(child.id);
+                  {/* Core Text Label */}
+                  <div className="min-w-0 flex-1">
+                    {isEditing ? (
+                      <div className="flex gap-1 items-center">
+                        <input
+                          type="text"
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveInlineEdit(node);
+                            if (e.key === 'Escape') setEditingNodeId(null);
                           }}
-                          className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer"
+                          className="w-full bg-slate-100 dark:bg-slate-800 border border-indigo-500 rounded px-1.5 py-0.5 text-[11px] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-indigo-500"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveInlineEdit(node)}
+                          className="px-1.5 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] rounded"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          ОК
                         </button>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    ) : (
+                      <div 
+                        className="text-[12.5px] font-semibold text-slate-800 dark:text-slate-200 cursor-pointer pr-1.5 break-words flex items-center flex-wrap gap-1.5"
+                        onClick={() => {
+                          onSelectNode(node.id);
+                        }}
+                      >
+                        <span className={node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal font-sans' : 'font-sans'}>
+                          {node.text}
+                        </span>
 
-                {/* Subtask inline quick add text box */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const subVal = newSubtaskTexts[node.id] || '';
-                    if (!subVal.trim()) return;
-                    handleAddSubtaskSubmit(node.id, subVal);
-                  }}
-                  className="flex gap-2"
-                >
-                  <input
-                    type="text"
-                    value={newSubtaskTexts[node.id] || ''}
-                    onChange={(e) => setNewSubtaskTexts(prev => ({ ...prev, [node.id]: e.target.value }))}
-                    placeholder="Добавить новую подзадачу..."
-                    className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
+                        {/* Highly compressed inline metadata on main line to avoid extra height lines */}
+                        <div className="inline-flex items-center gap-1.5 text-[9.5px] font-mono select-none">
+                          {node.priority !== 'none' && (
+                            <span className={`px-1 rounded-sm font-bold text-[9px] uppercase border ${pMeta.bg} ${pMeta.border} ${pMeta.text}`}>
+                              {node.priority}
+                            </span>
+                          )}
+
+                          {node.text.toLowerCase().includes('важн') && node.priority === 'none' && (
+                            <span className="px-1 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[8.5px] font-bold rounded-sm uppercase">важно</span>
+                          )}
+
+                          {node.dueDate && (
+                            <span className={`flex items-center gap-1 px-1 rounded-sm border ${
+                              !node.completed && node.dueDate < todayStr
+                                ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30'
+                                : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700'
+                            }`}>
+                              <span>{node.dueDate}</span>
+                            </span>
+                          )}
+
+                          {nodeChildrenCountMap[node.id] > 0 && (
+                            <span className="text-indigo-600 dark:text-indigo-400 font-sans font-bold bg-slate-100 dark:bg-slate-800 px-1 rounded text-[9px]">
+                              {nodeChildrenCompletedCountMap[node.id] || 0}/{nodeChildrenCountMap[node.id]}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Micro Controls Action Panel */}
+                <div className="flex items-center gap-0.5 shrink-0">
                   <button
-                    type="submit"
-                    disabled={!(newSubtaskTexts[node.id] || '').trim()}
-                    className="px-3 py-1 bg-indigo-600 disabled:opacity-40 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg cursor-pointer transition-all"
+                    type="button"
+                    onClick={() => handleStartInlineEdit(node)}
+                    className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-md hover:bg-slate-55/40 dark:hover:bg-slate-800 cursor-pointer"
+                    title="Редактировать текст"
                   >
-                    Добавить
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
                   </button>
-                </form>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Вы действительно хотите удалить эту задачу и все её подзадачи?')) {
+                        onDeleteNode(node.id);
+                      }
+                    }}
+                    className="p-1 text-slate-400 hover:text-rose-500 rounded-md hover:bg-rose-50/50 dark:hover:bg-rose-950/25 cursor-pointer"
+                    title="Удалить задачу"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelectNode(node.id === selectedNodeId ? null : node.id);
+                    }}
+                    className={`p-1 rounded-md border cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-indigo-650 text-white border-transparent'
+                        : 'bg-slate-5 border-slate-200 text-slate-500 hover:text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
+                    }`}
+                    title={isSelected ? "Свернуть свойства" : "Свойства и список подзадач"}
+                  >
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+
+              {/* Subtags listed in details line when NOT editing */}
+              {(!isEditing && ((node.tags && node.tags.length > 0) || node.notes)) && (
+                <div className="flex flex-wrap items-center gap-1.5 ml-6.5 text-[10px] text-slate-400 font-mono">
+                  {node.tags && node.tags.map(t => (
+                    <span key={t} className="px-1 bg-indigo-5/50 dark:bg-indigo-95/20 text-indigo-500 border border-indigo-100/40 text-[9px] rounded-sm font-sans">
+                      #{t}
+                    </span>
+                  ))}
+                  {node.notes && (
+                    <span className="flex items-center gap-1 font-sans italic max-w-[150px] truncate text-[10px]">
+                      <FileText className="w-2.5 h-2.5 shrink-0" />
+                      <span className="truncate">{node.notes}</span>
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Inline Expanded Manager for attributes, dates, and direct child tasks checklist */}
+              {isSelected && (
+                <div className="mt-2.5 pt-2.5 border-t border-slate-150 dark:border-slate-800/80 space-y-3.5 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">Приоритет:</span>
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {(['none', 'low', 'medium', 'high', 'urgent'] as Priority[]).map((pr) => {
+                          const active = node.priority === pr;
+                          return (
+                            <button
+                              key={pr}
+                              type="button"
+                              onClick={() => handleUpdatePriority(node, pr)}
+                              className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded cursor-pointer border ${
+                                active 
+                                  ? 'bg-slate-900 border-transparent text-white dark:bg-white dark:text-black' 
+                                  : 'bg-slate-55 mb-1 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-705 dark:text-slate-400'
+                              }`}
+                            >
+                              {pr}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">Срок выполнения:</span>
+                      <input
+                        type="date"
+                        value={node.dueDate || ''}
+                        onChange={(e) => handleUpdateDueDate(node, e.target.value)}
+                        className="mt-1 w-full bg-slate-55/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-1 text-xs text-slate-800 dark:text-slate-100 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Tactile Parent Dropdown Selector for frictionless Nesting and Organization */}
+                  <div className="bg-slate-100/40 dark:bg-slate-900/40 rounded-lg p-2 border border-slate-200/50 dark:border-slate-800/60">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Родительская задача (Иерархия):</span>
+                    <select
+                      id={`mobile-task-parent-select-${node.id}`}
+                      value={node.parentId || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        onUpdateNode({
+                          ...node,
+                          parentId: val ? val : null,
+                          isFloating: false
+                        });
+                      }}
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1 px-1.5 text-xs text-slate-700 dark:text-slate-300 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="">(Сделать главной задачей — нет родителя)</option>
+                      {nodes
+                        .filter((n) => n.id !== node.id && !n.isContainer && !isDescendant(n.id, node.id))
+                        .map((n) => (
+                          <option key={n.id} value={n.id}>
+                            {n.text}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {/* Subtask checklist with quick add input for absolute TickTick experience */}
+                  <div className="pt-2.5 border-t border-slate-150 dark:border-slate-800/50">
+                    <div className="flex justify-between items-center mb-1.5">
+                      <span className="text-[10px] uppercase font-bold text-slate-400">Список подзадач:</span>
+                      <span className="text-[9.5px] font-mono text-slate-500">
+                        Всего подзадач: {allDirectChildren.length}
+                      </span>
+                    </div>
+
+                    {allDirectChildren.length > 0 && (
+                      <div className="max-h-[160px] overflow-y-auto space-y-1 mb-2 bg-slate-55/40 dark:bg-slate-850 p-2 rounded-lg divide-y divide-slate-100 dark:divide-slate-800/40">
+                        {allDirectChildren.map((child) => (
+                          <div key={child.id} className="flex items-center justify-between py-1 first:pt-0 last:pb-0 gap-2 text-xs">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleCompleted(child)}
+                                className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 transition-all ${
+                                  child.completed
+                                    ? 'bg-emerald-500 border-emerald-500 text-white'
+                                    : 'border-slate-300 dark:border-slate-700'
+                                }`}
+                              >
+                                {child.completed && <Check className="w-2.5 h-2.5 stroke-[2.5]" />}
+                              </button>
+                              <span className={`truncate min-w-0 ${child.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-700 dark:text-slate-300 font-medium'}`}>
+                                {child.text}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm('Удалить подзадачу?')) onDeleteNode(child.id);
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Subtask inline quick add text box */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const subVal = newSubtaskTexts[node.id] || '';
+                        if (!subVal.trim()) return;
+                        handleAddSubtaskSubmit(node.id, subVal);
+                      }}
+                      className="flex gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={newSubtaskTexts[node.id] || ''}
+                        onChange={(e) => setNewSubtaskTexts(prev => ({ ...prev, [node.id]: e.target.value }))}
+                        placeholder="Добавить новую подзадачу..."
+                        className="flex-1 bg-slate-55 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!(newSubtaskTexts[node.id] || '').trim()}
+                        className="px-3 py-1 bg-indigo-600 disabled:opacity-40 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg cursor-pointer transition-all"
+                      >
+                        Добавить
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+            </div> {/* End pointer-events-none wrapper */}
+          </div> {/* End tactile flex container */}
         </div>
 
         {/* Display child items list recursively */}
@@ -902,10 +1069,20 @@ export default function MobileListView({
         }}
         onDrop={handleDropOnBackground}
       >
-        {/* Help tooltip when dragging a node off-center / in the background */}
-        {draggedNodeId !== null && dragOverNodeId === null && (
-          <div className="sticky top-1 mx-auto text-center w-fit bg-indigo-50 dark:bg-slate-900/90 text-indigo-700 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-950 px-3 py-1.5 rounded-full text-[10px] font-bold shadow-md z-10 flex items-center gap-1 animate-pulse pointer-events-none">
-            <span>✨ Отпустите здесь для открепления (плавающая задача)</span>
+        {/* Help tooltip and Touch de-nesting dropzone when dragging a task */}
+        {draggedNodeId !== null && (
+          <div 
+            id="mobile-task-root-dropzone"
+            className={`sticky top-1 mx-auto text-center w-full max-w-md p-3 border-2 border-dashed rounded-xl transition-all duration-150 z-20 shadow-md ${
+              dragOverNodeId === 'background_root_zone'
+                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold scale-[1.01]'
+                : 'border-slate-300 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 text-slate-500 dark:text-slate-400'
+            }`}
+            style={{ touchAction: 'none' }}
+          >
+            <span className="text-[10px] font-bold tracking-wide uppercase flex items-center justify-center gap-1.5 select-none">
+              📂 Перетащите сюда, чтобы сделать задачу главной
+            </span>
           </div>
         )}
 

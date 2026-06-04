@@ -10,6 +10,7 @@ import {
   Circle,
   MoreVertical,
   ChevronRight,
+  ChevronDown,
   Sparkles,
   Tag,
   Clock
@@ -56,6 +57,20 @@ export default function KanbanView({
   // Drag states for column highlighting
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null);
+
+  // Collapsible state for category select on mobile/tablet screens
+  const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_categories_expanded');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    // Default collapsed on mobile/tablet (< 768px), expanded on desktop
+    return typeof window !== 'undefined' ? window.innerWidth >= 768 : false;
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('task_mindmap_categories_expanded', String(isCategoriesExpanded));
+  }, [isCategoriesExpanded]);
 
   const activeCategory = tagCategories.find(c => c.id === selectedCategoryId) || tagCategories[0];
 
@@ -257,47 +272,76 @@ export default function KanbanView({
     <div id="kanban-view-root" className="flex flex-col h-full w-full select-none">
       
       {/* Category selector panel */}
-      <div id="kanban-categories-bar" className="flex flex-wrap items-center justify-between gap-4 px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800/80">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center border border-indigo-100 dark:border-indigo-900/30">
-            <KanbanIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">Категория группировки Канбана</h3>
-            <p className="text-[10px] text-slate-400">Выберите категорию ниже, чтобы построить колонки задач по её тегам</p>
-          </div>
+      <div 
+        id="kanban-categories-bar" 
+        className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800/80 px-4 sm:px-6 py-2 select-none"
+      >
+        {/* Mobile Header Toggle, visible on mobile, hidden on tablet/desktop */}
+        <div className="flex md:hidden items-center justify-between">
+          <button 
+            type="button"
+            onClick={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
+            className="flex items-center gap-2 cursor-pointer py-1 text-left focus:outline-none"
+          >
+            <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+              Группировка:
+            </span>
+            {activeCategory && (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700/60 text-[11px] font-bold text-slate-705 dark:text-slate-200">
+                <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-subtle" style={{ backgroundColor: activeCategory.color }} />
+                <span>{activeCategory.name}</span>
+              </span>
+            )}
+            <ChevronDown 
+              className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${
+                isCategoriesExpanded ? 'rotate-180' : ''
+              }`} 
+            />
+          </button>
         </div>
 
-        {/* Horizontal scroll tabs line of categories */}
-        <div className="flex flex-wrap gap-1.5 max-w-full">
-          {tagCategories.map(cat => {
-            const isSelected = cat.id === selectedCategoryId;
-            
-            // Count cards belonging to this category overall
-            const count = nodes.filter(n => {
-              if (!n.tags) return false;
-              return n.tags.some(t => cat.tags?.includes(t));
-            }).length;
+        {/* Categories container: always visible on desktop, conditionally collapsed/expanded with animation on mobile */}
+        <div className={`${isCategoriesExpanded ? 'flex' : 'hidden md:flex'} mt-1.5 md:mt-0 flex-col md:flex-row md:items-center gap-3 overflow-x-auto scrollbar-none`}>
+          <span className="hidden md:inline text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0">
+            Группировка:
+          </span>
+          
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5 overflow-[x-auto] py-0.5 scrollbar-none">
+            {tagCategories.map(cat => {
+              const isSelected = cat.id === selectedCategoryId;
+              
+              // Count cards belonging to this category overall
+              const count = nodes.filter(n => {
+                if (!n.tags) return false;
+                return n.tags.some(t => cat.tags?.includes(t));
+              }).length;
 
-            return (
-              <button
-                key={cat.id}
-                id={`kanban-cat-tab-${cat.id}`}
-                onClick={() => setSelectedCategoryId(cat.id)}
-                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all ${
-                  isSelected 
-                    ? 'bg-slate-100 dark:bg-slate-800 border-slate-350 dark:border-slate-700 text-slate-850 dark:text-slate-100 scale-102 font-bold ring-2 ring-indigo-505/10'
-                    : 'bg-slate-50/50 dark:bg-slate-900 border-slate-200 dark:border-slate-800/60 text-slate-450 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                <span>{cat.name}</span>
-                <span className="text-[9.5px] font-mono px-1.5 py-0.2 rounded-full bg-slate-200/60 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400">
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={cat.id}
+                  id={`kanban-cat-tab-${cat.id}`}
+                  onClick={() => {
+                    setSelectedCategoryId(cat.id);
+                    // Automatically collapse picker on mobile/tablet after selection
+                    if (window.innerWidth < 768) {
+                      setIsCategoriesExpanded(false);
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-md border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all shrink-0 ${
+                    isSelected 
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 font-bold ring-2 ring-indigo-500/5'
+                      : 'bg-slate-50/50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800/60 text-slate-450 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                  <span>{cat.name}</span>
+                  <span className="text-[9.5px] font-mono px-1.5 py-0.2 rounded-full bg-slate-200/60 dark:bg-slate-800/60 text-slate-505 dark:text-slate-400">
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 

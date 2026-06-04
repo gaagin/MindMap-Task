@@ -10,7 +10,9 @@ import {
   Maximize2,
   Calendar,
   Layers,
-  HelpCircle
+  HelpCircle,
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants } from '../utils';
@@ -57,6 +59,20 @@ export default function TaskDetailsPanel({
   const [newCatColor, setNewCatColor] = useState('#6366f1');
   const [addingTagToCatId, setAddingTagToCatId] = useState<string | null>(null);
   const [newCatTagName, setNewCatTagName] = useState('');
+  // Category collapse state, loaded and persisted in localStorage using the same key as Sidebar for 100% synchronization
+  const [collapsedCategoryIds, setCollapsedCategoryIds] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_collapsed_categories');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Failed to parse collapsed categories:', e);
+    }
+    return {};
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('task_mindmap_collapsed_categories', JSON.stringify(collapsedCategoryIds));
+  }, [collapsedCategoryIds]);
 
   if (!node) return null;
 
@@ -493,7 +509,20 @@ export default function TaskDetailsPanel({
                   return (
                     <div key={cat.id} className="space-y-1.5 bg-slate-50/40 dark:bg-slate-800/10 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800/50">
                       <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
-                        <div className="flex items-center gap-1.5 min-w-0">
+                        <div 
+                          className="flex items-center gap-1.5 min-w-0 cursor-pointer select-none py-0.5 hover:bg-slate-100/40 dark:hover:bg-slate-800/20 rounded px-1 -mx-1 flex-1"
+                          onClick={() => {
+                            setCollapsedCategoryIds(prev => ({
+                              ...prev,
+                              [cat.id]: !prev[cat.id]
+                            }));
+                          }}
+                        >
+                          {collapsedCategoryIds[cat.id] ? (
+                            <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+                          ) : (
+                            <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+                          )}
                           <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
                           <span className="text-slate-700 dark:text-slate-300 font-bold truncate" title={cat.name}>{cat.name}</span>
                         </div>
@@ -502,8 +531,15 @@ export default function TaskDetailsPanel({
                             <button
                               type="button"
                               onClick={() => {
-                                setAddingTagToCatId(isAddingTag ? null : cat.id);
+                                const newAdding = !isAddingTag;
+                                setAddingTagToCatId(newAdding ? cat.id : null);
                                 setNewCatTagName('');
+                                if (newAdding) {
+                                  setCollapsedCategoryIds(prev => ({
+                                    ...prev,
+                                    [cat.id]: false
+                                  }));
+                                }
                               }}
                               className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer"
                               title="Добавить тег в эту категорию"
@@ -584,43 +620,44 @@ export default function TaskDetailsPanel({
                       )}
 
                       {/* Display the tags of the category as small click-to-toggle buttons */}
-                      {cat.tags && cat.tags.length > 0 ? (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {cat.tags.map(t => {
-                            const isSelected = node.tags && node.tags.includes(t);
-                            return (
-                              <div key={t} className="inline-flex items-center gap-0.5 bg-white dark:bg-slate-800 rounded-md shadow-2xs border border-slate-100 dark:border-slate-850">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleCategoryTag(t)}
-                                  className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-l-md transition-all cursor-pointer border-r border-slate-100 dark:border-slate-850 select-none inline-flex items-center gap-0.5"
-                                  style={{
-                                    backgroundColor: isSelected ? `${cat.color}15` : 'transparent',
-                                    color: isSelected ? cat.color : '#64748b',
-                                  }}
-                                >
-                                  {isSelected ? '✓ ' : ''}#{t}
-                                </button>
-                                {onUpdateTagCategory && (
+                      {!collapsedCategoryIds[cat.id] && (
+                        cat.tags && cat.tags.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {cat.tags.map(t => {
+                              const isSelected = node.tags && node.tags.includes(t);
+                              return (
+                                <div key={t} className="inline-flex items-center gap-0.5 bg-white dark:bg-slate-800 rounded-md shadow-2xs border border-slate-100 dark:border-slate-850">
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      // Remove tag from category definition
-                                      const updatedTags = cat.tags.filter(tagItem => tagItem !== t);
-                                      onUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
+                                    onClick={() => handleToggleCategoryTag(t)}
+                                    className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-l-md transition-all cursor-pointer border-r border-slate-100 dark:border-slate-850 select-none inline-flex items-center gap-0.5"
+                                    style={{
+                                      backgroundColor: isSelected ? `${cat.color}15` : 'transparent',
+                                      color: isSelected ? cat.color : '#64748b',
                                     }}
-                                    className="p-1 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-400 hover:text-rose-500 rounded-r-md cursor-pointer shrink-0 transition-colors"
-                                    title={`Исключить #${t} из категории`}
                                   >
-                                    <X className="w-2.5 h-2.5" />
+                                    {isSelected ? '✓ ' : ''}#{t}
                                   </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="text-[10px] text-slate-400 italic">Нет тегов в этой категории.</p>
+                                  {onUpdateTagCategory && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updatedTags = cat.tags.filter(tagItem => tagItem !== t);
+                                        onUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
+                                      }}
+                                      className="p-1 hover:bg-rose-50 dark:hover:bg-rose-955/20 text-slate-400 hover:text-rose-500 rounded-r-md cursor-pointer shrink-0 transition-colors"
+                                      title={`Исключить #${t} из категории`}
+                                    >
+                                      <X className="w-2.5 h-2.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-slate-400 italic">Нет тегов в этой категории.</p>
+                        )
                       )}
                     </div>
                   );

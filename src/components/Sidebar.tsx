@@ -65,11 +65,23 @@ export default function Sidebar({
   currentWorkspaceState,
   onApplySyncedState
 }: SidebarProps) {
-  // Folder tree expansion state
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
-    'f-work': true,
-    'f-personal': true
+  // Folder tree expansion state, loaded and persisted in localStorage
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_expanded_folders');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Failed to parse expanded folders:', e);
+    }
+    return {
+      'f-work': true,
+      'f-personal': true
+    };
   });
+
+  React.useEffect(() => {
+    localStorage.setItem('task_mindmap_expanded_folders', JSON.stringify(expandedFolders));
+  }, [expandedFolders]);
   
   // Creation / editing inputs
   const [newFolderName, setNewFolderName] = useState('');
@@ -93,6 +105,21 @@ export default function Sidebar({
   const [editingCategoryColor, setEditingCategoryColor] = useState('#6366f1');
   const [addingTagToCategoryId, setAddingTagToCategoryId] = useState<string | null>(null);
   const [newCategoryTagName, setNewCategoryTagName] = useState('');
+  
+  // Tag categories collapse state, loaded and persisted in localStorage
+  const [collapsedCategoryIds, setCollapsedCategoryIds] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_collapsed_categories');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Failed to parse collapsed categories:', e);
+    }
+    return {};
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('task_mindmap_collapsed_categories', JSON.stringify(collapsedCategoryIds));
+  }, [collapsedCategoryIds]);
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders(prev => ({
@@ -668,19 +695,38 @@ export default function Sidebar({
                           </div>
                         </div>
                       ) : (
-                        <div className="flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+                        <div 
+                          className="flex items-center justify-between cursor-pointer select-none py-0.5 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 rounded px-1 -mx-1" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCollapsedCategoryIds(prev => ({
+                              ...prev,
+                              [cat.id]: !prev[cat.id]
+                            }));
+                          }}
+                        >
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate" title={cat.name}>
+                            {collapsedCategoryIds[cat.id] ? (
+                              <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            )}
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate font-sans" title={cat.name}>
                               {cat.name}
                             </span>
                           </div>
-                          <div className="flex items-center gap-0.5">
+                          <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setAddingTagToCategoryId(cat.id);
                                 setNewCategoryTagName('');
+                                // Automatically expand when adding tag to make it visible
+                                setCollapsedCategoryIds(prev => ({
+                                  ...prev,
+                                  [cat.id]: false
+                                }));
                               }}
                               className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                               title="Добавить тег"
@@ -693,6 +739,11 @@ export default function Sidebar({
                                 setEditingCategoryId(cat.id);
                                 setEditingCategoryName(cat.name);
                                 setEditingCategoryColor(cat.color);
+                                // Automatically expand when starting editing of category
+                                setCollapsedCategoryIds(prev => ({
+                                  ...prev,
+                                  [cat.id]: false
+                                }));
                               }}
                               className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                               title="Редактировать"
@@ -716,7 +767,7 @@ export default function Sidebar({
                       )}
 
                       {/* Tags inside Category */}
-                      {!isEditing && (
+                      {!collapsedCategoryIds[cat.id] && (
                         <div className="mt-1.5 pl-4" onClick={(e) => e.stopPropagation()}>
                           {cat.tags && cat.tags.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
