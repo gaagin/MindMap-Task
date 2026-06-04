@@ -15,7 +15,8 @@ import {
   X,
   FolderOpen
 } from 'lucide-react';
-import { Folder, Project } from '../types';
+import { Folder, Project, TagCategory, WorkspaceState } from '../types';
+import GoogleSheetsSync from './GoogleSheetsSync';
 
 interface SidebarProps {
   folders: Folder[];
@@ -33,6 +34,12 @@ interface SidebarProps {
   onResetDemo: () => void;
   isOpen: boolean;
   onClose: () => void;
+  tagCategories: TagCategory[];
+  onCreateTagCategory: (name: string, color: string) => void;
+  onUpdateTagCategory: (id: string, name: string, color: string, tags: string[]) => void;
+  onDeleteTagCategory: (id: string) => void;
+  currentWorkspaceState: WorkspaceState;
+  onApplySyncedState: (state: WorkspaceState) => void;
 }
 
 export default function Sidebar({
@@ -50,7 +57,13 @@ export default function Sidebar({
   onImportData,
   onResetDemo,
   isOpen,
-  onClose
+  onClose,
+  tagCategories = [],
+  onCreateTagCategory,
+  onUpdateTagCategory,
+  onDeleteTagCategory,
+  currentWorkspaceState,
+  onApplySyncedState
 }: SidebarProps) {
   // Folder tree expansion state
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
@@ -70,6 +83,16 @@ export default function Sidebar({
   
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState('');
+
+  // Tag Category states
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColor, setNewCategoryColor] = useState('#6366f1');
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [editingCategoryColor, setEditingCategoryColor] = useState('#6366f1');
+  const [addingTagToCategoryId, setAddingTagToCategoryId] = useState<string | null>(null);
+  const [newCategoryTagName, setNewCategoryTagName] = useState('');
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders(prev => ({
@@ -451,6 +474,351 @@ export default function Sidebar({
                 Нет папок или карт. Создайте новые выше!
               </div>
             )}
+          </div>
+
+          {/* Google Sheets Synchronization System */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
+            <GoogleSheetsSync
+              currentWorkspaceState={currentWorkspaceState}
+              onApplySyncedState={onApplySyncedState}
+            />
+          </div>
+
+          {/* Tag Categories section */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                Категории тегов
+              </h2>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowNewCategoryInput(true);
+                  setNewCategoryName('');
+                  setNewCategoryColor('#6366f1');
+                }}
+                className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded hover:bg-slate-100 dark:hover:bg-slate-850 transition-colors cursor-pointer"
+                title="Создать категорию тегов"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* New Category Input Form */}
+            {showNewCategoryInput && (
+              <div 
+                className="bg-amber-50/50 dark:bg-slate-800/40 border border-amber-200/50 dark:border-slate-800/80 p-2.5 rounded-lg space-y-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div>
+                  <label className="text-[10px] font-medium text-slate-400 block mb-1">Название категории</label>
+                  <input
+                    type="text"
+                    placeholder="Категория (например, Приоритет)..."
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newCategoryName.trim()) {
+                          onCreateTagCategory(newCategoryName.trim(), newCategoryColor);
+                          setShowNewCategoryInput(false);
+                        }
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setShowNewCategoryInput(false);
+                      }
+                    }}
+                    className="w-full bg-white dark:bg-slate-700 border border-slate-250 dark:border-slate-650 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none dark:text-slate-100"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-medium text-slate-400 block mb-1">Цвет категории</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { hex: '#ef4444', name: 'Красный' },
+                      { hex: '#f59e0b', name: 'Янтарный' },
+                      { hex: '#10b981', name: 'Изумрудный' },
+                      { hex: '#14b8a6', name: 'Бирюзовый' },
+                      { hex: '#3b82f6', name: 'Синий' },
+                      { hex: '#6366f1', name: 'Индиго' },
+                      { hex: '#8b5cf6', name: 'Фиолетовый' },
+                      { hex: '#ec4899', name: 'Розовый' }
+                    ].map(col => (
+                      <button
+                        key={col.hex}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setNewCategoryColor(col.hex);
+                        }}
+                        className={`w-5 h-5 rounded-full transition-transform cursor-pointer ${newCategoryColor === col.hex ? 'scale-125 ring-2 ring-indigo-505' : 'hover:scale-110'}`}
+                        style={{ backgroundColor: col.hex }}
+                        title={col.name}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 justify-end pt-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowNewCategoryInput(false);
+                    }}
+                    className="px-2 py-1 text-[10px] bg-slate-100 dark:bg-slate-705 border border-slate-200 dark:border-transparent hover:bg-slate-200 rounded text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (newCategoryName.trim()) {
+                        onCreateTagCategory(newCategoryName.trim(), newCategoryColor);
+                        setShowNewCategoryInput(false);
+                      }
+                    }}
+                    className="px-2.5 py-1 text-[10px] bg-amber-600 hover:bg-amber-700 text-white rounded font-medium transition-colors cursor-pointer"
+                  >
+                    Создать
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* List of categories */}
+            <div className="space-y-2">
+              {tagCategories && tagCategories.length > 0 ? (
+                tagCategories.map(cat => {
+                  const isEditing = editingCategoryId === cat.id;
+                  const isAddingTag = addingTagToCategoryId === cat.id;
+
+                  return (
+                    <div
+                      key={cat.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      }}
+                      className="group/cat bg-slate-50/50 dark:bg-slate-800/10 border border-slate-100 dark:border-slate-800/60 pb-2.5 pt-2 px-2.5 rounded-lg transition-all"
+                    >
+                      {isEditing ? (
+                        <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={editingCategoryName}
+                            onChange={(e) => setEditingCategoryName(e.target.value)}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (editingCategoryName.trim()) {
+                                  onUpdateTagCategory(cat.id, editingCategoryName.trim(), editingCategoryColor, cat.tags);
+                                  setEditingCategoryId(null);
+                                }
+                              }
+                              if (e.key === 'Escape') {
+                                e.preventDefault();
+                                setEditingCategoryId(null);
+                              }
+                            }}
+                            className="w-full bg-white dark:bg-slate-705 border border-slate-300 dark:border-slate-600 rounded px-1.5 py-0.5 text-xs focus:ring-1 focus:ring-indigo-500 font-sans dark:text-slate-100"
+                            autoFocus
+                          />
+                          <div className="flex flex-wrap gap-1.5 py-1">
+                            {[
+                              '#ef4444', '#f59e0b', '#10b981', '#14b8a6',
+                              '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899'
+                            ].map(hex => (
+                              <button
+                                key={hex}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingCategoryColor(hex);
+                                }}
+                                className={`w-4 h-4 rounded-full transition-transform cursor-pointer ${editingCategoryColor === hex ? 'scale-125 ring-2 ring-indigo-505' : 'hover:scale-110'}`}
+                                style={{ backgroundColor: hex }}
+                              />
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCategoryId(null);
+                              }}
+                              className="px-1.5 py-0.5 text-[10px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-705 dark:hover:bg-slate-650 rounded text-slate-600 dark:text-slate-300 cursor-pointer"
+                            >
+                              Отмена
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (editingCategoryName.trim()) {
+                                  onUpdateTagCategory(cat.id, editingCategoryName.trim(), editingCategoryColor, cat.tags);
+                                  setEditingCategoryId(null);
+                                }
+                              }}
+                              className="px-1.5 py-0.5 text-[10px] bg-indigo-600 text-white rounded font-medium hover:bg-indigo-700 cursor-pointer"
+                            >
+                              Сохранить
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate" title={cat.name}>
+                              {cat.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAddingTagToCategoryId(cat.id);
+                                setNewCategoryTagName('');
+                              }}
+                              className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="Добавить тег"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCategoryId(cat.id);
+                                setEditingCategoryName(cat.name);
+                                setEditingCategoryColor(cat.color);
+                              }}
+                              className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="Редактировать"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Вы уверены, что хотите удалить категорию "${cat.name}"? Теги на картах останутся, но не будут классифицированы.`)) {
+                                  onDeleteTagCategory(cat.id);
+                                }
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="Удалить категорию"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Tags inside Category */}
+                      {!isEditing && (
+                        <div className="mt-1.5 pl-4" onClick={(e) => e.stopPropagation()}>
+                          {cat.tags && cat.tags.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {cat.tags.map(tag => (
+                                <span
+                                  key={tag}
+                                  className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-md font-semibold select-none bg-white dark:bg-slate-800"
+                                  style={{
+                                    color: cat.color,
+                                    border: `1px solid ${cat.color}25`
+                                  }}
+                                >
+                                  #{tag}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      // Remove tag from category
+                                      const updatedTags = cat.tags.filter(t => t !== tag);
+                                      onUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
+                                    }}
+                                    className="p-0.5 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 rounded text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 transition-colors cursor-pointer"
+                                    title="Исключить из этой категории"
+                                  >
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 block italic">Нет тегов</span>
+                          )}
+
+                          {/* Add inline tag form */}
+                          {isAddingTag && (
+                            <div className="mt-2 flex gap-1 items-center" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="text"
+                                placeholder="Новый тег..."
+                                value={newCategoryTagName}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  setNewCategoryTagName(e.target.value.replace(/\s+/g, '-'));
+                                }}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation();
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const trimmed = newCategoryTagName.trim().replace(/#/g, '');
+                                    if (trimmed) {
+                                      const alreadyInCat = cat.tags.includes(trimmed);
+                                      if (!alreadyInCat) {
+                                        onUpdateTagCategory(cat.id, cat.name, cat.color, [...cat.tags, trimmed]);
+                                      }
+                                      setAddingTagToCategoryId(null);
+                                    }
+                                  }
+                                  if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    setAddingTagToCategoryId(null);
+                                  }
+                                }}
+                                className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-1.5 py-0.5 text-[10px] w-full focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
+                                autoFocus
+                              />
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const trimmed = newCategoryTagName.trim().replace(/#/g, '');
+                                  if (trimmed) {
+                                    const alreadyInCat = cat.tags.includes(trimmed);
+                                    if (!alreadyInCat) {
+                                      onUpdateTagCategory(cat.id, cat.name, cat.color, [...cat.tags, trimmed]);
+                                    }
+                                  }
+                                  setAddingTagToCategoryId(null);
+                                }}
+                                className="px-1.5 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] rounded shrink-0 font-medium cursor-pointer"
+                              >
+                                Добавить
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAddingTagToCategoryId(null);
+                                }}
+                                className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-2 text-[11px] text-slate-400 dark:text-slate-500 italic">
+                  Категории не созданы
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

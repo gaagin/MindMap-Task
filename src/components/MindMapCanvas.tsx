@@ -15,6 +15,9 @@ import {
   Move,
   Type,
   ChevronDown,
+  ChevronUp,
+  FolderMinus,
+  FolderPlus,
   Menu,
   Zap,
   Calendar,
@@ -24,7 +27,7 @@ import {
   Eye,
   Link2Off
 } from 'lucide-react';
-import { TaskNode, Priority } from '../types';
+import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize } from '../utils';
 
 interface MindMapCanvasProps {
@@ -57,6 +60,7 @@ interface MindMapCanvasProps {
   filterAttachments?: string;
   filterNotes?: string;
   searchQuery?: string;
+  tagCategories?: TagCategory[];
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -101,7 +105,8 @@ export default function MindMapCanvas({
   filterDueDate = 'all',
   filterAttachments = 'all',
   filterNotes = 'all',
-  searchQuery = ''
+  searchQuery = '',
+  tagCategories = []
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -179,6 +184,7 @@ export default function MindMapCanvas({
 
   // Resize states for containers
   const [resizingNodeId, setResizingNodeId] = useState<string | null>(null);
+  const [resizeDirection, setResizeDirection] = useState<string | null>(null);
   const [resizeStartPos, setResizeStartPos] = useState({ x: 0, y: 0 });
   const [resizeStartSize, setResizeStartSize] = useState({ width: 520, height: 400 });
   const [resizeStartCenter, setResizeStartCenter] = useState({ x: 0, y: 0 });
@@ -397,30 +403,47 @@ export default function MindMapCanvas({
     const draggingNode = nodes.find(n => n.id === draggingId);
     if (!draggingNode) return undefined;
 
-    return visibleNodes.find(otherNode => {
+    // First attempt: Check for hover/overlap with regular non-container task nodes
+    const normalNodeOverlap = visibleNodes.find(otherNode => {
       if (otherNode.id === draggingId) return false;
       if (isDescendantOrSelf(otherNode.id, draggingId, nodes)) return false;
+      if (otherNode.isContainer) return false;
 
-      // Container checks
-      if (otherNode.isContainer && !otherNode.collapsed) {
-        if (draggingNode.isContainer) return false; // Containers cannot go inside other containers
-        if (focusedContainerId === otherNode.id) return false; // Do not overlap with the focused container itself in focus mode
-        const dx = Math.abs(newX - otherNode.x);
-        const dy = Math.abs(newY - otherNode.y);
-        const halfW = (otherNode.width || 520) / 2;
-        const halfH = (otherNode.height || 400) / 2;
-        return dx < halfW && dy < halfH;
-      }
-
-      // Normal node checks
       if (!draggingNode.isContainer) {
         const dx = Math.abs(newX - otherNode.x);
         const dy = Math.abs(newY - otherNode.y);
         return dx < 120 && dy < 75;
       }
-
       return false;
     });
+
+    if (normalNodeOverlap) return normalNodeOverlap;
+
+    // Second attempt: Check for containment inside container nodes
+    const containerOverlap = visibleNodes.find(otherNode => {
+      if (otherNode.id === draggingId) return false;
+      if (isDescendantOrSelf(otherNode.id, draggingId, nodes)) return false;
+      if (!otherNode.isContainer || otherNode.collapsed) return false;
+
+      if (draggingNode.isContainer) return false; // Containers cannot go inside other containers
+      if (focusedContainerId === otherNode.id) return false; // Do not overlap with the focused container itself in focus mode
+
+      // Do not instantly snap to container during active drag if currently nested under a standard task parent
+      if (draggingNode.parentId) {
+        const currentParent = nodes.find(p => p.id === draggingNode.parentId);
+        if (currentParent && !currentParent.isContainer) {
+          return false;
+        }
+      }
+
+      const dx = Math.abs(newX - otherNode.x);
+      const dy = Math.abs(newY - otherNode.y);
+      const halfW = (otherNode.width || 520) / 2;
+      const halfH = (otherNode.height || 400) / 2;
+      return dx < halfW && dy < halfH;
+    });
+
+    return containerOverlap;
   };
 
   const handleZoomIn = () => {
@@ -457,20 +480,50 @@ export default function MindMapCanvas({
       const deltaX = (e.clientX - resizeStartPos.x) / zoom;
       const deltaY = (e.clientY - resizeStartPos.y) / zoom;
 
-      const topLeftX = resizeStartCenter.x - resizeStartSize.width / 2;
-      const topLeftY = resizeStartCenter.y - resizeStartSize.height / 2;
+      const startLeft = resizeStartCenter.x - resizeStartSize.width / 2;
+      const startRight = resizeStartCenter.x + resizeStartSize.width / 2;
+      const startTop = resizeStartCenter.y - resizeStartSize.height / 2;
+      const startBottom = resizeStartCenter.y + resizeStartSize.height / 2;
 
-      const startBottomRightX = topLeftX + resizeStartSize.width;
-      const startBottomRightY = topLeftY + resizeStartSize.height;
+      let newLeft = startLeft;
+      let newRight = startRight;
+      let newTop = startTop;
+      let newBottom = startBottom;
 
-      const currentBottomRightX = startBottomRightX + deltaX;
-      const currentBottomRightY = startBottomRightY + deltaY;
+      const dir = resizeDirection || 'se';
 
-      const newWidth = Math.max(300, currentBottomRightX - topLeftX);
-      const newHeight = Math.max(200, currentBottomRightY - topLeftY);
+      // Horizontal updates
+      if (dir.includes('e')) {
+        newRight = startRight + deltaX;
+      } else if (dir.includes('w')) {
+        newLeft = startLeft + deltaX;
+      }
 
-      const newCenterX = topLeftX + newWidth / 2;
-      const newCenterY = topLeftY + newHeight / 2;
+      // Vertical updates
+      if (dir.includes('s')) {
+        newBottom = startBottom + deltaY;
+      } else if (dir.includes('n')) {
+        newTop = startTop + deltaY;
+      }
+
+      // Constraints
+      const newWidth = Math.max(300, newRight - newLeft);
+      const newHeight = Math.max(200, newBottom - newTop);
+
+      if (dir.includes('w')) {
+        newLeft = newRight - newWidth;
+      } else if (dir.includes('e')) {
+        newRight = newLeft + newWidth;
+      }
+
+      if (dir.includes('n')) {
+        newTop = newBottom - newHeight;
+      } else if (dir.includes('s')) {
+        newBottom = newTop + newHeight;
+      }
+
+      const newCenterX = newLeft + newWidth / 2;
+      const newCenterY = newTop + newHeight / 2;
 
       onUpdateNode({
         ...node,
@@ -505,6 +558,66 @@ export default function MindMapCanvas({
       }
 
       onUpdateNodeCoordinates(draggingNodeId, newX, newY);
+
+      // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
+      const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
+      if (parentContainer) {
+        const W = parentContainer.width || 520;
+        const H = parentContainer.height || 400;
+
+        const cardW = 210;
+        const cardH = 110;
+
+        const nodeLeft = newX - cardW / 2;
+        const nodeRight = newX + cardW / 2;
+        const nodeTop = newY - cardH / 2;
+        const nodeBottom = newY + cardH / 2;
+
+        const currentLeft = parentContainer.x - W / 2;
+        const currentRight = parentContainer.x + W / 2;
+        const currentTop = parentContainer.y - H / 2;
+        const currentBottom = parentContainer.y + H / 2;
+
+        const padding = 35;
+
+        let needsResize = false;
+        let nextLeft = currentLeft;
+        let nextRight = currentRight;
+        let nextTop = currentTop;
+        let nextBottom = currentBottom;
+
+        if (nodeLeft - padding < currentLeft) {
+          nextLeft = nodeLeft - padding;
+          needsResize = true;
+        }
+        if (nodeRight + padding > currentRight) {
+          nextRight = nodeRight + padding;
+          needsResize = true;
+        }
+        if (nodeTop - padding < currentTop) {
+          nextTop = nodeTop - padding;
+          needsResize = true;
+        }
+        if (nodeBottom + padding > currentBottom) {
+          nextBottom = nodeBottom + padding;
+          needsResize = true;
+        }
+
+        if (needsResize) {
+          const newW = Math.round(nextRight - nextLeft);
+          const newH = Math.round(nextBottom - nextTop);
+          const newCX = Math.round(nextLeft + newW / 2);
+          const newCY = Math.round(nextTop + newH / 2);
+
+          onUpdateNode({
+            ...parentContainer,
+            width: newW,
+            height: newH,
+            x: newCX,
+            y: newCY
+          });
+        }
+      }
 
       // Check support for re-parenting by hovering over another task card or container
       const overlapNode = getOverlapParent(draggingNodeId, newX, newY);
@@ -549,6 +662,7 @@ export default function MindMapCanvas({
   const handleMouseUp = () => {
     setIsPanning(false);
     setResizingNodeId(null);
+    setResizeDirection(null);
 
     if (draggingNodeId && hasDraggedNode) {
       const node = nodes.find(n => n.id === draggingNodeId);
@@ -561,13 +675,28 @@ export default function MindMapCanvas({
           onUpdateNodeParent(node.id, overlap.id);
         } else if (currentParent) {
           if (currentParent.isContainer) {
-            // Dragged and released outside container boundary -> auto remove from container
+            const dx = Math.abs(node.x - currentParent.x);
+            const dy = Math.abs(node.y - currentParent.y);
+            let shouldDetach = false;
+
             if (focusedContainerId) {
-              if (node.parentId !== focusedContainerId) {
-                onUpdateNodeParent(node.id, focusedContainerId);
-              }
+              const maxW = (currentParent.width || 520) / 2 + 400;
+              const maxH = (currentParent.height || 400) / 2 + 400;
+              shouldDetach = dx > maxW || dy > maxH;
             } else {
-              onUpdateNodeParent(node.id, null);
+              const maxW = (currentParent.width || 520) / 2;
+              const maxH = (currentParent.height || 400) / 2;
+              shouldDetach = dx > maxW || dy > maxH;
+            }
+
+            if (shouldDetach) {
+              if (focusedContainerId) {
+                if (node.parentId !== focusedContainerId) {
+                  onUpdateNodeParent(node.id, focusedContainerId);
+                }
+              } else {
+                onUpdateNodeParent(node.id, null);
+              }
             }
           } else {
             // Dragged away from standard parent by more than 330px on empty space -> auto detach!
@@ -575,7 +704,25 @@ export default function MindMapCanvas({
             const dy = node.y - currentParent.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 330) {
-              onUpdateNodeParent(node.id, null);
+              if (focusedContainerId) {
+                onUpdateNodeParent(node.id, focusedContainerId);
+              } else {
+                // Check if release position is inside any container
+                const container = visibleNodes.find(otherNode => {
+                  if (otherNode.id === node.id) return false;
+                  if (!otherNode.isContainer || otherNode.collapsed) return false;
+                  const cdx = Math.abs(node.x - otherNode.x);
+                  const cdy = Math.abs(node.y - otherNode.y);
+                  const halfW = (otherNode.width || 520) / 2;
+                  const halfH = (otherNode.height || 400) / 2;
+                  return cdx < halfW && cdy < halfH;
+                });
+                if (container) {
+                  onUpdateNodeParent(node.id, container.id);
+                } else {
+                  onUpdateNodeParent(node.id, null);
+                }
+              }
             }
           }
         }
@@ -734,20 +881,50 @@ export default function MindMapCanvas({
       const deltaX = (touch.clientX - resizeStartPos.x) / zoom;
       const deltaY = (touch.clientY - resizeStartPos.y) / zoom;
 
-      const topLeftX = resizeStartCenter.x - resizeStartSize.width / 2;
-      const topLeftY = resizeStartCenter.y - resizeStartSize.height / 2;
+      const startLeft = resizeStartCenter.x - resizeStartSize.width / 2;
+      const startRight = resizeStartCenter.x + resizeStartSize.width / 2;
+      const startTop = resizeStartCenter.y - resizeStartSize.height / 2;
+      const startBottom = resizeStartCenter.y + resizeStartSize.height / 2;
 
-      const startBottomRightX = topLeftX + resizeStartSize.width;
-      const startBottomRightY = topLeftY + resizeStartSize.height;
+      let newLeft = startLeft;
+      let newRight = startRight;
+      let newTop = startTop;
+      let newBottom = startBottom;
 
-      const currentBottomRightX = startBottomRightX + deltaX;
-      const currentBottomRightY = startBottomRightY + deltaY;
+      const dir = resizeDirection || 'se';
 
-      const newWidth = Math.max(300, currentBottomRightX - topLeftX);
-      const newHeight = Math.max(200, currentBottomRightY - topLeftY);
+      // Horizontal updates
+      if (dir.includes('e')) {
+        newRight = startRight + deltaX;
+      } else if (dir.includes('w')) {
+        newLeft = startLeft + deltaX;
+      }
 
-      const newCenterX = topLeftX + newWidth / 2;
-      const newCenterY = topLeftY + newHeight / 2;
+      // Vertical updates
+      if (dir.includes('s')) {
+        newBottom = startBottom + deltaY;
+      } else if (dir.includes('n')) {
+        newTop = startTop + deltaY;
+      }
+
+      // Constraints
+      const newWidth = Math.max(300, newRight - newLeft);
+      const newHeight = Math.max(200, newBottom - newTop);
+
+      if (dir.includes('w')) {
+        newLeft = newRight - newWidth;
+      } else if (dir.includes('e')) {
+        newRight = newLeft + newWidth;
+      }
+
+      if (dir.includes('n')) {
+        newTop = newBottom - newHeight;
+      } else if (dir.includes('s')) {
+        newBottom = newTop + newHeight;
+      }
+
+      const newCenterX = newLeft + newWidth / 2;
+      const newCenterY = newTop + newHeight / 2;
 
       onUpdateNode({
         ...node,
@@ -800,6 +977,66 @@ export default function MindMapCanvas({
 
       onUpdateNodeCoordinates(draggingNodeId, newX, newY);
 
+      // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
+      const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
+      if (parentContainer) {
+        const W = parentContainer.width || 520;
+        const H = parentContainer.height || 400;
+
+        const cardW = 210;
+        const cardH = 110;
+
+        const nodeLeft = newX - cardW / 2;
+        const nodeRight = newX + cardW / 2;
+        const nodeTop = newY - cardH / 2;
+        const nodeBottom = newY + cardH / 2;
+
+        const currentLeft = parentContainer.x - W / 2;
+        const currentRight = parentContainer.x + W / 2;
+        const currentTop = parentContainer.y - H / 2;
+        const currentBottom = parentContainer.y + H / 2;
+
+        const padding = 35;
+
+        let needsResize = false;
+        let nextLeft = currentLeft;
+        let nextRight = currentRight;
+        let nextTop = currentTop;
+        let nextBottom = currentBottom;
+
+        if (nodeLeft - padding < currentLeft) {
+          nextLeft = nodeLeft - padding;
+          needsResize = true;
+        }
+        if (nodeRight + padding > currentRight) {
+          nextRight = nodeRight + padding;
+          needsResize = true;
+        }
+        if (nodeTop - padding < currentTop) {
+          nextTop = nodeTop - padding;
+          needsResize = true;
+        }
+        if (nodeBottom + padding > currentBottom) {
+          nextBottom = nodeBottom + padding;
+          needsResize = true;
+        }
+
+        if (needsResize) {
+          const newW = Math.round(nextRight - nextLeft);
+          const newH = Math.round(nextBottom - nextTop);
+          const newCX = Math.round(nextLeft + newW / 2);
+          const newCY = Math.round(nextTop + newH / 2);
+
+          onUpdateNode({
+            ...parentContainer,
+            width: newW,
+            height: newH,
+            x: newCX,
+            y: newCY
+          });
+        }
+      }
+
       // Check support for re-parenting by hovering over another task card or container
       const overlapNode = getOverlapParent(draggingNodeId, newX, newY);
 
@@ -844,6 +1081,7 @@ export default function MindMapCanvas({
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     setResizingNodeId(null);
+    setResizeDirection(null);
     // If fewer than 2 touches, clean up the pinch distance tracker
     if (e.touches.length < 2) {
       pinchStartDistRef.current = null;
@@ -880,13 +1118,28 @@ export default function MindMapCanvas({
             onUpdateNodeParent(node.id, overlap.id);
           } else if (currentParent) {
             if (currentParent.isContainer) {
-              // Released outside container boundary -> auto remove from container
+              const dx = Math.abs(node.x - currentParent.x);
+              const dy = Math.abs(node.y - currentParent.y);
+              let shouldDetach = false;
+
               if (focusedContainerId) {
-                if (node.parentId !== focusedContainerId) {
-                  onUpdateNodeParent(node.id, focusedContainerId);
-                }
+                const maxW = (currentParent.width || 520) / 2 + 400;
+                const maxH = (currentParent.height || 400) / 2 + 400;
+                shouldDetach = dx > maxW || dy > maxH;
               } else {
-                onUpdateNodeParent(node.id, null);
+                const maxW = (currentParent.width || 520) / 2;
+                const maxH = (currentParent.height || 400) / 2;
+                shouldDetach = dx > maxW || dy > maxH;
+              }
+
+              if (shouldDetach) {
+                if (focusedContainerId) {
+                  if (node.parentId !== focusedContainerId) {
+                    onUpdateNodeParent(node.id, focusedContainerId);
+                  }
+                } else {
+                  onUpdateNodeParent(node.id, null);
+                }
               }
             } else {
               // Dragged away from standard parent by more than 330px on empty space -> auto detach!
@@ -894,7 +1147,25 @@ export default function MindMapCanvas({
               const dy = node.y - currentParent.y;
               const dist = Math.sqrt(dx * dx + dy * dy);
               if (dist > 330) {
-                onUpdateNodeParent(node.id, null);
+                if (focusedContainerId) {
+                  onUpdateNodeParent(node.id, focusedContainerId);
+                } else {
+                  // Check if release position is inside any container
+                  const container = visibleNodes.find(otherNode => {
+                    if (otherNode.id === node.id) return false;
+                    if (!otherNode.isContainer || otherNode.collapsed) return false;
+                    const cdx = Math.abs(node.x - otherNode.x);
+                    const cdy = Math.abs(node.y - otherNode.y);
+                    const halfW = (otherNode.width || 520) / 2;
+                    const halfH = (otherNode.height || 400) / 2;
+                    return cdx < halfW && cdy < halfH;
+                  });
+                  if (container) {
+                    onUpdateNodeParent(node.id, container.id);
+                  } else {
+                    onUpdateNodeParent(node.id, null);
+                  }
+                }
               }
             }
           }
@@ -928,11 +1199,12 @@ export default function MindMapCanvas({
   };
 
   // Start container resizing from Mouse Down
-  const startResize = (e: React.MouseEvent, node: TaskNode) => {
+  const startResize = (e: React.MouseEvent, node: TaskNode, direction: string = 'se') => {
     e.stopPropagation();
     e.preventDefault();
     onSelectNode(node.id);
     setResizingNodeId(node.id);
+    setResizeDirection(direction);
     setResizeStartPos({ x: e.clientX, y: e.clientY });
     setResizeStartSize({
       width: node.width || 520,
@@ -942,11 +1214,12 @@ export default function MindMapCanvas({
   };
 
   // Start container resizing from Touch Start
-  const startResizeTouch = (e: React.TouchEvent, node: TaskNode) => {
+  const startResizeTouch = (e: React.TouchEvent, node: TaskNode, direction: string = 'se') => {
     if (e.touches.length === 0) return;
     e.stopPropagation();
     onSelectNode(node.id);
     setResizingNodeId(node.id);
+    setResizeDirection(direction);
     const touch = e.touches[0];
     setResizeStartPos({ x: touch.clientX, y: touch.clientY });
     setResizeStartSize({
@@ -1120,7 +1393,7 @@ export default function MindMapCanvas({
         const parent = nodes.find(n => n.id === currentParentId);
         if (!parent) break;
         if (parent.collapsed) {
-          return false; // Hidden because some sub-ancestor inside the container is collapsed
+          return false; // Hidden because some ancestor inside the container is collapsed
         }
         currentParentId = parent.parentId;
       }
@@ -1531,23 +1804,7 @@ export default function MindMapCanvas({
                     </div>
                   ) : (
                     <>
-                      {/* Bounding / Drop Guide Center Placeholder Watermark */}
-                      {totalChildren === 0 ? (
-                        <div className="absolute inset-x-6 top-1/2 -translate-y-1/2 p-5 text-center border-2 border-dashed border-slate-200/50 dark:border-slate-800/50 bg-slate-100/5 dark:bg-slate-900/5 pointer-events-none rounded-2xl select-none flex flex-col items-center justify-center">
-                          <span className="text-xl mb-1.5 opacity-60">🎨</span>
-                          <p className="text-[11px] font-bold text-slate-400 dark:text-slate-500 font-sans">
-                            Отдельный холст-контейнер
-                          </p>
-                          <p className="text-[9px] text-slate-400/80 dark:text-slate-550/80 mt-1 max-w-[280px] leading-relaxed font-sans">
-                            Перетащите сюда карточки задач для быстрой группировки. Перемещая контейнер, вы будете двигать всю эту область вместе с карточками.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="absolute inset-x-6 top-1/2 -translate-y-1/2 pointer-events-none opacity-[0.06] select-none flex flex-col items-center justify-center">
-                          <span className="text-6xl mb-2">🎨</span>
-                          <span className="text-sm font-bold uppercase tracking-widest font-sans">Холст</span>
-                        </div>
-                      )}
+                      {/* Removed empty container guide labels */}
 
                       {/* Small dynamic status overview bar at the bottom */}
                       <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex items-center justify-between select-none bg-white/20 dark:bg-slate-950/20 px-2 py-1.5 rounded-lg z-10">
@@ -1578,20 +1835,72 @@ export default function MindMapCanvas({
                   )}
                 </div>
 
-                {/* Resize Handle for container */}
+                {/* Resize Handles for container from all sides */}
                 {!isContainerCollapsed && (
-                  <div
-                    onMouseDown={(e) => startResize(e, node)}
-                    onTouchStart={(e) => startResizeTouch(e, node)}
-                    className="absolute bottom-1 right-1 w-6 h-6 flex items-end justify-end p-1 cursor-se-resize text-slate-450 hover:text-amber-650 dark:text-slate-600 dark:hover:text-amber-500 z-30 select-none"
-                    title="Изменить размер контейнера"
-                  >
-                    <svg width="10" height="10" viewBox="0 0 10 10">
-                      <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      <line x1="10" y1="4" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      <line x1="10" y1="7" x2="7" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
-                  </div>
+                  <>
+                    {/* Top border resizer */}
+                    <div
+                      onMouseDown={(e) => startResize(e, node, 'n')}
+                      onTouchStart={(e) => startResizeTouch(e, node, 'n')}
+                      className="absolute -top-1 left-2 right-2 h-2 cursor-ns-resize z-30 select-none hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-colors duration-150"
+                      title="Изменить высоту (вверх)"
+                    />
+                    {/* Bottom border resizer */}
+                    <div
+                      onMouseDown={(e) => startResize(e, node, 's')}
+                      onTouchStart={(e) => startResizeTouch(e, node, 's')}
+                      className="absolute -bottom-1 left-2 right-2 h-2 cursor-ns-resize z-30 select-none hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-colors duration-150"
+                      title="Изменить высоту (вниз)"
+                    />
+                    {/* Left border resizer */}
+                    <div
+                      onMouseDown={(e) => startResize(e, node, 'w')}
+                      onTouchStart={(e) => startResizeTouch(e, node, 'w')}
+                      className="absolute top-2 bottom-2 -left-1 w-2 cursor-ew-resize z-30 select-none hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-colors duration-150"
+                      title="Изменить ширину (влево)"
+                    />
+                    {/* Right border resizer */}
+                    <div
+                      onMouseDown={(e) => startResize(e, node, 'e')}
+                      onTouchStart={(e) => startResizeTouch(e, node, 'e')}
+                      className="absolute top-2 bottom-2 -right-1 w-2 cursor-ew-resize z-30 select-none hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-colors duration-150"
+                      title="Изменить ширину (вправо)"
+                    />
+
+                    {/* Top-Left corner resizer */}
+                    <div
+                      onMouseDown={(e) => startResize(e, node, 'nw')}
+                      onTouchStart={(e) => startResizeTouch(e, node, 'nw')}
+                      className="absolute -top-1.5 -left-1.5 w-4 h-4 cursor-nwse-resize z-40 select-none hover:bg-amber-500/40 active:bg-amber-500/60 rounded-full border border-amber-500/20 transition-colors duration-150"
+                      title="Изменить размер (сверху-слева)"
+                    />
+                    {/* Top-Right corner resizer */}
+                    <div
+                      onMouseDown={(e) => startResize(e, node, 'ne')}
+                      onTouchStart={(e) => startResizeTouch(e, node, 'ne')}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 cursor-nesw-resize z-40 select-none hover:bg-amber-500/40 active:bg-amber-500/60 rounded-full border border-amber-500/20 transition-colors duration-150"
+                      title="Изменить размер (сверху-справа)"
+                    />
+                    {/* Bottom-Left corner resizer */}
+                    <div
+                      onMouseDown={(e) => startResize(e, node, 'sw')}
+                      onTouchStart={(e) => startResizeTouch(e, node, 'sw')}
+                      className="absolute -bottom-1.5 -left-1.5 w-4 h-4 cursor-nesw-resize z-40 select-none hover:bg-amber-500/40 active:bg-amber-500/60 rounded-full border border-amber-500/20 transition-colors duration-150"
+                      title="Изменить размер (снизу-слева)"
+                    />
+                    {/* Bottom-Right corner resizer */}
+                    <div
+                      onMouseDown={(e) => startResize(e, node, 'se')}
+                      onTouchStart={(e) => startResizeTouch(e, node, 'se')}
+                      className="absolute -bottom-1.5 -right-1.5 w-4 h-4 cursor-nwse-resize z-40 select-none hover:bg-amber-500/40 active:bg-amber-500/60 rounded-full border border-amber-500/20 transition-colors duration-150 flex items-center justify-center p-0.5"
+                      title="Изменить размер (снизу-справа)"
+                    >
+                      <svg width="6" height="6" viewBox="0 0 6 6" className="text-amber-600 dark:text-amber-400 opacity-60">
+                        <line x1="6" y1="0" x2="0" y2="6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+                        <line x1="6" y1="3" x2="3" y2="6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+                      </svg>
+                    </div>
+                  </>
                 )}
 
                 {/* Hover reparent highlight notification */}
@@ -1614,11 +1923,24 @@ const pInfo = getPriorityInfo(node.priority);
           const isDimmed = isAnyFilterActive && !matches;
 
           const currentParentForNode = node.parentId ? nodes.find(p => p.id === node.parentId) : null;
-          const showDetachHint = isDraggingThisNode && currentParentForNode && !currentParentForNode.isContainer && (() => {
-            const dx = node.x - currentParentForNode.x;
-            const dy = node.y - currentParentForNode.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            return dist > 330;
+          const showDetachHint = isDraggingThisNode && currentParentForNode && (() => {
+            const dx = Math.abs(node.x - currentParentForNode.x);
+            const dy = Math.abs(node.y - currentParentForNode.y);
+            
+            if (currentParentForNode.isContainer) {
+              if (focusedContainerId) {
+                const maxW = (currentParentForNode.width || 520) / 2 + 400;
+                const maxH = (currentParentForNode.height || 400) / 2 + 400;
+                return dx > maxW || dy > maxH;
+              } else {
+                const maxW = (currentParentForNode.width || 520) / 2;
+                const maxH = (currentParentForNode.height || 400) / 2;
+                return dx > maxW || dy > maxH;
+              }
+            } else {
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              return dist > 330;
+            }
           })();
 
           return (
@@ -1721,105 +2043,135 @@ const pInfo = getPriorityInfo(node.priority);
                   </div>
                 </div>
 
-                {/* Priority & Badge Stats Row */}
-                <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                  {!isRoot && (
-                    <span className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${pInfo.bg}`}>
-                      <span className={`w-1 h-1 rounded-full ${pInfo.dot}`} />
-                      {pInfo.label}
-                    </span>
-                  )}
-
-                  {node.dueDate && (
-                    <span 
-                      className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${
-                        node.completed
-                          ? isRoot
-                            ? 'bg-indigo-700/50 text-indigo-200 border-indigo-500/30'
-                            : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-505 border-slate-200 dark:border-slate-800'
-                          : isOverdue(node.dueDate)
-                            ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-900/60 animate-pulse font-extrabold shadow-[0_0_6px_rgba(244,63,94,0.3)]'
-                            : isRoot
-                              ? 'bg-indigo-500/20 text-indigo-100 border-indigo-400/30'
-                              : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-250 dark:border-emerald-900'
-                      }`}
-                      title={
-                        node.completed 
-                          ? `Срок выполнения: ${formatDisplayDate(node.dueDate)} (Выполнено)`
-                          : isOverdue(node.dueDate)
-                            ? `Внимание! Срок выполнения истек: ${formatDisplayDate(node.dueDate)}`
-                            : `Срок выполнения: ${formatDisplayDate(node.dueDate)}`
-                      }
-                    >
-                      {isOverdue(node.dueDate) && !node.completed ? (
-                        <AlertTriangle className="w-2.5 h-2.5 text-rose-500 animate-bounce" />
-                      ) : (
-                        <Calendar className="w-2.5 h-2.5 text-indigo-500 dark:text-indigo-400" />
+                {!node.isCardCollapsed ? (
+                  <>
+                    {/* Priority & Badge Stats Row */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                      {!isRoot && (
+                        <span className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${pInfo.bg}`}>
+                          <span className={`w-1 h-1 rounded-full ${pInfo.dot}`} />
+                          {pInfo.label}
+                        </span>
                       )}
-                      <span>{formatDisplayDate(node.dueDate)}</span>
-                    </span>
-                  )}
 
-                  {hasNotes && (
-                    <span 
-                      className={`inline-flex items-center text-[9px] px-1 py-0.5 ${
-                        isRoot ? 'text-indigo-200' : 'text-slate-500 dark:text-slate-400'
-                      }`} 
-                      title="Есть описание"
-                    >
-                      <FileText className="w-3 h-3 opacity-80" />
-                    </span>
-                  )}
+                      {node.dueDate && (
+                        <span 
+                          className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${
+                            node.completed
+                              ? isRoot
+                                ? 'bg-indigo-700/50 text-indigo-200 border-indigo-500/30'
+                                : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-505 border-slate-200 dark:border-slate-800'
+                              : isOverdue(node.dueDate)
+                                ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-900/60 animate-pulse font-extrabold shadow-[0_0_6px_rgba(244,63,94,0.3)]'
+                                : isRoot
+                                  ? 'bg-indigo-500/20 text-indigo-100 border-indigo-400/30'
+                                  : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-250 dark:border-emerald-900'
+                          }`}
+                          title={
+                            node.completed 
+                              ? `Срок выполнения: ${formatDisplayDate(node.dueDate)} (Выполнено)`
+                              : isOverdue(node.dueDate)
+                                ? `Внимание! Срок выполнения истек: ${formatDisplayDate(node.dueDate)}`
+                                : `Срок выполнения: ${formatDisplayDate(node.dueDate)}`
+                          }
+                        >
+                          {isOverdue(node.dueDate) && !node.completed ? (
+                            <AlertTriangle className="w-2.5 h-2.5 text-rose-500 animate-bounce" />
+                          ) : (
+                            <Calendar className="w-2.5 h-2.5 text-indigo-500 dark:text-indigo-400" />
+                          )}
+                          <span>{formatDisplayDate(node.dueDate)}</span>
+                        </span>
+                      )}
 
-                  {hasFiles && (
-                    <span 
-                      className={`inline-flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded border ${
-                        isRoot 
-                          ? 'bg-indigo-700/60 text-indigo-100 border-indigo-500/30' 
-                          : 'bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-405 border-slate-200 dark:border-slate-755'
-                      }`}
-                      title={`${node.files.length} прикрепленных файла(ов)`}
-                    >
-                      <Paperclip className="w-2.5 h-2.5" />
-                      {node.files.length}
-                    </span>
-                  )}
-                </div>
+                      {hasNotes && (
+                        <span 
+                          className={`inline-flex items-center text-[9px] px-1 py-0.5 ${
+                            isRoot ? 'text-indigo-200' : 'text-slate-500 dark:text-slate-400'
+                          }`} 
+                          title="Есть описание"
+                        >
+                          <FileText className="w-3 h-3 opacity-80" />
+                        </span>
+                      )}
 
-                {/* Subtask Progress Bar for nodes with children */}
-                {hasChildren && (() => {
-                  const progressPercent = calculateProgress(node.id, nodes) || 0;
-                  return (
-                    <div className="mt-2.5 mb-1 space-y-1" title={`Прогресс подзадач: ${progressPercent}%`}>
-                      <div className="flex justify-between items-center text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
-                        <span>Прогресс</span>
-                        <span className="font-mono">{progressPercent}%</span>
-                      </div>
-                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full transition-all duration-300 ${isRoot ? 'bg-indigo-300' : 'bg-indigo-600 dark:bg-indigo-500'}`}
-                          style={{ width: `${progressPercent}%` }}
-                        />
-                      </div>
+                      {hasFiles && (
+                        <span 
+                          className={`inline-flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                            isRoot 
+                              ? 'bg-indigo-700/60 text-indigo-100 border-indigo-500/30' 
+                              : 'bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-405 border-slate-200 dark:border-slate-755'
+                          }`}
+                          title={`${node.files.length} прикрепленных файла(ов)`}
+                        >
+                          <Paperclip className="w-2.5 h-2.5" />
+                          {node.files.length}
+                        </span>
+                      )}
                     </div>
-                  );
-                })()}
 
-                {/* Tags block */}
-                {node.tags && node.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {node.tags.map((tag) => (
-                      <span 
-                        key={tag}
-                        className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-                          isRoot 
-                            ? 'bg-indigo-700 text-indigo-100 opacity-90' 
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                        }`}
-                      >
-                        #{tag}
+                    {/* Subtask Progress Bar for nodes with children */}
+                    {hasChildren && (() => {
+                      const progressPercent = calculateProgress(node.id, nodes) || 0;
+                      return (
+                        <div className="mt-2.5 mb-1 space-y-1" title={`Прогресс подзадач: ${progressPercent}%`}>
+                          <div className="flex justify-between items-center text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                            <span>Прогресс</span>
+                            <span className="font-mono">{progressPercent}%</span>
+                          </div>
+                          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full transition-all duration-300 ${isRoot ? 'bg-indigo-300' : 'bg-indigo-600 dark:bg-indigo-500'}`}
+                              style={{ width: `${progressPercent}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Tags block */}
+                    {node.tags && node.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {node.tags.map((tag) => {
+                          const matchedCategory = tagCategories.find(cat => cat.tags && cat.tags.includes(tag));
+                          const color = matchedCategory?.color;
+                          
+                          // Style based on whether a category is found with this tag
+                          const style = color && !isRoot ? {
+                            backgroundColor: `${color}18`,
+                            color: color,
+                            border: `1px solid ${color}35`
+                          } : undefined;
+
+                          return (
+                            <span 
+                              key={tag}
+                              style={style}
+                              className={`text-[9.5px] font-semibold px-2 py-0.5 rounded-md select-none transition-all ${
+                                isRoot 
+                                  ? 'bg-indigo-700 text-indigo-100 opacity-90' 
+                                  : color 
+                                    ? '' 
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-transparent'
+                              }`}
+                            >
+                              #{tag}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center gap-1.5 mt-2 text-[9px] text-slate-400 dark:text-slate-500 font-medium select-none">
+                    <span className="px-1 text-[8px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-550 rounded border border-slate-250 dark:border-slate-750">
+                      Свернуто
+                    </span>
+                    {hasChildren && (
+                      <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                        • {countDescendants(node.id, nodes)} подзадач
                       </span>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
@@ -1840,6 +2192,27 @@ const pInfo = getPriorityInfo(node.priority);
                     className="flex items-center justify-center w-7 h-7 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                   >
                     <Plus className="w-4 h-4" />
+                  </button>
+
+                  <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                  {/* Button 1.2: Свернуть / Развернуть детали карточки */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateNode({
+                        ...node,
+                        isCardCollapsed: !node.isCardCollapsed
+                      });
+                    }}
+                    title={node.isCardCollapsed ? "Развернуть детали карточки" : "Свернуть детали карточки"}
+                    className="flex items-center justify-center w-7 h-7 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                  >
+                    {node.isCardCollapsed ? (
+                      <FolderPlus className="w-4 h-4 text-indigo-500" />
+                    ) : (
+                      <FolderMinus className="w-4 h-4 text-slate-500" />
+                    )}
                   </button>
 
                   {node.parentId !== null && (

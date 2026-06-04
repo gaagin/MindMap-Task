@@ -22,6 +22,7 @@ export interface TaskNode {
   files: AttachmentFile[];
   color?: string; // Optional custom border/connector color for the node
   collapsed?: boolean; // Optional state to collapse/hide sub-branches
+  isCardCollapsed?: boolean; // Optional state to collapse/fold only the task card visual details
   dueDate?: string; // Optional due date string (YYYY-MM-DD)
   progress?: number; // Optional progress percentage (0 to 100)
   isFloating?: boolean; // Optional flag for independent floating nodes
@@ -44,9 +45,17 @@ export interface Folder {
   parentId: string | null; // supports nested folders
 }
 
+export interface TagCategory {
+  id: string;
+  name: string;
+  color: string; // hex string, e.g. '#6366f1'
+  tags: string[];
+}
+
 export interface WorkspaceState {
   folders: Folder[];
   projects: Project[];
   nodes: Record<string, TaskNode[]>; // projectId maps to task nodes
   activeProjectId: string | null;
+  tagCategories?: TagCategory[];
 }

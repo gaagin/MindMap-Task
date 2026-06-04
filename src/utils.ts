@@ -1,4 +1,4 @@
-import { Folder, Project, TaskNode, Priority, WorkspaceState } from './types';
+import { Folder, Project, TaskNode, Priority, WorkspaceState, TagCategory } from './types';
 
 // Helper to generate UUIDs
 export function generateId(): string {
@@ -303,6 +303,27 @@ export function createDemoWorkspace(): WorkspaceState {
     }
   ];
 
+  const tagCategories: TagCategory[] = [
+    {
+      id: 'cat-phase',
+      name: 'Этап разработки',
+      color: '#f59e0b', // Amber
+      tags: ['MVP', 'Разработка', 'Трафик', 'Дизайн', 'Тех-задание']
+    },
+    {
+      id: 'cat-department',
+      name: 'Отдел/Тематика',
+      color: '#3b82f6', // Indigo
+      tags: ['Генеральный-план', 'SMM', 'PR', 'Сайт', 'Юридическое', 'Безопасность', 'Инвесторы', 'Презентация', 'Питч', 'Слайды']
+    },
+    {
+      id: 'cat-personal',
+      name: 'Личное',
+      color: '#10b981', // Emerald
+      tags: ['Стиль-жизни', 'Утро', 'Осознанность', 'Фокус', 'Сон', 'Здоровье']
+    }
+  ];
+
   return {
     folders,
     projects,
@@ -311,6 +332,7 @@ export function createDemoWorkspace(): WorkspaceState {
       'p-habit': pHabitNodes,
     },
     activeProjectId: 'p-startup',
+    tagCategories
   };
 }
 
@@ -332,6 +354,28 @@ export function loadWorkspace(): WorkspaceState {
     if (!state.folders) state.folders = [];
     if (!state.projects) state.projects = [];
     if (!state.nodes) state.nodes = {};
+    if (!state.tagCategories || state.tagCategories.length === 0) {
+      state.tagCategories = [
+        {
+          id: 'cat-phase',
+          name: 'Этап разработки',
+          color: '#f59e0b', // Amber
+          tags: ['MVP', 'Разработка', 'Трафик', 'Дизайн', 'Тех-задание']
+        },
+        {
+          id: 'cat-department',
+          name: 'Отдел/Тематика',
+          color: '#3b82f6', // Indigo
+          tags: ['Генеральный-план', 'SMM', 'PR', 'Сайт', 'Юридическое', 'Безопасность', 'Инвесторы', 'Презентация', 'Питч', 'Слайды']
+        },
+        {
+          id: 'cat-personal',
+          name: 'Личное',
+          color: '#10b981', // Emerald
+          tags: ['Стиль-жизни', 'Утро', 'Осознанность', 'Фокус', 'Сон', 'Здоровье']
+        }
+      ];
+    }
     if (!state.activeProjectId && state.projects.length > 0) {
       state.activeProjectId = state.projects[0].id;
     }
@@ -394,5 +438,44 @@ export function calculateProgress(nodeId: string, allNodes: TaskNode[]): number 
   if (descendants.length === 0) return null;
   const completedCount = descendants.filter(d => d.completed).length;
   return Math.round((completedCount / descendants.length) * 100);
+}
+
+// Function to recursively synchronize completion state of all nodes (bottom-up propagation)
+export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
+  let changed = true;
+  let current = [...nodesList];
+  let iterations = 0;
+
+  while (changed && iterations < 8) {
+    changed = false;
+    current = current.map(node => {
+      // Find direct children
+      const children = current.filter(n => n.parentId === node.id);
+      if (children.length > 0) {
+        // A node/container is marked completed if and only if all its sub-elements/children are completed
+        const allCompleted = children.every(c => c.completed);
+        if (node.completed !== allCompleted) {
+          changed = true;
+          return { ...node, completed: allCompleted };
+        }
+      }
+      return node;
+    });
+    iterations++;
+  }
+  return current;
+}
+
+// Function to toggle a node and recursively match all of its subtask descendants
+export function toggleNodeAndDescendants(nodeId: string, completed: boolean, allNodes: TaskNode[]): TaskNode[] {
+  const descendants = getDescendants(nodeId, allNodes);
+  const idsToToggle = [nodeId, ...descendants.map(d => d.id)];
+  
+  return allNodes.map(n => {
+    if (idsToToggle.includes(n.id)) {
+      return { ...n, completed: completed };
+    }
+    return n;
+  });
 }
 

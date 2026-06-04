@@ -11,13 +11,16 @@ import {
   Trash2,
   Trash,
   SlidersHorizontal,
-  X
+  X,
+  Kanban,
+  Network
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority } from './types';
-import { loadWorkspace, saveWorkspace, generateId } from './utils';
+import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants } from './utils';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
+import KanbanView from './components/KanbanView';
 
 export default function App() {
   // Load initial state
@@ -53,6 +56,9 @@ export default function App() {
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
+
+  // View Mode: 'canvas' or 'kanban'
+  const [viewMode, setViewMode] = useState<'canvas' | 'kanban'>('canvas');
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
@@ -247,6 +253,43 @@ export default function App() {
     setSelectedNodeId(null);
   };
 
+  // ----- TAG CATEGORY OPERATIONS -----
+  const handleCreateTagCategory = (name: string, color: string) => {
+    setState(prev => {
+      const cats = prev.tagCategories || [];
+      const newCat = {
+        id: 'cat-' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
+        name,
+        color,
+        tags: []
+      };
+      return {
+        ...prev,
+        tagCategories: [...cats, newCat]
+      };
+    });
+  };
+
+  const handleUpdateTagCategory = (id: string, name: string, color: string, tags: string[]) => {
+    setState(prev => {
+      const cats = prev.tagCategories || [];
+      return {
+        ...prev,
+        tagCategories: cats.map(c => c.id === id ? { ...c, name, color, tags } : c)
+      };
+    });
+  };
+
+  const handleDeleteTagCategory = (id: string) => {
+    setState(prev => {
+      const cats = prev.tagCategories || [];
+      return {
+        ...prev,
+        tagCategories: cats.filter(c => c.id !== id)
+      };
+    });
+  };
+
 
   // ----- TASK NODE CANVAS OPERATIONS -----
   const activeNodes = state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : [];
@@ -314,54 +357,55 @@ export default function App() {
     const parent = currentNodes.find(p => p.id === newParentId);
     const parentColor = parent ? parent.color : '';
 
-    setState(prev => ({
-      ...prev,
-      nodes: {
-        ...prev.nodes,
-        [pid]: currentNodes.map(n => {
-          if (n.id === id) {
-            // Calculate non-overlapping coordinates if re-parented to a non-container task node
-            let targetX = n.x;
-            let targetY = n.y;
+    setState(prev => {
+      const updatedList = currentNodes.map(n => {
+        if (n.id === id) {
+          // Calculate non-overlapping coordinates if re-parented to a non-container task node
+          let targetX = n.x;
+          let targetY = n.y;
+          
+          if (parent && !parent.isContainer) {
+            const isLeft = parent.x < 0 || (parent.x === 0 && (currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id).length % 2 !== 0));
+            targetX = parent.x + (isLeft ? -250 : 250);
             
-            if (parent && !parent.isContainer) {
-              const isLeft = parent.x < 0 || (parent.x === 0 && (currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id).length % 2 !== 0));
-              targetX = parent.x + (isLeft ? -250 : 250);
-              
-              const siblings = currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id);
-              if (siblings.length > 0) {
-                const k = siblings.length;
-                const sign = k % 2 === 0 ? 1 : -1;
-                const factor = Math.floor((k + 1) / 2);
-                targetY = parent.y + factor * 95 * sign;
-              } else {
-                targetY = parent.y;
-              }
-            } else if (parent && parent.isContainer) {
-              const W = parent.width || 520;
-              const H = parent.height || 400;
-              const siblings = currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id);
+            const siblings = currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id);
+            if (siblings.length > 0) {
               const k = siblings.length;
-              const columns = 2;
-              const col = k % columns;
-              const row = Math.floor(k / columns);
-              
-              targetX = parent.x + (col === 0 ? -115 : 115);
-              targetY = parent.y - (H / 2) + 75 + row * 95;
+              const sign = k % 2 === 0 ? 1 : -1;
+              const factor = Math.floor((k + 1) / 2);
+              targetY = parent.y + factor * 95 * sign;
+            } else {
+              targetY = parent.y;
             }
-
-            return {
-              ...n,
-              x: Math.round(targetX),
-              y: Math.round(targetY),
-              parentId: newParentId,
-              color: parentColor || n.color
-            };
+          } else if (parent && parent.isContainer) {
+            // Keep exactly where dropped on the canvas as requested!
+            targetX = n.x;
+            targetY = n.y;
           }
-          return n;
-        })
-      }
-    }));
+
+          const isInitiallyRoot = n.parentId === null && !n.isFloating;
+          const updatedIsFloating = isInitiallyRoot ? false : (newParentId === null);
+
+          return {
+            ...n,
+            x: Math.round(targetX),
+            y: Math.round(targetY),
+            parentId: newParentId,
+            color: parentColor || n.color,
+            isFloating: updatedIsFloating
+          };
+        }
+        return n;
+      });
+
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncCompletion(updatedList)
+        }
+      };
+    });
   };
 
   // Add child branching node beautifully
@@ -521,13 +565,16 @@ export default function App() {
 
     const idsToDelete = collectIdsToDelete(id);
 
-    setState(prev => ({
-      ...prev,
-      nodes: {
-        ...prev.nodes,
-        [pid]: currentNodes.filter(n => !idsToDelete.includes(n.id))
-      }
-    }));
+    setState(prev => {
+      const remainingNodes = currentNodes.filter(n => !idsToDelete.includes(n.id));
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncCompletion(remainingNodes)
+        }
+      };
+    });
 
     if (selectedNodeId && idsToDelete.includes(selectedNodeId)) {
       setSelectedNodeId(null);
@@ -539,13 +586,27 @@ export default function App() {
     const pid = state.activeProjectId;
     if (!pid) return;
 
-    setState(prev => ({
-      ...prev,
-      nodes: {
-        ...prev.nodes,
-        [pid]: prev.nodes[pid].map(n => n.id === id ? { ...n, completed: !n.completed } : n)
-      }
-    }));
+    setState(prev => {
+      const currentNodes = prev.nodes[pid] || [];
+      const targetNode = currentNodes.find(n => n.id === id);
+      if (!targetNode) return prev;
+
+      const nextCompleted = !targetNode.completed;
+
+      // Toggle state of node and recursively all of its descendants
+      const updatedNodes = toggleNodeAndDescendants(id, nextCompleted, currentNodes);
+
+      // Bottom up check to keep all container and task parent states consistent
+      const syncedNodes = syncCompletion(updatedNodes);
+
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncedNodes
+        }
+      };
+    });
   };
 
   // Toggle node collapsed state for sub-branch hiding
@@ -562,6 +623,41 @@ export default function App() {
     }));
   };
 
+  // Create a new task originating from the Kanban Board view
+  const handleCreateKanbanTask = (text: string, initialTags: string[]) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const newTargetNode: TaskNode = {
+      id: 'node-' + generateId(),
+      projectId: pid,
+      text,
+      x: 350 + Math.random() * 200,
+      y: 350 + Math.random() * 200,
+      parentId: null,
+      isFloating: true,
+      priority: 'none',
+      tags: initialTags,
+      notes: 'Создано на Канбан-доске.',
+      completed: false,
+      files: [],
+      color: '#6366f1'
+    };
+
+    setState(prev => ({
+      ...prev,
+      nodes: {
+        ...prev.nodes,
+        [pid]: [...currentNodes, newTargetNode]
+      }
+    }));
+    
+    setSelectedNodeId(newTargetNode.id);
+  };
+
   // Single node attribute editor update
   const handleUpdateNode = (updatedNode: TaskNode) => {
     const pid = state.activeProjectId;
@@ -570,13 +666,26 @@ export default function App() {
     // backup before properties update simple helper
     const currentNodes = state.nodes[pid] || [];
 
-    setState(prev => ({
-      ...prev,
-      nodes: {
-        ...prev.nodes,
-        [pid]: currentNodes.map(n => n.id === updatedNode.id ? updatedNode : n)
+    setState(prev => {
+      const targetNode = currentNodes.find(n => n.id === updatedNode.id);
+      let updatedList = currentNodes.map(n => n.id === updatedNode.id ? updatedNode : n);
+      
+      // If completed state was toggled from details panel, sync all descendants
+      if (targetNode && targetNode.completed !== updatedNode.completed) {
+        updatedList = toggleNodeAndDescendants(updatedNode.id, updatedNode.completed, updatedList);
       }
-    }));
+
+      // Automatically reconcile bottom-up completion constraints
+      const syncedNodes = syncCompletion(updatedList);
+
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncedNodes
+        }
+      };
+    });
   };
 
   // ----- SEARCH & HIGHLIGHT -----
@@ -795,6 +904,12 @@ export default function App() {
         onResetDemo={handleResetDemo}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        tagCategories={state.tagCategories || []}
+        onCreateTagCategory={handleCreateTagCategory}
+        onUpdateTagCategory={handleUpdateTagCategory}
+        onDeleteTagCategory={handleDeleteTagCategory}
+        currentWorkspaceState={state}
+        onApplySyncedState={setState}
       />
 
       {/* Main Workspace Frame */}
@@ -899,6 +1014,40 @@ export default function App() {
               </button>
             )}
 
+            {/* View Mode Switching Tabs */}
+            {state.activeProjectId && (
+              <div id="view-mode-toggle-group" className="bg-slate-100 dark:bg-slate-850 p-1 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center shrink-0">
+                <button
+                  id="view-mode-canvas-btn"
+                  type="button"
+                  onClick={() => setViewMode('canvas')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                    viewMode === 'canvas'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+                  title="Режим интеллект-карты"
+                >
+                  <Network className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Холст</span>
+                </button>
+                <button
+                  id="view-mode-kanban-btn"
+                  type="button"
+                  onClick={() => setViewMode('kanban')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                    viewMode === 'kanban'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+                  title="Режим Канбан-доски"
+                >
+                  <Kanban className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Канбан</span>
+                </button>
+              </div>
+            )}
+
             {/* Dark light theme toggler */}
             <button
               onClick={() => setDarkMode(!darkMode)}
@@ -950,9 +1099,31 @@ export default function App() {
                 className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 dark:text-slate-300 max-w-[150px]"
               >
                 <option value="all">Все теги</option>
-                {allAvailableTags.map(tag => (
-                  <option key={tag} value={tag}>#{tag}</option>
-                ))}
+                {/* Categorized tags */}
+                {state.tagCategories?.map(cat => {
+                  const catTagsInUse = (cat.tags || []).filter(t => allAvailableTags.includes(t));
+                  if (catTagsInUse.length === 0) return null;
+                  return (
+                    <optgroup key={cat.id} label={cat.name}>
+                      {catTagsInUse.map(tag => (
+                        <option key={tag} value={tag}>#{tag}</option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
+                {/* Uncategorized tags */}
+                {(() => {
+                  const categorizedSet = new Set(state.tagCategories?.flatMap(cat => cat.tags || []) || []);
+                  const uncategorizedTags = allAvailableTags.filter(t => !categorizedSet.has(t));
+                  if (uncategorizedTags.length === 0) return null;
+                  return (
+                    <optgroup label="Остальные">
+                      {uncategorizedTags.map(tag => (
+                        <option key={tag} value={tag}>#{tag}</option>
+                      ))}
+                    </optgroup>
+                  );
+                })()}
               </select>
             </div>
 
@@ -1014,37 +1185,59 @@ export default function App() {
         <div className="flex-1 w-full h-full relative bg-[#FAFBFD] dark:bg-slate-950/20">
           
           {state.activeProjectId ? (
-            <MindMapCanvas
-              nodes={activeNodes}
-              darkMode={darkMode}
-              activeProjectId={state.activeProjectId}
-              selectedNodeId={selectedNodeId}
-              onSelectNode={setSelectedNodeId}
-              onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
-              onUpdateNodeParent={handleUpdateNodeParent}
-              onAddChildNode={handleAddChildNode}
-              onAddFloatingNode={handleAddFloatingNode}
-              onAddContainerNode={handleAddContainerNode}
-              onDeleteNode={handleDeleteNode}
-              onToggleNodeCompleted={handleToggleNodeCompleted}
-              onToggleNodeCollapse={handleToggleNodeCollapse}
-              onUpdateNode={handleUpdateNode}
-              panX={panX}
-              panY={panY}
-              zoom={zoom}
-              setPanX={setPanX}
-              setPanY={setPanY}
-              setZoom={setZoom}
-              onOpenSidebar={() => setSidebarOpen(true)}
-              onOpenDrawer={() => setIsDrawerOpen(true)}
-              filterStatus={filterStatus}
-              filterPriority={filterPriority}
-              filterTag={filterTag}
-              filterDueDate={filterDueDate}
-              filterAttachments={filterAttachments}
-              filterNotes={filterNotes}
-              searchQuery={searchQuery}
-            />
+            viewMode === 'kanban' ? (
+              <KanbanView
+                nodes={activeNodes}
+                tagCategories={state.tagCategories || []}
+                activeProjectId={state.activeProjectId}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={(id) => {
+                  setSelectedNodeId(id);
+                  if (id) {
+                    setIsDrawerOpen(true);
+                  } else {
+                    setIsDrawerOpen(false);
+                  }
+                }}
+                onUpdateNode={handleUpdateNode}
+                onDeleteNode={handleDeleteNode}
+                onCreateTask={handleCreateKanbanTask}
+                onCreateTagCategory={handleCreateTagCategory}
+              />
+            ) : (
+              <MindMapCanvas
+                nodes={activeNodes}
+                darkMode={darkMode}
+                activeProjectId={state.activeProjectId}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={setSelectedNodeId}
+                onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
+                onUpdateNodeParent={handleUpdateNodeParent}
+                onAddChildNode={handleAddChildNode}
+                onAddFloatingNode={handleAddFloatingNode}
+                onAddContainerNode={handleAddContainerNode}
+                onDeleteNode={handleDeleteNode}
+                onToggleNodeCompleted={handleToggleNodeCompleted}
+                onToggleNodeCollapse={handleToggleNodeCollapse}
+                onUpdateNode={handleUpdateNode}
+                panX={panX}
+                panY={panY}
+                zoom={zoom}
+                setPanX={setPanX}
+                setPanY={setPanY}
+                setZoom={setZoom}
+                onOpenSidebar={() => setSidebarOpen(true)}
+                onOpenDrawer={() => setIsDrawerOpen(true)}
+                filterStatus={filterStatus}
+                filterPriority={filterPriority}
+                filterTag={filterTag}
+                filterDueDate={filterDueDate}
+                filterAttachments={filterAttachments}
+                filterNotes={filterNotes}
+                searchQuery={searchQuery}
+                tagCategories={state.tagCategories || []}
+              />
+            )
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
               <p className="text-sm text-slate-400 font-serif max-w-sm">
@@ -1064,6 +1257,10 @@ export default function App() {
             onClose={() => setIsDrawerOpen(false)}
             onUpdateNode={handleUpdateNode}
             onDeleteNode={handleDeleteNode}
+            tagCategories={state.tagCategories || []}
+            onCreateTagCategory={handleCreateTagCategory}
+            onUpdateTagCategory={handleUpdateTagCategory}
+            onDeleteTagCategory={handleDeleteTagCategory}
           />
         )}
       </main>
