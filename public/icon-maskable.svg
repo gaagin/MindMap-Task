@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e1b4b" />
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  
+  <!-- Rounded Background -->
+  <rect width="512" height="512" fill="url(#bg)" />
+  
+  <!-- Mind Map Nodes & Connections Group - Scaled down for safe zone -->
+  <g transform="translate(51, 51) scale(0.8)" filter="url(#shadow)">
+    <!-- Connections -->
+    <path d="M 256 256 L 370 170" stroke="url(#glow)" stroke-width="12" stroke-linecap="round" stroke-dasharray="1 1" stroke-dashoffset="1" />
+    <path d="M 256 256 L 150 160" stroke="#38bdf8" stroke-width="10" stroke-linecap="round" />
+    <path d="M 256 256 L 256 380" stroke="url(#glow)" stroke-width="12" stroke-linecap="round" />
+    <path d="M 256 256 L 390 280" stroke="#38bdf8" stroke-width="10" stroke-linecap="round" />
+
+    <!-- Connection Sub-branches -->
+    <path d="M 370 170 L 430 130" stroke="url(#glow)" stroke-width="8" stroke-linecap="round" />
+    <path d="M 370 170 L 410 210" stroke="url(#glow)" stroke-width="8" stroke-linecap="round" />
+    <path d="M 150 160 L 90 130" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
+    <path d="M 256 380 L 190 420" stroke="url(#glow)" stroke-width="8" stroke-linecap="round" />
+    <path d="M 256 380 L 320 420" stroke="url(#glow)" stroke-width="8" stroke-linecap="round" />
+
+    <!-- Outer Nodes -->
+    <circle cx="370" cy="170" r="28" fill="#6366f1" />
+    <circle cx="430" cy="130" r="14" fill="#818cf8" />
+    <circle cx="410" cy="210" r="14" fill="#818cf8" />
+    
+    <circle cx="150" cy="160" r="24" fill="#0284c7" />
+    <circle cx="90" cy="130" r="14" fill="#38bdf8" />
+
+    <!-- Bottom Nodes (Task nodes with checklist style) -->
+    <rect x="236" y="360" width="40" height="40" rx="10" fill="#4f46e5" />
+    <path d="M 246 380 L 252 386 L 266 372" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+    
+    <circle cx="190" cy="420" r="14" fill="#818cf8" />
+    <rect x="300" y="400" width="40" height="40" rx="10" fill="#10b981" />
+    <path d="M 310 420 L 316 426 L 330 412" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+
+    <!-- Center Main Node -->
+    <circle cx="256" cy="256" r="48" fill="#4f46e5" stroke="#ffffff" stroke-width="6" />
+    <circle cx="256" cy="256" r="20" fill="#ffffff" />
+  </g>
+</svg>
