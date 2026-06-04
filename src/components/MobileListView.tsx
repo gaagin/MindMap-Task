@@ -59,6 +59,7 @@ export default function MobileListView({
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   
   // Quick task input states (TickTick experience)
   const [newTaskText, setNewTaskText] = useState('');
@@ -75,6 +76,79 @@ export default function MobileListView({
 
   // Local subtask creation input states mapping parentTaskId -> input text
   const [newSubtaskTexts, setNewSubtaskTexts] = useState<Record<string, string>>({});
+
+  // Drag and drop states
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+  const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
+
+  // Checks if node A is a descendant of node B
+  const isDescendant = (targetId: string, ancestorId: string): boolean => {
+    let current = nodes.find(n => n.id === targetId);
+    while (current && current.parentId) {
+      if (current.parentId === ancestorId) return true;
+      current = nodes.find(n => n.id === current.parentId);
+    }
+    return false;
+  };
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData('text/plain', id);
+    setDraggedNodeId(id);
+  };
+
+  const handleDragOverCard = (e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (draggedNodeId === id || isDescendant(id, draggedNodeId || '')) {
+      return;
+    }
+    setDragOverNodeId(id);
+  };
+
+  const handleDragLeaveCard = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverNodeId(null);
+  };
+
+  const handleDropOnCard = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverNodeId(null);
+    
+    const dragId = e.dataTransfer.getData('text/plain') || draggedNodeId;
+    setDraggedNodeId(null);
+
+    if (!dragId || dragId === targetId || isDescendant(targetId, dragId)) {
+      return;
+    }
+
+    const draggedNode = nodes.find(n => n.id === dragId);
+    if (draggedNode && draggedNode.parentId !== targetId) {
+      onUpdateNode({
+        ...draggedNode,
+        parentId: targetId,
+        isFloating: false,
+      });
+    }
+  };
+
+  const handleDropOnBackground = (e: React.DragEvent) => {
+    e.preventDefault();
+    const dragId = e.dataTransfer.getData('text/plain') || draggedNodeId;
+    setDraggedNodeId(null);
+    setDragOverNodeId(null);
+
+    if (!dragId) return;
+
+    const draggedNode = nodes.find(n => n.id === dragId);
+    if (draggedNode && draggedNode.parentId !== null) {
+      onUpdateNode({
+        ...draggedNode,
+        parentId: null,
+        isFloating: true,
+      });
+    }
+  };
 
   // Priority metadata for colors and icons
   const priorities: { value: Priority; label: string; bg: string; border: string; text: string }[] = [
@@ -305,35 +379,53 @@ export default function MobileListView({
     const allDirectChildren = childrenByParentId[node.id] || [];
 
     // Subtask styling offset and container card margin
-    const mlClass = depth > 0 ? 'ml-5 md:ml-8 mt-1.5' : 'mt-2';
+    const mlClass = depth > 0 ? 'ml-3 mt-1' : 'mt-1.5';
 
     return (
       <div key={node.id} className={`${mlClass} flex flex-col`}>
         <div
           id={`mobile-task-card-${node.id}`}
-          className={`border rounded-xl p-3 transition-all flex flex-col gap-2 relative ${
-            isSelected 
-              ? 'bg-indigo-55/10 border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900/40' 
-              : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800'
+          draggable={!isEditing}
+          onDragStart={(e) => handleDragStart(e, node.id)}
+          onDragOver={(e) => handleDragOverCard(e, node.id)}
+          onDragLeave={handleDragLeaveCard}
+          onDrop={(e) => handleDropOnCard(e, node.id)}
+          className={`border rounded-xl p-1.5 px-2.5 transition-all flex flex-col gap-1 relative cursor-grab active:cursor-grabbing select-none ${
+            draggedNodeId === node.id
+              ? 'opacity-30 border-2 border-dashed border-indigo-400 bg-slate-50 dark:bg-slate-950'
+              : dragOverNodeId === node.id
+                ? 'border-2 border-dashed border-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/40 ring-2 ring-indigo-500/15 scale-[1.01] shadow-sm'
+                : isSelected 
+                  ? 'bg-indigo-55/10 border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900/40' 
+                  : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800'
           } ${node.completed ? 'opacity-70' : ''}`}
         >
           {/* Connector guide line for nested subtasks */}
           {depth > 0 && (
-            <div className="absolute left-[-16px] top-6 w-[16px] h-4 border-l-2 border-b-2 border-slate-250 dark:border-slate-800 rounded-bl-lg pointer-events-none" />
+            <div className="absolute left-[-16px] top-4 w-[16px].0 h-3 border-l-2 border-b-2 border-slate-250 dark:border-slate-800 rounded-bl-lg pointer-events-none" />
           )}
 
-          <div className="flex items-start gap-2.5 justify-between">
+          {/* Visual Overlay Drop-zone Cue */}
+          {dragOverNodeId === node.id && (
+            <div className="absolute inset-0 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-xl flex items-center justify-center border-2 border-indigo-500 border-dashed pointer-events-none z-10 animate-pulse">
+              <span className="text-[10px] font-bold text-indigo-700 bg-white dark:text-indigo-300 dark:bg-slate-900 px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1 border border-indigo-150">
+                📥 Сделать подзадачей
+              </span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 justify-between">
             {/* Tick Checkbox & title container */}
-            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               {/* Expand/Collapse Toggle if there are sub-elements in the list */}
               {children.length > 0 && (
                 <button
                   type="button"
                   onClick={(e) => toggleParentCollapse(node.id, e)}
-                  className="p-1 mt-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
+                  className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
                   title={isCollapsed ? "Развернуть подзадачи" : "Свернуть подзадачи"}
                 >
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+                  <ChevronDown className={`w-3 h-3 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
                 </button>
               )}
 
@@ -341,7 +433,7 @@ export default function MobileListView({
               <button
                 type="button"
                 onClick={() => handleToggleCompleted(node)}
-                className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-all ${
+                className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 cursor-pointer transition-all ${
                   node.completed
                     ? 'bg-emerald-500 border-emerald-500 text-white'
                     : `border-slate-300 hover:border-indigo-500 dark:border-slate-700`
@@ -349,13 +441,13 @@ export default function MobileListView({
                 title={node.completed ? 'Восстановить' : 'Завершить'}
                 style={!node.completed ? { borderColor: pMeta.value !== 'none' ? pMeta.text.replace('text-', '') : undefined } : undefined}
               >
-                {node.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                {node.completed && <Check className="w-2.5 h-2.5 stroke-[3]" />}
               </button>
 
               {/* Core Text Label */}
               <div className="min-w-0 flex-1">
                 {isEditing ? (
-                  <div className="flex gap-1.5 items-center">
+                  <div className="flex gap-1 items-center">
                     <input
                       type="text"
                       value={editingText}
@@ -364,89 +456,63 @@ export default function MobileListView({
                         if (e.key === 'Enter') handleSaveInlineEdit(node);
                         if (e.key === 'Escape') setEditingNodeId(null);
                       }}
-                      className="w-full bg-slate-100 dark:bg-slate-800 border border-indigo-500 rounded px-2 py-1 text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="w-full bg-slate-100 dark:bg-slate-800 border border-indigo-500 rounded px-1.5 py-0.5 text-[11px] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-indigo-500"
                       autoFocus
                     />
                     <button
                       type="button"
                       onClick={() => handleSaveInlineEdit(node)}
-                      className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded"
+                      className="px-1.5 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] rounded"
                     >
                       ОК
                     </button>
                   </div>
                 ) : (
                   <div 
-                    className="text-sm font-semibold text-slate-800 dark:text-slate-200 cursor-pointer pr-2 break-words"
+                    className="text-[12.5px] font-semibold text-slate-800 dark:text-slate-200 cursor-pointer pr-1.5 break-words flex items-center flex-wrap gap-1.5"
                     onClick={() => {
                       onSelectNode(node.id);
                     }}
                   >
-                    <span className={node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''}>
+                    <span className={node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal font-sans' : 'font-sans'}>
                       {node.text}
                     </span>
+
+                    {/* Highly compressed inline metadata on main line to avoid extra height lines */}
+                    <div className="inline-flex items-center gap-1.5 text-[9.5px] font-mono select-none">
+                      {node.priority !== 'none' && (
+                        <span className={`px-1 rounded-sm font-bold text-[9px] uppercase border ${pMeta.bg} ${pMeta.border} ${pMeta.text}`}>
+                          {node.priority}
+                        </span>
+                      )}
+
+                      {node.dueDate && (
+                        <span className={`flex items-center gap-1 px-1 rounded-sm border ${
+                          !node.completed && node.dueDate < todayStr
+                            ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30'
+                            : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700'
+                        }`}>
+                          <span>{node.dueDate}</span>
+                        </span>
+                      )}
+
+                      {nodeChildrenCountMap[node.id] > 0 && (
+                        <span className="text-indigo-600 dark:text-indigo-400 font-sans font-bold bg-slate-100 dark:bg-slate-800 px-1 rounded text-[9px]">
+                          {nodeChildrenCompletedCountMap[node.id] || 0}/{nodeChildrenCountMap[node.id]}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
-
-                {/* Auxiliary items metadata details bar */}
-                <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[11px] text-slate-400 font-mono">
-                  {/* Priority banner */}
-                  {node.priority !== 'none' && (
-                    <span className={`px-1.5 py-0.5 rounded-md font-bold text-[10px] uppercase border ${pMeta.bg} ${pMeta.border} ${pMeta.text}`}>
-                      {node.priority}
-                    </span>
-                  )}
-
-                  {/* Due date indicator */}
-                  {node.dueDate && (
-                    <span className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded-md border ${
-                      !node.completed && node.dueDate < todayStr
-                        ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30 dark:text-rose-400'
-                        : 'bg-slate-55/10 border-slate-205 dark:bg-slate-800 dark:border-slate-750 text-slate-500 dark:text-slate-400'
-                    }`}>
-                      <Calendar className="w-3 h-3" />
-                      <span>{node.dueDate}</span>
-                    </span>
-                  )}
-
-                  {/* Tag Category chips */}
-                  {node.tags && node.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {node.tags.map(t => (
-                        <span key={t} className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 border border-indigo-100/60 dark:border-indigo-900/20 text-[9.5px] rounded-sm font-sans font-medium">
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Attachment Notes info */}
-                  {node.notes && (
-                    <span className="flex items-center gap-1 text-slate-400" title="Есть заметки">
-                      <FileText className="w-3 h-3" />
-                      <span className="truncate max-w-[120px] font-sans italic text-[10.5px]">
-                        {node.notes}
-                      </span>
-                    </span>
-                  )}
-
-                  {/* Subtasks Progress tag (TickTick style) */}
-                  {nodeChildrenCountMap[node.id] > 0 && (
-                    <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400 font-sans font-bold bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px]">
-                      <span>Подзадачи:</span>
-                      <span className="text-indigo-600 dark:text-indigo-400">{nodeChildrenCompletedCountMap[node.id] || 0}/{nodeChildrenCountMap[node.id]}</span>
-                    </span>
-                  )}
-                </div>
               </div>
             </div>
 
             {/* Micro Controls Action Panel */}
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-0.5 shrink-0">
               <button
                 type="button"
                 onClick={() => handleStartInlineEdit(node)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-55/40 dark:hover:bg-slate-800 cursor-pointer"
+                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-md hover:bg-slate-55/40 dark:hover:bg-slate-800 cursor-pointer"
                 title="Редактировать текст"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -459,7 +525,7 @@ export default function MobileListView({
                     onDeleteNode(node.id);
                   }
                 }}
-                className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/25 cursor-pointer"
+                className="p-1 text-slate-400 hover:text-rose-500 rounded-md hover:bg-rose-50/50 dark:hover:bg-rose-950/25 cursor-pointer"
                 title="Удалить задачу"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -470,17 +536,34 @@ export default function MobileListView({
                 onClick={() => {
                   onSelectNode(node.id === selectedNodeId ? null : node.id);
                 }}
-                className={`p-1.5 rounded-lg border cursor-pointer transition-all ${
+                className={`p-1 rounded-md border cursor-pointer transition-all ${
                   isSelected
-                    ? 'bg-indigo-600 text-white border-transparent'
-                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    ? 'bg-indigo-650 text-white border-transparent'
+                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
                 }`}
                 title={isSelected ? "Свернуть свойства" : "Свойства и список подзадач"}
               >
-                <ChevronRight className="w-3.5 h-3.5" />
+                <ChevronRight className="w-3 h-3" />
               </button>
             </div>
           </div>
+
+          {/* Subtags listed in details line when NOT editing */}
+          {(!isEditing && ((node.tags && node.tags.length > 0) || node.notes)) && (
+            <div className="flex flex-wrap items-center gap-1.5 ml-6.5 text-[10px] text-slate-400 font-mono">
+              {node.tags && node.tags.map(t => (
+                <span key={t} className="px-1 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-500 border border-indigo-100/40 text-[9px] rounded-sm font-sans">
+                  #{t}
+                </span>
+              ))}
+              {node.notes && (
+                <span className="flex items-center gap-1 font-sans italic max-w-[150px] truncate text-[10px]">
+                  <FileText className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate">{node.notes}</span>
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Inline Expanded Manager for attributes, dates, and direct child tasks checklist */}
           {isSelected && (
@@ -606,52 +689,26 @@ export default function MobileListView({
   return (
     <div id="mobile-ticktick-view" className="w-full h-full flex flex-col bg-slate-50 dark:bg-slate-950">
       
-      {/* Mobile-Adapted Dashboard Header */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 shrink-0 transition-all">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="p-1 px-2 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold text-xs uppercase tracking-wider">
-                Быстрый список (TickTick Style)
-              </span>
-            </div>
-            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 mt-1 flex items-center gap-1.5 font-sans">
-              Клиент мобильного планирования
-            </h2>
-            <p className="text-xs text-slate-400">
-              Компактный дизайн с крупными элементами управления для удобной работы со смартфонов и планшетов
-            </p>
-          </div>
-
-          {/* Core Stats Overview block */}
-          <div className="grid grid-cols-4 gap-1.5 max-w-sm w-full font-mono text-center">
-            <div className="bg-slate-50 dark:bg-slate-850 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
-              <p className="text-[10px] text-slate-400">Активно</p>
-              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{activeCount}</p>
-            </div>
-            <div className="bg-rose-50 dark:bg-rose-950/20 p-1.5 rounded-lg border border-rose-100/40 dark:border-rose-900/10">
-              <p className="text-[10px] text-rose-500">Просроч.</p>
-              <p className="text-xs font-bold text-rose-600 dark:text-rose-400">{overdueCount}</p>
-            </div>
-            <div className="bg-indigo-50 dark:bg-indigo-950/20 p-1.5 rounded-lg border border-indigo-100/40 dark:border-indigo-900/10">
-              <p className="text-[10px] text-indigo-500">Сегодня</p>
-              <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{todayCount}</p>
-            </div>
-            <div className="bg-emerald-50 dark:bg-emerald-950/20 p-1.5 rounded-lg border border-emerald-100/40 dark:border-emerald-900/10">
-              <p className="text-[10px] text-emerald-500">Закрыто</p>
-              <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{completedCount}</p>
-            </div>
+      {/* Super Compact Mobile-Adapted Dashboard Header */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-2 shrink-0 transition-all">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xs font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-widest whitespace-nowrap pl-1">
+            Задачи
+          </h2>
+          <div className="text-[10px] text-slate-400 font-mono flex gap-1.5 pr-1">
+            <span>Актив.: <strong className="font-bold text-slate-700 dark:text-slate-200">{activeCount}</strong></span>
+            <span>Проср.: <strong className="font-bold text-rose-500">{overdueCount}</strong></span>
           </div>
         </div>
 
         {/* Tab Selection Row like TickTick */}
-        <div className="flex gap-2 mt-4 overflow-x-auto pb-1 scrollbar-thin">
+        <div className="flex gap-1.5 mt-1.5 overflow-x-auto pb-0.5 scrollbar-none select-none">
           {[
             { id: 'active', label: 'В работе', count: activeCount },
-            { id: 'today', label: 'По плану сегодня', count: todayCount, icon: Clock },
-            { id: 'overdue', label: 'Просрочено', count: overdueCount, color: 'text-rose-505' },
-            { id: 'completed', label: 'Выполненные', count: completedCount },
-            { id: 'all', label: 'Все задачи', count: totalCount }
+            { id: 'today', label: 'Сегодня', count: todayCount, icon: Clock },
+            { id: 'overdue', label: 'Просрочено', count: overdueCount },
+            { id: 'completed', label: 'Готово', count: completedCount },
+            { id: 'all', label: 'Все', count: totalCount }
           ].map((tab) => {
             const isTabActive = activeTab === tab.id;
             return (
@@ -662,15 +719,15 @@ export default function MobileListView({
                   setActiveTab(tab.id as any);
                   onSelectNode(null);
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all ${
+                className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all ${
                   isTabActive 
-                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs' 
+                    ? 'bg-indigo-600 text-white shadow-xs' 
                     : 'bg-slate-100 text-slate-600 hover:text-slate-950 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
                 }`}
               >
-                {tab.icon && <tab.icon className="w-3.5 h-3.5" />}
+                {tab.icon && <tab.icon className="w-3 h-3" />}
                 <span>{tab.label}</span>
-                <span className={`px-1 rounded-sm text-[9px] ${isTabActive ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
+                <span className={`px-1 rounded-sm text-[9px] ${isTabActive ? 'bg-indigo-700 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
                   {tab.count}
                 </span>
               </button>
@@ -679,64 +736,106 @@ export default function MobileListView({
         </div>
       </div>
 
-      {/* Advanced filters & text search block */}
-      <div className="p-3 bg-slate-100/50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800/80 shrink-0 grid grid-cols-1 md:grid-cols-3 gap-2">
-        <div className="relative">
-          <span className="absolute left-2.5 top-2.5 text-slate-400">
-            <Search className="w-3.5 h-3.5" />
-          </span>
-          <input
-            id="mobile-search-input"
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Быстрый поиск по названию/тегам..."
-            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
+      {/* Advanced filters & text search block (Highly compressed with toggling selects) */}
+      <div className="p-2 bg-slate-100/50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800/80 shrink-0 space-y-1.5">
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1">
+            <span className="absolute left-2 top-2.5 text-slate-400 pointer-events-none">
+              <Search className="w-3 h-3" />
+            </span>
+            <input
+              id="mobile-search-input"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Поиск по названию или тегам..."
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-6 pr-6 py-1 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-1.5 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold w-5 h-5 flex items-center justify-center rounded-full hover:bg-slate-105-dark"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowFilters(f => !f)}
+            className={`p-1 px-1.5 rounded-lg border flex items-center gap-1 cursor-pointer transition-all text-xs font-semibold ${
+              showFilters || priorityFilter !== 'all' || tagFilter !== 'all'
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-950/40 dark:border-indigo-900/40 dark:text-indigo-400'
+                : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800 text-slate-500 hover:text-slate-700'
+            }`}
+            title="Фильтры по приоритетам и тегам"
+          >
+            <ListFilter className="w-3.5 h-3.5" />
+            <span>Фильтры</span>
+          </button>
         </div>
 
-        {/* Priority options selector */}
-        <div className="relative">
-          <span className="absolute left-2.5 top-2.5 text-slate-400">
-            <Flag className="w-3.5 h-3.5" />
-          </span>
-          <select
-            id="mobile-priority-select"
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-          >
-            <option value="all">Любой приоритет</option>
-            <option value="urgent">Срочно 🔥</option>
-            <option value="high">Высокий 🔴</option>
-            <option value="medium">Средний 🟡</option>
-            <option value="low">Низкий 🔵</option>
-            <option value="none">Без приоритета ⚪</option>
-          </select>
-        </div>
+        {/* Dropdowns visible only when toggled */}
+        {(showFilters || priorityFilter !== 'all' || tagFilter !== 'all') && (
+          <div className="grid grid-cols-2 gap-2 pb-0.5 pt-0.5 animate-fadeIn">
+            {/* Priority options selector */}
+            <div className="relative">
+              <span className="absolute left-2 top-2 text-slate-400 pointer-events-none">
+                <Flag className="w-3 h-3" />
+              </span>
+              <select
+                id="mobile-priority-select"
+                value={priorityFilter}
+                onChange={(e) => setPriorityFilter(e.target.value)}
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-6 pr-1.5 py-1 text-[11px] text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="all">Все приоритеты</option>
+                <option value="urgent">Срочно 🔥</option>
+                <option value="high">Высокий 🔴</option>
+                <option value="medium">Средний 🟡</option>
+                <option value="low">Низкий 🔵</option>
+                <option value="none">Без приор. ⚪</option>
+              </select>
+            </div>
 
-        {/* Tag choice selector */}
-        <div className="relative">
-          <span className="absolute left-2.5 top-2.5 text-slate-400">
-            <Tag className="w-3.5 h-3.5" />
-          </span>
-          <select
-            id="mobile-tag-select"
-            value={tagFilter}
-            onChange={(e) => setTagFilter(e.target.value)}
-            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-          >
-            <option value="all">Все теги</option>
-            {/* Flatten all tag values from categories */}
-            {tagCategories.flatMap(c => c.tags || []).map(tag => (
-              <option key={tag} value={tag}>#{tag}</option>
-            ))}
-          </select>
-        </div>
+            {/* Tag choice selector */}
+            <div className="relative">
+              <span className="absolute left-2 top-2 text-slate-400 pointer-events-none">
+                <Tag className="w-3 h-3" />
+              </span>
+              <select
+                id="mobile-tag-select"
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-6 pr-1.5 py-1 text-[11px] text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="all">Все теги</option>
+                {tagCategories.flatMap(c => c.tags || []).map(tag => (
+                  <option key={tag} value={tag}>#{tag}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main interactive Tasks container */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+      <div 
+        className="flex-1 overflow-y-auto px-4 py-3 space-y-2 relative"
+        onDragOver={(e) => {
+          e.preventDefault();
+        }}
+        onDrop={handleDropOnBackground}
+      >
+        {/* Help tooltip when dragging a node off-center / in the background */}
+        {draggedNodeId !== null && dragOverNodeId === null && (
+          <div className="sticky top-1 mx-auto text-center w-fit bg-indigo-50 dark:bg-slate-900/90 text-indigo-700 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-950 px-3 py-1.5 rounded-full text-[10px] font-bold shadow-md z-10 flex items-center gap-1 animate-pulse pointer-events-none">
+            <span>✨ Отпустите здесь для открепления (плавающая задача)</span>
+          </div>
+        )}
+
         {taskTreeRoots.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center text-slate-400 h-full">
             <div className="w-12 h-12 bg-slate-100 dark:bg-slate-850 rounded-full flex items-center justify-center mb-3">

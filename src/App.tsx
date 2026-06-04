@@ -971,11 +971,13 @@ export default function App() {
               <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-2">
                 {state.projects.find(p => p.id === state.activeProjectId)?.name || 'Карта задач'}
               </h2>
-              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-serif">
-                <span>Задач в карте: {activeNodes.length}</span>
-                <span className="text-slate-300 dark:text-slate-700">|</span>
-                <span>Выполнено: {activeNodes.filter(n => n.completed).length}</span>
-              </div>
+              {viewMode !== 'mobile-list' && (
+                <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-400 font-serif">
+                  <span>Задач в карте: {activeNodes.length}</span>
+                  <span className="text-slate-300 dark:text-slate-700">|</span>
+                  <span>Выполнено: {activeNodes.filter(n => n.completed).length}</span>
+                </div>
+              )}
             </div>
           </div>
 
