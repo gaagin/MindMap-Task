@@ -328,16 +328,18 @@ export default function App() {
     }
   }, [googleToken]);
 
-  // 4. Background Symmetrical Sheets Sync with 35s debounce during continuous editing states (rate-limit protection)
+  // 4. Background Symmetrical Sheets Sync with 25s/10s debounce during continuous editing states (rate-limit protection)
   // Only triggers background auto-sync when there are actual unsynced edits, saving Google API quota limits!
   useEffect(() => {
     if (googleToken && unsyncedEditsCount > 0) {
+      const isMobile = viewMode === 'mobile-list' || (typeof window !== 'undefined' && window.innerWidth < 768);
+      const debounceTime = isMobile ? 10000 : 25000; // 10s for mobile, 25s for desktop
       const timer = setTimeout(() => {
         runSheetsSymmetricalSync(googleToken, state);
-      }, 35000); // 35-second rate-limiting debounce
+      }, debounceTime); // Optimized rate-limiting debounce
       return () => clearTimeout(timer);
     }
-  }, [state, googleToken, unsyncedEditsCount]);
+  }, [state, googleToken, unsyncedEditsCount, viewMode]);
 
   // 5. Symmetrical Sheets Sync instantly on window tab switch or pageunload (visibilitychange / pagehide)
   useEffect(() => {
@@ -1631,6 +1633,8 @@ export default function App() {
                 onDeleteNode={handleDeleteNode}
                 onCreateTask={handleCreateMobileTask}
                 onCreateTagCategory={handleCreateTagCategory}
+                onUpdateTagCategory={handleUpdateTagCategory}
+                onDeleteTagCategory={handleDeleteTagCategory}
               />
             ) : viewMode === 'kanban' ? (
               <KanbanView

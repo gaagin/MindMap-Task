@@ -38,6 +38,8 @@ interface MobileListViewProps {
   onDeleteNode: (id: string) => void;
   onCreateTask: (text: string, tags: string[], priority: Priority, dueDate?: string, parentId?: string | null) => void;
   onCreateTagCategory?: (name: string, color: string) => void;
+  onUpdateTagCategory?: (id: string, name: string, color: string, tags: string[]) => void;
+  onDeleteTagCategory?: (id: string) => void;
 }
 
 interface TaskTreeItem {
@@ -54,6 +56,9 @@ export default function MobileListView({
   onUpdateNode,
   onDeleteNode,
   onCreateTask,
+  onCreateTagCategory,
+  onUpdateTagCategory,
+  onDeleteTagCategory,
 }: MobileListViewProps) {
   // Inbox / State filters
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed' | 'today' | 'overdue'>('active');
@@ -62,6 +67,18 @@ export default function MobileListView({
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileSearchIndex, setMobileSearchIndex] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Tags Manager modal state variables
+  const [showTagsManager, setShowTagsManager] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatColor, setNewCatColor] = useState('#6366f1');
+  const [showAddCatForm, setShowAddCatForm] = useState(false);
+  const [expandedCatIds, setExpandedCatIds] = useState<Record<string, boolean>>({});
+  const [editingCategoryTagId, setEditingCategoryTagId] = useState<string | null>(null);
+  const [editingCategoryTagName, setEditingCategoryTagName] = useState('');
+  const [editingCategoryTagColor, setEditingCategoryTagColor] = useState('#6366f1');
+  const [addingTagToCatId, setAddingTagToCatId] = useState<string | null>(null);
+  const [newTagNameInput, setNewTagNameInput] = useState('');
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -1015,6 +1032,16 @@ export default function MobileListView({
             <ListFilter className="w-3.5 h-3.5" />
             <span>Фильтры</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setShowTagsManager(true)}
+            className="p-1 px-1.5 rounded-lg border bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800 text-slate-500 hover:text-slate-700 flex items-center gap-1 cursor-pointer transition-all text-xs font-semibold shrink-0"
+            title="Управление тегами и категориями"
+          >
+            <Tag className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+            <span>Теги</span>
+          </button>
         </div>
 
         {/* Dropdowns visible only when toggled */}
@@ -1187,6 +1214,324 @@ export default function MobileListView({
           </div>
         </form>
       </div>
+
+      {/* Tags & Categories Manager bottom overlay sheet */}
+      {showTagsManager && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center animate-fadeIn">
+          <div 
+            className="absolute inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-xs" 
+            onClick={() => setShowTagsManager(false)}
+          />
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-2xl shadow-2xl p-4 flex flex-col max-h-[85vh] z-10 animate-slideUp">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 mb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-indigo-500" />
+                <h3 className="text-sm font-bold text-slate-850 dark:text-slate-100 uppercase tracking-wider">
+                  Теги и категории
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTagsManager(false)}
+                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+              >
+                Готово
+              </button>
+            </div>
+
+            {/* Scrollable area */}
+            <div className="flex-1 overflow-y-auto space-y-4 pb-8 pr-1">
+              
+              {/* Add New Category quick section */}
+              <div className="bg-slate-50 dark:bg-slate-850/60 border border-slate-100 dark:border-slate-800/60 rounded-xl p-3">
+                {!showAddCatForm ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddCatForm(true);
+                      setNewCatName('');
+                      setNewCatColor('#6366f1');
+                    }}
+                    className="w-full py-2 border border-dashed border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50/30 rounded-lg text-indigo-100 dark:text-indigo-400 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-indigo-505" />
+                    <span className="text-indigo-650 dark:text-indigo-400 font-bold">Создать категорию тегов</span>
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">Новая категория</span>
+                    <input
+                      type="text"
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                      placeholder="Название (например: Этап, Приоритет)..."
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
+                    />
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-1.5">Цвет</span>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          '#ef4444', '#f59e0b', '#10b981', '#14b8a6', 
+                          '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899'
+                        ].map(hex => (
+                          <button
+                            key={hex}
+                            type="button"
+                            onClick={() => setNewCatColor(hex)}
+                            style={{ backgroundColor: hex }}
+                            className={`w-5 h-5 rounded-full transition-all cursor-pointer ${
+                              newCatColor === hex ? 'scale-125 ring-2 ring-indigo-550' : 'hover:scale-110'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddCatForm(false)}
+                        className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-705 bg-slate-100 dark:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Отмена
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newCatName.trim() && onCreateTagCategory) {
+                            onCreateTagCategory(newCatName.trim(), newCatColor);
+                            setNewCatName('');
+                            setShowAddCatForm(false);
+                          }
+                        }}
+                        className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                      >
+                        Создать
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Tag Categories List */}
+              <div className="space-y-3">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider block">Существующие категории</span>
+                {tagCategories.length === 0 ? (
+                  <div className="text-center py-6 text-xs text-slate-400 italic">
+                    Категории тегов отсутствуют
+                  </div>
+                ) : (
+                  tagCategories.map(cat => {
+                    const isEditing = editingCategoryTagId === cat.id;
+                    const isAddingTag = addingTagToCatId === cat.id;
+                    const isExpanded = !expandedCatIds[cat.id]; // default expanded
+
+                    return (
+                      <div
+                        key={cat.id}
+                        className="border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 bg-white dark:bg-slate-900 space-y-2"
+                      >
+                        {/* Title block */}
+                        {isEditing ? (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={editingCategoryTagName}
+                              onChange={(e) => setEditingCategoryTagName(e.target.value)}
+                              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-bold"
+                            />
+                            <div className="flex flex-wrap gap-1.5 py-1">
+                              {[
+                                '#ef4444', '#f59e0b', '#10b981', '#14b8a6', 
+                                '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899'
+                              ].map(hex => (
+                                <button
+                                  key={hex}
+                                  type="button"
+                                  onClick={() => setEditingCategoryTagColor(hex)}
+                                  style={{ backgroundColor: hex }}
+                                  className={`w-4 h-4 rounded-full transition-all cursor-pointer ${
+                                    editingCategoryTagColor === hex ? 'scale-125 ring-2 ring-indigo-500' : 'hover:scale-110'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setEditingCategoryTagId(null)}
+                                className="px-2 py-0.5 text-[10px] text-slate-500 hover:text-slate-700 bg-slate-50 dark:bg-slate-800 rounded"
+                              >
+                                Отмена
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (editingCategoryTagName.trim() && onUpdateTagCategory) {
+                                    onUpdateTagCategory(cat.id, editingCategoryTagName.trim(), editingCategoryTagColor, cat.tags || []);
+                                    setEditingCategoryTagId(null);
+                                  }
+                                }}
+                                className="px-2 py-0.5 text-[10px] bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold"
+                              >
+                                Сохранить
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <div 
+                              className="flex items-center gap-1.5 min-w-0 cursor-pointer select-none py-1 flex-1"
+                              onClick={() => {
+                                setExpandedCatIds(prev => ({ ...prev, [cat.id]: !prev[cat.id] }));
+                              }}
+                            >
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                              <span className="font-bold text-xs text-slate-850 dark:text-slate-100 truncate">{cat.name}</span>
+                              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingCategoryTagId(cat.id);
+                                  setEditingCategoryTagName(cat.name);
+                                  setEditingCategoryTagColor(cat.color);
+                                }}
+                                className="text-[10px] py-1 px-1.5 font-bold text-indigo-650 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-850 rounded transition-colors"
+                              >
+                                Изм.
+                              </button>
+                              {onDeleteTagCategory && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Вы действительно хотите удалить категорию "${cat.name}" со всеми ее тегами?`)) {
+                                      onDeleteTagCategory(cat.id);
+                                    }
+                                  }}
+                                  className="text-[10px] py-1 px-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-955/20 rounded transition-colors"
+                                >
+                                  Удал.
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Expandable tags body */}
+                        {isExpanded && !isEditing && (
+                          <div className="space-y-2 pt-1 border-t border-slate-50 dark:border-slate-800/50">
+                            {/* Tags bubble list */}
+                            <div className="flex flex-wrap gap-1">
+                              {(cat.tags || []).length === 0 ? (
+                                <span className="text-[10px] text-slate-400 italic">Теги отсутствуют</span>
+                              ) : (
+                                (cat.tags || []).map(t => (
+                                  <div
+                                    key={t}
+                                    className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded px-2 py-0.5 text-[10px] font-sans text-slate-600 dark:text-slate-350"
+                                  >
+                                    <span>#{t}</span>
+                                    {onUpdateTagCategory && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const filtered = (cat.tags || []).filter(item => item !== t);
+                                          onUpdateTagCategory(cat.id, cat.name, cat.color, filtered);
+                                        }}
+                                        className="text-slate-400 hover:text-rose-500 font-bold ml-1 text-xs shrink-0 w-3 h-3 flex items-center justify-center cursor-pointer"
+                                        title="Удалить тег"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+
+                            {/* Add inline tag form */}
+                            {onUpdateTagCategory && (
+                              <div className="pt-1 select-none">
+                                {isAddingTag ? (
+                                  <div className="flex items-center gap-1 mt-1">
+                                    <input
+                                      type="text"
+                                      placeholder="Новый тег (без пробелов)..."
+                                      value={newTagNameInput}
+                                      onChange={(e) => setNewTagNameInput(e.target.value.replace(/\s+/g, '-'))}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          const tagText = newTagNameInput.trim().replace(/#/g, '');
+                                          if (tagText) {
+                                            const updated = Array.from(new Set([...(cat.tags || []), tagText]));
+                                            onUpdateTagCategory(cat.id, cat.name, cat.color, updated);
+                                          }
+                                          setNewTagNameInput('');
+                                          setAddingTagToCatId(null);
+                                        }
+                                        if (e.key === 'Escape') {
+                                          setAddingTagToCatId(null);
+                                        }
+                                      }}
+                                      className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-0.5 text-[10px] focus:ring-1 focus:ring-indigo-500 focus:outline-none flex-1 font-sans text-slate-850 dark:text-slate-100"
+                                      autoFocus
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => setAddingTagToCatId(null)}
+                                      className="text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-slate-500"
+                                    >
+                                      Отмена
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const tagText = newTagNameInput.trim().replace(/#/g, '');
+                                        if (tagText) {
+                                          const updated = Array.from(new Set([...(cat.tags || []), tagText]));
+                                          onUpdateTagCategory(cat.id, cat.name, cat.color, updated);
+                                        }
+                                        setNewTagNameInput('');
+                                        setAddingTagToCatId(null);
+                                      }}
+                                      className="text-[10px] px-2 py-0.5 bg-indigo-600 text-white font-bold rounded"
+                                    >
+                                      ОК
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setAddingTagToCatId(cat.id);
+                                      setNewTagNameInput('');
+                                    }}
+                                    className="text-[10px] font-bold text-indigo-650 dark:text-indigo-400 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+                                  >
+                                    <Plus className="w-2.5 h-2.5" /> Добавить тег
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
