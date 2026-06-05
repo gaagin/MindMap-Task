@@ -35,13 +35,16 @@ import MobileListView from './components/MobileListView';
 import { 
   initAuth, 
   googleSignIn, 
-  logout 
+  logout,
+  db
 } from './lib/firebase';
 import { 
   saveToFirebaseDirectly, 
+  loadFromFirebaseDirectly, 
   syncWithGoogleSheets, 
   logDeletion 
 } from './lib/syncService';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 
 /**
@@ -254,6 +257,65 @@ export default function App() {
     );
     return () => unsubscribe();
   }, []);
+
+  // Keep track of latest state and unsynced counts for real-time listener to avoid resubscription on every character change
+  const stateRef = React.useRef(state);
+  stateRef.current = state;
+  
+  const unsyncedEditsCountRef = React.useRef(unsyncedEditsCount);
+  unsyncedEditsCountRef.current = unsyncedEditsCount;
+
+  // 3. Real-time Firestore snapshot synchronization for instant Desktop-to-Mobile and Mobile-To-Desktop updates
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const docRef = doc(db, 'workspaces', currentUser.uid);
+    const unsubscribe = onSnapshot(docRef, (snap) => {
+      if (!snap.exists()) return;
+      const cloudData = snap.data();
+      if (!cloudData) return;
+
+      const cloudState: WorkspaceState = {
+        folders: cloudData.folders || [],
+        projects: cloudData.projects || [],
+        nodes: cloudData.nodes || {},
+        activeProjectId: cloudData.activeProjectId || '',
+        tagCategories: cloudData.tagCategories || []
+      };
+
+      const currentState = stateRef.current;
+
+      const localCompare = {
+        folders: currentState.folders,
+        projects: currentState.projects,
+        nodes: currentState.nodes,
+        activeProjectId: currentState.activeProjectId,
+        tagCategories: currentState.tagCategories
+      };
+
+      const cloudCompare = {
+        folders: cloudState.folders,
+        projects: cloudState.projects,
+        nodes: cloudState.nodes,
+        activeProjectId: cloudState.activeProjectId,
+        tagCategories: cloudState.tagCategories
+      };
+
+      if (JSON.stringify(localCompare) !== JSON.stringify(cloudCompare)) {
+        // Only absorb incoming changes if we are not actively typing/syncing locally.
+        // This avoids typing collisions and key cursor resets when editing.
+        if (unsyncedEditsCountRef.current === 0) {
+          ignoreNextStateChangeRef.current = true;
+          setRawState(cloudState);
+          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        }
+      }
+    }, (error) => {
+      console.error('[Firebase snapshot listener error]:', error);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
 
   // 2. Local save & Automatic Firebase snapshot update upon state modifications (fully offline-first optimized)
   useEffect(() => {
