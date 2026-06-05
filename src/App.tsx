@@ -1802,7 +1802,12 @@ export default function App() {
                         onClick={async () => {
                           setAuthError(null);
                           try {
-                            await googleSignIn();
+                            const res = await googleSignIn();
+                            if (res) {
+                              setCurrentUser(res.user);
+                              setGoogleToken(res.accessToken);
+                              setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+                            }
                           } catch (err: any) {
                             const msg = err?.message || String(err);
                             console.error("Sign in failed:", err);
