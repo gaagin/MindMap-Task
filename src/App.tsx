@@ -130,6 +130,7 @@ export default function App() {
   // Load initial state
   const [state, setRawState] = useState<WorkspaceState>(() => loadWorkspace());
   const isFirstRender = React.useRef(true);
+  const ignoreNextStateChangeRef = React.useRef(false);
 
   // Intercept all state changes, update modification timestamps automatically, ensuring symmetrical sync compatibility
   const setState = (updater: WorkspaceState | ((prev: WorkspaceState) => WorkspaceState)) => {
@@ -260,6 +261,9 @@ export default function App() {
 
     if (isFirstRender.current) {
       isFirstRender.current = false;
+    } else if (ignoreNextStateChangeRef.current) {
+      // Skip incrementing unsynced edits count when the update was caused by Google Sheets sync download/merge
+      ignoreNextStateChangeRef.current = false;
     } else {
       setUnsyncedEditsCount(prev => prev + 1);
     }
@@ -287,6 +291,8 @@ export default function App() {
     try {
       const result = await syncWithGoogleSheets(token, currentWorkspace);
       if (result.success) {
+        // Correctly set block flag before state reset to prevent trigger loop
+        ignoreNextStateChangeRef.current = true;
         setRawState(result.state);
         setSyncStatus(prev => ({
           ...prev,
@@ -322,15 +328,16 @@ export default function App() {
     }
   }, [googleToken]);
 
-  // 4. Background Symmetrical Sheets Sync with 10s debounce during continuous editing states (rate-limit protection)
+  // 4. Background Symmetrical Sheets Sync with 35s debounce during continuous editing states (rate-limit protection)
+  // Only triggers background auto-sync when there are actual unsynced edits, saving Google API quota limits!
   useEffect(() => {
-    if (googleToken) {
+    if (googleToken && unsyncedEditsCount > 0) {
       const timer = setTimeout(() => {
         runSheetsSymmetricalSync(googleToken, state);
-      }, 10000);
+      }, 35000); // 35-second rate-limiting debounce
       return () => clearTimeout(timer);
     }
-  }, [state, googleToken]);
+  }, [state, googleToken, unsyncedEditsCount]);
 
   // 5. Symmetrical Sheets Sync instantly on window tab switch or pageunload (visibilitychange / pagehide)
   useEffect(() => {
