@@ -20,9 +20,10 @@ import {
   Database,
   RefreshCw,
   LogOut,
-  CheckCircle2
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
-import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory } from './types';
+import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants } from './utils';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
@@ -128,6 +129,7 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
 export default function App() {
   // Load initial state
   const [state, setRawState] = useState<WorkspaceState>(() => loadWorkspace());
+  const isFirstRender = React.useRef(true);
 
   // Intercept all state changes, update modification timestamps automatically, ensuring symmetrical sync compatibility
   const setState = (updater: WorkspaceState | ((prev: WorkspaceState) => WorkspaceState)) => {
@@ -142,6 +144,7 @@ export default function App() {
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{
     local: 'saved' | 'saving' | 'error';
     firebase: 'idle' | 'saved' | 'syncing' | 'error';
@@ -151,6 +154,28 @@ export default function App() {
     local: 'saved',
     firebase: 'idle',
     sheets: 'idle'
+  });
+
+  const [unsyncedEditsCount, setUnsyncedEditsCount] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('unsynced_edits_count');
+      return saved ? Number(saved) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('unsynced_edits_count', String(unsyncedEditsCount));
+  }, [unsyncedEditsCount]);
+
+  const [syncReport, setSyncReport] = useState<SyncReport | null>(() => {
+    try {
+      const saved = localStorage.getItem('milli_last_sync_report');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
   
   // Sidebar visibility state, persisted to prevent unexpected collapses
@@ -231,6 +256,12 @@ export default function App() {
   // 2. Local save & Automatic Firebase snapshot update upon state modifications (fully offline-first optimized)
   useEffect(() => {
     saveWorkspace(state);
+
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+    } else {
+      setUnsyncedEditsCount(prev => prev + 1);
+    }
     
     if (currentUser) {
       setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
@@ -258,8 +289,16 @@ export default function App() {
         setSyncStatus(prev => ({
           ...prev,
           sheets: 'synced',
-          lastSyncedTime: new Date().toLocaleTimeString()
+          lastSyncedTime: new Date().toLocaleTimeString() + ', ' + new Date().toLocaleDateString()
         }));
+        
+        if (result.report) {
+          setSyncReport(result.report);
+          localStorage.setItem('milli_last_sync_report', JSON.stringify(result.report));
+        }
+        
+        // Zero out progress tracking on successful symmetrical sheet consolidation
+        setUnsyncedEditsCount(0);
       } else {
         setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
       }
@@ -1404,167 +1443,26 @@ export default function App() {
               </div>
             )}
 
-            {/* Unified Hybrid Symmetrical Sync Dashboard */}
-            {!currentUser ? (
-              <button
-                id="google-signin-btn"
-                type="button"
-                onClick={async () => {
-                  try {
-                    await googleSignIn();
-                  } catch (err) {
-                    alert("Ошибка входа Google: " + err);
-                  }
-                }}
-                className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-600 hover:bg-indigo-750 text-white text-xs font-bold rounded-lg cursor-pointer transition-all shadow-xs shrink-0"
-              >
-                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                  <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.414 0-6.19-2.77-6.19-6.19 0-3.418 2.776-6.19 6.19-6.19 1.483 0 2.844.52 3.917 1.391l3.056-3.056C19.11 2.8 15.86 1.332 12.24 1.332 6.136 1.332 1.2 6.268 1.2 12.37s4.936 11.04 11.04 11.04c6.264 0 10.8-4.4 10.8-10.74 0-.74-.065-1.3-.18-1.85H12.24z"/>
-                </svg>
-                <span className="hidden sm:inline">Синхронизация</span>
-              </button>
-            ) : (
-              <div className="relative">
-                <button
-                  id="sync-status-indicator-btn"
-                  type="button"
-                  onClick={() => setIsSyncMenuOpen(!isSyncMenuOpen)}
-                  className={`flex items-center gap-1.5 py-1.5 px-2.5 border rounded-lg text-xs font-bold cursor-pointer transition-all shrink-0 ${
-                    isSyncingSheets || syncStatus.firebase === 'syncing'
-                      ? 'border-indigo-400 bg-indigo-50/50 text-indigo-700 animate-pulse'
-                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-750 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                  }`}
-                  title="Показать статус гибридной синхронизации"
-                >
-                  <Database className="w-3.5 h-3.5 text-emerald-500" />
-                  <span className="hidden sm:inline text-slate-700 dark:text-slate-300">Синхронизация</span>
-                  {(isSyncingSheets || syncStatus.firebase === 'syncing') ? (
-                    <RefreshCw className="w-3 h-3 animate-spin text-indigo-500" />
-                  ) : (
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  )}
-                </button>
-
-                {isSyncMenuOpen && (
-                  <div className="absolute right-0 top-11 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl p-4 w-72 z-50 text-xs animate-in fade-in-50 duration-100">
-                    <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100 dark:border-slate-800">
-                      <span className="font-bold text-slate-800 dark:text-slate-100">Статус Sync Manager</span>
-                      <button
-                        onClick={() => setIsSyncMenuOpen(false)}
-                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    {/* Profile row */}
-                    <div className="flex items-center gap-2 mb-3 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg">
-                      {currentUser.photoURL ? (
-                        <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="User Avatar" className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700" />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-705 dark:text-indigo-300 flex items-center justify-center font-bold">
-                          {currentUser.email?.[0].toUpperCase() || 'U'}
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-750 dark:text-slate-200 truncate">{currentUser.displayName || 'Пользователь Google'}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{currentUser.email}</p>
-                      </div>
-                    </div>
-
-                    {/* Status tiers */}
-                    <div className="space-y-2 mb-4 px-0.5">
-                      {/* LocalStorage Tier */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400 flex items-center gap-1.5"><Layers className="w-3.5 h-3.5 text-blue-500" /> Локальный буфер (L1)</span>
-                        <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                          Активно <CheckCircle2 className="w-3 h-3" />
-                        </span>
-                      </div>
-
-                      {/* Cloud Firestore Snap Tier */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400 flex items-center gap-1.5"><Cloud className="w-3.5 h-3.5 text-sky-505" /> Облачный снимок (L2)</span>
-                        <span>
-                          {syncStatus.firebase === 'saved' && (
-                            <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                              Сохранено <CheckCircle2 className="w-3 h-3" />
-                            </span>
-                          )}
-                          {syncStatus.firebase === 'syncing' && (
-                            <span className="text-indigo-500 flex items-center gap-1 animate-pulse font-semibold">
-                              Синхронизация... <RefreshCw className="w-3 h-3 animate-spin" />
-                            </span>
-                          )}
-                          {syncStatus.firebase === 'error' && (
-                            <span className="font-semibold text-rose-500">Ошибка</span>
-                          )}
-                          {syncStatus.firebase === 'idle' && (
-                            <span className="text-slate-400">He подключено</span>
-                          )}
-                        </span>
-                      </div>
-
-                      {/* Google Sheets Merged Tier */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400 flex items-center gap-1.5">
-                          <svg className="w-3.5 h-3.5 fill-current text-emerald-500" viewBox="0 0 24 24">
-                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3.5 14h-7V7h7v10z"/>
-                          </svg>
-                          Google Sheets (L3)
-                        </span>
-                        <span>
-                          {syncStatus.sheets === 'synced' && (
-                            <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1" title={syncStatus.lastSyncedTime ? `Время синхронизации: ${syncStatus.lastSyncedTime}` : undefined}>
-                              Связано <CheckCircle2 className="w-3 h-3" />
-                            </span>
-                          )}
-                          {syncStatus.sheets === 'syncing' && (
-                            <span className="text-indigo-500 flex items-center gap-1 animate-pulse font-semibold">
-                              Связывание... <RefreshCw className="w-3 h-3 animate-spin" />
-                            </span>
-                          )}
-                          {syncStatus.sheets === 'error' && (
-                            <span className="font-semibold text-rose-500">Ошибка</span>
-                          )}
-                          {syncStatus.sheets === 'idle' && (
-                            <span className="text-slate-400">He связано</span>
-                          )}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Manual trigger */}
-                    {googleToken && (
-                      <button
-                        type="button"
-                        disabled={isSyncingSheets}
-                        onClick={() => runSheetsSymmetricalSync(googleToken, state)}
-                        className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/60 text-white text-xs font-bold rounded-lg cursor-pointer transition-all shadow-xs mb-2.5"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-                        <span>Синхронизировать сейчас</span>
-                      </button>
-                    )}
-
-                    {/* Sign out */}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (confirm('Вы уверены, что хотите выйти из аккаунта Google? Это временно отключит облачное сохранение.')) {
-                          await logout();
-                          setIsSyncMenuOpen(false);
-                        }
-                      }}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 border border-slate-200 dark:border-slate-800 text-slate-450 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-semibold rounded-lg cursor-pointer transition-all hover:bg-slate-100/50 dark:hover:bg-slate-800"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Выйти из аккаунта</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Symmetrical Sync and Backup Trigger Button */}
+            <button
+              id="milli-sync-dashboard-btn"
+              type="button"
+              onClick={() => setIsSyncMenuOpen(true)}
+              className={`flex items-center gap-1.5 py-1.5 px-3 border rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:scale-[1.01] shrink-0 ${
+                isSyncingSheets || syncStatus.firebase === 'syncing'
+                  ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+              }`}
+              title="Открыть панель резервного копирования и синхронизации"
+            >
+              <Database className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span className="hidden sm:inline">Резервная копия и синхронизация</span>
+              {currentUser ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+              )}
+            </button>
 
             {/* Dark light theme toggler */}
             <button
@@ -1801,6 +1699,332 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Symmetrical Sync & Backup Dashboard Full Modal Backdrop Overlay */}
+      {isSyncMenuOpen && (() => {
+        const getQueuedDeletionsCount = () => {
+          try {
+            const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
+            return JSON.parse(listJson).length;
+          } catch {
+            return 0;
+          }
+        };
+        
+        const totalItemsCount = state.folders.length + 
+          state.projects.length + 
+          Object.values(state.nodes).flat().length + 
+          (state.tagCategories || []).length;
+
+        return (
+          <div 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[999] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+            onClick={() => setIsSyncMenuOpen(false)}
+          >
+            <div 
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-4 max-h-[92vh] relative text-left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="border-b border-slate-150 dark:border-slate-850 px-6 py-4.5 flex items-center justify-between bg-slate-50/60 dark:bg-slate-900/60">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl shrink-0">
+                    <Cloud className="w-5 h-5 text-indigo-650 dark:text-indigo-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-extrabold text-slate-850 dark:text-slate-100 leading-tight">
+                      Резервное копирование и дельта-синхронизация
+                    </h3>
+                    <p className="text-[11px] text-slate-450 dark:text-slate-400 mt-0.5 leading-snug">
+                      Взаимный обмен изменениями напрямую с вашей личной Google Таблицей
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSyncMenuOpen(false)}
+                  className="p-1 px-2 py-1 text-slate-450 hover:text-slate-755 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all text-xs font-semibold"
+                >
+                  Закрыть
+                </button>
+              </div>
+
+              {/* Modal Content Scroll */}
+              <div className="p-6 overflow-y-auto space-y-5.5 text-xs text-slate-700 dark:text-slate-300">
+                
+                {/* Connection status section */}
+                <div className="bg-slate-50 dark:bg-slate-850 border border-slate-200/60 dark:border-slate-800/80 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-455 uppercase tracking-wider block mb-1">
+                      СТАТУС ПОДКЛЮЧЕНИЯ:
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${currentUser ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500 animate-ping'}`} />
+                      <span className="font-extrabold text-xs text-slate-800 dark:text-slate-150">
+                        {currentUser ? 'Авторизован (Облачная синхронизация)' : 'Не авторизован (Локальный буфер)'}
+                      </span>
+                    </div>
+                    
+                    {currentUser && (
+                      <div className="mt-3 flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-900/50 border border-slate-150 dark:border-slate-800/50 rounded-lg max-w-xs">
+                        {currentUser.photoURL ? (
+                          <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-slate-200" />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 font-bold flex items-center justify-center text-[10px] text-indigo-700 dark:text-indigo-400">
+                            {currentUser.email?.[0].toUpperCase() || 'U'}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-705 dark:text-slate-200 truncate leading-none text-[11px]">{currentUser.displayName || 'Пользователь Google'}</p>
+                          <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">{currentUser.email}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    {currentUser ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (confirm('Вы уверены, что хотите выйти из учетной записи Google? Это приостановит синхронизацию.')) {
+                            await logout();
+                          }
+                        }}
+                        className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-755 text-slate-600 dark:text-slate-305 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all hover:scale-[1.01]"
+                      >
+                        <LogOut className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Выйти</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setAuthError(null);
+                          try {
+                            await googleSignIn();
+                          } catch (err: any) {
+                            const msg = err?.message || String(err);
+                            console.error("Sign in failed:", err);
+                            if (msg.includes("unauthorized-domain") || (err?.code && err.code.includes("unauthorized-domain"))) {
+                              setAuthError("unauthorized-domain");
+                            } else {
+                              setAuthError(msg);
+                            }
+                          }
+                        }}
+                        className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition-all hover:scale-[1.01] shadow-xs shrink-0"
+                      >
+                        <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                          <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.414 0-6.19-2.77-6.19-6.19 0-3.418 2.776-6.19 6.19-6.19 1.483 0 2.844.52 3.917 1.391l3.056-3.056C19.11 2.8 15.86 1.332 12.24 1.332 6.136 1.332 1.2 6.268 1.2 12.37s4.936 11.04 11.04 11.04c6.264 0 10.8-4.4 10.8-10.74 0-.74-.065-1.3-.18-1.85H12.24z"/>
+                        </svg>
+                        <span>Авторизоваться</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Unauthorized Domain Error Advice */}
+                {authError && (
+                  <div className="bg-red-50 dark:bg-rose-950/20 border border-red-200 dark:border-red-900 shadow-sm rounded-xl p-4 text-xs space-y-3">
+                    <div className="flex items-center gap-1.5 text-red-650 dark:text-red-400 font-bold">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+                      <span>Ошибка авторизации (Unauthorized Domain)</span>
+                    </div>
+                    
+                    {authError === 'unauthorized-domain' ? (
+                      <div className="space-y-3 text-slate-600 dark:text-slate-350">
+                        <p className="leading-relaxed">
+                          Домен этой страницы не добавлен в список разрешённых для OAuth-авторизации в настройках вашего Firebase-проекта.
+                        </p>
+                        
+                        <div className="bg-white dark:bg-slate-900 border border-red-105 dark:border-red-950 p-3 rounded-lg space-y-1.5">
+                          <p className="font-bold text-slate-700 dark:text-slate-200">Как исправить за 1 минуту:</p>
+                          <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400 text-[11px]">
+                            <li>Перейдите в <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-650 dark:text-indigo-400 underline font-semibold">Консоль Firebase</a>.</li>
+                            <li>Откройте проект <b>"Default Gemini Project"</b>.</li>
+                            <li>Перейдите в раздел <b>Authentication</b> → вкладка <b>Settings</b> → <b>Authorized domains</b> (Разрешенные домены).</li>
+                            <li>Нажмите кнопку <b>Add domain</b> и добавьте этот домен:</li>
+                          </ol>
+                          <div className="mt-2 flex items-center justify-between bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded border border-slate-200 dark:border-slate-800 font-mono text-[10px]">
+                            <span className="select-all truncate">{window.location.hostname}</span>
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(window.location.hostname);
+                                alert('Скопировано!');
+                              }}
+                              className="text-indigo-600 dark:text-indigo-455 hover:underline cursor-pointer ml-1 text-[9px] font-bold"
+                            >
+                              Копировать
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-red-655 dark:text-red-400 leading-relaxed font-semibold">
+                        {authError}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Symmetrical Sync explainer section */}
+                <div className="bg-indigo-50/45 dark:bg-indigo-950/15 border border-indigo-100/50 dark:border-indigo-900/35 p-4 rounded-xl space-y-2">
+                  <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 leading-none">
+                    <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                    Как работает дельта-синхронизация?
+                  </h4>
+                  <ul className="list-disc list-inside space-y-1.5 text-slate-550 dark:text-slate-400 leading-relaxed font-normal text-[11px]">
+                    <li>
+                      <span className="font-semibold text-slate-700 dark:text-slate-350">Импортируются и экспортируются все данные</span>: папки, проекты, задачи и категории тегов на основе точных временных меток изменений.
+                    </li>
+                    <li>
+                      <span className="font-semibold text-slate-700 dark:text-slate-350">Двусторонний обмен</span>: любые новые элементы или корректировки (включая изменения на смартфонах или ПК) будут синхронизированы в обе стороны.
+                    </li>
+                    <li>
+                      <span className="font-semibold text-slate-700 dark:text-slate-350">Безопасное удаление</span>: ветви, задачи или категории, удаленные вами локально, автоматически списываются из облака при сеансе связи.
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Bento Cards Metrics */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-50/80 dark:bg-slate-850 border border-slate-200/50 dark:border-slate-855 p-4 rounded-xl flex flex-col items-center justify-center text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                      ВСЕГО ОПЕРАЦИЙ В ПРИЛОЖЕНИИ
+                    </span>
+                    <span className="text-3xl font-extrabold text-indigo-650 dark:text-indigo-400 font-mono">
+                      {totalItemsCount}
+                    </span>
+                    <span className="text-[9px] text-slate-400 mt-1">
+                      общая емкость структуры
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50/80 dark:bg-slate-850 border border-slate-200/50 dark:border-slate-855 p-4 rounded-xl flex flex-col items-center justify-center text-center">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                      ИЗМЕНЕНИЙ В ОЧЕРЕДИ
+                    </span>
+                    <span className="text-3xl font-extrabold text-amber-500 font-mono">
+                      {unsyncedEditsCount + getQueuedDeletionsCount()}
+                    </span>
+                    <span className="text-[9px] text-slate-400 mt-1">
+                      редактирований: {unsyncedEditsCount}, удаления: {getQueuedDeletionsCount()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Large Sync trigger button */}
+                <div className="flex flex-col items-center gap-3 py-4 border-y border-slate-100 dark:border-slate-800">
+                  {googleToken ? (
+                    <button
+                      type="button"
+                      disabled={isSyncingSheets}
+                      onClick={() => runSheetsSymmetricalSync(googleToken, state)}
+                      className="w-full max-w-md bg-emerald-400 hover:bg-emerald-500 disabled:bg-emerald-400/55 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-slate-900 font-extrabold text-xs tracking-wider uppercase py-3.5 px-6 rounded-xl border border-emerald-400 dark:border-emerald-500 cursor-pointer shadow-md transition-all hover:scale-[1.015] flex items-center justify-center gap-2"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
+                      <span>СИНХРОНИЗИРОВАТЬ С GOOGLE SHEETS</span>
+                    </button>
+                  ) : (
+                    <div className="w-full max-w-md text-center p-3 border border-dashed border-slate-205 dark:border-slate-800 text-slate-400 rounded-xl bg-slate-50/30 italic">
+                      Авторизуйтесь, чтобы запустить слияние с Google Sheets
+                    </div>
+                  )}
+
+                  {syncStatus.sheets === 'synced' && syncStatus.lastSyncedTime && (
+                    <div className="text-[10px] text-slate-455 dark:text-slate-400 italic">
+                      Последняя синхронизация: {syncStatus.lastSyncedTime}
+                    </div>
+                  )}
+
+                  {isSyncingSheets && (
+                    <div className="text-[10px] text-indigo-505 font-bold animate-pulse">
+                      Слияние изменений структуры дерева... Пожалуйста, подождите.
+                    </div>
+                  )}
+                </div>
+
+                {/* Sync Report detail lists */}
+                <div className="space-y-3.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                    ОТЧЕТ ПО СИНХРОНИЗАЦИИ ИЗМЕНЕНИЙ:
+                  </span>
+
+                  {syncReport ? (
+                    <div className="space-y-4">
+                      {/* Summary row */}
+                      <div className="grid grid-cols-4 gap-2 bg-slate-50/50 dark:bg-slate-950/25 p-3 rounded-xl border border-slate-150 dark:border-slate-850 text-center text-xs font-mono font-bold">
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Выгружено</span>
+                          <span className="text-emerald-550 dark:text-emerald-400">{syncReport.uploadedCount}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Закачано</span>
+                          <span className="text-indigo-600 dark:text-indigo-400">{syncReport.downloadedCount}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Удалено в обл.</span>
+                          <span className="text-rose-600 dark:text-rose-450">{syncReport.deletedTableCount}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Удалено лок.</span>
+                          <span className="text-amber-600 dark:text-amber-500">{syncReport.deletedLocallyCount}</span>
+                        </div>
+                      </div>
+
+                      {/* Detailed rows */}
+                      <div className="border border-slate-150 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+                        <div className="px-3.5 py-1.5 bg-slate-50 dark:bg-slate-850 font-bold text-slate-400 uppercase tracking-wider text-[8px]">
+                          ДЕТАЛИЗАЦИЯ ИЗМЕНЕНИЙ:
+                        </div>
+                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-650 dark:text-slate-350">Папки (Folders):</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.foldersAdded} доб. / {syncReport.foldersUpdated} обн.</span>
+                        </div>
+                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-650 dark:text-slate-350">Проекты (Projects):</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.projectsAdded} доб. / {syncReport.projectsUpdated} обн.</span>
+                        </div>
+                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-650 dark:text-slate-350">Задачи / Ветки (Nodes):</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.nodesAdded} доб. / {syncReport.nodesUpdated} обн.</span>
+                        </div>
+                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-650 dark:text-slate-350">Категории тегов (Tag Categories):</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.tagCategoriesAdded} r. / {syncReport.tagCategoriesUpdated} o.</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 border border-dashed border-slate-155 dark:border-slate-800 rounded-xl text-slate-400 italic bg-slate-50/20">
+                      Выполните первую синхронизацию, чтобы сформировать отчет по изменениям.
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Modal Footer (direct sheet link) */}
+              {localStorage.getItem('google_sheets_sync_file_id') && (
+                <div className="border-t border-slate-150 dark:border-slate-850 p-4.5 bg-slate-50 dark:bg-slate-900/60 flex items-center shrink-0">
+                  <a
+                    href={`https://docs.google.com/spreadsheets/d/${localStorage.getItem('google_sheets_sync_file_id')}/edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-indigo-655 dark:text-indigo-400 hover:underline font-bold text-[11px]"
+                  >
+                    <svg className="w-4 h-4 fill-current text-emerald-500 shrink-0" viewBox="0 0 24 24">
+                      <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3.5 14h-7V7h7v10z"/>
+                    </svg>
+                    <span>Открыть личную таблицу MindMap_Sync_Workbook ↗</span>
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

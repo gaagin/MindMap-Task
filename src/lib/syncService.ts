@@ -1,6 +1,6 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import { WorkspaceState, TaskNode, Folder, Project, TagCategory } from '../types';
+import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport } from '../types';
 
 // Registry for Deletion tracking to synchronize with Google Sheets Deletions tab
 export interface DeletionRecord {
@@ -225,7 +225,7 @@ async function writeHeaders(spreadsheetId: string, accessToken: string) {
 export async function syncWithGoogleSheets(
   accessToken: string,
   localState: WorkspaceState
-): Promise<{ state: WorkspaceState; success: boolean }> {
+): Promise<{ state: WorkspaceState; success: boolean; report?: SyncReport }> {
   try {
     let fileId = await findSpreadsheet(accessToken);
     if (!fileId) {
@@ -351,6 +351,89 @@ export async function syncWithGoogleSheets(
     // Filter helper to drop deleted items from arrays
     const isDeleted = (type: string, id: string) => {
       return mergedDeletions.some(d => d.type === type && d.id === id);
+    };
+
+    // ------------------ COMPUTE SYNC REPORT METRICS ------------------
+    const deletedTableCount = sheetFolders.filter(f => isDeleted('folder', f.id)).length +
+                              sheetProjects.filter(p => isDeleted('project', p.id)).length +
+                              sheetNodes.filter(n => isDeleted('node', n.id)).length +
+                              sheetTagCats.filter(t => isDeleted('tagCategory', t.id)).length;
+
+    const deletedLocallyCount = localState.folders.filter(f => isDeleted('folder', f.id)).length +
+                               localState.projects.filter(p => isDeleted('project', p.id)).length +
+                               Object.values(localState.nodes).flat().filter(n => isDeleted('node', n.id)).length +
+                               (localState.tagCategories || []).filter(t => isDeleted('tagCategory', t.id)).length;
+
+    // Folders change metrics
+    const localFoldersAdded = localState.folders.filter(f => !sheetFolders.some(sf => sf.id === f.id) && !isDeleted('folder', f.id)).length;
+    const localFoldersUpdated = localState.folders.filter(f => {
+      const sf = sheetFolders.find(x => x.id === f.id);
+      return sf && new Date(f.updatedAt || 0).getTime() > new Date(sf.updatedAt || 0).getTime() && !isDeleted('folder', f.id);
+    }).length;
+
+    const foldersAdded = sheetFolders.filter(sf => !localState.folders.some(f => f.id === sf.id) && !isDeleted('folder', sf.id)).length;
+    const foldersUpdated = sheetFolders.filter(sf => {
+      const lf = localState.folders.find(x => x.id === sf.id);
+      return lf && new Date(sf.updatedAt || 0).getTime() > new Date(lf.updatedAt || 0).getTime() && !isDeleted('folder', sf.id);
+    }).length;
+
+    // Projects change metrics
+    const localProjectsAdded = localState.projects.filter(p => !sheetProjects.some(sp => sp.id === p.id) && !isDeleted('project', p.id)).length;
+    const localProjectsUpdated = localState.projects.filter(p => {
+      const sp = sheetProjects.find(x => x.id === p.id);
+      return sp && new Date(p.updatedAt || 0).getTime() > new Date(sp.updatedAt || 0).getTime() && !isDeleted('project', p.id);
+    }).length;
+
+    const projectsAdded = sheetProjects.filter(sp => !localState.projects.some(p => p.id === sp.id) && !isDeleted('project', sp.id)).length;
+    const projectsUpdated = sheetProjects.filter(sp => {
+      const lp = localState.projects.find(x => x.id === sp.id);
+      return lp && new Date(sp.updatedAt || 0).getTime() > new Date(lp.updatedAt || 0).getTime() && !isDeleted('project', sp.id);
+    }).length;
+
+    // Nodes change metrics
+    const localNodes = Object.values(localState.nodes).flat();
+    const localNodesAdded = localNodes.filter(n => !sheetNodes.some(sn => sn.id === n.id) && !isDeleted('node', n.id)).length;
+    const localNodesUpdated = localNodes.filter(n => {
+      const sn = sheetNodes.find(x => x.id === n.id);
+      return sn && new Date(n.updatedAt || 0).getTime() > new Date(sn.updatedAt || 0).getTime() && !isDeleted('node', n.id);
+    }).length;
+
+    const nodesAdded = sheetNodes.filter(sn => !localNodes.some(n => n.id === sn.id) && !isDeleted('node', sn.id)).length;
+    const nodesUpdated = sheetNodes.filter(sn => {
+      const ln = localNodes.find(x => x.id === sn.id);
+      return ln && new Date(sn.updatedAt || 0).getTime() > new Date(ln.updatedAt || 0).getTime() && !isDeleted('node', sn.id);
+    }).length;
+
+    // Tag Categories metrics
+    const localTagCats = localState.tagCategories || [];
+    const localTagCatsAdded = localTagCats.filter(t => !sheetTagCats.some(st => st.id === t.id) && !isDeleted('tagCategory', t.id)).length;
+    const localTagCatsUpdated = localTagCats.filter(t => {
+      const st = sheetTagCats.find(x => x.id === t.id);
+      return st && new Date(t.updatedAt || 0).getTime() > new Date(st.updatedAt || 0).getTime() && !isDeleted('tagCategory', t.id);
+    }).length;
+
+    const tagCategoriesAdded = sheetTagCats.filter(st => !localTagCats.some(t => t.id === st.id) && !isDeleted('tagCategory', st.id)).length;
+    const tagCategoriesUpdated = sheetTagCats.filter(st => {
+      const lt = localTagCats.find(x => x.id === st.id);
+      return lt && new Date(st.updatedAt || 0).getTime() > new Date(lt.updatedAt || 0).getTime() && !isDeleted('tagCategory', st.id);
+    }).length;
+
+    const uploadedCount = localFoldersAdded + localFoldersUpdated + localProjectsAdded + localProjectsUpdated + localNodesAdded + localNodesUpdated + localTagCatsAdded + localTagCatsUpdated;
+    const downloadedCount = foldersAdded + foldersUpdated + projectsAdded + projectsUpdated + nodesAdded + nodesUpdated + tagCategoriesAdded + tagCategoriesUpdated;
+
+    const syncReportData: SyncReport = {
+      uploadedCount,
+      downloadedCount,
+      deletedTableCount,
+      deletedLocallyCount,
+      foldersAdded,
+      foldersUpdated,
+      projectsAdded,
+      projectsUpdated,
+      nodesAdded,
+      nodesUpdated,
+      tagCategoriesAdded,
+      tagCategoriesUpdated
     };
 
     // 3. Symmetrical Merge of folders
@@ -567,7 +650,7 @@ export async function syncWithGoogleSheets(
     clearLocalDeletions(mergedDeletions);
 
     console.log('Bilateral Symmetrical Google Sheets Sync Completed Successfully!');
-    return { state: mergedState, success: true };
+    return { state: mergedState, success: true, report: syncReportData };
   } catch (error) {
     console.error('Bilateral Symmetrical Sync Error:', error);
     return { state: localState, success: false };

@@ -62,3 +62,19 @@ export interface WorkspaceState {
   activeProjectId: string | null;
   tagCategories?: TagCategory[];
 }
+
+export interface SyncReport {
+  uploadedCount: number;
+  downloadedCount: number;
+  deletedTableCount: number;
+  deletedLocallyCount: number;
+  foldersAdded: number;
+  foldersUpdated: number;
+  projectsAdded: number;
+  projectsUpdated: number;
+  nodesAdded: number;
+  nodesUpdated: number;
+  tagCategoriesAdded: number;
+  tagCategoriesUpdated: number;
+}
+
