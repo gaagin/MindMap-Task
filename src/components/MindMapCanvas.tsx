@@ -403,18 +403,15 @@ export default function MindMapCanvas({
     const draggingNode = nodes.find(n => n.id === draggingId);
     if (!draggingNode) return undefined;
 
-    // First attempt: Check for hover/overlap with regular non-container task nodes
+    // First attempt: Check for hover/overlap with regular non-container task nodes (containers can also overlap and snap here)
     const normalNodeOverlap = visibleNodes.find(otherNode => {
       if (otherNode.id === draggingId) return false;
       if (isDescendantOrSelf(otherNode.id, draggingId, nodes)) return false;
       if (otherNode.isContainer) return false;
 
-      if (!draggingNode.isContainer) {
-        const dx = Math.abs(newX - otherNode.x);
-        const dy = Math.abs(newY - otherNode.y);
-        return dx < 120 && dy < 75;
-      }
-      return false;
+      const dx = Math.abs(newX - otherNode.x);
+      const dy = Math.abs(newY - otherNode.y);
+      return dx < 120 && dy < 75;
     });
 
     if (normalNodeOverlap) return normalNodeOverlap;
@@ -1431,7 +1428,7 @@ export default function MindMapCanvas({
       const parent = visibleNodes.find(p => p.id === node.parentId);
       return { child: node, parent };
     })
-    .filter(conn => conn.parent !== undefined && !conn.parent.isContainer) as { child: TaskNode; parent: TaskNode }[];
+    .filter(conn => conn.parent !== undefined) as { child: TaskNode; parent: TaskNode }[];
 
   return (
     <div 
@@ -1731,6 +1728,19 @@ export default function MindMapCanvas({
                   
                   {/* Container Action Buttons */}
                   <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    {/* Add child task/branch inside container */}
+                    {!node.collapsed && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddChildNode(node.id);
+                        }}
+                        title="Добавить задачу внутрь контейнера"
+                        className="p-1 rounded-md text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-350 hover:bg-emerald-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     {/* Focus Mode toggle */}
                     <button
                       onClick={(e) => {

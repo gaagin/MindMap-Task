@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Workspace": {
+      "title": "Workspace snapshot",
+      "description": "Entire user workspace state snapshot including folders, projects, nodes, and tag categories",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner user ID"
+        },
+        "folders": {
+          "type": "array",
+          "description": "List of folders"
+        },
+        "projects": {
+          "type": "array",
+          "description": "List of projects"
+        },
+        "nodes": {
+          "type": "object",
+          "description": "Map of project IDs to task nodes"
+        },
+        "tagCategories": {
+          "type": "array",
+          "description": "List of tags categories"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last local updates"
+        }
+      },
+      "required": ["userId", "folders", "projects", "nodes", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/workspaces/{userId}": {
+      "schema": "Workspace",
+      "description": "Stores user workspace snapshot"
+    }
+  }
+}

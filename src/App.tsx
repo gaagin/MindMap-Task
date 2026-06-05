@@ -15,9 +15,14 @@ import {
   Kanban,
   Network,
   Smartphone,
-  ChevronRight
+  ChevronRight,
+  Cloud,
+  Database,
+  RefreshCw,
+  LogOut,
+  CheckCircle2
 } from 'lucide-react';
-import { WorkspaceState, TaskNode, Folder, Project, Priority } from './types';
+import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants } from './utils';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
@@ -25,9 +30,128 @@ import TaskDetailsPanel from './components/TaskDetailsPanel';
 import KanbanView from './components/KanbanView';
 import MobileListView from './components/MobileListView';
 
+// Import Google Sheets & Firebase Auth systems
+import { 
+  initAuth, 
+  googleSignIn, 
+  logout 
+} from './lib/firebase';
+import { 
+  saveToFirebaseDirectly, 
+  syncWithGoogleSheets, 
+  logDeletion 
+} from './lib/syncService';
+import { User } from 'firebase/auth';
+
+/**
+ * Automatically computes precisely what entities were changed and stamps them with updatedAt.
+ */
+function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): WorkspaceState {
+  const now = new Date().toISOString();
+
+  // 1. Folders
+  const enrichedFolders = next.folders.map(nf => {
+    const pf = prev.folders.find(f => f.id === nf.id);
+    if (!pf || pf.name !== nf.name || pf.parentId !== nf.parentId) {
+      return { ...nf, updatedAt: now };
+    }
+    return nf;
+  });
+
+  // 2. Projects
+  const enrichedProjects = next.projects.map(np => {
+    const pp = prev.projects.find(p => p.id === np.id);
+    if (!pp || pp.name !== np.name || pp.folderId !== np.folderId) {
+      return { ...np, updatedAt: now };
+    }
+    return np;
+  });
+
+  // 3. Nodes
+  const enrichedNodes: Record<string, TaskNode[]> = {};
+  for (const pid of Object.keys(next.nodes)) {
+    const nextArr = next.nodes[pid] || [];
+    const prevArr = prev.nodes[pid] || [];
+    enrichedNodes[pid] = nextArr.map(nn => {
+      const pn = prevArr.find(n => n.id === nn.id) || 
+                 Object.values(prev.nodes).flat().find(n => n.id === nn.id);
+      
+      if (!pn) {
+        return { ...nn, updatedAt: now };
+      }
+      
+      const changed = 
+        pn.text !== nn.text ||
+        pn.x !== nn.x ||
+        pn.y !== nn.y ||
+        pn.parentId !== nn.parentId ||
+        pn.priority !== nn.priority ||
+        pn.completed !== nn.completed ||
+        pn.notes !== nn.notes ||
+        pn.color !== nn.color ||
+        pn.collapsed !== nn.collapsed ||
+        pn.isCardCollapsed !== nn.isCardCollapsed ||
+        pn.dueDate !== nn.dueDate ||
+        pn.progress !== nn.progress ||
+        pn.isFloating !== nn.isFloating ||
+        pn.isContainer !== nn.isContainer ||
+        pn.width !== nn.width ||
+        pn.height !== nn.height ||
+        JSON.stringify(pn.files) !== JSON.stringify(nn.files) ||
+        JSON.stringify(pn.tags) !== JSON.stringify(nn.tags);
+
+      if (changed) {
+        return { ...nn, updatedAt: now };
+      }
+      return nn;
+    });
+  }
+
+  // 4. TagCategories
+  const enrichedTagCats = (next.tagCategories || []).map(nc => {
+    const pc = (prev.tagCategories || []).find(c => c.id === nc.id);
+    if (!pc || pc.name !== nc.name || pc.color !== nc.color || JSON.stringify(pc.tags) !== JSON.stringify(nc.tags)) {
+      return { ...nc, updatedAt: now };
+    }
+    return nc;
+  });
+
+  return {
+    ...next,
+    folders: enrichedFolders,
+    projects: enrichedProjects,
+    nodes: enrichedNodes,
+    tagCategories: enrichedTagCats
+  };
+}
+
 export default function App() {
   // Load initial state
-  const [state, setState] = useState<WorkspaceState>(() => loadWorkspace());
+  const [state, setRawState] = useState<WorkspaceState>(() => loadWorkspace());
+
+  // Intercept all state changes, update modification timestamps automatically, ensuring symmetrical sync compatibility
+  const setState = (updater: WorkspaceState | ((prev: WorkspaceState) => WorkspaceState)) => {
+    setRawState(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return enrichStateWithTimestamps(prev, next);
+    });
+  };
+
+  // Google Authentication & Symmetrical Sync statuses
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [isSyncingSheets, setIsSyncingSheets] = useState(false);
+  const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{
+    local: 'saved' | 'saving' | 'error';
+    firebase: 'idle' | 'saved' | 'syncing' | 'error';
+    sheets: 'idle' | 'synced' | 'syncing' | 'error';
+    lastSyncedTime?: string;
+  }>({
+    local: 'saved',
+    firebase: 'idle',
+    sheets: 'idle'
+  });
   
   // Sidebar visibility state, persisted to prevent unexpected collapses
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -87,10 +211,105 @@ export default function App() {
   // Simple Undo/Redo stack for nodes (for active safety)
   const [undoStack, setUndoStack] = useState<Record<string, TaskNode[][]>>({});
 
-  // Sync state changes with localStorage auto-saving
+  // 1. Firebase Auth listener registration
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user, token) => {
+        setCurrentUser(user);
+        setGoogleToken(token);
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+      },
+      () => {
+        setCurrentUser(null);
+        setGoogleToken(null);
+        setSyncStatus(prev => ({ ...prev, firebase: 'idle', sheets: 'idle' }));
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Local save & Automatic Firebase snapshot update upon state modifications (fully offline-first optimized)
   useEffect(() => {
     saveWorkspace(state);
-  }, [state]);
+    
+    if (currentUser) {
+      setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+      const timer = setTimeout(async () => {
+        const success = await saveToFirebaseDirectly(currentUser.uid, state);
+        setSyncStatus(prev => ({
+          ...prev,
+          firebase: success ? 'saved' : 'error'
+        }));
+      }, 1500); // 1.5s snapshot rate-limiting debounce
+      return () => clearTimeout(timer);
+    }
+  }, [state, currentUser]);
+
+  // Symmetrical Google Sheets merge trigger method
+  const runSheetsSymmetricalSync = async (token: string, currentWorkspace: WorkspaceState) => {
+    if (isSyncingSheets) return;
+    setIsSyncingSheets(true);
+    setSyncStatus(prev => ({ ...prev, sheets: 'syncing' }));
+
+    try {
+      const result = await syncWithGoogleSheets(token, currentWorkspace);
+      if (result.success) {
+        setRawState(result.state);
+        setSyncStatus(prev => ({
+          ...prev,
+          sheets: 'synced',
+          lastSyncedTime: new Date().toLocaleTimeString()
+        }));
+      } else {
+        setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+      }
+    } catch (e) {
+      console.error('Error running symmetrical sheets sync:', e);
+      setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+    } finally {
+      setIsSyncingSheets(false);
+    }
+  };
+
+  // 3. Auto Symmetrical Google Sheets merge on startup / login auth
+  useEffect(() => {
+    if (googleToken) {
+      runSheetsSymmetricalSync(googleToken, state);
+    }
+  }, [googleToken]);
+
+  // 4. Background Symmetrical Sheets Sync with 10s debounce during continuous editing states (rate-limit protection)
+  useEffect(() => {
+    if (googleToken) {
+      const timer = setTimeout(() => {
+        runSheetsSymmetricalSync(googleToken, state);
+      }, 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [state, googleToken]);
+
+  // 5. Symmetrical Sheets Sync instantly on window tab switch or pageunload (visibilitychange / pagehide)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && googleToken) {
+        syncWithGoogleSheets(googleToken, state);
+      }
+    };
+
+    const handlePageHide = () => {
+      if (googleToken) {
+        syncWithGoogleSheets(googleToken, state);
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [googleToken, state]);
 
   // Handle media/dark mode class on body element
   useEffect(() => {
@@ -191,6 +410,7 @@ export default function App() {
   };
 
   const handleDeleteFolder = (id: string) => {
+    logDeletion('folder', id);
     setState(prev => {
       // Subfolders and projects attached to deleted folder are unlinked/moved to root parent
       const subFolders = prev.folders.map(f => f.parentId === id ? { ...f, parentId: null } : f);
@@ -258,6 +478,11 @@ export default function App() {
   };
 
   const handleDeleteProject = (id: string) => {
+    logDeletion('project', id);
+    // Log deletions of all task nodes that belong to this deleted project
+    const projectNodes = state.nodes[id] || [];
+    projectNodes.forEach(node => logDeletion('node', node.id));
+
     setState(prev => {
       const remainingProjects = prev.projects.filter(p => p.id !== id);
       const nextActiveId = remainingProjects.length > 0 ? remainingProjects[0].id : null;
@@ -303,6 +528,7 @@ export default function App() {
   };
 
   const handleDeleteTagCategory = (id: string) => {
+    logDeletion('tagCategory', id);
     setState(prev => {
       const cats = prev.tagCategories || [];
       return {
@@ -586,6 +812,7 @@ export default function App() {
     };
 
     const idsToDelete = collectIdsToDelete(id);
+    idsToDelete.forEach(nid => logDeletion('node', nid));
 
     setState(prev => {
       const remainingNodes = currentNodes.filter(n => !idsToDelete.includes(n.id));
@@ -1174,6 +1401,168 @@ export default function App() {
                   <Smartphone className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Мобильный</span>
                 </button>
+              </div>
+            )}
+
+            {/* Unified Hybrid Symmetrical Sync Dashboard */}
+            {!currentUser ? (
+              <button
+                id="google-signin-btn"
+                type="button"
+                onClick={async () => {
+                  try {
+                    await googleSignIn();
+                  } catch (err) {
+                    alert("Ошибка входа Google: " + err);
+                  }
+                }}
+                className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-600 hover:bg-indigo-750 text-white text-xs font-bold rounded-lg cursor-pointer transition-all shadow-xs shrink-0"
+              >
+                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                  <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.414 0-6.19-2.77-6.19-6.19 0-3.418 2.776-6.19 6.19-6.19 1.483 0 2.844.52 3.917 1.391l3.056-3.056C19.11 2.8 15.86 1.332 12.24 1.332 6.136 1.332 1.2 6.268 1.2 12.37s4.936 11.04 11.04 11.04c6.264 0 10.8-4.4 10.8-10.74 0-.74-.065-1.3-.18-1.85H12.24z"/>
+                </svg>
+                <span className="hidden sm:inline">Синхронизация</span>
+              </button>
+            ) : (
+              <div className="relative">
+                <button
+                  id="sync-status-indicator-btn"
+                  type="button"
+                  onClick={() => setIsSyncMenuOpen(!isSyncMenuOpen)}
+                  className={`flex items-center gap-1.5 py-1.5 px-2.5 border rounded-lg text-xs font-bold cursor-pointer transition-all shrink-0 ${
+                    isSyncingSheets || syncStatus.firebase === 'syncing'
+                      ? 'border-indigo-400 bg-indigo-50/50 text-indigo-700 animate-pulse'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-750 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                  title="Показать статус гибридной синхронизации"
+                >
+                  <Database className="w-3.5 h-3.5 text-emerald-500" />
+                  <span className="hidden sm:inline text-slate-700 dark:text-slate-300">Синхронизация</span>
+                  {(isSyncingSheets || syncStatus.firebase === 'syncing') ? (
+                    <RefreshCw className="w-3 h-3 animate-spin text-indigo-500" />
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  )}
+                </button>
+
+                {isSyncMenuOpen && (
+                  <div className="absolute right-0 top-11 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl p-4 w-72 z-50 text-xs animate-in fade-in-50 duration-100">
+                    <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100 dark:border-slate-800">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">Статус Sync Manager</span>
+                      <button
+                        onClick={() => setIsSyncMenuOpen(false)}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Profile row */}
+                    <div className="flex items-center gap-2 mb-3 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg">
+                      {currentUser.photoURL ? (
+                        <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="User Avatar" className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-705 dark:text-indigo-300 flex items-center justify-center font-bold">
+                          {currentUser.email?.[0].toUpperCase() || 'U'}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-750 dark:text-slate-200 truncate">{currentUser.displayName || 'Пользователь Google'}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{currentUser.email}</p>
+                      </div>
+                    </div>
+
+                    {/* Status tiers */}
+                    <div className="space-y-2 mb-4 px-0.5">
+                      {/* LocalStorage Tier */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 flex items-center gap-1.5"><Layers className="w-3.5 h-3.5 text-blue-500" /> Локальный буфер (L1)</span>
+                        <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          Активно <CheckCircle2 className="w-3 h-3" />
+                        </span>
+                      </div>
+
+                      {/* Cloud Firestore Snap Tier */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 flex items-center gap-1.5"><Cloud className="w-3.5 h-3.5 text-sky-505" /> Облачный снимок (L2)</span>
+                        <span>
+                          {syncStatus.firebase === 'saved' && (
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                              Сохранено <CheckCircle2 className="w-3 h-3" />
+                            </span>
+                          )}
+                          {syncStatus.firebase === 'syncing' && (
+                            <span className="text-indigo-500 flex items-center gap-1 animate-pulse font-semibold">
+                              Синхронизация... <RefreshCw className="w-3 h-3 animate-spin" />
+                            </span>
+                          )}
+                          {syncStatus.firebase === 'error' && (
+                            <span className="font-semibold text-rose-500">Ошибка</span>
+                          )}
+                          {syncStatus.firebase === 'idle' && (
+                            <span className="text-slate-400">He подключено</span>
+                          )}
+                        </span>
+                      </div>
+
+                      {/* Google Sheets Merged Tier */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 flex items-center gap-1.5">
+                          <svg className="w-3.5 h-3.5 fill-current text-emerald-500" viewBox="0 0 24 24">
+                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3.5 14h-7V7h7v10z"/>
+                          </svg>
+                          Google Sheets (L3)
+                        </span>
+                        <span>
+                          {syncStatus.sheets === 'synced' && (
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1" title={syncStatus.lastSyncedTime ? `Время синхронизации: ${syncStatus.lastSyncedTime}` : undefined}>
+                              Связано <CheckCircle2 className="w-3 h-3" />
+                            </span>
+                          )}
+                          {syncStatus.sheets === 'syncing' && (
+                            <span className="text-indigo-500 flex items-center gap-1 animate-pulse font-semibold">
+                              Связывание... <RefreshCw className="w-3 h-3 animate-spin" />
+                            </span>
+                          )}
+                          {syncStatus.sheets === 'error' && (
+                            <span className="font-semibold text-rose-500">Ошибка</span>
+                          )}
+                          {syncStatus.sheets === 'idle' && (
+                            <span className="text-slate-400">He связано</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Manual trigger */}
+                    {googleToken && (
+                      <button
+                        type="button"
+                        disabled={isSyncingSheets}
+                        onClick={() => runSheetsSymmetricalSync(googleToken, state)}
+                        className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/60 text-white text-xs font-bold rounded-lg cursor-pointer transition-all shadow-xs mb-2.5"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
+                        <span>Синхронизировать сейчас</span>
+                      </button>
+                    )}
+
+                    {/* Sign out */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (confirm('Вы уверены, что хотите выйти из аккаунта Google? Это временно отключит облачное сохранение.')) {
+                          await logout();
+                          setIsSyncMenuOpen(false);
+                        }
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 border border-slate-200 dark:border-slate-800 text-slate-450 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-semibold rounded-lg cursor-pointer transition-all hover:bg-slate-100/50 dark:hover:bg-slate-800"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Выйти из аккаунта</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

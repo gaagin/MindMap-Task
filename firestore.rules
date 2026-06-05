@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net - default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidWorkspace(data) {
+      return data.userId is string && data.userId.size() <= 128
+        && data.folders is list
+        && data.projects is list
+        && data.nodes is map
+        && data.updatedAt is string;
+    }
+
+    match /workspaces/{userId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidWorkspace(request.resource.data);
+    }
+  }
+}

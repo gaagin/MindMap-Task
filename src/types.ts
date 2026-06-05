@@ -29,6 +29,7 @@ export interface TaskNode {
   isContainer?: boolean; // Optional flag for a container box node
   width?: number; // Optional custom width (for containers)
   height?: number; // Optional custom height (for containers)
+  updatedAt?: string; // ISO string for conflict resolution sync
 }
 
 export interface Project {
@@ -43,6 +44,7 @@ export interface Folder {
   id: string;
   name: string;
   parentId: string | null; // supports nested folders
+  updatedAt?: string; // ISO string for conflict resolution sync
 }
 
 export interface TagCategory {
@@ -50,6 +52,7 @@ export interface TagCategory {
   name: string;
   color: string; // hex string, e.g. '#6366f1'
   tags: string[];
+  updatedAt?: string; // ISO string for conflict resolution sync
 }
 
 export interface WorkspaceState {
