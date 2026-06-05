@@ -21,7 +21,8 @@ import {
   RefreshCw,
   LogOut,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Sparkles
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants } from './utils';
@@ -250,6 +251,22 @@ export default function App() {
 
   // Simple Undo/Redo stack for nodes (for active safety)
   const [undoStack, setUndoStack] = useState<Record<string, TaskNode[][]>>({});
+
+  // Version Control & Symmetrical Release Updates
+  const APP_VERSION = "2.5.0";
+  const [showVersionUpdateAlert, setShowVersionUpdateAlert] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('task_mindmap_app_version');
+      if (stored !== APP_VERSION) {
+        setShowVersionUpdateAlert(true);
+        localStorage.setItem('task_mindmap_app_version', APP_VERSION);
+      }
+    } catch (e) {
+      console.error('Failed to log version update:', e);
+    }
+  }, []);
 
   // 1. Firebase Auth listener registration
   useEffect(() => {
@@ -1399,6 +1416,7 @@ export default function App() {
         onDeleteTagCategory={handleDeleteTagCategory}
         currentWorkspaceState={state}
         onApplySyncedState={setState}
+        version={APP_VERSION}
       />
 
       {/* Main Workspace Frame */}
@@ -2226,6 +2244,48 @@ export default function App() {
           </div>
         );
       })()}
+
+      {/* Floating Application Update Notification Banner Pop */}
+      {showVersionUpdateAlert && (
+        <div className="fixed bottom-6 right-6 max-w-sm bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-950/80 p-5 rounded-2xl shadow-[0_12px_40px_-10px_rgba(99,102,241,0.25)] z-[1000] animate-in slide-in-from-bottom duration-300 flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="flex-shrink-0 bg-indigo-50 dark:bg-indigo-950/50 p-1.5 rounded-lg text-indigo-600 dark:text-indigo-400">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              <h4 className="font-extrabold text-sm tracking-tight text-slate-800 dark:text-slate-100">Программа обновлена!</h4>
+            </div>
+            <button 
+              onClick={() => setShowVersionUpdateAlert(false)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="space-y-2">
+            <p className="text-xs text-slate-600 dark:text-slate-350 leading-snug">
+              Успешный переход на версию <span className="font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded font-mono text-[10.5px]">v{APP_VERSION}</span>!
+            </p>
+            
+            <div className="text-[11px] text-slate-500 dark:text-slate-450 space-y-1 bg-slate-50 dark:bg-slate-950/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/50">
+              <p className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 mb-1">Что изменилось:</p>
+              <ul className="space-y-1.5 pl-1.5 list-disc list-inside">
+                <li><span className="font-semibold text-slate-700 dark:text-slate-300">Подзадачи:</span> Добавлена новая Кнопка редактирования прямо в список подзадач.</li>
+                <li><span className="font-semibold text-slate-700 dark:text-slate-300">Контейнеры:</span> Восстановлено быстрое удаление без лишних всплывающих окон.</li>
+                <li><span className="font-semibold text-slate-700 dark:text-slate-300">Версионирование:</span> Номер версии ПО выведен на боковую панель.</li>
+              </ul>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowVersionUpdateAlert(false)}
+            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md active:scale-98 cursor-pointer"
+          >
+            Понятно, спасибо
+          </button>
+        </div>
+      )}
     </div>
   );
 }

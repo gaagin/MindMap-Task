@@ -40,6 +40,7 @@ interface SidebarProps {
   onDeleteTagCategory: (id: string) => void;
   currentWorkspaceState: WorkspaceState;
   onApplySyncedState: (state: WorkspaceState) => void;
+  version?: string;
 }
 
 export default function Sidebar({
@@ -63,7 +64,8 @@ export default function Sidebar({
   onUpdateTagCategory,
   onDeleteTagCategory,
   currentWorkspaceState,
-  onApplySyncedState
+  onApplySyncedState,
+  version = "2.5.0"
 }: SidebarProps) {
   // Folder tree expansion state, loaded and persisted in localStorage
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
@@ -907,6 +909,13 @@ export default function Sidebar({
           >
             <RotateCcw className="w-3.5 h-3.5" /> Восстановить демо
           </button>
+
+          <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-mono pt-1 select-none">
+            <span>Класс версии ПО</span>
+            <span className="text-indigo-600 dark:text-indigo-400 font-extrabold bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-100/50 dark:border-indigo-900/50 font-sans">
+              v{version}
+            </span>
+          </div>
         </div>
       </aside>
     </>
