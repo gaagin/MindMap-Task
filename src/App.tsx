@@ -145,6 +145,7 @@ export default function App() {
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [sheetsError, setSheetsError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{
     local: 'saved' | 'saving' | 'error';
     firebase: 'idle' | 'saved' | 'syncing' | 'error';
@@ -281,6 +282,7 @@ export default function App() {
     if (isSyncingSheets) return;
     setIsSyncingSheets(true);
     setSyncStatus(prev => ({ ...prev, sheets: 'syncing' }));
+    setSheetsError(null);
 
     try {
       const result = await syncWithGoogleSheets(token, currentWorkspace);
@@ -299,12 +301,15 @@ export default function App() {
         
         // Zero out progress tracking on successful symmetrical sheet consolidation
         setUnsyncedEditsCount(0);
+        setSheetsError(null);
       } else {
         setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+        setSheetsError('Failed to synchronize. Response state was not successful.');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error running symmetrical sheets sync:', e);
       setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+      setSheetsError(e?.message || String(e));
     } finally {
       setIsSyncingSheets(false);
     }
@@ -1726,16 +1731,16 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
-              <div className="border-b border-slate-150 dark:border-slate-850 px-6 py-4.5 flex items-center justify-between bg-slate-50/60 dark:bg-slate-900/60">
+              <div className="border-b border-slate-200 dark:border-slate-800 px-6 py-4.5 flex items-center justify-between bg-slate-50 dark:bg-slate-900/60">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl shrink-0">
-                    <Cloud className="w-5 h-5 text-indigo-650 dark:text-indigo-400" />
+                    <Cloud className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                   </div>
                   <div>
-                    <h3 className="text-sm sm:text-base font-extrabold text-slate-850 dark:text-slate-100 leading-tight">
+                    <h3 className="text-sm sm:text-base font-extrabold text-slate-800 dark:text-slate-100 leading-tight">
                       Резервное копирование и дельта-синхронизация
                     </h3>
-                    <p className="text-[11px] text-slate-450 dark:text-slate-400 mt-0.5 leading-snug">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
                       Взаимный обмен изменениями напрямую с вашей личной Google Таблицей
                     </p>
                   </div>
@@ -1743,7 +1748,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsSyncMenuOpen(false)}
-                  className="p-1 px-2 py-1 text-slate-450 hover:text-slate-755 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all text-xs font-semibold"
+                  className="p-1 px-2 py-1 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all text-xs font-semibold"
                 >
                   Закрыть
                 </button>
@@ -1753,9 +1758,9 @@ export default function App() {
               <div className="p-6 overflow-y-auto space-y-5.5 text-xs text-slate-700 dark:text-slate-300">
                 
                 {/* Connection status section */}
-                <div className="bg-slate-50 dark:bg-slate-850 border border-slate-200/60 dark:border-slate-800/80 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-455 uppercase tracking-wider block mb-1">
+                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block mb-1">
                       СТАТУС ПОДКЛЮЧЕНИЯ:
                     </span>
                     <div className="flex items-center gap-2">
@@ -1766,7 +1771,7 @@ export default function App() {
                     </div>
                     
                     {currentUser && (
-                      <div className="mt-3 flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-900/50 border border-slate-150 dark:border-slate-800/50 rounded-lg max-w-xs">
+                      <div className="mt-3 flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/50 rounded-lg max-w-xs">
                         {currentUser.photoURL ? (
                           <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-slate-200" />
                         ) : (
@@ -1775,7 +1780,7 @@ export default function App() {
                           </div>
                         )}
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-705 dark:text-slate-200 truncate leading-none text-[11px]">{currentUser.displayName || 'Пользователь Google'}</p>
+                          <p className="font-bold text-slate-700 dark:text-slate-200 truncate leading-none text-[11px]">{currentUser.displayName || 'Пользователь Google'}</p>
                           <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">{currentUser.email}</p>
                         </div>
                       </div>
@@ -1791,7 +1796,7 @@ export default function App() {
                             await logout();
                           }
                         }}
-                        className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-755 text-slate-600 dark:text-slate-305 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all hover:scale-[1.01]"
+                        className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all hover:scale-[1.01]"
                       >
                         <LogOut className="w-3.5 h-3.5 text-slate-400" />
                         <span>Выйти</span>
@@ -1818,12 +1823,12 @@ export default function App() {
                             }
                           }
                         }}
-                        className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition-all hover:scale-[1.01] shadow-xs shrink-0"
+                        className="flex items-center gap-2.5 py-2.5 px-4.5 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white text-xs font-bold rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.03] active:scale-[0.98] shadow-md hover:shadow-lg shrink-0 border border-indigo-700 dark:border-indigo-400"
                       >
-                        <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                        <svg className="w-3.5 h-3.5 fill-current text-white" viewBox="0 0 24 24">
                           <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.414 0-6.19-2.77-6.19-6.19 0-3.418 2.776-6.19 6.19-6.19 1.483 0 2.844.52 3.917 1.391l3.056-3.056C19.11 2.8 15.86 1.332 12.24 1.332 6.136 1.332 1.2 6.268 1.2 12.37s4.936 11.04 11.04 11.04c6.264 0 10.8-4.4 10.8-10.74 0-.74-.065-1.3-.18-1.85H12.24z"/>
                         </svg>
-                        <span>Авторизоваться</span>
+                        <span>Авторизоваться через Google</span>
                       </button>
                     )}
                   </div>
@@ -1946,6 +1951,37 @@ export default function App() {
                   {isSyncingSheets && (
                     <div className="text-[10px] text-indigo-505 font-bold animate-pulse">
                       Слияние изменений структуры дерева... Пожалуйста, подождите.
+                    </div>
+                  )}
+
+                  {syncStatus.sheets === 'error' && (
+                    <div className="w-full max-w-md bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 shadow-sm rounded-xl p-4 text-xs text-slate-700 dark:text-slate-300 space-y-2.5 mt-2">
+                      <div className="flex items-center gap-2 text-rose-600 dark:text-rose-450 font-bold">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500 animate-bounce" />
+                        <span>Ошибка дельта-синхронизации (Google Sheets)</span>
+                      </div>
+                      
+                      <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded border border-rose-100 dark:border-rose-900 font-mono text-[10px] text-rose-700 dark:text-rose-300 select-all overflow-x-auto whitespace-pre-wrap">
+                        {sheetsError || 'Bilateral Symmetrical Sync Error: Failed to fetch'}
+                      </div>
+
+                      <div className="text-[10.5px] space-y-2 text-slate-600 dark:text-slate-400 leading-relaxed font-normal">
+                        <p className="font-bold text-slate-700 dark:text-slate-300">💡 Как это исправить:</p>
+                        <ul className="list-decimal list-inside space-y-1.5 pl-1 leading-snug">
+                          <li>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">Истекшее время авторизации</span>: 
+                            Google-токен действует ровно 1 час. Нажмите кнопку <b>"Выйти"</b> в окне "Статус подключения" выше, а затем повторно нажмите <b>"Авторизоваться через Google"</b>. Это полностью обновит сессию.
+                          </li>
+                          <li>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">Отключены Google API</span>: 
+                            В консоли Google Cloud / Firebase проекта должны быть включены <b>Google Sheets API</b> и <b>Google Drive API</b>. Без этого запросы со стороны браузера отклоняются с ошибкой CORS.
+                          </li>
+                          <li>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">Блокировщики скриптов</span>: 
+                            Ваш браузер или плагин (uBlock, AdBlock, Brave Shield) может блокировать сторонние запросы к доменам <i>googleapi</i>. Попробуйте отключить их для этого сайта.
+                          </li>
+                        </ul>
+                      </div>
                     </div>
                   )}
                 </div>

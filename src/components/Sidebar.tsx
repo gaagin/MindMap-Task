@@ -503,13 +503,7 @@ export default function Sidebar({
             )}
           </div>
 
-          {/* Google Sheets Synchronization System */}
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
-            <GoogleSheetsSync
-              currentWorkspaceState={currentWorkspaceState}
-              onApplySyncedState={onApplySyncedState}
-            />
-          </div>
+
 
           {/* Tag Categories section */}
           <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
