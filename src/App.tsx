@@ -902,6 +902,38 @@ export default function App() {
     setLastCreatedNodeId(newChild.id);
   };
 
+  // Add a fully independent task inside the temporary off-canvas INBOX container
+  const handleAddInboxTask = (text: string) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const newInboxNode: TaskNode = {
+      id: 'node-' + generateId(),
+      projectId: pid,
+      text: text.trim(),
+      x: 0,
+      y: 0,
+      parentId: 'inbox',
+      isFloating: true,
+      priority: 'none',
+      tags: [],
+      notes: 'Эта задача была записана в INBOX. Нажмите "На холст", чтобы разместить её на интеллект-карте.',
+      completed: false,
+      files: []
+    };
+
+    setState(prev => ({
+      ...prev,
+      nodes: {
+        ...prev.nodes,
+        [pid]: [...currentNodes, newInboxNode]
+      }
+    }));
+  };
+
   // Add a fully independent floating node anywhere on the canvas
   const handleAddFloatingNode = (x: number, y: number, parentId: string | null = null) => {
     const pid = state.activeProjectId;
@@ -1803,6 +1835,7 @@ export default function App() {
                 onAddChildNode={handleAddChildNode}
                 onAddFloatingNode={handleAddFloatingNode}
                 onAddContainerNode={handleAddContainerNode}
+                onAddInboxTask={handleAddInboxTask}
                 onDeleteNode={handleDeleteNode}
                 onToggleNodeCompleted={handleToggleNodeCompleted}
                 onToggleNodeCollapse={handleToggleNodeCollapse}

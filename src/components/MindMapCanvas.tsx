@@ -41,6 +41,7 @@ interface MindMapCanvasProps {
   onAddChildNode: (parentId: string) => void;
   onAddFloatingNode: (x: number, y: number, parentId?: string | null) => void;
   onAddContainerNode: (x: number, y: number) => void;
+  onAddInboxTask?: (text: string) => void;
   onDeleteNode: (id: string) => void;
   onToggleNodeCompleted: (id: string) => void;
   onToggleNodeCollapse: (id: string) => void;
@@ -87,6 +88,7 @@ export default function MindMapCanvas({
   onAddChildNode,
   onAddFloatingNode,
   onAddContainerNode,
+  onAddInboxTask,
   onDeleteNode,
   onToggleNodeCompleted,
   onToggleNodeCollapse,
@@ -171,6 +173,26 @@ export default function MindMapCanvas({
   const [nodeOffsetStart, setNodeOffsetStart] = useState({ x: 0, y: 0 });
   const [hasDraggedNode, setHasDraggedNode] = useState(false);
   const [priorityViewActive, setPriorityViewActive] = useState<boolean>(false);
+
+  // INBOX Container off-canvas persistent states
+  const [isInboxCollapsed, setIsInboxCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_inbox_collapsed');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [inboxInputText, setInboxInputText] = useState<string>('');
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('task_mindmap_inbox_collapsed', JSON.stringify(isInboxCollapsed));
+    } catch (e) {
+      console.error('Failed to persist inbox state:', e);
+    }
+  }, [isInboxCollapsed]);
 
   // Focus mode states for container fullscreen focus
   const [focusedContainerId, setFocusedContainerId] = useState<string | null>(null);
@@ -1365,6 +1387,7 @@ export default function MindMapCanvas({
 
   // Trace parent nodes back to root to determine if any ancestor is collapsed, or filtered by focus mode
   const visibleNodes = nodes.filter(node => {
+    if (node.parentId === 'inbox') return false;
     if (focusedContainerId) {
       // In focus mode, we only show the container itself or its descendants
       if (node.id === focusedContainerId) return true;
@@ -2364,6 +2387,174 @@ const pInfo = getPriorityInfo(node.priority);
           </div>
         </div>
       )}
+
+      {/* Off-canvas Sticky INBOX Container Widget */}
+      <div 
+        className="absolute top-4 right-4 z-40 pointer-events-auto select-none"
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
+        {isInboxCollapsed ? (
+          <button
+            onClick={() => setIsInboxCollapsed(false)}
+            className="flex items-center gap-2 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600 rounded-xl shadow-[0_8px_30px_rgba(99,102,241,0.35)] hover:shadow-[0_8px_30px_rgba(99,102,241,0.5)] border border-indigo-500 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer font-sans text-xs font-extrabold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <span className="text-sm shrink-0">📥</span>
+            <span>INBOX</span>
+            <span className="bg-indigo-700 dark:bg-indigo-750 text-indigo-100 px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold">
+              {nodes.filter(n => n.parentId === 'inbox').length}
+            </span>
+          </button>
+        ) : (
+          <div className="w-80 max-h-[460px] bg-white dark:bg-slate-900 rounded-2xl border border-slate-205 dark:border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.18)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* INBOX Header */}
+            <div className="px-4 py-3 bg-slate-50 dark:bg-slate-850/60 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📥</span>
+                <span className="font-extrabold text-[11px] tracking-wider uppercase text-slate-800 dark:text-slate-100 font-sans">
+                  INBOX (Входящие)
+                </span>
+                <span className="bg-indigo-100 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full font-mono">
+                  {nodes.filter(n => n.parentId === 'inbox').length}
+                </span>
+              </div>
+              <button
+                onClick={() => setIsInboxCollapsed(true)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-850 transition-colors cursor-pointer"
+                title="Свернуть Inbox"
+              >
+                <ChevronUp className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick-add Input */}
+            <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  placeholder="Запишите быструю мысль... (Enter)"
+                  value={inboxInputText}
+                  onChange={(e) => setInboxInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter' && inboxInputText.trim() && onAddInboxTask) {
+                      onAddInboxTask(inboxInputText);
+                      setInboxInputText('');
+                    }
+                  }}
+                  className="w-full text-xs py-2 pl-3 pr-8 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-slate-800 dark:text-slate-100 rounded-xl border border-slate-205 dark:border-slate-755 focus:border-indigo-500 focus:outline-none transition-all placeholder-slate-450"
+                />
+                <button
+                  onClick={() => {
+                    if (inboxInputText.trim() && onAddInboxTask) {
+                      onAddInboxTask(inboxInputText);
+                      setInboxInputText('');
+                    }
+                  }}
+                  disabled={!inboxInputText.trim()}
+                  className="absolute right-1.5 p-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-650 hover:text-white rounded-lg transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Task list */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5 max-h-[280px] custom-scrollbar bg-slate-50/40 dark:bg-slate-950/20">
+              {nodes.filter(n => n.parentId === 'inbox').length === 0 ? (
+                <div className="py-8 text-center flex flex-col items-center justify-center gap-1 select-none">
+                  <span className="text-xl">💭</span>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 max-w-[180px] leading-relaxed">
+                    Здесь будут ваши свежие идеи. Запишите все мысли в Inbox, чтобы потом разобрать их по холсту!
+                  </p>
+                </div>
+              ) : (
+                nodes
+                  .filter(n => n.parentId === 'inbox')
+                  .map(task => {
+                    return (
+                      <div 
+                        key={task.id}
+                        className="p-2 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl flex items-center gap-2 shadow-sm group hover:border-indigo-150 dark:hover:border-indigo-950 transition-all duration-200"
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        {/* Task completing checkbox */}
+                        <button
+                          onClick={() => onToggleNodeCompleted(task.id)}
+                          className={`p-0.5 rounded-full hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer ${
+                            task.completed ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-600'
+                          }`}
+                        >
+                          {task.completed ? (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          ) : (
+                            <Circle className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
+                        {/* Editable task title inside Inbox */}
+                        <input
+                          type="text"
+                          value={task.text}
+                          onChange={(e) => {
+                            onUpdateNode({
+                              ...task,
+                              text: e.target.value
+                            });
+                          }}
+                          className={`flex-1 text-xs bg-transparent border-0 focus:ring-0 p-0.5 text-slate-800 dark:text-slate-100 focus:outline-none max-w-[140px] truncate-none hover:bg-slate-50/50 dark:hover:bg-slate-800/50 focus:bg-slate-50 dark:focus:bg-slate-850 px-1 rounded transition-colors ${
+                            task.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
+                          }`}
+                          placeholder="Имя задачи..."
+                        />
+
+                        {/* Release / Deploy Button */}
+                        <button
+                          onClick={() => {
+                            // Calculate screen center coordinates relative to canvas bounding box
+                            let cx = window.innerWidth / 2;
+                            let cy = window.innerHeight / 2;
+                            if (containerRef.current) {
+                              const rect = containerRef.current.getBoundingClientRect();
+                              cx = rect.left + rect.width / 2;
+                              cy = rect.top + rect.height / 2;
+                            }
+                            const canvasCoords = getCanvasCoordinates(cx, cy);
+                            onUpdateNode({
+                              ...task,
+                              parentId: null,
+                              x: canvasCoords.x,
+                              y: canvasCoords.y,
+                            });
+                            onSelectNode(task.id);
+                          }}
+                          title="Разместить на холсте по центру экрана"
+                          className="p-1 text-indigo-500 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 rounded-lg transition-colors cursor-pointer shrink-0 opacity-80 group-hover:opacity-100"
+                        >
+                          <Move className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* Delete Button */}
+                        <button
+                          onClick={() => onDeleteNode(task.id)}
+                          title="Удалить безвозвратно"
+                          className="p-1 text-slate-450 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors cursor-pointer shrink-0 opacity-80 group-hover:opacity-100"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+            
+            {/* Help Info Footer */}
+            <div className="bg-slate-50 dark:bg-slate-850 p-2 text-[10px] text-slate-400 dark:text-slate-500 text-center border-t border-slate-150 dark:border-slate-800 select-none leading-relaxed">
+              Нажмите кнопку <span className="font-extrabold text-indigo-600 dark:text-indigo-450">переноса</span>, чтобы отправить задачу в центр карты.
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Hidden file input for file uploading in nodes */}
       <input 
