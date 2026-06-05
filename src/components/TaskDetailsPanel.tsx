@@ -16,7 +16,9 @@ import {
   Circle,
   CheckCircle2,
   Eye,
-  Edit
+  Edit,
+  Link as LinkIcon,
+  Check
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants } from '../utils';
@@ -60,6 +62,20 @@ export default function TaskDetailsPanel({
 }: TaskDetailsPanelProps) {
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Copy direct task link handler
+  const handleCopyLink = () => {
+    if (!node) return;
+    try {
+      const taskLink = `${window.location.origin}${window.location.pathname}?task=${node.id}`;
+      navigator.clipboard.writeText(taskLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error('Failed to copy task link:', e);
+    }
+  };
 
   // Category management inside TaskProperties
   const [showNewCatForm, setShowNewCatForm] = useState(false);
@@ -174,22 +190,63 @@ export default function TaskDetailsPanel({
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 uppercase tracking-wider font-sans flex items-center gap-2">
           <Layers className="w-4 h-4 text-indigo-500" /> Свойства задачи
         </h3>
-        <button 
-          onClick={onClose}
-          className="p-1 px-[5px] rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
-          title="Закрыть панель"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1.55">
+          {/* Quick header copy link button */}
+          <button 
+            type="button"
+            onClick={handleCopyLink}
+            className={`p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 cursor-pointer ${copied ? 'text-emerald-600 dark:text-emerald-400 font-bold text-[11px]' : 'text-slate-500 hover:text-indigo-500'}`}
+            title="Копировать прямую ссылку на эту задачу"
+          >
+            {copied ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-500" />
+                <span className="text-[10px] hidden sm:inline">Ссылка скопирована</span>
+              </>
+            ) : (
+              <>
+                <LinkIcon className="w-4 h-4" />
+              </>
+            )}
+          </button>
+
+          <button 
+            onClick={onClose}
+            className="p-1 px-[5px] rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
+            title="Закрыть панель"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         
         {/* Name / Heading */}
         <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-            Текст задачи (ветвь)
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+              Текст задачи (ветвь)
+            </label>
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className={`text-[10px] font-bold flex items-center gap-1 cursor-pointer hover:underline transition-colors ${
+                copied ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400 font-semibold'
+              }`}
+              title="Получить прямую ссылку"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-500" /> Ссылка скопирована!
+                </>
+              ) : (
+                <>
+                  <LinkIcon className="w-3 h-3" /> Копировать ссылку на задачу
+                </>
+              )}
+            </button>
+          </div>
           <textarea
             value={node.text}
             onChange={(e) => handlePropChange('text', e.target.value)}

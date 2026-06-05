@@ -22,7 +22,10 @@ import {
   LogOut,
   CheckCircle2,
   AlertTriangle,
-  Sparkles
+  Sparkles,
+  Calendar,
+  GanttChart,
+  Table
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants } from './utils';
@@ -31,6 +34,9 @@ import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
 import KanbanView from './components/KanbanView';
 import MobileListView from './components/MobileListView';
+import CalendarView from './components/CalendarView';
+import GanttView from './components/GanttView';
+import TableView from './components/TableView';
 
 // Import Google Sheets & Firebase Auth systems
 import { 
@@ -135,6 +141,7 @@ export default function App() {
   const [state, setRawState] = useState<WorkspaceState>(() => loadWorkspace());
   const isFirstRender = React.useRef(true);
   const ignoreNextStateChangeRef = React.useRef(false);
+  const hasCheckedUrlParamRef = React.useRef(false);
 
   // Intercept all state changes, update modification timestamps automatically, ensuring symmetrical sync compatibility
   const setState = (updater: WorkspaceState | ((prev: WorkspaceState) => WorkspaceState)) => {
@@ -239,8 +246,8 @@ export default function App() {
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
 
-  // View Mode: 'canvas' or 'kanban' or 'mobile-list'
-  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list'>('canvas');
+  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'
+  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'>('canvas');
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
@@ -255,6 +262,7 @@ export default function App() {
   // Version Control & Symmetrical Release Updates
   const APP_VERSION = "2.5.0";
   const [showVersionUpdateAlert, setShowVersionUpdateAlert] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
     try {
@@ -462,6 +470,67 @@ export default function App() {
     }
     localStorage.setItem('task_mindmap_dark', String(darkMode));
   }, [darkMode]);
+
+  // Load specified task URL link parameter on startup
+  useEffect(() => {
+    if (hasCheckedUrlParamRef.current) return;
+    
+    // Check if state is initialized with nodes
+    const nodeKeys = Object.keys(state.nodes);
+    if (nodeKeys.length === 0) return;
+
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlTaskId = urlParams.get('task') || urlParams.get('t');
+      if (!urlTaskId) {
+        hasCheckedUrlParamRef.current = true;
+        return;
+      }
+
+      // Search cross-project to find which project owns this task
+      let targetProjectId: string | null = null;
+      let targetNode: TaskNode | null = null;
+      const projectIds = Object.keys(state.nodes);
+      for (const projectId of projectIds) {
+        const nodeArray = state.nodes[projectId];
+        if (!nodeArray) continue;
+        const foundNode = nodeArray.find(n => n.id === urlTaskId);
+        if (foundNode) {
+          targetProjectId = projectId;
+          targetNode = foundNode;
+          break;
+        }
+      }
+
+      if (targetProjectId && targetNode) {
+        hasCheckedUrlParamRef.current = true;
+        
+        // Match project
+        setState(prev => {
+          if (prev.activeProjectId === targetProjectId) return prev;
+          return { ...prev, activeProjectId: targetProjectId! };
+        });
+        
+        // Select the task/node
+        setSelectedNodeId(urlTaskId);
+        setIsDrawerOpen(true);
+
+        // Calculate and set absolute coordinates to recenter the canvas on startup
+        if (targetNode.x !== undefined && targetNode.y !== undefined) {
+          // Adjust starting pan offset safely with standard coordinates
+          const offsetWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+          const offsetHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+          const panX = -targetNode.x + offsetWidth / 2 - 200;
+          const panY = -targetNode.y + offsetHeight / 2;
+          setPanX(panX);
+          setPanY(panY);
+          setZoom(1.05);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to parse load URL parameters:', err);
+    }
+  }, [state.nodes]);
 
   // Handle keyboard shortcuts (Delete to delete selected task, Escape to cancel newly added task during focus)
   useEffect(() => {
@@ -1422,6 +1491,8 @@ export default function App() {
 
   const selectedNode = activeNodes.find(n => n.id === selectedNodeId) || null;
 
+  const hasSyncOrAuthError = !!authError || !!sheetsError || syncStatus.sheets === 'error' || syncStatus.local === 'error';
+
   return (
     <div className="flex h-screen h-[100dvh] overflow-hidden text-slate-900 bg-white dark:bg-slate-950 dark:text-slate-100 font-sans transition-colors duration-150">
       
@@ -1622,6 +1693,48 @@ export default function App() {
                   <Smartphone className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Мобильный</span>
                 </button>
+                <button
+                  id="view-mode-calendar-btn"
+                  type="button"
+                  onClick={() => setViewMode('calendar')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                    viewMode === 'calendar'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+                  title="Календарный вид"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Календарь</span>
+                </button>
+                <button
+                  id="view-mode-gantt-btn"
+                  type="button"
+                  onClick={() => setViewMode('gantt')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                    viewMode === 'gantt'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+                  title="Линейный график Ганнта"
+                >
+                  <GanttChart className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Ганнт</span>
+                </button>
+                <button
+                  id="view-mode-table-btn"
+                  type="button"
+                  onClick={() => setViewMode('table')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                    viewMode === 'table'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+                  title="Табличный вид"
+                >
+                  <Table className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Таблица</span>
+                </button>
               </div>
             )}
 
@@ -1639,7 +1752,9 @@ export default function App() {
             >
               <Database className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
               <span className="hidden sm:inline">Резервная копия и синхронизация</span>
-              {currentUser ? (
+              {hasSyncOrAuthError ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
+              ) : currentUser ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               ) : (
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
@@ -1823,6 +1938,66 @@ export default function App() {
                 onCreateTask={handleCreateKanbanTask}
                 onCreateTagCategory={handleCreateTagCategory}
               />
+            ) : viewMode === 'calendar' ? (
+              <CalendarView
+                nodes={activeNodes}
+                tagCategories={state.tagCategories || []}
+                activeProjectId={state.activeProjectId}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={(id) => {
+                  setSelectedNodeId(id);
+                  if (id) {
+                    setIsDrawerOpen(true);
+                  } else {
+                    setIsDrawerOpen(false);
+                  }
+                }}
+                onUpdateNode={handleUpdateNode}
+                onDeleteNode={handleDeleteNode}
+                onCreateTask={(text, initialTags, dueDate) => {
+                  handleCreateMobileTask(text, initialTags || [], 'none', dueDate);
+                }}
+              />
+            ) : viewMode === 'gantt' ? (
+              <GanttView
+                nodes={activeNodes}
+                tagCategories={state.tagCategories || []}
+                activeProjectId={state.activeProjectId}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={(id) => {
+                  setSelectedNodeId(id);
+                  if (id) {
+                    setIsDrawerOpen(true);
+                  } else {
+                    setIsDrawerOpen(false);
+                  }
+                }}
+                onUpdateNode={handleUpdateNode}
+                onDeleteNode={handleDeleteNode}
+                onCreateTask={(text, initialTags, dueDate) => {
+                  handleCreateMobileTask(text, initialTags || [], 'none', dueDate);
+                }}
+              />
+            ) : viewMode === 'table' ? (
+              <TableView
+                nodes={activeNodes}
+                tagCategories={state.tagCategories || []}
+                activeProjectId={state.activeProjectId}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={(id) => {
+                  setSelectedNodeId(id);
+                  if (id) {
+                    setIsDrawerOpen(true);
+                  } else {
+                    setIsDrawerOpen(false);
+                  }
+                }}
+                onUpdateNode={handleUpdateNode}
+                onDeleteNode={handleDeleteNode}
+                onCreateTask={(text, initialTags) => {
+                  handleCreateMobileTask(text, initialTags || [], 'none');
+                }}
+              />
             ) : (
               <MindMapCanvas
                 nodes={activeNodes}
@@ -1946,9 +2121,15 @@ export default function App() {
                       СТАТУС ПОДКЛЮЧЕНИЯ:
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${currentUser ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500 animate-ping'}`} />
+                      <span className={`w-2.5 h-2.5 rounded-full ${
+                        hasSyncOrAuthError 
+                          ? 'bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]' 
+                          : currentUser 
+                            ? 'bg-emerald-500 animate-pulse' 
+                            : 'bg-amber-500 animate-ping'
+                      }`} />
                       <span className="font-extrabold text-xs text-slate-800 dark:text-slate-150">
-                        {currentUser ? 'Авторизован (Облачная синхронизация)' : 'Не авторизован (Локальный буфер)'}
+                        {hasSyncOrAuthError ? 'Ошибка синхронизации / авторизации' : currentUser ? 'Авторизован (Облачная синхронизация)' : 'Не авторизован (Локальный буфер)'}
                       </span>
                     </div>
                     
@@ -1971,18 +2152,43 @@ export default function App() {
 
                   <div>
                     {currentUser ? (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (confirm('Вы уверены, что хотите выйти из учетной записи Google? Это приостановит синхронизацию.')) {
-                            await logout();
-                          }
-                        }}
-                        className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all hover:scale-[1.01]"
-                      >
-                        <LogOut className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Выйти</span>
-                      </button>
+                      showLogoutConfirm ? (
+                        <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-1 duration-150">
+                          <span className="text-[10px] text-rose-500 font-extrabold max-w-[120px] leading-tight">Выйти?</span>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await logout();
+                              } catch (e) {
+                                console.error(e);
+                              }
+                              setShowLogoutConfirm(false);
+                            }}
+                            className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors"
+                          >
+                            Да
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowLogoutConfirm(false)}
+                            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                          >
+                            Нет
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowLogoutConfirm(true);
+                          }}
+                          className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all hover:scale-[1.01]"
+                        >
+                          <LogOut className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Выйти</span>
+                        </button>
+                      )
                     ) : (
                       <button
                         type="button"
@@ -2181,7 +2387,7 @@ export default function App() {
                         <ul className="list-decimal list-inside space-y-1.5 pl-1 leading-snug">
                           <li>
                             <span className="font-semibold text-slate-800 dark:text-slate-200">Истекшее время авторизации</span>: 
-                            Google-токен действует ровно 1 час. Нажмите кнопку <b>"Выйти"</b> в окне "Статус подключения" выше, а затем повторно нажмите <b>"Авторизоваться через Google"</b>. Это полностью обновит сессию.
+                            Ваша сессия и Google-токен настроены на длительное действие до одного дня (24 часов). Если сессия завершилась, просто нажмите кнопку <b>"Выйти"</b> в окне "Статус подключения" выше, а затем повторно нажмите <b>"Авторизоваться через Google"</b> для полного обновления.
                           </li>
                           <li>
                             <span className="font-semibold text-slate-800 dark:text-slate-200">Отключены Google API</span>: 

@@ -50,6 +50,8 @@ export default function GoogleSheetsSync({
   const [showHelp, setShowHelp] = useState(false);
   const [showManualPaste, setShowManualPaste] = useState(false);
   const [manualToken, setManualToken] = useState('');
+  const [showPullConfirm, setShowPullConfirm] = useState(false);
+  const [showPushConfirm, setShowPushConfirm] = useState(false);
 
   // Auto-load available spreadsheets on accessToken change
   useEffect(() => {
@@ -175,7 +177,7 @@ export default function GoogleSheetsSync({
   };
 
   // Push current local state to cloud sheet
-  const handlePushToCloud = async () => {
+  const handlePushToCloud = async (bypassConfirm = false) => {
     if (!accessToken) {
       setStatusMsg({ text: 'Пожалуйста, сначала войдите через Google.', type: 'error' });
       return;
@@ -185,8 +187,10 @@ export default function GoogleSheetsSync({
       return;
     }
 
-    const conf = window.confirm('Внимание! Данные на Google Диске в этой таблице будут перезаписаны текущими локальными данными устройств. Продолжить?');
-    if (!conf) return;
+    if (!bypassConfirm) {
+      setShowPushConfirm(true);
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -201,7 +205,7 @@ export default function GoogleSheetsSync({
   };
 
   // Pull cloud state to local app workspace
-  const handlePullFromCloud = async () => {
+  const handlePullFromCloud = async (bypassConfirm = false) => {
     if (!accessToken) {
       setStatusMsg({ text: 'Пожалуйста, сначала войдите через Google.', type: 'error' });
       return;
@@ -211,8 +215,10 @@ export default function GoogleSheetsSync({
       return;
     }
 
-    const conf = window.confirm('Внимание! Локальные данные на этом устройстве будут ПОЛНОСТЬЮ ЗАМЕНЕНЫ данными из выбранной Google Таблицы. Применить изменения?');
-    if (!conf) return;
+    if (!bypassConfirm) {
+      setShowPullConfirm(true);
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -464,28 +470,86 @@ export default function GoogleSheetsSync({
 
         {/* Sync Actions Panel (Push & Pull) */}
         {accessToken && spreadsheetId && (
-          <div className="grid grid-cols-2 gap-2 border-t border-slate-100 dark:border-slate-800/65 pt-3 animate-slide-in">
-            <button
-              id="sync-pull-from-cloud"
-              type="button"
-              onClick={handlePullFromCloud}
-              disabled={isLoading}
-              className="py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-100 rounded-lg text-xs font-bold border border-slate-200 dark:border-transparent transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
-            >
-              <Download className="w-4 h-4 text-indigo-500 shrink-0" />
-              <span>Загрузить в ПК</span>
-            </button>
+          <div className="border-t border-slate-100 dark:border-slate-800/65 pt-3 animate-slide-in space-y-3">
+            {showPullConfirm && (
+              <div className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20 text-xs flex flex-col gap-1.5 animate-in fade-in-50 duration-200">
+                <p className="font-semibold text-slate-700 dark:text-slate-300">
+                  Внимание! Локальные данные на этом устройстве будут ПОЛНОСТЬЮ ЗАМЕНЕНЫ данными из выбранной Google Таблицы. Применить изменения?
+                </p>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowPullConfirm(false)}
+                    className="px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer transition-colors"
+                  >
+                    Отменить
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPullConfirm(false);
+                      handlePullFromCloud(true);
+                    }}
+                    className="px-2.5 py-1 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded cursor-pointer transition-colors"
+                  >
+                    Да, перезаписать
+                  </button>
+                </div>
+              </div>
+            )}
 
-            <button
-              id="sync-push-to-cloud"
-              type="button"
-              onClick={handlePushToCloud}
-              disabled={isLoading}
-              className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              <Save className="w-4 h-4 shrink-0" />
-              <span>Выгрузить в Облако</span>
-            </button>
+            {showPushConfirm && (
+              <div className="p-2.5 rounded-lg border border-indigo-200 bg-indigo-50/50 dark:border-indigo-900/40 dark:bg-indigo-950/20 text-xs flex flex-col gap-1.5 animate-in fade-in-50 duration-200">
+                <p className="font-semibold text-slate-700 dark:text-slate-300">
+                  Внимание! Данные на Google Диске в этой таблице будут перезаписаны текущими локальными данными этого устройства. Продолжить?
+                </p>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowPushConfirm(false)}
+                    className="px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer transition-colors"
+                  >
+                    Отменить
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPushConfirm(false);
+                      handlePushToCloud(true);
+                    }}
+                    className="px-2.5 py-1 text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded cursor-pointer transition-colors"
+                  >
+                    Да, выгрузить
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!showPullConfirm && !showPushConfirm && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  id="sync-pull-from-cloud"
+                  type="button"
+                  onClick={() => handlePullFromCloud(false)}
+                  disabled={isLoading}
+                  className="py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-100 rounded-lg text-xs font-bold border border-slate-200 dark:border-transparent transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+                >
+                  <Download className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span>Загрузить в ПК</span>
+                </button>
+
+                <button
+                  id="sync-push-to-cloud"
+                  type="button"
+                  onClick={() => handlePushToCloud(false)}
+                  disabled={isLoading}
+                  className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4 shrink-0" />
+                  <span>Выгрузить в Облако</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
