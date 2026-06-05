@@ -1428,7 +1428,7 @@ export default function MindMapCanvas({
       const parent = visibleNodes.find(p => p.id === node.parentId);
       return { child: node, parent };
     })
-    .filter(conn => conn.parent !== undefined) as { child: TaskNode; parent: TaskNode }[];
+    .filter(conn => conn.parent !== undefined && !conn.parent.isContainer) as { child: TaskNode; parent: TaskNode }[];
 
   return (
     <div 

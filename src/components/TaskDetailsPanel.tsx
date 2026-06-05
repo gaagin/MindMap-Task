@@ -277,10 +277,10 @@ export default function TaskDetailsPanel({
           <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
             Приоритет задачи
           </label>
-          <div className="grid grid-cols-5 gap-1.5">
-            {(['none', 'low', 'medium', 'high', 'urgent'] as const).map((p) => {
-              let label = 'Нет';
-              let activeColor = 'border-slate-600 bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200';
+          <div className="grid grid-cols-4 gap-1.5">
+            {(['low', 'medium', 'high', 'urgent'] as const).map((p) => {
+              let label = '';
+              let activeColor = '';
               if (p === 'low') {
                 label = 'Низкий';
                 activeColor = 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950/20 dark:text-teal-400';

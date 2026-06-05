@@ -560,7 +560,7 @@ export default function App() {
       x: 0,
       y: 0,
       parentId: null,
-      priority: 'none',
+      priority: 'low',
       tags: ['Главная'],
       notes: `Вы создали новую интеллект-карту задач "${name}". Нажмите на кнопку "+" внизу карты, чтобы создать новую ветку. Вы также можете свободно таскать карточки по экрану, менять им цвета, крепить файлы и ставить приоритеты!`,
       completed: false,
@@ -809,7 +809,7 @@ export default function App() {
       x: Math.round(newX),
       y: Math.round(newY),
       parentId: parentId,
-      priority: 'none',
+      priority: 'low',
       tags: [],
       notes: '',
       completed: false,
@@ -851,8 +851,8 @@ export default function App() {
       y: Math.round(y),
       parentId: parentId, // can be a container or branch root
       isFloating: !isInsideContainer,
-      priority: 'none',
-      tags: isInsideContainer ? ['Контейнер'] : ['Плавающая'],
+      priority: 'low',
+      tags: [],
       notes: isInsideContainer 
         ? 'Вы создали эту задачу непосредственно в сфокусированном контейнере.'
         : 'Это полностью независимая задача, свободная от основной ветви. Вы можете свободно перемещать её по холсту, а также добавлять к ней дочерние подзадачи через кнопку "+".',
@@ -890,8 +890,8 @@ export default function App() {
       parentId: null, // independent root
       isFloating: true,
       isContainer: true,
-      priority: 'none',
-      tags: ['Контейнер'],
+      priority: 'low',
+      tags: [],
       notes: 'Это визуальный контейнер. Поместите в него другие задачи (перетащите их внутрь контейнера и удерживайте полсекунды для авто-привязки). Перемещая контейнер, вы будете двигать и все находящиеся в нём задачи, а при сворачивании контейнера они скроются.',
       completed: false,
       files: [],
@@ -1003,7 +1003,7 @@ export default function App() {
       y: 350 + Math.random() * 200,
       parentId: null,
       isFloating: true,
-      priority: 'none',
+      priority: 'low',
       tags: initialTags,
       notes: 'Создано на Канбан-доске.',
       completed: false,

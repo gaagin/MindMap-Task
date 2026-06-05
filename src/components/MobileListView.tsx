@@ -132,7 +132,7 @@ export default function MobileListView({
   
   // Quick task input states (TickTick experience)
   const [newTaskText, setNewTaskText] = useState('');
-  const [newTaskPriority, setNewTaskPriority] = useState<Priority>('none');
+  const [newTaskPriority, setNewTaskPriority] = useState<Priority>('low');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
   const [newTaskTags, setNewTaskTags] = useState<string[]>([]);
   
@@ -388,7 +388,7 @@ export default function MobileListView({
 
     // Reset fields
     setNewTaskText('');
-    setNewTaskPriority('none');
+    setNewTaskPriority('low');
     setNewTaskDueDate('');
     setNewTaskTags([]);
   };
@@ -777,8 +777,9 @@ export default function MobileListView({
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-400">Приоритет:</span>
                       <div className="flex gap-1 mt-1 flex-wrap">
-                        {(['none', 'low', 'medium', 'high', 'urgent'] as Priority[]).map((pr) => {
+                        {(['low', 'medium', 'high', 'urgent'] as Priority[]).map((pr) => {
                           const active = node.priority === pr;
+                          const label = pr === 'low' ? 'Низкий' : pr === 'medium' ? 'Средний' : pr === 'high' ? 'Высокий' : 'Срочный';
                           return (
                             <button
                               key={pr}
@@ -790,7 +791,7 @@ export default function MobileListView({
                                   : 'bg-slate-55 mb-1 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-705 dark:text-slate-400'
                               }`}
                             >
-                              {pr}
+                              {label}
                             </button>
                           );
                         })}
@@ -1063,7 +1064,6 @@ export default function MobileListView({
                 <option value="high">Высокий 🔴</option>
                 <option value="medium">Средний 🟡</option>
                 <option value="low">Низкий 🔵</option>
-                <option value="none">Без приор. ⚪</option>
               </select>
             </div>
 
@@ -1167,7 +1167,6 @@ export default function MobileListView({
                   onChange={(e) => setNewTaskPriority(e.target.value as Priority)}
                   className="bg-transparent border-none text-[11px] font-bold text-slate-600 dark:text-slate-350 focus:outline-none cursor-pointer w-full"
                 >
-                  <option value="none">Приоритет: нет</option>
                   <option value="low">Низкий 🔵</option>
                   <option value="medium">Средний 🟡</option>
                   <option value="high">Высокий 🔴</option>
