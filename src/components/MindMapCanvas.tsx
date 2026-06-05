@@ -1735,6 +1735,8 @@ export default function MindMapCanvas({
                           e.stopPropagation();
                           onAddChildNode(node.id);
                         }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        data-drag-ignore
                         title="Добавить задачу внутрь контейнера"
                         className="p-1 rounded-md text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-350 hover:bg-emerald-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                       >
@@ -1757,6 +1759,8 @@ export default function MindMapCanvas({
                           onSelectNode(node.id);
                         }
                       }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      data-drag-ignore
                       title={focusedContainerId === node.id ? "Выйти из режима фокусировки" : "Раскрыть на весь экран (режим фокусировки)"}
                       className={`p-1 rounded-md transition-all cursor-pointer ${
                         focusedContainerId === node.id
@@ -1772,6 +1776,8 @@ export default function MindMapCanvas({
                         e.stopPropagation();
                         onToggleNodeCollapse(node.id);
                       }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      data-drag-ignore
                       title={node.collapsed ? "Развернуть контейнер" : "Свернуть контейнер"}
                       className="p-1 rounded-md text-slate-500 hover:text-amber-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                     >
@@ -1783,6 +1789,8 @@ export default function MindMapCanvas({
                         e.stopPropagation();
                         onDeleteNode(node.id);
                       }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      data-drag-ignore
                       title="Удалить контейнер"
                       className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-850 transition-colors cursor-pointer"
                     >

@@ -210,6 +210,16 @@ export default function App() {
     }
   }, [selectedNodeId]);
 
+  // Track last created task/container node to enable quick ESC cancel
+  const [lastCreatedNodeId, setLastCreatedNodeId] = useState<string | null>(null);
+
+  // Sync lastCreatedNodeId to null when selectedNodeId changes to another node or becomes null
+  useEffect(() => {
+    if (selectedNodeId !== lastCreatedNodeId) {
+      setLastCreatedNodeId(null);
+    }
+  }, [selectedNodeId, lastCreatedNodeId]);
+
   // Search keyword for filtering
   const [searchQuery, setSearchQuery] = useState('');
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
@@ -372,7 +382,7 @@ export default function App() {
         setSheetsError(null);
       } else {
         setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
-        setSheetsError('Failed to synchronize. Response state was not successful.');
+        setSheetsError(result.error || 'Failed to synchronize. Response state was not successful.');
       }
     } catch (e: any) {
       console.error('Error running symmetrical sheets sync:', e);
@@ -435,6 +445,47 @@ export default function App() {
     }
     localStorage.setItem('task_mindmap_dark', String(darkMode));
   }, [darkMode]);
+
+  // Handle keyboard shortcuts (Delete to delete selected task, Escape to cancel newly added task during focus)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isTyping = (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      );
+
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        if (selectedNodeId && selectedNodeId === lastCreatedNodeId) {
+          if (isTyping) {
+            target.blur();
+          }
+          handleDeleteNode(selectedNodeId, true); // True to skip confirming if it happens to be a container
+          setLastCreatedNodeId(null);
+          setSelectedNodeId(null);
+          e.preventDefault();
+          return;
+        }
+      }
+
+      if (isTyping) {
+        return; // Ignore other shortcuts (like Delete) while typing in inputs
+      }
+
+      if (e.key === 'Delete' || e.key === 'Del') {
+        if (selectedNodeId) {
+          handleDeleteNode(selectedNodeId);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [selectedNodeId, lastCreatedNodeId, state]);
 
   // Adjust sidebar on startup based on screen width ONLY on initial load if no preference is saved
   useEffect(() => {
@@ -831,6 +882,7 @@ export default function App() {
 
     // Auto select new node so user can rename instantly! 🚀
     setSelectedNodeId(newChild.id);
+    setLastCreatedNodeId(newChild.id);
   };
 
   // Add a fully independent floating node anywhere on the canvas
@@ -871,6 +923,7 @@ export default function App() {
 
     // Auto select the new floating node so user can rename instantly!
     setSelectedNodeId(newFloatingNode.id);
+    setLastCreatedNodeId(newFloatingNode.id);
   };
 
   // Add a fully independent styled container box anywhere on the canvas
@@ -908,14 +961,17 @@ export default function App() {
 
     // Auto select the new container node so user can rename instantly!
     setSelectedNodeId(newContainerNode.id);
+    setLastCreatedNodeId(newContainerNode.id);
   };
 
   // Recursive deletion of subnodes to avoid orphan paths in mapping svg
-  const handleDeleteNode = (id: string) => {
+  const handleDeleteNode = (id: string, skipConfirm = false) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
     const currentNodes = state.nodes[pid] || [];
+    const targetNode = currentNodes.find(n => n.id === id);
+
     pushToUndo(pid, currentNodes);
 
     // Collect list of ids to delete (target + children recursively)
@@ -1770,6 +1826,8 @@ export default function App() {
             onClose={() => setIsDrawerOpen(false)}
             onUpdateNode={handleUpdateNode}
             onDeleteNode={handleDeleteNode}
+            onAddChildNode={handleAddChildNode}
+            onSelectNode={setSelectedNodeId}
             tagCategories={state.tagCategories || []}
             onCreateTagCategory={handleCreateTagCategory}
             onUpdateTagCategory={handleUpdateTagCategory}
@@ -2037,6 +2095,35 @@ export default function App() {
                       <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded border border-rose-100 dark:border-rose-900 font-mono text-[10px] text-rose-700 dark:text-rose-300 select-all overflow-x-auto whitespace-pre-wrap">
                         {sheetsError || 'Bilateral Symmetrical Sync Error: Failed to fetch'}
                       </div>
+
+                      {sheetsError && (sheetsError.includes('401') || sheetsError.toUpperCase().includes('UNAUTHENTICATED')) && (
+                        <div className="pt-1.5 pb-1">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                setSheetsError(null);
+                                setSyncStatus(prev => ({ ...prev, sheets: 'syncing' }));
+                                const res = await googleSignIn();
+                                if (res) {
+                                  setCurrentUser(res.user);
+                                  setGoogleToken(res.accessToken);
+                                  // Changing googleToken will auto-trigger sync inside useEffect
+                                } else {
+                                  setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+                                  setSheetsError('Не удалось войти.');
+                                }
+                              } catch (err: any) {
+                                setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+                                setSheetsError(err?.message || String(err));
+                              }
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer transition-all shadow-md active:scale-[0.98]"
+                          >
+                            <span>Обновить авторизацию Google</span>
+                          </button>
+                        </div>
+                      )}
 
                       <div className="text-[10.5px] space-y-2 text-slate-600 dark:text-slate-400 leading-relaxed font-normal">
                         <p className="font-bold text-slate-700 dark:text-slate-300">💡 Как это исправить:</p>

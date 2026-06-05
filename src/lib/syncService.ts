@@ -162,7 +162,8 @@ async function createSpreadsheet(accessToken: string): Promise<string> {
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to create Spreadsheet: ${res.statusText}`);
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Failed to create Spreadsheet: ${res.status} ${res.statusText || 'Error'}. Info: ${errText}`);
   }
 
   const data = await res.json();
@@ -206,7 +207,7 @@ async function writeHeaders(spreadsheetId: string, accessToken: string) {
     }
   ];
 
-  await fetch(updateUrl, {
+  const writeRes = await fetch(updateUrl, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -217,6 +218,11 @@ async function writeHeaders(spreadsheetId: string, accessToken: string) {
       data
     })
   });
+
+  if (!writeRes.ok) {
+    const errText = await writeRes.text().catch(() => '');
+    throw new Error(`Failed to write sheet headers: ${writeRes.status} ${writeRes.statusText || 'Error'}. Info: ${errText}`);
+  }
 }
 
 /**
@@ -225,7 +231,7 @@ async function writeHeaders(spreadsheetId: string, accessToken: string) {
 export async function syncWithGoogleSheets(
   accessToken: string,
   localState: WorkspaceState
-): Promise<{ state: WorkspaceState; success: boolean; report?: SyncReport }> {
+): Promise<{ state: WorkspaceState; success: boolean; report?: SyncReport; error?: string }> {
   try {
     let fileId = await findSpreadsheet(accessToken);
     if (!fileId) {
@@ -240,7 +246,8 @@ export async function syncWithGoogleSheets(
     });
 
     if (!getRes.ok) {
-      throw new Error(`Google Sheets fetch failed with status ${getRes.status}`);
+      const errText = await getRes.text().catch(() => '');
+      throw new Error(`Google Sheets fetch failed with status ${getRes.status} ${getRes.statusText || 'Error'}. Info: ${errText}`);
     }
 
     const valueRangesResult = await getRes.json();
@@ -559,7 +566,7 @@ export async function syncWithGoogleSheets(
     // 8. Write updated lists back to Google Sheets (Overwrite to ensure exact symmetry)
     // Clear ancient rows
     const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchClear`;
-    await fetch(clearUrl, {
+    const clearRes = await fetch(clearUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -569,6 +576,10 @@ export async function syncWithGoogleSheets(
         ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:T', 'TagCategories!A2:E', 'Deletions!A2:C']
       })
     });
+    if (!clearRes.ok) {
+      const errText = await clearRes.text().catch(() => '');
+      throw new Error(`Failed to clear existing rows: ${clearRes.status} ${clearRes.statusText || 'Error'}. Info: ${errText}`);
+    }
 
     // Compile rows to append/write
     const folderRows = finalFolders.map(f => [
@@ -633,7 +644,7 @@ export async function syncWithGoogleSheets(
     if (deletionRows.length > 0) dataToWrite.push({ range: `Deletions!A2:C${deletionRows.length + 1}`, values: deletionRows });
 
     if (dataToWrite.length > 0) {
-      await fetch(updateUrl, {
+      const updateRes = await fetch(updateUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -644,6 +655,10 @@ export async function syncWithGoogleSheets(
           data: dataToWrite
         })
       });
+      if (!updateRes.ok) {
+        const errText = await updateRes.text().catch(() => '');
+        throw new Error(`Failed to write updated values: ${updateRes.status} ${updateRes.statusText || 'Error'}. Info: ${errText}`);
+      }
     }
 
     // Since they are written to sheets, clear our temporary local deletions uploaded
@@ -651,8 +666,8 @@ export async function syncWithGoogleSheets(
 
     console.log('Bilateral Symmetrical Google Sheets Sync Completed Successfully!');
     return { state: mergedState, success: true, report: syncReportData };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Bilateral Symmetrical Sync Error:', error);
-    return { state: localState, success: false };
+    return { state: localState, success: false, error: error?.message || String(error) };
   }
 }

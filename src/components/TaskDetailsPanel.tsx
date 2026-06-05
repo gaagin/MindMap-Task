@@ -12,7 +12,11 @@ import {
   Layers,
   HelpCircle,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  Circle,
+  CheckCircle2,
+  Eye,
+  Edit
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants } from '../utils';
@@ -23,6 +27,8 @@ interface TaskDetailsPanelProps {
   onClose: () => void;
   onUpdateNode: (updatedNode: TaskNode) => void;
   onDeleteNode: (id: string) => void;
+  onAddChildNode?: (parentId: string) => void;
+  onSelectNode?: (id: string | null) => void;
   tagCategories?: TagCategory[];
   onCreateTagCategory?: (name: string, color: string) => void;
   onUpdateTagCategory?: (id: string, name: string, color: string, tags: string[]) => void;
@@ -45,6 +51,8 @@ export default function TaskDetailsPanel({
   onClose,
   onUpdateNode,
   onDeleteNode,
+  onAddChildNode,
+  onSelectNode,
   tagCategories = [],
   onCreateTagCategory,
   onUpdateTagCategory,
@@ -271,6 +279,121 @@ export default function TaskDetailsPanel({
             </div>
           );
         })()}
+
+        {/* Subtasks Section */}
+        <div className="space-y-2 bg-[#FAFBFD]/40 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+              Подзадачи ({allNodes.filter(n => n.parentId === node.id).length})
+            </label>
+            {onAddChildNode && (
+              <button
+                type="button"
+                onClick={() => onAddChildNode(node.id)}
+                className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3 h-3" /> Добавить
+              </button>
+            )}
+          </div>
+
+          {(() => {
+            const subtasks = allNodes.filter(n => n.parentId === node.id);
+            if (subtasks.length > 0) {
+              return (
+                <div className="space-y-1.5 mt-1.5 max-h-48 overflow-y-auto pr-1">
+                  {subtasks.map((child) => (
+                    <div 
+                      key={child.id}
+                      className="flex items-center justify-between gap-1.5 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800/50 group hover:border-slate-200 dark:hover:border-slate-700 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {/* Completed Checkbox */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateNode({
+                              ...child,
+                              completed: !child.completed
+                            });
+                          }}
+                          className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex-shrink-0 transition-colors"
+                        >
+                          {child.completed ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-450" />
+                          ) : (
+                            <Circle className="w-4 h-4 text-slate-300 dark:text-slate-600" />
+                          )}
+                        </button>
+
+                        {/* Editable Name */}
+                        <input
+                          type="text"
+                          value={child.text}
+                          onChange={(e) => {
+                            onUpdateNode({
+                              ...child,
+                              text: e.target.value
+                            });
+                          }}
+                          className={`text-xs font-medium bg-transparent border-0 focus:ring-0 focus:outline-none p-0 w-full text-slate-700 dark:text-slate-200 ${
+                            child.completed ? 'line-through text-slate-400 dark:text-slate-500 italic' : ''
+                          }`}
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-1 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
+                        {/* Open Subtask Details Button */}
+                        {onSelectNode && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectNode(child.id)}
+                            title="Открыть свойства подзадачи"
+                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {/* Edit Subtask Details Button */}
+                        {onSelectNode && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectNode(child.id)}
+                            title="Редактировать подзадачу"
+                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {/* Delete Subtask Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Удалить подзадачу "${child.text}"?`)) {
+                              onDeleteNode(child.id);
+                            }
+                          }}
+                          title="Удалить подзадачу"
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-955/20 rounded transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            } else {
+              return (
+                <p className="text-xs text-slate-400 dark:text-slate-500 italic mt-1 pl-1">
+                  Нет дочерних подзадач.
+                </p>
+              );
+            }
+          })()}
+        </div>
 
         {/* Priority buttons */}
         <div className="space-y-2">
@@ -763,7 +886,7 @@ export default function TaskDetailsPanel({
       </div>
 
       {/* Dangerous/Root operations */}
-      {(node.parentId !== null || node.isFloating) && (
+      {(node.parentId !== null || node.isFloating || node.isContainer) && (
         <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/60">
           <button
             onClick={() => {
