@@ -209,9 +209,10 @@ export default function Sidebar({
           </div>
 
           {/* Folder actions hover */}
-          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 ml-2 transition-opacity">
+          <div className="relative z-50 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 flex items-center gap-1 ml-2 transition-opacity">
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setShowNewProjectInput(folder.id);
                 setExpandedFolders(prev => ({ ...prev, [folder.id]: true }));
               }}
@@ -221,7 +222,8 @@ export default function Sidebar({
               <Plus className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setShowNewFolderInput(folder.id);
                 setExpandedFolders(prev => ({ ...prev, [folder.id]: true }));
               }}
@@ -231,7 +233,8 @@ export default function Sidebar({
               <FolderPlus className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setEditingFolderId(folder.id);
                 setEditingFolderName(folder.name);
               }}
@@ -241,7 +244,8 @@ export default function Sidebar({
               <Edit className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 if (confirm(`Вы уверены, что хотите удалить папку "${folder.name}"? Карты внутри папки останутся.`)) {
                   onDeleteFolder(folder.id);
                 }
@@ -348,7 +352,7 @@ export default function Sidebar({
           )}
         </div>
 
-        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 ml-2 transition-opacity">
+        <div className="relative z-50 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 flex items-center gap-1.5 ml-2 transition-opacity">
           <button
             onClick={(e) => {
               e.stopPropagation();
