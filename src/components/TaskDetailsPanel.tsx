@@ -116,7 +116,22 @@ export default function TaskDetailsPanel({
     localStorage.setItem('task_mindmap_collapsed_categories', JSON.stringify(collapsedCategoryIds));
   }, [collapsedCategoryIds]);
 
+  // Safe confirmation states for iframes (avoiding browser confirm dialog)
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDeleteSubtaskId, setConfirmDeleteSubtaskId] = useState<string | null>(null);
+  const [confirmDeleteCatId, setConfirmDeleteCatId] = useState<string | null>(null);
+
+  // Reset confirmations on node change
+  React.useEffect(() => {
+    setConfirmDelete(false);
+    setConfirmDeleteSubtaskId(null);
+    setConfirmDeleteCatId(null);
+  }, [node?.id]);
+
   if (!node) return null;
+
+  // Check if it is the central workspace core node
+  const isCentralRootNode = node.parentId === null && !node.isFloating && !node.isContainer;
 
   // Generic modification helper
   const handlePropChange = <K extends keyof TaskNode>(key: K, value: TaskNode[K]) => {
@@ -446,14 +461,26 @@ export default function TaskDetailsPanel({
                         <button
                           type="button"
                           onClick={() => {
-                            if (window.confirm(`Удалить подзадачу "${child.text}"?`)) {
+                            if (confirmDeleteSubtaskId === child.id) {
                               onDeleteNode(child.id);
+                              setConfirmDeleteSubtaskId(null);
+                            } else {
+                              setConfirmDeleteSubtaskId(child.id);
+                              setTimeout(() => setConfirmDeleteSubtaskId(curr => curr === child.id ? null : curr), 4000);
                             }
                           }}
-                          title="Удалить подзадачу"
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-955/20 rounded transition-colors cursor-pointer"
+                          title={confirmDeleteSubtaskId === child.id ? "Нажмите для подтверждения удаления подзадачи" : "Удалить подзадачу"}
+                          className={`p-1 rounded transition-all duration-200 cursor-pointer flex items-center gap-1 text-[10px] uppercase font-bold ${
+                            confirmDeleteSubtaskId === child.id
+                              ? "text-white bg-rose-600 hover:bg-rose-700 px-2 animate-pulse"
+                              : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-955/20"
+                          }`}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          {confirmDeleteSubtaskId === child.id ? (
+                            <span>Удалить подзадачу?</span>
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
                         </button>
                       </div>
                     </div>
@@ -511,28 +538,83 @@ export default function TaskDetailsPanel({
           </div>
         </div>
 
-        {/* Срок выполнения (Due Date) */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-indigo-500" />
-            Срок выполнения (дедлайн)
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="date"
-              value={node.dueDate || ''}
-              onChange={(e) => handlePropChange('dueDate', e.target.value)}
-              className="flex-1 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
-            />
-            {node.dueDate && (
-              <button
-                onClick={() => handlePropChange('dueDate', '')}
-                className="px-2.5 py-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 rounded-lg transition-colors text-xs font-medium cursor-pointer"
-                title="Очистить срок"
-              >
-                Сбросить
-              </button>
-            )}
+        {/* Даты и время (Начало и Конец) */}
+        <div className="space-y-4 bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-150 dark:border-slate-800">
+          <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-indigo-500" />
+            Временные рамки и часы
+          </span>
+          
+          {/* Дата и время начала */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-450 uppercase flex items-center justify-between">
+              <span>Дата и время начала</span>
+              {(node.startDate || node.startTime) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateNode({
+                      ...node,
+                      startDate: undefined,
+                      startTime: undefined
+                    });
+                  }}
+                  className="text-[10px] text-rose-550 dark:text-rose-400 font-bold hover:underline"
+                >
+                  Сбросить
+                </button>
+              )}
+            </label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={node.startDate || ''}
+                onChange={(e) => handlePropChange('startDate', e.target.value)}
+                className="flex-1 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
+              />
+              <input
+                type="time"
+                value={node.startTime || ''}
+                onChange={(e) => handlePropChange('startTime', e.target.value)}
+                className="w-24 px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Дата и время окончания */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-450 uppercase flex items-center justify-between">
+              <span>Срок выполнения (дедлайн)</span>
+              {(node.dueDate || node.dueTime) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateNode({
+                      ...node,
+                      dueDate: undefined,
+                      dueTime: undefined
+                    });
+                  }}
+                  className="text-[10px] text-rose-550 dark:text-rose-400 font-bold hover:underline"
+                >
+                  Сбросить
+                </button>
+              )}
+            </label>
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={node.dueDate || ''}
+                onChange={(e) => handlePropChange('dueDate', e.target.value)}
+                className="flex-1 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
+              />
+              <input
+                type="time"
+                value={node.dueTime || ''}
+                onChange={(e) => handlePropChange('dueTime', e.target.value)}
+                className="w-24 px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-mono"
+              />
+            </div>
           </div>
         </div>
 
@@ -749,14 +831,22 @@ export default function TaskDetailsPanel({
                             <button
                               type="button"
                               onClick={() => {
-                                if (confirm(`Вы уверены, что хотите удалить категорию "${cat.name}"?`)) {
+                                if (confirmDeleteCatId === cat.id) {
                                   onDeleteTagCategory(cat.id);
+                                  setConfirmDeleteCatId(null);
+                                } else {
+                                  setConfirmDeleteCatId(cat.id);
+                                  setTimeout(() => setConfirmDeleteCatId(curr => curr === cat.id ? null : curr), 4000);
                                 }
                               }}
-                              className="text-[10px] text-rose-500 hover:text-rose-600 cursor-pointer"
-                              title="Удалить категорию"
+                              className={`text-[10px] cursor-pointer font-semibold rounded px-1.5 py-0.5 transition-all ${
+                                confirmDeleteCatId === cat.id 
+                                  ? "text-white bg-rose-600 animate-pulse font-bold" 
+                                  : "text-rose-500 hover:text-rose-600 hover:bg-rose-50"
+                              }`}
+                              title={confirmDeleteCatId === cat.id ? "Нажмите для подтверждения удаления" : "Удалить категорию"}
                             >
-                              Удалить
+                              {confirmDeleteCatId === cat.id ? "Удалить?" : "Удалить"}
                             </button>
                           )}
                         </div>
@@ -961,22 +1051,34 @@ export default function TaskDetailsPanel({
       </div>
 
       {/* Dangerous/Root operations */}
-      {(node.parentId !== null || node.isFloating || node.isContainer) && (
+      {!isCentralRootNode ? (
         <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/60">
           <button
             onClick={() => {
-              const confirmMsg = node.isContainer 
-                ? 'Удалить контейнер и все задачи внутри него?' 
-                : 'Удалить эту ветку mindmap вместе с дочерними?';
-              if (confirm(confirmMsg)) {
+              if (confirmDelete) {
                 onDeleteNode(node.id);
                 onClose();
+                setConfirmDelete(false);
+              } else {
+                setConfirmDelete(true);
+                setTimeout(() => setConfirmDelete(false), 4000);
               }
             }}
-            className="w-full flex items-center justify-center gap-2 py-2 border border-rose-250 dark:border-rose-950 text-rose-600 bg-rose-50/50 hover:bg-rose-50 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+            className={`w-full flex items-center justify-center gap-2 py-2 border text-xs font-semibold rounded-lg transition-all duration-300 cursor-pointer ${
+              confirmDelete
+                ? "bg-rose-600 border-rose-600 text-white font-bold animate-pulse scale-[1.02]"
+                : "border-rose-250 dark:border-rose-950 text-rose-600 bg-rose-50/50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40"
+            }`}
           >
-            <Trash2 className="w-3.5 h-3.5" /> {node.isContainer ? 'Удалить контейнер и задачи внутри' : 'Удалить текущую ветвь задач'}
+            <Trash2 className="w-3.5 h-3.5" /> 
+            {confirmDelete 
+              ? (node.isContainer ? 'Вы уверены? Нажмите ещё раз!' : 'Вы уверены? Нажмите ещё раз!') 
+              : (node.isContainer ? 'Удалить контейнер и задачи внутри' : 'Удалить текущую задачу/ветвь')}
           </button>
+        </div>
+      ) : (
+        <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/20 text-center text-slate-400 dark:text-slate-500 text-[10px] font-mono select-none">
+          Это корневой узел интеллект-карты. Его нельзя удалить.
         </div>
       )}
     </aside>

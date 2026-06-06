@@ -49,12 +49,38 @@ export function clearLocalDeletions(uploaded: DeletionRecord[]) {
 // ----------------- FIREBASE SYNC -----------------
 
 /**
+ * Recursively removes any undefined fields or converts them to null to prevent Firestore invalid data errors.
+ */
+function sanitizeForFirestore(obj: any): any {
+  if (obj === undefined) {
+    return null;
+  }
+  if (obj === null) {
+    return null;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeForFirestore);
+  }
+  if (typeof obj === 'object') {
+    const res: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        res[key] = sanitizeForFirestore(val);
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
+/**
  * Saves current WorkspaceState snapshot to firestore database dynamically.
  */
 export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState) {
   try {
     const docRef = doc(db, 'workspaces', userId);
-    const payload = {
+    const rawPayload = {
       userId,
       folders: state.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
       projects: state.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() })),
@@ -63,8 +89,11 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
         return acc;
       }, {} as Record<string, TaskNode[]>),
       activeProjectId: state.activeProjectId,
+      tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
       updatedAt: new Date().toISOString()
     };
+    
+    const payload = sanitizeForFirestore(rawPayload);
     await setDoc(docRef, payload);
     console.log('Firebase cloud sync snapshot completed successfully.');
     return true;

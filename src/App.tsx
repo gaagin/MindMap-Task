@@ -43,6 +43,7 @@ import {
   initAuth, 
   googleSignIn, 
   logout,
+  setAccessToken,
   db
 } from './lib/firebase';
 import { 
@@ -409,12 +410,30 @@ export default function App() {
         setSheetsError(null);
       } else {
         setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
-        setSheetsError(result.error || 'Failed to synchronize. Response state was not successful.');
+        const errMsg = result.error || 'Failed to synchronize. Response state was not successful.';
+        
+        const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
+        if (isStaleToken) {
+          setSheetsError('Сессия Google Таблиц истекла. Пожалуйста, выйдите и авторизуйтесь заново в меню "Google Таблицы".');
+          setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
+          setAccessToken(null); // Clear stored token from localStorage
+        } else {
+          setSheetsError(errMsg);
+        }
       }
     } catch (e: any) {
       console.error('Error running symmetrical sheets sync:', e);
       setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
-      setSheetsError(e?.message || String(e));
+      
+      const errMsg = e?.message || String(e);
+      const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
+      if (isStaleToken) {
+        setSheetsError('Сессия Google Таблиц истекла. Пожалуйста, выйдите и авторизуйтесь заново в меню "Google Таблицы".');
+        setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
+        setAccessToken(null); // Clear stored token from localStorage
+      } else {
+        setSheetsError(errMsg);
+      }
     } finally {
       setIsSyncingSheets(false);
     }
@@ -1236,7 +1255,7 @@ export default function App() {
   };
 
   // Create a new task originating from the Mobile list view (TickTick style)
-  const handleCreateMobileTask = (text: string, tags: string[], priority: Priority, dueDate?: string, parentId?: string | null) => {
+  const handleCreateMobileTask = (text: string, tags: string[], priority: Priority, dueDate?: string, parentId?: string | null, dueTime?: string) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
@@ -1261,6 +1280,7 @@ export default function App() {
       completed: false,
       files: [],
       dueDate,
+      dueTime,
       color: parentNode ? parentNode.color : '#6366f1'
     };
 
@@ -1993,8 +2013,8 @@ export default function App() {
                 }}
                 onUpdateNode={handleUpdateNode}
                 onDeleteNode={handleDeleteNode}
-                onCreateTask={(text, initialTags, dueDate) => {
-                  handleCreateMobileTask(text, initialTags || [], 'none', dueDate);
+                onCreateTask={(text, initialTags, dueDate, dueTime) => {
+                  handleCreateMobileTask(text, initialTags || [], 'none', dueDate, null, dueTime);
                 }}
               />
             ) : viewMode === 'gantt' ? (

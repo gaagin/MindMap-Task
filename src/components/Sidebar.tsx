@@ -13,7 +13,8 @@ import {
   Upload, 
   RotateCcw,
   X,
-  FolderOpen
+  FolderOpen,
+  AlertCircle
 } from 'lucide-react';
 import { Folder, Project, TagCategory, WorkspaceState } from '../types';
 import GoogleSheetsSync from './GoogleSheetsSync';
@@ -122,6 +123,12 @@ export default function Sidebar({
   React.useEffect(() => {
     localStorage.setItem('task_mindmap_collapsed_categories', JSON.stringify(collapsedCategoryIds));
   }, [collapsedCategoryIds]);
+
+  // Safety confirmation states for deleting items (crucial for iframe mode where window.confirm is blocked)
+  const [confirmDeleteFolderId, setConfirmDeleteFolderId] = useState<string | null>(null);
+  const [confirmDeleteProjectId, setConfirmDeleteProjectId] = useState<string | null>(null);
+  const [confirmDeleteCategoryId, setConfirmDeleteCategoryId] = useState<string | null>(null);
+  const [confirmResetDemo, setConfirmResetDemo] = useState(false);
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders(prev => ({
@@ -246,14 +253,28 @@ export default function Sidebar({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (confirm(`Вы уверены, что хотите удалить папку "${folder.name}"? Карты внутри папки останутся.`)) {
+                if (confirmDeleteFolderId === folder.id) {
                   onDeleteFolder(folder.id);
+                  setConfirmDeleteFolderId(null);
+                } else {
+                  setConfirmDeleteFolderId(folder.id);
+                  setTimeout(() => setConfirmDeleteFolderId(curr => curr === folder.id ? null : curr), 4000);
                 }
               }}
-              title="Удалить папку"
-              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+              title={confirmDeleteFolderId === folder.id ? "Подтвердите удаление (нажмите еще раз)" : "Удалить папку"}
+              className={`p-1 rounded transition-all duration-200 ${
+                confirmDeleteFolderId === folder.id
+                  ? "text-white bg-rose-600 hover:bg-rose-700 font-bold px-2 animate-pulse"
+                  : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+              }`}
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              {confirmDeleteFolderId === folder.id ? (
+                <span className="text-[10px] flex items-center gap-1 font-sans">
+                  <AlertCircle className="w-3.5 h-3.5 text-white" /> Удалить?
+                </span>
+              ) : (
+                <Trash2 className="w-3.5 h-3.5" />
+              )}
             </button>
           </div>
         </div>
@@ -367,14 +388,28 @@ export default function Sidebar({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (confirm(`Вы уверены, что хотите окончательно удалить карту задач "${project.name}"?`)) {
+              if (confirmDeleteProjectId === project.id) {
                 onDeleteProject(project.id);
+                setConfirmDeleteProjectId(null);
+              } else {
+                setConfirmDeleteProjectId(project.id);
+                setTimeout(() => setConfirmDeleteProjectId(curr => curr === project.id ? null : curr), 4000);
               }
             }}
-            title="Удалить интеллект-карту"
-            className="p-0.5 hover:text-rose-600 rounded"
+            title={confirmDeleteProjectId === project.id ? "Подтвердите удаление (нажмите еще раз)" : "Удалить интеллект-карту"}
+            className={`p-0.5 rounded transition-all duration-200 ${
+              confirmDeleteProjectId === project.id
+                ? "text-white bg-rose-600 hover:bg-rose-700 font-bold px-1.5 animate-pulse"
+                : "hover:text-rose-600"
+            }`}
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            {confirmDeleteProjectId === project.id ? (
+              <span className="text-[9px] flex items-center gap-0.5 font-sans">
+                Удалить?
+              </span>
+            ) : (
+              <Trash2 className="w-3.5 h-3.5" />
+            )}
           </button>
         </div>
       </div>
@@ -753,14 +788,26 @@ export default function Sidebar({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm(`Вы уверены, что хотите удалить категорию "${cat.name}"? Теги на картах останутся, но не будут классифицированы.`)) {
+                                if (confirmDeleteCategoryId === cat.id) {
                                   onDeleteTagCategory(cat.id);
+                                  setConfirmDeleteCategoryId(null);
+                                } else {
+                                  setConfirmDeleteCategoryId(cat.id);
+                                  setTimeout(() => setConfirmDeleteCategoryId(curr => curr === cat.id ? null : curr), 4000);
                                 }
                               }}
-                              className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                              title="Удалить категорию"
+                              className={`p-1 rounded transition-all duration-200 cursor-pointer ${
+                                confirmDeleteCategoryId === cat.id
+                                  ? "text-white bg-rose-600 hover:bg-rose-700 font-bold px-1.5 animate-pulse"
+                                  : "text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              }`}
+                              title={confirmDeleteCategoryId === cat.id ? "Подтвердите удаление" : "Удалить категорию"}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              {confirmDeleteCategoryId === cat.id ? (
+                                <span className="text-[9px] flex items-center font-sans">Удалить?</span>
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
                             </button>
                           </div>
                         </div>
@@ -905,13 +952,29 @@ export default function Sidebar({
 
           <button
             onClick={() => {
-              if (confirm('Внимание! Это действие заменит все текущие карты на демонстрационный набор данных. Продолжить?')) {
+              if (confirmResetDemo) {
                 onResetDemo();
+                setConfirmResetDemo(false);
+              } else {
+                setConfirmResetDemo(true);
+                setTimeout(() => setConfirmResetDemo(false), 5000);
               }
             }}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 text-slate-500 text-[11px] font-medium rounded-md transition-colors"
+            className={`w-full flex items-center justify-center gap-1.5 py-1.5 border hover:text-slate-900 text-[11px] font-medium rounded-md transition-all duration-300 ${
+              confirmResetDemo 
+                ? "bg-rose-600 border-rose-600 hover:bg-rose-700 text-white font-bold animate-pulse scale-102" 
+                : "bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
+            }`}
           >
-            <RotateCcw className="w-3.5 h-3.5" /> Восстановить демо
+            {confirmResetDemo ? (
+              <>
+                <AlertCircle className="w-3.5 h-3.5" /> Точно стереть всё и сбросить?
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-3.5 h-3.5" /> Восстановить демо
+              </>
+            )}
           </button>
 
           <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-mono pt-1 select-none">

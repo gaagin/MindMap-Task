@@ -134,26 +134,73 @@ export default function GanttView({
   };
 
   // Pre-calculate dates span positions for each task bar
-  // If a task ends at YYYY-MM-DD, we assume its duration is 3 days.
   const getTaskRangeColIndices = (task: TaskNode) => {
-    if (!task.dueDate) return null;
+    if (!task.startDate && !task.dueDate) return null;
     
-    // Find due date index in our table
-    const targetIdx = timelineDays.findIndex(d => d.dateString === task.dueDate);
-    if (targetIdx === -1) {
-      // Out of bounds for current slice
-      return null;
+    let startIdx = -1;
+    let endIdx = -1;
+
+    if (task.startDate) {
+      startIdx = timelineDays.findIndex(d => d.dateString === task.startDate);
+    }
+    if (task.dueDate) {
+      endIdx = timelineDays.findIndex(d => d.dateString === task.dueDate);
     }
 
-    // Assume 3-day duration (ends at due date index)
-    const duration = 3;
-    const startIdx = Math.max(0, targetIdx - duration + 1);
+    // If both dates are provided
+    if (task.startDate && task.dueDate) {
+      const startMs = new Date(task.startDate).getTime();
+      const endMs = new Date(task.dueDate).getTime();
+      
+      if (startMs <= endMs) {
+        if (startIdx === -1) {
+          const firstDayMs = timelineDays[0].date.getTime();
+          if (startMs < firstDayMs) {
+            startIdx = 0; // Starts before range
+          } else {
+            return null; // Starts after range
+          }
+        }
+        if (endIdx === -1) {
+          const lastDayMs = timelineDays[27].date.getTime();
+          if (endMs > lastDayMs) {
+            endIdx = 27; // Ends after range
+          } else {
+            return null; // Ends before range
+          }
+        }
+      } else {
+        // Swap if misconfigured
+        const temp = startIdx;
+        startIdx = endIdx;
+        endIdx = temp;
+      }
+    } else if (task.startDate) {
+      // Only startDate exists -> assume 3 days duration
+      if (startIdx === -1) {
+        const startMs = new Date(task.startDate).getTime();
+        const firstDayMs = timelineDays[0].date.getTime();
+        if (startMs < firstDayMs) return null;
+        return null;
+      }
+      endIdx = Math.min(27, startIdx + 2);
+    } else if (task.dueDate) {
+      // Only dueDate exists -> assume 3 days duration leading up to dueDate
+      if (endIdx === -1) {
+        return null;
+      }
+      startIdx = Math.max(0, endIdx - 2);
+    }
+
+    if (startIdx !== -1 && endIdx !== -1 && startIdx <= endIdx) {
+      return {
+        start: startIdx,
+        end: endIdx,
+        span: endIdx - startIdx + 1,
+      };
+    }
     
-    return {
-      start: startIdx,
-      end: targetIdx,
-      span: targetIdx - startIdx + 1,
-    };
+    return null;
   };
 
   const handleInlineTaskCreate = () => {

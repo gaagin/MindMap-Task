@@ -24,6 +24,9 @@ export interface TaskNode {
   collapsed?: boolean; // Optional state to collapse/hide sub-branches
   isCardCollapsed?: boolean; // Optional state to collapse/fold only the task card visual details
   dueDate?: string; // Optional due date string (YYYY-MM-DD)
+  dueTime?: string; // Optional due time string (HH:MM)
+  startDate?: string; // Optional start date string (YYYY-MM-DD)
+  startTime?: string; // Optional start time string (HH:MM)
   progress?: number; // Optional progress percentage (0 to 100)
   isFloating?: boolean; // Optional flag for independent floating nodes
   isContainer?: boolean; // Optional flag for a container box node

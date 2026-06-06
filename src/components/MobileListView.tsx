@@ -140,6 +140,11 @@ export default function MobileListView({
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
 
+  // Safe confirmation states for iframes (Mobile view)
+  const [confirmDeleteNodeId, setConfirmDeleteNodeId] = useState<string | null>(null);
+  const [confirmDeleteSubtaskId, setConfirmDeleteSubtaskId] = useState<string | null>(null);
+  const [confirmDeleteCatId, setConfirmDeleteCatId] = useState<string | null>(null);
+
   // Local state for expanded / collapsed parent tree items (TickTick style folders)
   const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
 
@@ -726,14 +731,22 @@ export default function MobileListView({
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm('Вы действительно хотите удалить эту задачу и все её подзадачи?')) {
+                      if (confirmDeleteNodeId === node.id) {
                         onDeleteNode(node.id);
+                        setConfirmDeleteNodeId(null);
+                      } else {
+                        setConfirmDeleteNodeId(node.id);
+                        setTimeout(() => setConfirmDeleteNodeId(curr => curr === node.id ? null : curr), 4000);
                       }
                     }}
-                    className="p-1 text-slate-400 hover:text-rose-500 rounded-md hover:bg-rose-50/50 dark:hover:bg-rose-950/25 cursor-pointer"
-                    title="Удалить задачу"
+                    className={`p-1 rounded-md transition-all duration-200 cursor-pointer flex items-center gap-0.5 ${
+                      confirmDeleteNodeId === node.id
+                        ? "text-white bg-rose-600 hover:bg-rose-700 px-1.5 text-[9px] font-bold animate-pulse"
+                        : "text-slate-400 hover:text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/25"
+                    }`}
+                    title={confirmDeleteNodeId === node.id ? "Подтвердите удаление" : "Удалить задачу"}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    {confirmDeleteNodeId === node.id ? "Удалить?" : <Trash2 className="w-3.5 h-3.5" />}
                   </button>
 
                   <button
@@ -868,7 +881,13 @@ export default function MobileListView({
                             <button
                               type="button"
                               onClick={() => {
-                                if (window.confirm('Удалить подзадачу?')) onDeleteNode(child.id);
+                                if (confirmDeleteSubtaskId === child.id) {
+                                  onDeleteNode(child.id);
+                                  setConfirmDeleteSubtaskId(null);
+                                } else {
+                                  setConfirmDeleteSubtaskId(child.id);
+                                  setTimeout(() => setConfirmDeleteSubtaskId(curr => curr === child.id ? null : curr), 4000);
+                                }
                               }}
                               className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer"
                             >
@@ -1408,13 +1427,22 @@ export default function MobileListView({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    if (confirm(`Вы действительно хотите удалить категорию "${cat.name}" со всеми ее тегами?`)) {
+                                    if (confirmDeleteCatId === cat.id) {
                                       onDeleteTagCategory(cat.id);
+                                      setConfirmDeleteCatId(null);
+                                    } else {
+                                      setConfirmDeleteCatId(cat.id);
+                                      setTimeout(() => setConfirmDeleteCatId(curr => curr === cat.id ? null : curr), 4000);
                                     }
                                   }}
-                                  className="text-[10px] py-1 px-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-955/20 rounded transition-colors"
+                                  className={`text-[10px] py-1 px-1.5 rounded transition-all cursor-pointer font-bold ${
+                                    confirmDeleteCatId === cat.id
+                                      ? "text-white bg-rose-600 px-2 animate-pulse"
+                                      : "text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-955/20"
+                                  }`}
+                                  title={confirmDeleteCatId === cat.id ? "Нажмите еще раз для подтверждения" : "Удалить категорию"}
                                 >
-                                  Удал.
+                                  {confirmDeleteCatId === cat.id ? "Удалить?" : "Удал."}
                                 </button>
                               )}
                             </div>
