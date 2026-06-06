@@ -1004,7 +1004,7 @@ export default function App() {
   };
 
   // Add a fully independent floating node anywhere on the canvas
-  const handleAddFloatingNode = (x: number, y: number, parentId: string | null = null) => {
+  const handleAddFloatingNode = (x: number, y: number, parentId: string | null = null, customText?: string) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
@@ -1016,16 +1016,18 @@ export default function App() {
     const newFloatingNode: TaskNode = {
       id: 'node-' + generateId(),
       projectId: pid,
-      text: isInsideContainer ? 'Новая подзадача' : 'Плавающая задача',
+      text: customText?.trim() || (isInsideContainer ? 'Новая подзадача' : 'Плавающая задача'),
       x: Math.round(x),
       y: Math.round(y),
       parentId: parentId, // can be a container or branch root
       isFloating: !isInsideContainer,
       priority: 'low',
       tags: [],
-      notes: isInsideContainer 
-        ? 'Вы создали эту задачу непосредственно в сфокусированном контейнере.'
-        : 'Это полностью независимая задача, свободная от основной ветви. Вы можете свободно перемещать её по холсту, а также добавлять к ней дочерние подзадачи через кнопку "+".',
+      notes: customText?.trim()
+        ? `Задача была продиктована голосом: "${customText.trim()}"`
+        : (isInsideContainer 
+          ? 'Вы создали эту задачу непосредственно в сфокусированном контейнере.'
+          : 'Это полностью независимая задача, свободная от основной ветви. Вы можете свободно перемещать её по холсту, а также добавлять к ней дочерние подзадачи через кнопку "+".'),
       completed: false,
       files: [],
       color: isInsideContainer ? '#3b82f6' : '#10b981' // Blue inside container, green otherwise

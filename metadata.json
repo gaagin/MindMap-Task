@@ -1,6 +1,6 @@
 {
   "name": "Mind Map Tasks",
   "description": "An interactive mind map and task manager designed to organize projects with task priorities, tags, rich notes, file attachments, and hierarchical folders.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

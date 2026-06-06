@@ -25,7 +25,9 @@ import {
   X,
   Download,
   Eye,
-  Link2Off
+  Link2Off,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize } from '../utils';
@@ -39,7 +41,7 @@ interface MindMapCanvasProps {
   onUpdateNodeCoordinates: (id: string, x: number, y: number) => void;
   onUpdateNodeParent: (id: string, newParentId: string | null) => void;
   onAddChildNode: (parentId: string) => void;
-  onAddFloatingNode: (x: number, y: number, parentId?: string | null) => void;
+  onAddFloatingNode: (x: number, y: number, parentId?: string | null, customText?: string) => void;
   onAddContainerNode: (x: number, y: number) => void;
   onAddInboxTask?: (text: string) => void;
   onDeleteNode: (id: string) => void;
@@ -193,6 +195,186 @@ export default function MindMapCanvas({
       console.error('Failed to persist inbox state:', e);
     }
   }, [isInboxCollapsed]);
+
+  // --- WEB SPEECH API INTEGRATION ---
+  const [speechSupported, setSpeechSupported] = useState<boolean>(false);
+  const [speechLanguage, setSpeechLanguage] = useState<'ru-RU' | 'az-AZ' | 'en-US'>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_speech_lang');
+      return (saved === 'az-AZ' || saved === 'en-US' || saved === 'ru-RU') ? saved : 'ru-RU';
+    } catch {
+      return 'ru-RU';
+    }
+  });
+  const [isInboxListening, setIsInboxListening] = useState<boolean>(false);
+  const [isCanvasListening, setIsCanvasListening] = useState<boolean>(false);
+  const [canvasSpeechText, setCanvasSpeechText] = useState<string>('');
+  
+  const inboxRecRef = useRef<any>(null);
+  const canvasRecRef = useRef<any>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('task_mindmap_speech_lang', speechLanguage);
+    } catch (e) {
+      console.error('Failed to persist speech lang:', e);
+    }
+  }, [speechLanguage]);
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    setSpeechSupported(!!SpeechRecognition);
+
+    return () => {
+      // Clean up on unmount
+      if (inboxRecRef.current) {
+        try { inboxRecRef.current.stop(); } catch (e) {}
+      }
+      if (canvasRecRef.current) {
+        try { canvasRecRef.current.stop(); } catch (e) {}
+      }
+    };
+  }, []);
+
+  const toggleInboxListening = () => {
+    if (!speechSupported) {
+      alert('Голосовой ввод не поддерживается вашим браузером. Попробуйте Google Chrome.');
+      return;
+    }
+
+    if (isInboxListening) {
+      if (inboxRecRef.current) {
+        try { inboxRecRef.current.stop(); } catch (e) {}
+      }
+      setIsInboxListening(false);
+      return;
+    }
+
+    if (isCanvasListening) {
+      stopCanvasListening();
+    }
+
+    try {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = speechLanguage;
+
+      rec.onstart = () => {
+        setIsInboxListening(true);
+      };
+
+      rec.onresult = (event: any) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        const text = finalTranscript || interimTranscript;
+        if (text) {
+          setInboxInputText(text);
+        }
+      };
+
+      rec.onerror = (e: any) => {
+        console.error('Inbox Speech Error:', e);
+        setIsInboxListening(false);
+      };
+
+      rec.onend = () => {
+        setIsInboxListening(false);
+      };
+
+      inboxRecRef.current = rec;
+      rec.start();
+    } catch (err) {
+      console.error('Error starting inbox speech:', err);
+      setIsInboxListening(false);
+    }
+  };
+
+  const startCanvasDictation = () => {
+    if (!speechSupported) {
+      alert('Голосовой ввод не поддерживается вашим браузером. Попробуйте Google Chrome.');
+      return;
+    }
+
+    if (isInboxListening) {
+      if (inboxRecRef.current) {
+        try { inboxRecRef.current.stop(); } catch (e) {}
+      }
+      setIsInboxListening(false);
+    }
+
+    setCanvasSpeechText('');
+    setIsCanvasListening(true);
+
+    try {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const rec = new SpeechRecognition();
+      rec.continuous = false;
+      rec.interimResults = true;
+      rec.lang = speechLanguage;
+
+      rec.onresult = (event: any) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        
+        const currentText = finalTranscript || interimTranscript;
+        setCanvasSpeechText(currentText);
+
+        if (finalTranscript.trim()) {
+          const textToCreate = finalTranscript.trim();
+          handleCreateCanvasTaskFromSpeech(textToCreate);
+          setIsCanvasListening(false);
+          try { rec.stop(); } catch (err) {}
+        }
+      };
+
+      rec.onerror = (e: any) => {
+        console.error('Canvas Speech Error:', e);
+        setIsCanvasListening(false);
+      };
+
+      rec.onend = () => {
+        setIsCanvasListening(false);
+      };
+
+      canvasRecRef.current = rec;
+      rec.start();
+    } catch (err) {
+      console.error('Error starting canvas speech:', err);
+      setIsCanvasListening(false);
+    }
+  };
+
+  const stopCanvasListening = () => {
+    if (canvasRecRef.current) {
+      try { canvasRecRef.current.stop(); } catch (e) {}
+    }
+    setIsCanvasListening(false);
+  };
+
+  const handleCreateCanvasTaskFromSpeech = (text: string) => {
+    if (!text.trim()) return;
+    const x = Math.round(-panX / zoom);
+    const y = Math.round(-panY / zoom);
+    onAddFloatingNode(x, y, focusedContainerId, text.trim());
+  };
+  // --- END OF WEB SPEECH API INTEGRATION ---
 
   // Focus mode states for container fullscreen focus
   const [focusedContainerId, setFocusedContainerId] = useState<string | null>(null);
@@ -1538,7 +1720,7 @@ export default function MindMapCanvas({
         );
       })()}
       {/* Floating Canvas UI Controls */}
-      <div className="absolute top-4 left-4 z-10 flex gap-2">
+      <div className={`absolute ${focusedContainerId ? 'top-20 sm:top-4' : 'top-4'} left-4 z-10 flex gap-2`}>
         <button
           onClick={onOpenSidebar}
           title="Открыть боковую панель"
@@ -1602,6 +1784,16 @@ export default function MindMapCanvas({
           <PlusCircle className="w-3.5 h-3.5 text-emerald-500" />
           <span className="hidden sm:inline">{focusedContainerId ? 'Создать задачу' : 'Плавающая задача'}</span>
           <span className="sm:hidden">{focusedContainerId ? 'Задача' : 'Плавающая'}</span>
+        </button>
+
+        <button
+          onClick={startCanvasDictation}
+          title={focusedContainerId ? "Продиктовать название новой задачи внутри текущего контейнера" : "Записать новую задачу на холст голосом"}
+          className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-indigo-600 dark:text-indigo-400 hover:text-indigo-705 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40 shrink-0"
+        >
+          <Mic className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="hidden sm:inline">Продиктовать задачу</span>
+          <span className="sm:hidden">Голос</span>
         </button>
 
         {!focusedContainerId && (
@@ -2390,7 +2582,7 @@ const pInfo = getPriorityInfo(node.priority);
 
       {/* Off-canvas Sticky INBOX Container Widget */}
       <div 
-        className="absolute top-4 right-4 z-40 pointer-events-auto select-none"
+        className={`absolute ${focusedContainerId ? 'top-20 sm:top-4' : 'top-4'} right-4 z-40 pointer-events-auto select-none`}
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >
@@ -2427,37 +2619,88 @@ const pInfo = getPriorityInfo(node.priority);
               </button>
             </div>
 
-            {/* Quick-add Input */}
-            <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
-              <div className="relative flex items-center">
-                <input
-                  type="text"
-                  placeholder="Запишите быструю мысль... (Enter)"
-                  value={inboxInputText}
-                  onChange={(e) => setInboxInputText(e.target.value)}
-                  onKeyDown={(e) => {
-                    e.stopPropagation();
-                    if (e.key === 'Enter' && inboxInputText.trim() && onAddInboxTask) {
-                      onAddInboxTask(inboxInputText);
-                      setInboxInputText('');
-                    }
-                  }}
-                  className="w-full text-xs py-2 pl-3 pr-8 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-slate-800 dark:text-slate-100 rounded-xl border border-slate-205 dark:border-slate-755 focus:border-indigo-500 focus:outline-none transition-all placeholder-slate-450"
-                />
-                <button
-                  onClick={() => {
-                    if (inboxInputText.trim() && onAddInboxTask) {
-                      onAddInboxTask(inboxInputText);
-                      setInboxInputText('');
-                    }
-                  }}
-                  disabled={!inboxInputText.trim()}
-                  className="absolute right-1.5 p-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-650 hover:text-white rounded-lg transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
+             {/* Quick-add Input */}
+             <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2">
+               <div className="relative flex items-center">
+                 <input
+                   type="text"
+                   placeholder="Запишите быструю мысль... (Enter)"
+                   value={inboxInputText}
+                   onChange={(e) => setInboxInputText(e.target.value)}
+                   onKeyDown={(e) => {
+                     e.stopPropagation();
+                     if (e.key === 'Enter' && inboxInputText.trim() && onAddInboxTask) {
+                       onAddInboxTask(inboxInputText);
+                       setInboxInputText('');
+                     }
+                   }}
+                   className="w-full text-xs py-2 pl-3 pr-16 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-slate-800 dark:text-slate-100 rounded-xl border border-slate-205 dark:border-slate-755 focus:border-indigo-500 focus:outline-none transition-all placeholder-slate-450"
+                 />
+                 <button
+                   onClick={toggleInboxListening}
+                   title={isInboxListening ? 'Остановить запись голоса' : 'Надиктуйте задачу голосом'}
+                   className={`absolute right-8 p-1 rounded-lg transition-all cursor-pointer ${
+                     isInboxListening 
+                       ? 'bg-rose-100 dark:bg-rose-950/45 text-rose-600 dark:text-rose-450 animate-pulse' 
+                       : 'text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-805 hover:text-slate-700 dark:hover:text-slate-300'
+                   }`}
+                 >
+                   {isInboxListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                 </button>
+                 <button
+                   onClick={() => {
+                     if (inboxInputText.trim() && onAddInboxTask) {
+                       onAddInboxTask(inboxInputText);
+                       setInboxInputText('');
+                     }
+                   }}
+                   disabled={!inboxInputText.trim()}
+                   className="absolute right-1.5 p-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-650 hover:text-white rounded-lg transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 cursor-pointer"
+                 >
+                   <Plus className="w-3.5 h-3.5" />
+                 </button>
+               </div>
+               
+               {/* Speech Language Switcher for Inbox */}
+               <div className="flex items-center justify-between text-[10px]">
+                 <span className="font-semibold text-slate-400 dark:text-slate-500">Язык диктовки:</span>
+                 <div className="flex gap-1 bg-slate-100/55 dark:bg-slate-950/40 p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-800/40">
+                   <button
+                     onClick={() => setSpeechLanguage('ru-RU')}
+                     title="Русский язык"
+                     className={`px-1.5 py-0.5 rounded-md font-bold text-[9px] transition-all cursor-pointer ${
+                       speechLanguage === 'ru-RU' 
+                         ? 'bg-white dark:bg-slate-850 shadow-sm text-indigo-600 dark:text-indigo-400' 
+                         : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-350'
+                     }`}
+                   >
+                     🇷🇺 RU
+                   </button>
+                   <button
+                     onClick={() => setSpeechLanguage('az-AZ')}
+                     title="Azərbaycan dili"
+                     className={`px-1.5 py-0.5 rounded-md font-bold text-[9px] transition-all cursor-pointer ${
+                       speechLanguage === 'az-AZ' 
+                         ? 'bg-white dark:bg-slate-850 shadow-sm text-indigo-600 dark:text-indigo-400' 
+                         : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-350'
+                     }`}
+                   >
+                     🇦🇿 AZ
+                   </button>
+                   <button
+                     onClick={() => setSpeechLanguage('en-US')}
+                     title="English Language"
+                     className={`px-1.5 py-0.5 rounded-md font-bold text-[9px] transition-all cursor-pointer ${
+                       speechLanguage === 'en-US' 
+                         ? 'bg-white dark:bg-slate-850 shadow-sm text-indigo-600 dark:text-indigo-400' 
+                         : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-350'
+                     }`}
+                   >
+                     🇺🇸 EN
+                   </button>
+                 </div>
+               </div>
+             </div>
 
             {/* Task list */}
             <div className="flex-1 overflow-y-auto p-2 space-y-1.5 max-h-[280px] custom-scrollbar bg-slate-50/40 dark:bg-slate-950/20">
@@ -2747,6 +2990,94 @@ const pInfo = getPriorityInfo(node.priority);
           </div>
         );
       })()}
+
+      {/* Voice Dictation overlay panel */}
+      {isCanvasListening && (
+        <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center flex flex-col items-center gap-4 animate-in fade-in zoom-in-95 duration-250">
+            <div className="relative">
+              <div className="absolute inset-0 w-12 h-12 bg-rose-500/20 rounded-full animate-ping animate-duration-1000" />
+              <div className="relative w-12 h-12 bg-rose-600 dark:bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg">
+                <Mic className="w-6 h-6 animate-pulse" />
+              </div>
+            </div>
+            
+            <div className="space-y-1">
+              <h3 className="text-sm font-sans font-extrabold text-slate-800 dark:text-slate-100">
+                Голосовой ввод на холст
+              </h3>
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Скажите название задачи на выбранном языке:
+              </p>
+            </div>
+
+            {/* Language Selector in Overlay */}
+            <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-xl gap-1 border border-slate-200 dark:border-slate-800">
+              <button
+                onClick={() => setSpeechLanguage('ru-RU')}
+                className={`px-3 py-1 text-[10px] font-extrabold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                  speechLanguage === 'ru-RU' 
+                    ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <span>🇷🇺</span> RU
+              </button>
+              <button
+                onClick={() => setSpeechLanguage('az-AZ')}
+                className={`px-3 py-1 text-[10px] font-extrabold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                  speechLanguage === 'az-AZ' 
+                    ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <span>🇦🇿</span> AZ
+              </button>
+              <button
+                onClick={() => setSpeechLanguage('en-US')}
+                className={`px-3 py-1 text-[10px] font-extrabold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                  speechLanguage === 'en-US' 
+                    ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <span>🇺🇸</span> EN
+              </button>
+            </div>
+
+            <div className="w-full min-h-[60px] bg-slate-50 dark:bg-slate-950 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-3 flex items-center justify-center">
+              {canvasSpeechText ? (
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 italic tracking-wide">
+                  « {canvasSpeechText} »
+                </p>
+              ) : (
+                <p className="text-xs text-slate-400 dark:text-slate-600 italic">
+                  Слушаем вашу речь...
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2 w-full mt-2">
+              <button
+                onClick={stopCanvasListening}
+                className="flex-1 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-705 dark:text-slate-400 dark:hover:bg-slate-800 bg-transparent rounded-xl cursor-pointer transition-all border border-slate-200 dark:border-slate-800"
+              >
+                Отмена
+              </button>
+              <button
+                disabled={!canvasSpeechText.trim()}
+                onClick={() => {
+                  handleCreateCanvasTaskFromSpeech(canvasSpeechText);
+                  stopCanvasListening();
+                }}
+                className="flex-1 py-1.5 text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                Готово
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
