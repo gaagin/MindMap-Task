@@ -23,7 +23,7 @@ import {
   BellOff
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
-import { formatFileSize, generateId, calculateProgress, getDescendants } from '../utils';
+import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime } from '../utils';
 
 interface TaskDetailsPanelProps {
   node: TaskNode | null;
@@ -688,23 +688,36 @@ export default function TaskDetailsPanel({
                 <Bell className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                 Напоминание
               </span>
-              {(node.reminderDate || node.reminderTime) && (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    onUpdateNode({
-                      ...node,
-                      reminderDate: undefined,
-                      reminderTime: undefined,
-                      reminderMinutesBefore: undefined,
-                      reminderDismissed: undefined
-                    });
-                  }}
-                  className="text-[10px] text-rose-550 dark:text-rose-400 font-bold hover:underline"
+                  onClick={() => playNotificationChime()}
+                  className="text-[10px] text-indigo-650 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
+                  title="Воспроизвести тестовый сигнал и разблокировать звук в браузере"
                 >
-                  Сбросить
+                  Проверить звук 🔊
                 </button>
-              )}
+                {(node.reminderDate || node.reminderTime) && (
+                  <>
+                    <span className="text-slate-300 dark:text-slate-700">|</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateNode({
+                          ...node,
+                          reminderDate: undefined,
+                          reminderTime: undefined,
+                          reminderMinutesBefore: undefined,
+                          reminderDismissed: undefined
+                        });
+                      }}
+                      className="text-[10px] text-rose-550 dark:text-rose-400 font-bold hover:underline cursor-pointer"
+                    >
+                      Сбросить
+                    </button>
+                  </>
+                )}
+              </div>
             </label>
 
             {/* Quick offset selection buttons - only visible when a deadline is set */}

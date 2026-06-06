@@ -30,7 +30,7 @@ import {
   BellRing
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
-import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants } from './utils';
+import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, playNotificationChime } from './utils';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
@@ -269,6 +269,9 @@ export default function App() {
         setTriggeredReminders(prev => {
           const prevIds = new Set(prev.map(r => r.nodeId));
           const newReminders = triggered.filter(r => !prevIds.has(r.nodeId));
+          if (newReminders.length > 0) {
+            playNotificationChime();
+          }
           return [...prev, ...newReminders];
         });
       }

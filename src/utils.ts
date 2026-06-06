@@ -484,3 +484,40 @@ export function toggleNodeAndDescendants(nodeId: string, completed: boolean, all
   });
 }
 
+// Function to synthesize a dual-tone pleasant crystal chime for reminder notifications
+export function playNotificationChime(): void {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    
+    // Create dual-tone bell play wrapper
+    const playChimeTone = (time: number, freq: number, duration: number, volume: number) => {
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, time);
+      
+      // Quick exponential volume profile to mimic a real bell strike
+      gainNode.gain.setValueAtTime(0, time);
+      gainNode.gain.linearRampToValueAtTime(volume, time + 0.04);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+      
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      
+      osc.start(time);
+      osc.stop(time + duration);
+    };
+    
+    const now = ctx.currentTime;
+    // Harmonious pair: D5 (587.33Hz) strike followed by high A5 (880.00Hz) strike
+    playChimeTone(now, 587.33, 1.2, 0.15);
+    playChimeTone(now + 0.12, 880.00, 1.4, 0.12);
+  } catch (error) {
+    console.warn("Chime playback was blocked or failed:", error);
+  }
+}
+
+
