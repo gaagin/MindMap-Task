@@ -25,7 +25,9 @@ import {
   Sparkles,
   Calendar,
   GanttChart,
-  Table
+  Table,
+  Bell,
+  BellRing
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants } from './utils';
@@ -223,6 +225,59 @@ export default function App() {
       setIsDrawerOpen(false);
     }
   }, [selectedNodeId]);
+
+  // Reminders check engine
+  const [triggeredReminders, setTriggeredReminders] = useState<{
+    nodeId: string;
+    projectId: string;
+    text: string;
+    targetTime: string;
+  }[]>([]);
+
+  useEffect(() => {
+    const checkReminders = () => {
+      const now = new Date();
+      const todayDateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+      const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+      const triggered: {
+        nodeId: string;
+        projectId: string;
+        text: string;
+        targetTime: string;
+      }[] = [];
+
+      Object.entries(state.nodes).forEach(([projectId, nodeList]) => {
+        (nodeList as TaskNode[]).forEach((node) => {
+          if (node.reminderDate && node.reminderTime && !node.reminderDismissed && !node.completed) {
+            const reminderDateTime = new Date(`${node.reminderDate}T${node.reminderTime}`);
+            const currentDateTime = new Date(`${todayDateStr}T${timeStr}`);
+
+            if (!isNaN(reminderDateTime.getTime()) && reminderDateTime <= currentDateTime) {
+              triggered.push({
+                nodeId: node.id,
+                projectId,
+                text: node.text,
+                targetTime: `${node.reminderDate} ${node.reminderTime}`,
+              });
+            }
+          }
+        });
+      });
+
+      if (triggered.length > 0) {
+        setTriggeredReminders(prev => {
+          const prevIds = new Set(prev.map(r => r.nodeId));
+          const newReminders = triggered.filter(r => !prevIds.has(r.nodeId));
+          return [...prev, ...newReminders];
+        });
+      }
+    };
+
+    checkReminders();
+    const interval = setInterval(checkReminders, 10000); // Check every 10 seconds
+    return () => clearInterval(interval);
+  }, [state.nodes]);
 
   // Track last created task/container node to enable quick ESC cancel
   const [lastCreatedNodeId, setLastCreatedNodeId] = useState<string | null>(null);
@@ -2582,6 +2637,95 @@ export default function App() {
           >
             Понятно, спасибо
           </button>
+        </div>
+      )}
+
+      {/* ================= ACTIVE REMINDERS FLOATING NOTIFICATIONS OVERLAY ================= */}
+      {triggeredReminders.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-[9999] max-w-sm w-full space-y-3 animate-fade-in pointer-events-auto">
+          {triggeredReminders.map((reminder) => (
+            <div 
+              key={reminder.nodeId}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-4 flex flex-col gap-3 relative overflow-hidden transition-all duration-300 md:max-w-[360px] select-none"
+            >
+              {/* Highlight left accent entry indicator */}
+              <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-rose-550 dark:bg-rose-500 animate-pulse" />
+
+              <div className="flex items-start justify-between pl-2">
+                <div className="flex items-center gap-2">
+                  <span className="flex-shrink-0 bg-rose-50 dark:bg-rose-950/40 p-1.5 rounded-xl text-rose-555 dark:text-rose-400">
+                    <BellRing className="w-4.5 h-4.5 animate-bounce" />
+                  </span>
+                  <div>
+                    <h4 className="font-extrabold text-xs tracking-tight text-slate-400 dark:text-slate-500 uppercase">Напоминание!</h4>
+                    <p className="text-[9.5px] text-slate-400 dark:text-slate-505 font-mono font-bold">{reminder.targetTime}</p>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => {
+                    // Update task node to be reminderDismissed: true
+                    const targetList = state.nodes[reminder.projectId] || [];
+                    const targetNode = targetList.find(n => n.id === reminder.nodeId);
+                    if (targetNode) {
+                      handleUpdateNode({
+                        ...targetNode,
+                        reminderDismissed: true
+                      });
+                    }
+                    setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="Закрыть напоминание"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="pl-2">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 leading-snug line-clamp-3">
+                  {reminder.text}
+                </p>
+              </div>
+
+              <div className="pl-2 grid grid-cols-2 gap-2 mt-1">
+                <button
+                  onClick={() => {
+                    // Switch project if different
+                    if (state.activeProjectId !== reminder.projectId) {
+                      setState(prev => ({
+                        ...prev,
+                        activeProjectId: reminder.projectId
+                      }));
+                    }
+                    // Select node and show details
+                    setSelectedNodeId(reminder.nodeId);
+                    setIsDrawerOpen(true);
+                  }}
+                  className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/40 text-indigo-650 dark:text-indigo-400 text-[10.5px] font-bold rounded-xl transition-all text-center cursor-pointer"
+                >
+                  Открыть задачу
+                </button>
+                <button
+                  onClick={() => {
+                    // Update task node to be reminderDismissed: true
+                    const targetList = state.nodes[reminder.projectId] || [];
+                    const targetNode = targetList.find(n => n.id === reminder.nodeId);
+                    if (targetNode) {
+                      handleUpdateNode({
+                        ...targetNode,
+                        reminderDismissed: true
+                      });
+                    }
+                    setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                  }}
+                  className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white text-[10.5px] font-bold rounded-xl transition-all shadow-md cursor-pointer"
+                >
+                  Прочитано (ОК)
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

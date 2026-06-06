@@ -33,6 +33,10 @@ export interface TaskNode {
   width?: number; // Optional custom width (for containers)
   height?: number; // Optional custom height (for containers)
   updatedAt?: string; // ISO string for conflict resolution sync
+  reminderDate?: string; // Optional reminder date string (YYYY-MM-DD)
+  reminderTime?: string; // Optional reminder time string (HH:MM)
+  reminderMinutesBefore?: number; // Optional offset minutes before dueDate/dueTime (e.g. 0, 5, 15, 30, 60, 1440)
+  reminderDismissed?: boolean; // Optional dismiss marker for reminders
 }
 
 export interface Project {

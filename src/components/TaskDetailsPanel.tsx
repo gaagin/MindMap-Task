@@ -18,7 +18,9 @@ import {
   Eye,
   Edit,
   Link as LinkIcon,
-  Check
+  Check,
+  Bell,
+  BellOff
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants } from '../utils';
@@ -139,6 +141,67 @@ export default function TaskDetailsPanel({
       ...node,
       [key]: value
     });
+  };
+
+  const handleSetRelativeReminder = (minutesBefore: number | undefined) => {
+    if (minutesBefore === undefined) {
+      onUpdateNode({
+        ...node,
+        reminderMinutesBefore: undefined,
+        reminderDate: node.reminderDate || node.dueDate || '',
+        reminderTime: node.reminderTime || node.dueTime || '',
+        reminderDismissed: false
+      });
+      return;
+    }
+
+    const dueDateStr = node.dueDate || new Date().toISOString().split('T')[0];
+    const dueTimeStr = node.dueTime || '12:00';
+
+    try {
+      const dueDateTime = new Date(`${dueDateStr}T${dueTimeStr}`);
+      if (isNaN(dueDateTime.getTime())) return;
+
+      const reminderDateTime = new Date(dueDateTime.getTime() - minutesBefore * 60 * 1000);
+      const rDate = reminderDateTime.toISOString().split('T')[0];
+      const rTime = reminderDateTime.toTimeString().split(' ')[0].substring(0, 5);
+
+      onUpdateNode({
+        ...node,
+        reminderMinutesBefore: minutesBefore,
+        reminderDate: rDate,
+        reminderTime: rTime,
+        reminderDismissed: false
+      });
+    } catch (error) {
+      console.error('Failed to calculate reminder time:', error);
+    }
+  };
+
+  const handleTimePropChange = (key: 'startDate' | 'startTime' | 'dueDate' | 'dueTime', val: string) => {
+    const updatedNode = { 
+      ...node, 
+      [key]: val || undefined 
+    };
+    
+    if ((key === 'dueDate' || key === 'dueTime') && updatedNode.reminderMinutesBefore !== undefined) {
+      const mBefore = updatedNode.reminderMinutesBefore;
+      const dueDateStr = updatedNode.dueDate || new Date().toISOString().split('T')[0];
+      const dueTimeStr = updatedNode.dueTime || '12:00';
+      try {
+        const dueDateTime = new Date(`${dueDateStr}T${dueTimeStr}`);
+        if (!isNaN(dueDateTime.getTime())) {
+          const reminderDateTime = new Date(dueDateTime.getTime() - mBefore * 60 * 1000);
+          updatedNode.reminderDate = reminderDateTime.toISOString().split('T')[0];
+          updatedNode.reminderTime = reminderDateTime.toTimeString().split(' ')[0].substring(0, 5);
+          updatedNode.reminderDismissed = false;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    onUpdateNode(updatedNode);
   };
 
   // Add the tag to target
@@ -569,13 +632,13 @@ export default function TaskDetailsPanel({
               <input
                 type="date"
                 value={node.startDate || ''}
-                onChange={(e) => handlePropChange('startDate', e.target.value)}
+                onChange={(e) => handleTimePropChange('startDate', e.target.value)}
                 className="flex-1 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
               />
               <input
                 type="time"
                 value={node.startTime || ''}
-                onChange={(e) => handlePropChange('startTime', e.target.value)}
+                onChange={(e) => handleTimePropChange('startTime', e.target.value)}
                 className="w-24 px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-mono"
               />
             </div>
@@ -592,7 +655,8 @@ export default function TaskDetailsPanel({
                     onUpdateNode({
                       ...node,
                       dueDate: undefined,
-                      dueTime: undefined
+                      dueTime: undefined,
+                      reminderMinutesBefore: undefined
                     });
                   }}
                   className="text-[10px] text-rose-550 dark:text-rose-400 font-bold hover:underline"
@@ -605,16 +669,127 @@ export default function TaskDetailsPanel({
               <input
                 type="date"
                 value={node.dueDate || ''}
-                onChange={(e) => handlePropChange('dueDate', e.target.value)}
+                onChange={(e) => handleTimePropChange('dueDate', e.target.value)}
                 className="flex-1 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
               />
               <input
                 type="time"
                 value={node.dueTime || ''}
-                onChange={(e) => handlePropChange('dueTime', e.target.value)}
+                onChange={(e) => handleTimePropChange('dueTime', e.target.value)}
                 className="w-24 px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-mono"
               />
             </div>
+          </div>
+
+          {/* Напоминание для задачи */}
+          <div className="pt-3 border-t border-slate-200/60 dark:border-slate-800 space-y-2.5 mt-2">
+            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-450 uppercase flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Bell className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                Напоминание
+              </span>
+              {(node.reminderDate || node.reminderTime) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateNode({
+                      ...node,
+                      reminderDate: undefined,
+                      reminderTime: undefined,
+                      reminderMinutesBefore: undefined,
+                      reminderDismissed: undefined
+                    });
+                  }}
+                  className="text-[10px] text-rose-550 dark:text-rose-400 font-bold hover:underline"
+                >
+                  Сбросить
+                </button>
+              )}
+            </label>
+
+            {/* Quick offset selection buttons - only visible when a deadline is set */}
+            {node.dueDate && (
+              <div className="space-y-1">
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium block">
+                  Быстрый выбор:
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    { label: 'В срок', val: 0 },
+                    { label: 'За 5 мин', val: 5 },
+                    { label: 'За 15 мин', val: 15 },
+                    { label: 'За 1 час', val: 60 },
+                    { label: 'За 1 день', val: 1440 },
+                  ].map((item) => {
+                    const isCurrent = node.reminderMinutesBefore === item.val;
+                    return (
+                      <button
+                        key={item.val}
+                        type="button"
+                        onClick={() => handleSetRelativeReminder(item.val)}
+                        className={`px-2 py-1 text-[10px] font-medium rounded-lg border transition-all cursor-pointer ${
+                          isCurrent
+                            ? 'bg-indigo-600 text-white border-indigo-600 font-semibold shadow-xs'
+                            : 'bg-white dark:bg-slate-800 border-slate-205 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => handleSetRelativeReminder(undefined)}
+                    className={`px-2 py-1 text-[10px] font-medium rounded-lg border transition-all cursor-pointer ${
+                      node.reminderDate && node.reminderMinutesBefore === undefined
+                        ? 'bg-indigo-600 text-white border-indigo-600 font-semibold shadow-xs'
+                        : 'bg-white dark:bg-slate-800 border-slate-205 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    Своё время
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Date and Time selectors for reminder */}
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={node.reminderDate || ''}
+                onChange={(e) => {
+                  onUpdateNode({
+                    ...node,
+                    reminderDate: e.target.value || undefined,
+                    reminderMinutesBefore: undefined, // switched to custom
+                    reminderDismissed: false
+                  });
+                }}
+                className="flex-1 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
+              />
+              <input
+                type="time"
+                value={node.reminderTime || ''}
+                onChange={(e) => {
+                  onUpdateNode({
+                    ...node,
+                    reminderTime: e.target.value || undefined,
+                    reminderMinutesBefore: undefined, // switched to custom
+                    reminderDismissed: false
+                  });
+                }}
+                className="w-24 px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-mono"
+              />
+            </div>
+
+            {node.reminderDate && node.reminderTime && (
+              <div className="p-2 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-100/40 dark:border-indigo-900/10 rounded-lg">
+                <p className="text-[10px] text-indigo-650 dark:text-indigo-400 font-medium flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shrink-0" />
+                  <span>Напоминание сработает в {node.reminderDate} в {node.reminderTime}</span>
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
