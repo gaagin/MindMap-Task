@@ -94,6 +94,82 @@ export default function CalendarView({
   const [draggedOverUnscheduled, setDraggedOverUnscheduled] = useState(false);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
 
+  // Auto-scrolling when dragging task near the edges of scrollable viewports
+  useEffect(() => {
+    if (!draggingTaskId) return;
+
+    let animationFrameId: number | null = null;
+    let lastClientX = 0;
+    let lastClientY = 0;
+
+    const handleDragOver = (e: DragEvent) => {
+      lastClientX = e.clientX;
+      lastClientY = e.clientY;
+    };
+
+    const autoScroll = () => {
+      const scrollThreshold = 95; // px from the edge of the container to trigger scrolling
+      const maxScrollSpeed = 16;  // maximum pixels to scroll per frame
+
+      // 1. Horizontal scroll container
+      const horizContainer = document.getElementById('calendar-horizontal-scroll-container');
+      if (horizContainer) {
+        const rect = horizContainer.getBoundingClientRect();
+        const relativeX = lastClientX - rect.left;
+        
+        if (relativeX >= 0 && relativeX <= rect.width) {
+          if (relativeX < scrollThreshold) {
+            const speed = Math.ceil((1 - relativeX / scrollThreshold) * maxScrollSpeed);
+            horizContainer.scrollLeft -= speed;
+          } else if (rect.width - relativeX < scrollThreshold) {
+            const speed = Math.ceil((1 - (rect.width - relativeX) / scrollThreshold) * maxScrollSpeed);
+            horizContainer.scrollLeft += speed;
+          }
+        }
+      }
+
+      // 2. Vertical scroll containers
+      const scrollVertical = (containerId: string) => {
+        const vertContainer = document.getElementById(containerId);
+        if (vertContainer) {
+          const rect = vertContainer.getBoundingClientRect();
+          if (lastClientX >= rect.left && lastClientX <= rect.right) {
+            const relativeY = lastClientY - rect.top;
+            if (relativeY >= 0 && relativeY <= rect.height) {
+              if (relativeY < scrollThreshold) {
+                const speed = Math.ceil((1 - relativeY / scrollThreshold) * maxScrollSpeed);
+                vertContainer.scrollTop -= speed;
+              } else if (rect.height - relativeY < scrollThreshold) {
+                const speed = Math.ceil((1 - (rect.height - relativeY) / scrollThreshold) * maxScrollSpeed);
+                vertContainer.scrollTop += speed;
+              }
+            }
+          }
+        }
+      };
+
+      if (calendarSubMode === 'month') {
+        scrollVertical('calendar-month-scroll-container');
+      } else if (calendarSubMode === 'week') {
+        scrollVertical('calendar-week-scroll-container');
+      } else if (calendarSubMode === 'day') {
+        scrollVertical('calendar-day-scroll-container');
+      }
+
+      animationFrameId = requestAnimationFrame(autoScroll);
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    animationFrameId = requestAnimationFrame(autoScroll);
+
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [draggingTaskId, calendarSubMode]);
+
   const handleTaskDrop = (taskId: string, targetDate: string | null) => {
     setDraggedOverDate(null);
     setDraggedOverUnscheduled(false);
@@ -434,7 +510,7 @@ export default function CalendarView({
         </div>
 
         {/* Scrollable container for mobile */}
-        <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
+        <div id="calendar-horizontal-scroll-container" className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
           <div className={`${calendarSubMode === 'day' ? 'w-full' : 'min-w-[1300px] lg:min-w-[1600px] xl:min-w-[1900px] 2xl:min-w-full'} h-full flex flex-col`}>
             
             {/* 1. Monthly Grid Mode */}
@@ -448,7 +524,7 @@ export default function CalendarView({
                 </div>
 
                 {/* Modern open week-by-week calendar list */}
-                <div className="flex-1 overflow-y-auto max-h-full pr-1 custom-scrollbar space-y-1 pb-6">
+                <div id="calendar-month-scroll-container" className="flex-1 overflow-y-auto max-h-full pr-1 custom-scrollbar space-y-1 pb-6">
                   {(() => {
                     const weeks: typeof calendarSlots[] = [];
                     for (let i = 0; i < 6; i++) {
@@ -646,7 +722,7 @@ export default function CalendarView({
 
             {/* 2. Weekly Layout Mode */}
             {calendarSubMode === 'week' && (
-              <div className="flex-1 grid grid-cols-7 gap-3 h-full overflow-y-auto pr-1 custom-scrollbar">
+              <div id="calendar-week-scroll-container" className="flex-1 grid grid-cols-7 gap-3 h-full overflow-y-auto pr-1 custom-scrollbar">
                 {weeklySlots.map((slot) => {
                   const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
                   const isDragOver = draggedOverDate === slot.dateString;
@@ -820,6 +896,50 @@ export default function CalendarView({
                     </span>
                   </div>
 
+                  {/* Inline list of all-day tasks */}
+                  {(() => {
+                    const allDayTasks = scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.dueTime);
+                    if (allDayTasks.length > 0) {
+                      return (
+                        <div className="flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
+                          {allDayTasks.map(task => (
+                            <div
+                              key={task.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectNode(task.id);
+                              }}
+                              className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative ${getPriorityColor(task.priority)}`}
+                            >
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onUpdateNode({
+                                    ...task,
+                                    completed: !task.completed
+                                  });
+                                }}
+                                className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0 ${
+                                  task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
+                                }`}
+                              >
+                                {task.completed ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                ) : (
+                                  <Circle className="w-3.5 h-3.5 shrink-0" />
+                                )}
+                              </button>
+                              <span className={`font-semibold truncate max-w-[150px] ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-205'}`}>
+                                {task.text}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
                   {/* Inline add for All Day tasks */}
                   {activeDayAddInput === currentDateStr && (
                     <div 
@@ -857,8 +977,10 @@ export default function CalendarView({
                 </div>
 
                 {/* Scrollable Hourly Timeline list */}
-                <div className="flex-1 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar animate-fade-in">
+                <div id="calendar-day-scroll-container" className="flex-1 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar animate-fade-in">
                   {HOURS.map((hour) => {
+                    const isDragOver = draggedOverDate === `hour-${hour}`;
+
                     return (
                       <div 
                         key={hour}
@@ -866,7 +988,22 @@ export default function CalendarView({
                           setActiveHourAddInput(hour);
                           setNewHourTaskText('');
                         }}
-                        className="flex items-stretch border-b border-dashed border-slate-100 dark:border-slate-800 min-h-[58px] transition-all duration-150 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-850/20 group/row"
+                        onDragOver={(e) => e.preventDefault()}
+                        onDragEnter={() => setDraggedOverDate(`hour-${hour}`)}
+                        onDragLeave={() => {
+                          if (draggedOverDate === `hour-${hour}`) {
+                            setDraggedOverDate(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          const taskId = e.dataTransfer.getData('text/plain');
+                          if (taskId) {
+                            handleTaskDropToHour(taskId, currentDateStr, hour);
+                          }
+                        }}
+                        className={`flex items-stretch border-b border-dashed border-slate-100 dark:border-slate-800 min-h-[58px] transition-all duration-150 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-850/20 group/row ${
+                          isDragOver ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''
+                        }`}
                       >
                         {/* Hour column */}
                         <div className="w-16 flex items-center justify-center shrink-0 border-r border-slate-100 dark:border-slate-800 pr-3 text-right">
@@ -877,43 +1014,125 @@ export default function CalendarView({
 
                         {/* Content area */}
                         <div className="flex-1 flex flex-wrap gap-2 items-center px-4 py-1.5 relative">
-                          {/* Inline Hour Input */}
-                          {activeHourAddInput === hour ? (
-                            <div 
-                              onClick={(e) => e.stopPropagation()}
-                              className="p-1 px-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/45 flex items-center gap-2 max-w-sm flex-1"
-                            >
-                              <input
-                                type="text"
-                                autoFocus
-                                placeholder={`Задача на ${hour}...`}
-                                value={newHourTaskText}
-                                onChange={(e) => setNewHourTaskText(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr, hour);
-                                  if (e.key === 'Escape') setActiveHourAddInput(null);
-                                }}
-                                className="flex-1 text-xs px-2 py-0.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500 font-medium"
-                              />
-                              <button
-                                onClick={() => handleAddDayTaskSubmit(currentDateStr, hour)}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-2 py-0.5 text-[10px] font-bold cursor-pointer"
-                              >
-                                Ок
-                              </button>
-                              <button
-                                onClick={() => setActiveHourAddInput(null)}
-                                className="text-slate-450 hover:text-slate-600 text-[10px]"
-                              >
-                                Отмена
-                              </button>
-                            </div>
-                          ) : (
-                            /* Guidance message inside row background hover layout */
-                            <div className="text-[11px] text-slate-300 dark:text-slate-705 italic group-hover/row:text-indigo-400/80 transition-colors">
-                              Кликните, чтобы добавить задачу на {hour}
-                            </div>
-                          )}
+                          {/* Render hour tasks or inline box */}
+                          {(() => {
+                            const hourTasks = scheduledTasks.filter(task => task.dueDate === currentDateStr && (task.dueTime === hour || task.startTime === hour));
+                            if (hourTasks.length > 0) {
+                              return (
+                                <div className="flex flex-wrap gap-2 items-center flex-1" onClick={(e) => e.stopPropagation()}>
+                                  {hourTasks.map(task => (
+                                    <div
+                                      key={task.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSelectNode(task.id);
+                                      }}
+                                      draggable={true}
+                                      onDragStart={(e) => {
+                                        e.stopPropagation();
+                                        e.dataTransfer.setData('text/plain', task.id);
+                                        setDraggingTaskId(task.id);
+                                      }}
+                                      onDragEnd={(e) => {
+                                        e.stopPropagation();
+                                        setDraggingTaskId(null);
+                                      }}
+                                      className={`group/task border text-[11px] leading-snug py-1 px-2.5 rounded-xl flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative shadow-xs shrink-0 max-w-[240px] ${getPriorityColor(task.priority)} ${
+                                        draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
+                                      }`}
+                                    >
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onUpdateNode({
+                                            ...task,
+                                            completed: !task.completed
+                                          });
+                                        }}
+                                        className="text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0"
+                                      >
+                                        {task.completed ? (
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                        ) : (
+                                          <Circle className="w-3.5 h-3.5 shrink-0" />
+                                        )}
+                                      </button>
+                                      <span className={`font-semibold truncate flex-1 ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-100'}`}>
+                                        {task.text}
+                                      </span>
+                                      {/* Quick cross to remove hour */}
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onUpdateNode({
+                                            ...task,
+                                            dueTime: undefined,
+                                            startTime: undefined
+                                          });
+                                        }}
+                                        className="opacity-0 group-hover/task:opacity-100 ml-1 hover:text-rose-500 text-[10px] font-bold bg-slate-100/40 dark:bg-slate-800/20 px-1 rounded cursor-pointer"
+                                        title="Убрать время"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ))}
+                                  {/* Plus icon to add another task */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveHourAddInput(hour);
+                                      setNewHourTaskText('');
+                                    }}
+                                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-450 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer"
+                                    title="Добавить еще задачу"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              );
+                            }
+
+                            if (activeHourAddInput === hour) {
+                              return (
+                                <div 
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="p-1 px-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/45 flex items-center gap-2 max-w-sm flex-1"
+                                >
+                                  <input
+                                    type="text"
+                                    autoFocus
+                                    placeholder={`Задача на ${hour}...`}
+                                    value={newHourTaskText}
+                                    onChange={(e) => setNewHourTaskText(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr, hour);
+                                      if (e.key === 'Escape') setActiveHourAddInput(null);
+                                    }}
+                                    className="flex-1 text-xs px-2 py-0.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500 font-medium"
+                                  />
+                                  <button
+                                    onClick={() => handleAddDayTaskSubmit(currentDateStr, hour)}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-2 py-0.5 text-[10px] font-bold cursor-pointer"
+                                  >
+                                    Ок
+                                  </button>
+                                  <button
+                                    onClick={() => setActiveHourAddInput(null)}
+                                    className="text-slate-455 hover:text-slate-600 text-[10px]"
+                                  >
+                                    Отмена
+                                  </button>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div className="text-[11px] text-slate-300 dark:text-slate-705 italic group-hover/row:text-indigo-400/80 transition-colors">
+                                Кликните, чтобы добавить задачу на {hour}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     );
