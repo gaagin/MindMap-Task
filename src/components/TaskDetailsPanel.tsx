@@ -31,7 +31,7 @@ interface TaskDetailsPanelProps {
   onDeleteNode: (id: string) => void;
   onAddChildNode?: (parentId: string) => void;
   onSelectNode?: (id: string | null) => void;
-  tagCategories?: TagCategory[];
+  categories?: TagCategory[];
   onCreateTagCategory?: (name: string, color: string) => void;
   onUpdateTagCategory?: (id: string, name: string, color: string, tags: string[]) => void;
   onDeleteTagCategory?: (id: string) => void;
@@ -55,7 +55,7 @@ export default function TaskDetailsPanel({
   onDeleteNode,
   onAddChildNode,
   onSelectNode,
-  tagCategories = [],
+  categories = [],
   onCreateTagCategory,
   onUpdateTagCategory,
   onDeleteTagCategory
@@ -83,6 +83,24 @@ export default function TaskDetailsPanel({
   const [newCatColor, setNewCatColor] = useState('#6366f1');
   const [addingTagToCatId, setAddingTagToCatId] = useState<string | null>(null);
   const [newCatTagName, setNewCatTagName] = useState('');
+
+
+  const handleUpdateCategories = (newCategories: TagCategory[]) => {
+    // Logic as discussed
+  };
+
+  const handleCreateTagCategory = (name: string, color: string) => {
+    if (onCreateTagCategory) onCreateTagCategory(name, color);
+  };
+
+  const handleUpdateTagCategory = (id: string, name: string, color: string, tags: string[]) => {
+    if (onUpdateTagCategory) onUpdateTagCategory(id, name, color, tags);
+  };
+
+  const handleDeleteTagCategory = (id: string) => {
+    if (onDeleteTagCategory) onDeleteTagCategory(id);
+  };
+
   // Category collapse state, loaded and persisted in localStorage using the same key as Sidebar for 100% synchronization
   const [collapsedCategoryIds, setCollapsedCategoryIds] = useState<Record<string, boolean>>(() => {
     try {
@@ -567,7 +585,7 @@ export default function TaskDetailsPanel({
           {node.tags && node.tags.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {node.tags.map((tag, index) => {
-                const matchedCategory = tagCategories.find(cat => cat.tags && cat.tags.includes(tag));
+                const matchedCategory = categories.find(cat => cat.tags && cat.tags.includes(tag));
                 const color = matchedCategory?.color;
                 const style = color ? {
                   backgroundColor: `${color}18`,
@@ -683,8 +701,8 @@ export default function TaskDetailsPanel({
 
             {/* List of categories */}
             <div className="space-y-3">
-              {tagCategories && tagCategories.length > 0 ? (
-                tagCategories.map(cat => {
+              {categories && categories.length > 0 ? (
+                categories.map(cat => {
                   const isAddingTag = addingTagToCatId === cat.id;
                   return (
                     <div key={cat.id} className="space-y-1.5 bg-slate-50/40 dark:bg-slate-800/10 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800/50">

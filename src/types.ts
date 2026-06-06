@@ -38,6 +38,7 @@ export interface Project {
   folderId: string | null; // null means root directory
   createdAt: string;
   updatedAt: string;
+  tagCategories?: TagCategory[];
 }
 
 export interface Folder {

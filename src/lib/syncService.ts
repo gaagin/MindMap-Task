@@ -63,7 +63,6 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
         return acc;
       }, {} as Record<string, TaskNode[]>),
       activeProjectId: state.activeProjectId,
-      tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
       updatedAt: new Date().toISOString()
     };
     await setDoc(docRef, payload);

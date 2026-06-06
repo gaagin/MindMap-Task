@@ -343,12 +343,17 @@ const STORAGE_KEY = 'task_mindmaps_state';
 export function loadWorkspace(): WorkspaceState {
   try {
     const serialized = localStorage.getItem(STORAGE_KEY);
-    if (!serialized) {
+    if (!serialized || serialized === 'null' || serialized === 'undefined') {
       const demo = createDemoWorkspace();
       saveWorkspace(demo);
       return demo;
     }
     const state = JSON.parse(serialized) as WorkspaceState;
+    if (!state || typeof state !== 'object') {
+      const demo = createDemoWorkspace();
+      saveWorkspace(demo);
+      return demo;
+    }
     
     // Safety fallback in case fields are missing
     if (!state.folders) state.folders = [];

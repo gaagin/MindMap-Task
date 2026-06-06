@@ -69,10 +69,10 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
     return nf;
   });
 
-  // 2. Projects
+  // Projects
   const enrichedProjects = next.projects.map(np => {
     const pp = prev.projects.find(p => p.id === np.id);
-    if (!pp || pp.name !== np.name || pp.folderId !== np.folderId) {
+    if (!pp || pp.name !== np.name || pp.folderId !== np.folderId || JSON.stringify(pp.tagCategories) !== JSON.stringify(np.tagCategories)) {
       return { ...np, updatedAt: now };
     }
     return np;
@@ -110,6 +110,7 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         pn.height !== nn.height ||
         JSON.stringify(pn.files) !== JSON.stringify(nn.files) ||
         JSON.stringify(pn.tags) !== JSON.stringify(nn.tags);
+//        JSON.stringify(pn.tags) !== JSON.stringify(nn.tags); // Note: I might have removed this inadvertently
 
       if (changed) {
         return { ...nn, updatedAt: now };
@@ -146,7 +147,11 @@ export default function App() {
   // Intercept all state changes, update modification timestamps automatically, ensuring symmetrical sync compatibility
   const setState = (updater: WorkspaceState | ((prev: WorkspaceState) => WorkspaceState)) => {
     setRawState(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
+      const nextTyped = typeof updater === 'function' ? updater(prev) : updater;
+      const next = {
+        ...nextTyped,
+        tagCategories: nextTyped.projects.flatMap(p => p.tagCategories || [])
+      };
       return enrichStateWithTimestamps(prev, next);
     });
   };
@@ -314,8 +319,7 @@ export default function App() {
         folders: cloudData.folders || [],
         projects: cloudData.projects || [],
         nodes: cloudData.nodes || {},
-        activeProjectId: cloudData.activeProjectId || '',
-        tagCategories: cloudData.tagCategories || []
+        activeProjectId: cloudData.activeProjectId || ''
       };
 
       const currentState = stateRef.current;
@@ -324,16 +328,14 @@ export default function App() {
         folders: currentState.folders,
         projects: currentState.projects,
         nodes: currentState.nodes,
-        activeProjectId: currentState.activeProjectId,
-        tagCategories: currentState.tagCategories
+        activeProjectId: currentState.activeProjectId
       };
 
       const cloudCompare = {
         folders: cloudState.folders,
         projects: cloudState.projects,
         nodes: cloudState.nodes,
-        activeProjectId: cloudState.activeProjectId,
-        tagCategories: cloudState.tagCategories
+        activeProjectId: cloudState.activeProjectId
       };
 
       if (JSON.stringify(localCompare) !== JSON.stringify(cloudCompare)) {
@@ -754,38 +756,73 @@ export default function App() {
 
   // ----- TAG CATEGORY OPERATIONS -----
   const handleCreateTagCategory = (name: string, color: string) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
     setState(prev => {
-      const cats = prev.tagCategories || [];
-      const newCat = {
+      const projectIndex = prev.projects.findIndex(p => p.id === pid);
+      if (projectIndex === -1) return prev;
+
+      const newCat: TagCategory = {
         id: 'cat-' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
         name,
         color,
         tags: []
       };
+
+      const updatedProjects = [...prev.projects];
+      const project = { ...updatedProjects[projectIndex] };
+      project.tagCategories = [...(project.tagCategories || []), newCat];
+      updatedProjects[projectIndex] = project;
+
       return {
         ...prev,
-        tagCategories: [...cats, newCat]
+        projects: updatedProjects
       };
     });
   };
 
   const handleUpdateTagCategory = (id: string, name: string, color: string, tags: string[]) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
     setState(prev => {
-      const cats = prev.tagCategories || [];
+      const projectIndex = prev.projects.findIndex(p => p.id === pid);
+      if (projectIndex === -1) return prev;
+
+      const updatedProjects = [...prev.projects];
+      const project = { ...updatedProjects[projectIndex] };
+      const cats = project.tagCategories || [];
+      
+      project.tagCategories = cats.map(c => c.id === id ? { ...c, name, color, tags } : c);
+      updatedProjects[projectIndex] = project;
+
       return {
         ...prev,
-        tagCategories: cats.map(c => c.id === id ? { ...c, name, color, tags } : c)
+        projects: updatedProjects
       };
     });
   };
 
   const handleDeleteTagCategory = (id: string) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
     logDeletion('tagCategory', id);
     setState(prev => {
-      const cats = prev.tagCategories || [];
+      const projectIndex = prev.projects.findIndex(p => p.id === pid);
+      if (projectIndex === -1) return prev;
+
+      const updatedProjects = [...prev.projects];
+      const project = { ...updatedProjects[projectIndex] };
+      const cats = project.tagCategories || [];
+      
+      project.tagCategories = cats.filter(c => c.id !== id);
+      updatedProjects[projectIndex] = project;
+
       return {
         ...prev,
-        tagCategories: cats.filter(c => c.id !== id)
+        projects: updatedProjects
       };
     });
   };
@@ -1515,7 +1552,7 @@ export default function App() {
         onResetDemo={handleResetDemo}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
-        tagCategories={state.tagCategories || []}
+        tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
         onCreateTagCategory={handleCreateTagCategory}
         onUpdateTagCategory={handleUpdateTagCategory}
         onDeleteTagCategory={handleDeleteTagCategory}
@@ -1903,7 +1940,7 @@ export default function App() {
             viewMode === 'mobile-list' ? (
               <MobileListView
                 nodes={activeNodes}
-                tagCategories={state.tagCategories || []}
+                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 onSelectNode={(id) => {
@@ -1924,7 +1961,7 @@ export default function App() {
             ) : viewMode === 'kanban' ? (
               <KanbanView
                 nodes={activeNodes}
-                tagCategories={state.tagCategories || []}
+                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 onSelectNode={(id) => {
@@ -1943,7 +1980,7 @@ export default function App() {
             ) : viewMode === 'calendar' ? (
               <CalendarView
                 nodes={activeNodes}
-                tagCategories={state.tagCategories || []}
+                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 onSelectNode={(id) => {
@@ -1963,7 +2000,7 @@ export default function App() {
             ) : viewMode === 'gantt' ? (
               <GanttView
                 nodes={activeNodes}
-                tagCategories={state.tagCategories || []}
+                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 onSelectNode={(id) => {
@@ -1983,7 +2020,7 @@ export default function App() {
             ) : viewMode === 'table' ? (
               <TableView
                 nodes={activeNodes}
-                tagCategories={state.tagCategories || []}
+                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 onSelectNode={(id) => {
@@ -2032,7 +2069,7 @@ export default function App() {
                 filterAttachments={filterAttachments}
                 filterNotes={filterNotes}
                 searchQuery={searchQuery}
-                tagCategories={state.tagCategories || []}
+                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
               />
             )
           ) : (
@@ -2056,7 +2093,7 @@ export default function App() {
             onDeleteNode={handleDeleteNode}
             onAddChildNode={handleAddChildNode}
             onSelectNode={setSelectedNodeId}
-            tagCategories={state.tagCategories || []}
+            categories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
             onCreateTagCategory={handleCreateTagCategory}
             onUpdateTagCategory={handleUpdateTagCategory}
             onDeleteTagCategory={handleDeleteTagCategory}
