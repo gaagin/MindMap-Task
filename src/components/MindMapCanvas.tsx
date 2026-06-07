@@ -179,6 +179,481 @@ export default function MindMapCanvas({
   const [hasDraggedNode, setHasDraggedNode] = useState(false);
   const [priorityViewActive, setPriorityViewActive] = useState<boolean>(false);
 
+  // States of container view modes (e.g., list, kanban, calendar, gantt, table, canvas)
+  const [containerViewModes, setContainerViewModes] = useState<Record<string, 'list' | 'kanban' | 'calendar' | 'gantt' | 'table' | 'canvas'>>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_container_views');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const setContainerViewMode = (containerId: string, mode: 'list' | 'kanban' | 'calendar' | 'gantt' | 'table' | 'canvas') => {
+    setContainerViewModes(prev => {
+      const updated = { ...prev, [containerId]: mode };
+      try {
+        localStorage.setItem('task_mindmap_container_views', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to persist container view:', e);
+      }
+      return updated;
+    });
+  };
+
+  const [inlineAddTexts, setInlineAddTexts] = useState<Record<string, string>>({});
+
+  const getCalendarGroups = (tasks: TaskNode[]) => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const todayStr = today.toISOString().split('T')[0];
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+    const endOfWeek = new Date(today);
+    const dayOfWeek = endOfWeek.getDay();
+    const distanceToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+    endOfWeek.setDate(endOfWeek.getDate() + distanceToSunday);
+    const endOfWeekStr = endOfWeek.toISOString().split('T')[0];
+
+    const todayTasks: TaskNode[] = [];
+    const tomorrowTasks: TaskNode[] = [];
+    const weekTasks: TaskNode[] = [];
+    const laterTasks: TaskNode[] = [];
+    const noDateTasks: TaskNode[] = [];
+    const overdueTasks: TaskNode[] = [];
+
+    tasks.forEach(t => {
+      if (!t.dueDate) {
+        noDateTasks.push(t);
+        return;
+      }
+      if (t.dueDate === todayStr) {
+        todayTasks.push(t);
+      } else if (t.dueDate === tomorrowStr) {
+        tomorrowTasks.push(t);
+      } else if (t.dueDate < todayStr && !t.completed) {
+        overdueTasks.push(t);
+      } else if (t.dueDate > tomorrowStr && t.dueDate <= endOfWeekStr) {
+        weekTasks.push(t);
+      } else {
+        laterTasks.push(t);
+      }
+    });
+
+    return [
+      { id: 'overdue', title: 'Просрочено', tasks: overdueTasks, color: 'text-rose-500 bg-rose-500/10' },
+      { id: 'today', title: 'Сегодня', tasks: todayTasks, color: 'text-amber-500 bg-amber-500/10' },
+      { id: 'tomorrow', title: 'Завтра', tasks: tomorrowTasks, color: 'text-blue-500 bg-blue-500/10' },
+      { id: 'week', title: 'На неделе', tasks: weekTasks, color: 'text-indigo-500 bg-indigo-500/10' },
+      { id: 'later', title: 'Позже', tasks: laterTasks, color: 'text-slate-500 bg-slate-500/10' },
+      { id: 'nodate', title: 'Без даты', tasks: noDateTasks, color: 'text-slate-450 bg-slate-200/40 dark:bg-slate-800' }
+    ].filter(g => g.tasks.length > 0);
+  };
+
+  const getGanttData = (tasks: TaskNode[]) => {
+    const days: { dateStr: string; label: string; dayNum: number }[] = [];
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    for (let i = 0; i < 7; i++) {
+       const d = new Date(today);
+       d.setDate(today.getDate() + i);
+       const dateStr = d.toISOString().split('T')[0];
+       const weekdayLabel = d.toLocaleDateString('ru-RU', { weekday: 'short' });
+       const dayNum = d.getDate();
+       days.push({ dateStr, label: weekdayLabel, dayNum });
+    }
+
+    const ganttTasks = tasks.filter(t => t.dueDate || t.startDate);
+    return { days, ganttTasks };
+  };
+
+  const renderContainerBody = (node: TaskNode, containerChildren: TaskNode[], isFullScreen = false) => {
+    const viewMode = containerViewModes[node.id] || 'canvas';
+
+    if (viewMode === 'canvas') {
+      if (containerChildren.length === 0) {
+        return (
+          <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto">
+            <span className="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest mb-1.5">Свободный холст</span>
+            <span className="text-[9px] text-slate-400 dark:text-slate-500 max-w-[200px]">
+              Дочерние подзадачи свободно перемещаются по этому прямоугольнику. Добавьте задачу кнопкой <b>+</b> выше.
+            </span>
+          </div>
+        );
+      }
+      return <div className="flex-1 min-h-[140px]" />;
+    }
+
+    if (viewMode === 'list') {
+      return (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin ${isFullScreen ? 'max-h-[50vh] text-xs' : 'max-h-[220px]'}`}>
+            {containerChildren.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[120px] text-center my-auto">
+                <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач в списке нет</span>
+              </div>
+            ) : (
+              containerChildren.map(child => (
+                <div key={child.id} className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-xs hover:border-slate-200 group/item">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onToggleNodeCompleted(child.id); }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      data-drag-ignore
+                      className="text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                    >
+                      {child.completed ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : (
+                        <Circle className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </button>
+                    <span 
+                      onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                      className={`font-medium leading-relaxed truncate cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
+                    >
+                      {child.text}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                    {child.dueDate && (
+                      <span className="text-[8px] font-bold text-slate-400 px-1 py-0.5 rounded bg-slate-50 dark:bg-slate-950 font-mono border border-slate-200 dark:border-slate-800">
+                        {formatDisplayDate(child.dueDate)}
+                      </span>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setNotesModalNodeId(child.id); }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      data-drag-ignore
+                      className="p-0.5 rounded text-slate-400 hover:text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      title="Описание / Заметки"
+                    >
+                      <FileText className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDeleteNode(child.id); }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      data-drag-ignore
+                      className="p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      title="Удалить"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              const txt = inlineAddTexts[node.id] || '';
+              if (txt.trim()) {
+                onAddFloatingNode(node.x, node.y, node.id, txt.trim());
+                setInlineAddTexts(prev => ({ ...prev, [node.id]: '' }));
+              }
+            }}
+            className="mt-2 flex items-center gap-1 shrink-0 z-20"
+          >
+            <input 
+              type="text"
+              placeholder="Добавить новую задачу..."
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              value={inlineAddTexts[node.id] || ''}
+              onChange={(e) => setInlineAddTexts(prev => ({ ...prev, [node.id]: e.target.value }))}
+              data-drag-ignore
+              className="flex-1 text-[10px] py-1 px-2.5 bg-white/70 dark:bg-slate-950/70 rounded-lg border border-slate-200 dark:border-slate-800/80 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500 placeholder-slate-400"
+            />
+            <button 
+              type="submit" 
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              data-drag-ignore
+              className="p-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer text-[10px] font-bold"
+            >
+              +
+            </button>
+          </form>
+        </div>
+      );
+    }
+
+    if (viewMode === 'kanban') {
+      const todoTasks = containerChildren.filter(c => !c.completed && (!c.progress || c.progress === 0));
+      const progressTasks = containerChildren.filter(c => !c.completed && (c.progress && c.progress > 0));
+      const doneTasks = containerChildren.filter(c => c.completed);
+
+      return (
+        <div className="flex-1 flex gap-1.5 overflow-x-auto min-h-0 pb-1 scrollbar-none">
+          {[
+            { id: 'todo', title: 'План', tasks: todoTasks, bg: 'bg-slate-500/5 dark:bg-slate-900/40', border: 'border-slate-150 dark:border-slate-800/60' },
+            { id: 'progress', title: 'В работе', tasks: progressTasks, bg: 'bg-amber-500/5 dark:bg-amber-950/10', border: 'border-amber-200/20 dark:border-amber-900/30' },
+            { id: 'done', title: 'Готово', tasks: doneTasks, bg: 'bg-emerald-500/5 dark:bg-emerald-950/10', border: 'border-emerald-200/20 dark:border-emerald-900/30' }
+          ].map(col => (
+            <div key={col.id} className={`flex-1 rounded-xl border ${col.border} ${col.bg} p-1.5 flex flex-col min-h-0 ${isFullScreen ? 'min-w-[200px]' : 'min-w-[130px] max-w-[170px]'}`}>
+              <div className="flex items-center justify-between mb-1.5 px-0.5 select-none shrink-0">
+                <span className="text-[9px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{col.title}</span>
+                <span className="text-[8px] font-extrabold bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1 py-0.2 rounded font-mono">{col.tasks.length}</span>
+              </div>
+              
+              <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[175px]'}`}>
+                {col.tasks.map(child => (
+                  <div key={child.id} className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item">
+                    <span 
+                      onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                      className={`font-semibold leading-normal cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
+                    >
+                      {child.text}
+                    </span>
+                    <div className="flex items-center justify-between mt-1 pt-1 border-t border-slate-100/40 dark:border-slate-900/40 shrink-0">
+                      <div className="flex gap-0.5">
+                        {col.id === 'todo' && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({ ...child, progress: 50 });
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            data-drag-ignore
+                            className="p-0.5 px-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[7.5px] font-black cursor-pointer transition-colors"
+                            title="Начать работу (In Progress)"
+                          >
+                            ▶ Раб.
+                          </button>
+                        )}
+                        {col.id === 'progress' && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({ ...child, progress: 0 });
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            data-drag-ignore
+                            className="p-0.5 px-1 rounded bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[7.5px] font-black cursor-pointer transition-colors"
+                            title="Вернуть в бэклог"
+                          >
+                            ◀ План
+                          </button>
+                        )}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleNodeCompleted(child.id);
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        data-drag-ignore
+                        className={`p-0.5 px-1 rounded text-[7.5px] font-extrabold cursor-pointer transition-all ${
+                          child.completed 
+                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-455' 
+                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        }`}
+                      >
+                        {child.completed ? '↩ Отмена' : '✓ Вып.'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {col.tasks.length === 0 && (
+                  <div className="flex-1 flex items-center justify-center py-4 border border-dashed border-slate-200/50 dark:border-slate-800/45 rounded-lg select-none">
+                    <span className="text-[8px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Пусто</span>
+                </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (viewMode === 'calendar') {
+      const groups = getCalendarGroups(containerChildren);
+      return (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className={`flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[220px]'}`}>
+            {groups.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto">
+                <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач с датами нет</span>
+              </div>
+            ) : (
+              groups.map(g => (
+                <div key={g.id} className="space-y-1">
+                  <div className="flex items-center gap-1.5 mb-1 shrink-0 select-none">
+                    <span className={`text-[8.5px] font-black px-1.5 py-0.2 rounded-md ${g.color} shadow-2xs`}>
+                      {g.title}
+                    </span>
+                    <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 font-mono">({g.tasks.length})</span>
+                  </div>
+                  
+                  <div className="space-y-1 pl-1">
+                    {g.tasks.map(child => (
+                      <div 
+                        key={child.id} 
+                        onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                        className="p-1 px-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-2xs flex items-center justify-between gap-2 hover:border-slate-200 group/item cursor-pointer"
+                      >
+                        <span className={`font-semibold truncate flex-1 ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-205'}`}>
+                          {child.text}
+                        </span>
+                        
+                        <div className="flex items-center gap-1 shrink-0">
+                          {child.dueDate && (
+                            <span className="text-[8px] font-extrabold text-slate-400 font-mono">
+                              {formatDisplayDate(child.dueDate)}
+                            </span>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleNodeCompleted(child.id);
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            data-drag-ignore
+                            className="p-0.5 rounded text-slate-400 hover:text-indigo-600 hover:bg-slate-100 select-none cursor-pointer"
+                          >
+                            {child.completed ? '✅' : '⬜'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (viewMode === 'gantt') {
+      const { days, ganttTasks } = getGanttData(containerChildren);
+      return (
+        <div className="flex-1 flex flex-col min-h-0">
+          {ganttTasks.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-3 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto">
+              <span className="text-[9px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-wide mb-1">Нет временных меток</span>
+              <span className="text-[8px] text-slate-400 dark:text-slate-500 max-w-[200px]">Установите сроки (DueDate) для задач этого контейнера, чтобы построить диаграмму Ганта.</span>
+            </div>
+          ) : (
+            <div className="space-y-1.5 min-h-0 flex-1 flex flex-col">
+              <div className="flex items-center gap-1 border-b border-slate-100 dark:border-slate-800 pb-1 select-none shrink-0">
+                <div className="w-1/3 text-[8.5px] font-black text-slate-400 uppercase tracking-widest">Задача</div>
+                <div className="flex-1 flex gap-0.5">
+                  {days.map(d => (
+                    <div key={d.dateStr} className="flex-1 flex flex-col items-center justify-center text-center">
+                      <span className="text-[7.5px] font-bold text-slate-400/80 uppercase">{d.label}</span>
+                      <span className="text-[8.5px] font-extrabold text-slate-500">{d.dayNum}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div className={`flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[170px]'}`}>
+                {ganttTasks.map(child => {
+                  const startDate = child.startDate || child.dueDate;
+                  const endDate = child.dueDate || child.startDate;
+                  return (
+                    <div key={child.id} className="flex items-center gap-1 text-[9.5px]">
+                      <div className="w-1/3 min-w-0 pr-1 shrink-0">
+                        <span 
+                          onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                          className={`font-semibold truncate block cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-205'}`}
+                        >
+                          {child.text}
+                        </span>
+                      </div>
+                      <div className="flex-1 flex gap-0.5 h-3 relative select-none">
+                        {days.map(d => {
+                          const isDayOfTask = startDate && endDate && (d.dateStr >= startDate && d.dateStr <= endDate);
+                          return (
+                            <div 
+                              key={d.dateStr} 
+                              className={`flex-1 rounded-xs border ${
+                                isDayOfTask 
+                                  ? child.completed 
+                                    ? 'bg-emerald-500/20 border-emerald-400/30' 
+                                    : 'bg-amber-500/70 border-amber-400 shadow-3xs' 
+                                  : 'bg-slate-100/10 border-slate-100/50 dark:bg-slate-900/10 dark:border-slate-805/30'
+                              }`}
+                              title={`${child.text} (${startDate ?? ''} — ${endDate ?? ''})`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (viewMode === 'table') {
+      return (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="w-full flex items-center border-b border-slate-150 dark:border-slate-800 pb-1 text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest select-none shrink-0 mb-1">
+            <div className="w-1/2">Задача</div>
+            <div className="w-1/4 text-center">Приоритет</div>
+            <div className="w-1/4 text-right">Срок</div>
+          </div>
+          
+          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[200px]'}`}>
+            {containerChildren.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center py-6 border border-dashed border-slate-200/40 dark:border-slate-850 rounded-lg select-none">
+                <span className="text-[8.5px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Нет данных</span>
+              </div>
+            ) : (
+              containerChildren.map(child => {
+                const pDot = child.priority === 'urgent' ? '🔴' : child.priority === 'high' ? '🟠' : child.priority === 'medium' ? '🔵' : child.priority === 'low' ? '🟢' : '⚪';
+                return (
+                  <div 
+                    key={child.id} 
+                    className="w-full flex items-center py-1.5 border-b border-slate-100/50 dark:border-slate-850/60 hover:bg-slate-50/40 dark:hover:bg-slate-900/20 group/row"
+                  >
+                    <div className="w-1/2 min-w-0 pr-2 flex items-center gap-1.5">
+                       <button 
+                         onClick={(e) => { e.stopPropagation(); onToggleNodeCompleted(child.id); }}
+                         onMouseDown={(e) => e.stopPropagation()}
+                         data-drag-ignore
+                         className="text-slate-400 hover:text-indigo-600 transition-all cursor-pointer text-[10px] shrink-0"
+                       >
+                         {child.completed ? '✅' : '⬜'}
+                       </button>
+                       <span 
+                         onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                         className={`truncate font-semibold cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-205'}`}
+                       >
+                         {child.text}
+                       </span>
+                    </div>
+                    <div className="w-1/4 text-center text-[9px] font-bold">
+                      <span title={`Приоритет: ${child.priority}`}>{pDot}</span>
+                    </div>
+                    <div className="w-1/4 text-right font-mono text-[8.5px] text-slate-400 dark:text-slate-450 pr-0.5">
+                      {child.dueDate ? formatDisplayDate(child.dueDate) : '—'}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   // INBOX Container off-canvas persistent states
   const [isInboxCollapsed, setIsInboxCollapsed] = useState<boolean>(() => {
     try {
@@ -316,60 +791,97 @@ export default function MindMapCanvas({
 
     setCanvasSpeechText('');
     setIsCanvasListening(true);
-
-    try {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      const rec = new SpeechRecognition();
-      rec.continuous = false;
-      rec.interimResults = true;
-      rec.lang = speechLanguage;
-
-      rec.onresult = (event: any) => {
-        let finalTranscript = '';
-        let interimTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-        
-        const currentText = finalTranscript || interimTranscript;
-        setCanvasSpeechText(currentText);
-
-        if (finalTranscript.trim()) {
-          const textToCreate = finalTranscript.trim();
-          handleCreateCanvasTaskFromSpeech(textToCreate);
-          setIsCanvasListening(false);
-          try { rec.stop(); } catch (err) {}
-        }
-      };
-
-      rec.onerror = (e: any) => {
-        console.error('Canvas Speech Error:', e);
-        setIsCanvasListening(false);
-      };
-
-      rec.onend = () => {
-        setIsCanvasListening(false);
-      };
-
-      canvasRecRef.current = rec;
-      rec.start();
-    } catch (err) {
-      console.error('Error starting canvas speech:', err);
-      setIsCanvasListening(false);
-    }
   };
 
   const stopCanvasListening = () => {
-    if (canvasRecRef.current) {
-      try { canvasRecRef.current.stop(); } catch (e) {}
-    }
     setIsCanvasListening(false);
   };
+
+  // Robustly manage the canvas Speech Recognition service in the background
+  useEffect(() => {
+    if (!isCanvasListening) return;
+
+    let rec: any = null;
+    let isActive = true;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const startListening = () => {
+      try {
+        rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = speechLanguage;
+
+        rec.onstart = () => {
+          console.log(`Speech started for language: ${speechLanguage}`);
+        };
+
+        rec.onresult = (event: any) => {
+          if (!isActive) return;
+          let finalTranscript = '';
+          let interimTranscript = '';
+          
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            } else {
+              interimTranscript += event.results[i][0].transcript;
+            }
+          }
+          
+          const currentText = finalTranscript || interimTranscript;
+          if (currentText.trim()) {
+            setCanvasSpeechText(currentText);
+          }
+        };
+
+        rec.onerror = (e: any) => {
+          console.error('Canvas Speech Error inside effect:', e);
+          // Ignore general aborted we caused or no-speech timeouts
+        };
+
+        rec.onend = () => {
+          // If deactivated or modal closed, do not restart
+          if (!isActive || !isCanvasListening) return;
+          // Auto-restart to stay responsive and avoid silent timeout closures
+          try {
+            if (isActive) {
+              rec.start();
+            }
+          } catch (err) {
+            console.error('Failed to auto-restart speech:', err);
+          }
+        };
+
+        canvasRecRef.current = rec;
+        rec.start();
+      } catch (err) {
+        console.error('Error starting canvas SpeechRecognition:', err);
+      }
+    };
+
+    // Delay start slightly to allow previous recognition to completely stop
+    const startTimer = setTimeout(() => {
+      if (isActive) startListening();
+    }, 150);
+
+    return () => {
+      isActive = false;
+      if (rec) {
+        try {
+          rec.onend = null;
+          rec.onerror = null;
+          rec.stop();
+        } catch (e) {}
+      }
+      if (canvasRecRef.current === rec) {
+        canvasRecRef.current = null;
+      }
+      clearTimeout(startTimer);
+    };
+  }, [isCanvasListening, speechLanguage]);
 
   const parseVoiceCommand = (transcript: string) => {
     const cleanText = transcript.trim().replace(/[.?!,;]+$/, "").trim();
@@ -1643,6 +2155,18 @@ export default function MindMapCanvas({
   // Trace parent nodes back to root to determine if any ancestor is collapsed, or filtered by focus mode
   const visibleNodes = nodes.filter(node => {
     if (node.parentId === 'inbox') return false;
+
+    // Hide child nodes from main canvas view if parent is a container in list/kanban/calendar/gantt/table view (unless focused)
+    if (node.parentId) {
+      const parentNode = nodes.find(n => n.id === node.parentId);
+      if (parentNode && parentNode.isContainer) {
+        const parentMode = containerViewModes[parentNode.id] || 'canvas';
+        if (parentMode !== 'canvas' && focusedContainerId !== parentNode.id) {
+          return false;
+        }
+      }
+    }
+
     if (focusedContainerId) {
       // In focus mode, we only show the container itself or its descendants
       if (node.id === focusedContainerId) return true;
@@ -1737,30 +2261,67 @@ export default function MindMapCanvas({
         const progress = totalChildren > 0 ? Math.round((completedChildren / totalChildren) * 100) : 0;
         
         return (
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3 border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl flex items-center gap-4 transition-all duration-350 animate-in fade-in slide-in-from-top-4 max-w-[95vw] sm:max-w-xl">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="text-xl shrink-0">📦</span>
-              <div className="min-w-0">
-                <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans">Режим фокусировки</div>
-                <input
-                  type="text"
-                  value={focusedContainer.text}
-                  onChange={(e) => {
-                    onUpdateNode({
-                      ...focusedContainer,
-                      text: e.target.value
-                    });
-                  }}
-                  className="text-sm font-sans font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b border-dashed border-amber-300 dark:border-amber-800 focus:border-amber-500 focus:outline-none focus:ring-0 px-0.5 py-0 min-w-0 max-w-[130px] sm:max-w-[200px]"
-                  placeholder="Имя контейнера"
-                />
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3 border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl flex flex-col md:flex-row items-center gap-4 transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-[95vw] md:max-w-4xl">
+            <div className="flex items-center gap-2.5 min-w-0 w-full md:w-auto justify-between md:justify-start">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="text-xl shrink-0">📦</span>
+                <div className="min-w-0">
+                  <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans">Режим фокусировки</div>
+                  <input
+                    type="text"
+                    value={focusedContainer.text}
+                    onChange={(e) => {
+                      onUpdateNode({
+                        ...focusedContainer,
+                        text: e.target.value
+                      });
+                    }}
+                    className="text-sm font-sans font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b border-dashed border-amber-300 dark:border-amber-800 focus:border-amber-500 focus:outline-none focus:ring-0 px-0.5 py-0 min-w-0 max-w-[130px] sm:max-w-[200px]"
+                    placeholder="Имя контейнера"
+                  />
+                </div>
               </div>
             </div>
             
-            <div className="w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
+            <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
+
+            {/* View Selector for Focused Mode */}
+            <div className="flex items-center gap-1 bg-slate-100/60 dark:bg-slate-950/40 p-1 rounded-xl border border-slate-200/40 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none shrink-0 max-w-full">
+              {[
+                { id: 'canvas', label: 'Карта', icon: '🕸️' },
+                { id: 'list', label: 'Список', icon: '📋' },
+                { id: 'kanban', label: 'Канбан', icon: '📊' },
+                { id: 'calendar', label: 'Календарь', icon: '📅' },
+                { id: 'gantt', label: 'Гант', icon: '📈' },
+                { id: 'table', label: 'Таблица', icon: '🗂️' }
+              ].map(v => {
+                const active = (containerViewModes[focusedContainer.id] || 'canvas') === v.id;
+                return (
+                  <button
+                    key={v.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setContainerViewMode(focusedContainer.id, v.id as any);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    data-drag-ignore
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      active 
+                        ? 'bg-amber-100 dark:bg-amber-950/75 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 shadow-2xs' 
+                        : 'text-slate-650 dark:text-slate-400 hover:bg-slate-150/40 dark:hover:bg-slate-800/60 border border-transparent'
+                    }`}
+                  >
+                    <span className="text-xs">{v.icon}</span>
+                    <span>{v.label}</span>
+                  </button>
+                );
+              })}
+            </div>
             
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="hidden sm:flex flex-col items-end gap-0.5">
+            <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
+            
+            <div className="flex items-center gap-3 shrink-0 w-full md:w-auto justify-between md:justify-start">
+              <div className="flex flex-col items-end gap-0.5 select-none text-right">
                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
                   {completedChildren}/{totalChildren} Выполнено
                 </span>
@@ -1775,7 +2336,6 @@ export default function MindMapCanvas({
               <button
                 onClick={() => {
                   autoFitContainer(focusedContainerId);
-                  // Focus the camera on the container instead of resetting to central task coordinate (0,0)
                   const targetZoom = 0.85;
                   setZoom(targetZoom);
                   setPanX(-focusedContainer.x * targetZoom);
@@ -1788,6 +2348,26 @@ export default function MindMapCanvas({
                 <Minimize2 className="w-3.5 h-3.5 text-rose-500" />
                 Вернуться
               </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Immersive Fullscreen View Content for Focused Container */}
+      {focusedContainerId && (() => {
+        const focusedContainer = nodes.find(n => n.id === focusedContainerId);
+        if (!focusedContainer) return null;
+        const viewMode = containerViewModes[focusedContainer.id] || 'canvas';
+        if (viewMode === 'canvas') return null;
+
+        const containerChildren = nodes.filter(n => n.parentId === focusedContainerId);
+        
+        return (
+          <div className="absolute inset-0 bg-slate-550/10 dark:bg-slate-950/40 backdrop-blur-xs z-30 flex items-center justify-center p-4 pt-48 pb-6 sm:p-8 sm:pt-40 md:pt-28">
+            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-200 dark:border-amber-900/50 rounded-3xl shadow-2xl w-full max-w-4xl h-full flex flex-col p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-30">
+              <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden z-30">
+                {renderContainerBody(focusedContainer, containerChildren, true)}
+              </div>
             </div>
           </div>
         );
@@ -2087,6 +2667,42 @@ export default function MindMapCanvas({
                   </div>
                 </div>
 
+                {/* Secondary toolbar for View Selection within Container */}
+                {!isContainerCollapsed && (
+                  <div className="px-3 py-1.5 flex items-center gap-1 bg-slate-50/50 dark:bg-slate-950/20 border-b border-slate-100 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none z-10 shrink-0">
+                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mr-1 shrink-0">Вид:</span>
+                    {[
+                      { id: 'canvas', label: 'Карта', icon: '🕸️' },
+                      { id: 'list', label: 'Список', icon: '📋' },
+                      { id: 'kanban', label: 'Канбан', icon: '📊' },
+                      { id: 'calendar', label: 'Календарь', icon: '📅' },
+                      { id: 'gantt', label: 'Гант', icon: '📈' },
+                      { id: 'table', label: 'Таблица', icon: '🗂️' }
+                    ].map(v => {
+                      const active = (containerViewModes[node.id] || 'canvas') === v.id;
+                      return (
+                        <button
+                          key={v.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setContainerViewMode(node.id, v.id as any);
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          data-drag-ignore
+                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                            active 
+                              ? 'bg-amber-100 dark:bg-amber-950/75 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 shadow-2xs' 
+                              : 'text-slate-550 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
+                          }`}
+                        >
+                          <span className="text-[10px]">{v.icon}</span>
+                          <span>{v.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {/* Body / Workspace Area */}
                 <div className="relative flex-1 p-3 flex flex-col justify-between min-h-0 bg-transparent rounded-b-2xl">
                   {isContainerCollapsed ? (
@@ -2097,10 +2713,13 @@ export default function MindMapCanvas({
                     </div>
                   ) : (
                     <>
-                      {/* Removed empty container guide labels */}
+                      {/* Inner interactive view */}
+                      <div className="flex-1 flex flex-col min-h-0 z-10 select-text overflow-hidden mb-2">
+                        {renderContainerBody(node, containerChildren)}
+                      </div>
 
                       {/* Small dynamic status overview bar at the bottom */}
-                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex items-center justify-between select-none bg-white/20 dark:bg-slate-950/20 px-2 py-1.5 rounded-lg z-10">
+                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex items-center justify-between select-none bg-white/20 dark:bg-slate-950/20 px-2 py-1.5 rounded-lg z-10 shrink-0">
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={(e) => {

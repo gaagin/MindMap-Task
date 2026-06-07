@@ -146,6 +146,7 @@ export default function App() {
   const isFirstRender = React.useRef(true);
   const ignoreNextStateChangeRef = React.useRef(false);
   const hasCheckedUrlParamRef = React.useRef(false);
+  const lastStateRef = React.useRef<WorkspaceState | null>(null);
 
   // Intercept all state changes, update modification timestamps automatically, ensuring symmetrical sync compatibility
   const setState = (updater: WorkspaceState | ((prev: WorkspaceState) => WorkspaceState)) => {
@@ -468,16 +469,32 @@ export default function App() {
   useEffect(() => {
     saveWorkspace(state);
 
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-    } else if (ignoreNextStateChangeRef.current) {
-      // Skip incrementing unsynced edits count when the update was caused by Google Sheets sync download/merge
-      ignoreNextStateChangeRef.current = false;
+    const isFirstTime = lastStateRef.current === null;
+    const stateChanged = !isFirstTime && state !== lastStateRef.current;
+    lastStateRef.current = state;
+
+    if (isFirstTime) {
+      if (isFirstRender.current) {
+        isFirstRender.current = false;
+      }
+    } else if (stateChanged) {
+      if (isFirstRender.current) {
+        isFirstRender.current = false;
+      } else if (ignoreNextStateChangeRef.current) {
+        // Skip incrementing unsynced edits count when the update was caused by Google Sheets sync download/merge or Firestore snapshot
+        ignoreNextStateChangeRef.current = false;
+      } else {
+        setUnsyncedEditsCount(prev => prev + 1);
+      }
     } else {
-      setUnsyncedEditsCount(prev => prev + 1);
+      if (isFirstRender.current) {
+        isFirstRender.current = false;
+      }
     }
     
-    if (currentUser) {
+    // Only save to Firebase if the state actually changed or there are pending unsynced edits.
+    // This prevents a stale client session from overwriting newer changes in the cloud on auth load.
+    if (currentUser && (stateChanged || unsyncedEditsCountRef.current > 0)) {
       setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
       const timer = setTimeout(async () => {
         const success = await saveToFirebaseDirectly(currentUser.uid, state);
