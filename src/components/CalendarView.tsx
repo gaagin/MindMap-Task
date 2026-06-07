@@ -19,6 +19,7 @@ interface CalendarViewProps {
   tagCategories: TagCategory[];
   activeProjectId: string;
   selectedNodeId: string | null;
+  activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
@@ -37,6 +38,7 @@ export default function CalendarView({
   tagCategories,
   activeProjectId,
   selectedNodeId,
+  activePomodoroNodeId,
   onSelectNode,
   onUpdateNode,
   onDeleteNode,
@@ -629,8 +631,11 @@ export default function CalendarView({
                                           {iconPrefix && (
                                             <span className="shrink-0 text-[10px]">{iconPrefix}</span>
                                           )}
-                                          <span className={`truncate font-bold tracking-tight ${task.completed ? 'line-through opacity-55 text-slate-455 dark:text-slate-550' : ''}`}>
+                                          <span className={`truncate font-bold tracking-tight flex items-center gap-0.5 ${task.completed ? 'line-through opacity-55 text-slate-455 dark:text-slate-550' : ''}`}>
                                             {task.text}
+                                            {activePomodoroNodeId === task.id && (
+                                              <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
+                                            )}
                                           </span>
                                         </div>
                                         {(task.startTime || task.dueTime) && (
@@ -1243,10 +1248,19 @@ export default function CalendarView({
               >
                 <div className="flex items-start gap-1.5 justify-between">
                   {/* Title */}
-                  <span className={`text-xs font-semibold text-slate-800 dark:text-slate-200 leading-tight flex-1 ${
+                  <span className={`text-xs font-semibold text-slate-800 dark:text-slate-200 leading-tight flex-1 flex items-center flex-wrap gap-1 ${
                     task.completed ? 'line-through opacity-55' : ''
                   }`}>
-                    {task.text}
+                    <span>{task.text}</span>
+                    {activePomodoroNodeId === task.id && (
+                      <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[9px] font-sans font-extrabold animate-pulse ml-0.5 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+                        </span>
+                        <span>🍅</span>
+                      </span>
+                    )}
                   </span>
                   
                   {/* Delete button wrapper */}

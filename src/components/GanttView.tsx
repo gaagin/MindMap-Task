@@ -22,6 +22,7 @@ interface GanttViewProps {
   tagCategories: TagCategory[];
   activeProjectId: string;
   selectedNodeId: string | null;
+  activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
@@ -33,6 +34,7 @@ export default function GanttView({
   tagCategories,
   activeProjectId,
   selectedNodeId,
+  activePomodoroNodeId,
   onSelectNode,
   onUpdateNode,
   onDeleteNode,
@@ -346,8 +348,11 @@ export default function GanttView({
                     </button>
                     <span className={`text-xs font-extrabold truncate text-slate-750 dark:text-slate-200 ${
                       task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
-                    }`}>
-                      {task.text}
+                    } flex items-center gap-1`}>
+                      <span>{task.text}</span>
+                      {activePomodoroNodeId === task.id && (
+                        <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
+                      )}
                     </span>
                   </div>
 

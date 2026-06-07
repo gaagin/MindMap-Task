@@ -37,6 +37,7 @@ interface MindMapCanvasProps {
   darkMode: boolean;
   activeProjectId: string | null;
   selectedNodeId: string | null;
+  activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNodeCoordinates: (id: string, x: number, y: number) => void;
   onUpdateNodeParent: (id: string, newParentId: string | null) => void;
@@ -84,6 +85,7 @@ export default function MindMapCanvas({
   darkMode,
   activeProjectId,
   selectedNodeId,
+  activePomodoroNodeId,
   onSelectNode,
   onUpdateNodeCoordinates,
   onUpdateNodeParent,
@@ -2326,9 +2328,18 @@ const pInfo = getPriorityInfo(node.priority);
                     <p className={`text-xs font-semibold leading-snug font-sans break-words ${
                       isRoot 
                         ? 'text-white' 
-                        : 'text-slate-800 dark:text-slate-100'
-                    } ${node.completed ? 'line-through opacity-60 italic' : ''}`}>
-                      {node.text || 'Без названия'}
+                        : 'text-slate-800 dark:text-slate-100 font-medium'
+                    } ${node.completed ? 'line-through opacity-60 italic' : ''} flex items-center flex-wrap gap-1`}>
+                      <span>{node.text || 'Без названия'}</span>
+                      {activePomodoroNodeId === node.id && (
+                        <span className="inline-flex items-center gap-1 bg-red-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                          </span>
+                          <span>🍅</span>
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>

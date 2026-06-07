@@ -2120,6 +2120,7 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
                   if (id) {
@@ -2141,6 +2142,7 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
                   if (id) {
@@ -2160,6 +2162,7 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
                   if (id) {
@@ -2180,6 +2183,7 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
                   if (id) {
@@ -2200,6 +2204,7 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
                   if (id) {
@@ -2220,6 +2225,7 @@ export default function App() {
                 darkMode={darkMode}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={setSelectedNodeId}
                 onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
                 onUpdateNodeParent={handleUpdateNodeParent}

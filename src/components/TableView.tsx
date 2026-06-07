@@ -21,6 +21,7 @@ interface TableViewProps {
   tagCategories: TagCategory[];
   activeProjectId: string;
   selectedNodeId: string | null;
+  activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
@@ -35,6 +36,7 @@ export default function TableView({
   tagCategories,
   activeProjectId,
   selectedNodeId,
+  activePomodoroNodeId,
   onSelectNode,
   onUpdateNode,
   onDeleteNode,
@@ -498,6 +500,15 @@ export default function TableView({
                             task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
                           }`}
                         />
+                        {activePomodoroNodeId === task.id && (
+                          <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
+                            <span className="relative flex h-1.5 w-1.5">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+                            </span>
+                            <span>🍅</span>
+                          </span>
+                        )}
                       </div>
                     </td>
  
