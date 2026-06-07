@@ -885,7 +885,25 @@ export default function CalendarView({
                     setActiveDayAddInput(currentDateStr);
                     setNewDayTaskText('');
                   }}
-                  className="mb-4 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/45 dark:bg-slate-950/20 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-900 hover:bg-indigo-50/5 dark:hover:bg-indigo-950/5 transition-all group/allday"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
+                  onDragLeave={() => {
+                    if (draggedOverDate === `allday-${currentDateStr}`) {
+                      setDraggedOverDate(null);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.stopPropagation();
+                    const taskId = e.dataTransfer.getData('text/plain');
+                    if (taskId) {
+                      handleTaskDropToHour(taskId, currentDateStr, null);
+                    }
+                  }}
+                  className={`mb-4 p-4 rounded-2xl border transition-all group/allday cursor-pointer ${
+                    draggedOverDate === `allday-${currentDateStr}`
+                      ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20'
+                      : 'border-slate-100 dark:border-slate-800 bg-slate-50/45 dark:bg-slate-950/20 hover:border-indigo-300 dark:hover:border-indigo-900 hover:bg-indigo-50/5 dark:hover:bg-indigo-950/5'
+                  }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-extrabold text-slate-550 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1">
@@ -906,10 +924,22 @@ export default function CalendarView({
                             <div
                               key={task.id}
                               onClick={(e) => {
-                                e.stopPropagation();
-                                onSelectNode(task.id);
+                                  e.stopPropagation();
+                                  onSelectNode(task.id);
                               }}
-                              className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative ${getPriorityColor(task.priority)}`}
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.setData('text/plain', task.id);
+                                setDraggingTaskId(task.id);
+                              }}
+                              onDragEnd={(e) => {
+                                e.stopPropagation();
+                                setDraggingTaskId(null);
+                              }}
+                              className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative cursor-grab active:cursor-grabbing ${getPriorityColor(task.priority)} ${
+                                draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
+                              }`}
                             >
                               <button
                                 onClick={(e) => {
