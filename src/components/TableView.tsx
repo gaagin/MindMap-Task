@@ -169,6 +169,26 @@ export default function TableView({
     }
   };
 
+  const getSortIcon = (field: SortField) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="w-3 h-3 text-slate-350 dark:text-slate-600" />;
+    }
+    return sortOrder === 'asc' ? (
+      <ChevronUp className="w-3.5 h-3.5 text-indigo-650 dark:text-indigo-400 font-extrabold shrink-0" />
+    ) : (
+      <ChevronDown className="w-3.5 h-3.5 text-indigo-650 dark:text-indigo-400 font-extrabold shrink-0" />
+    );
+  };
+
+  const getHeaderClass = (field: SortField, baseWidth: string) => {
+    const isActive = sortField === field;
+    return `${baseWidth} px-4 py-2 cursor-pointer transition-colors ${
+      isActive 
+        ? 'bg-indigo-50/40 dark:bg-indigo-950/15 text-indigo-700 dark:text-indigo-400 font-extrabold' 
+        : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+    }`;
+  };
+
   return (
     <div id="table-spreadsheet-workspace" className="flex flex-col w-full h-[calc(100vh-130px)] bg-[#FAFBFD] dark:bg-slate-950/20 font-sans overflow-hidden">
       
@@ -191,14 +211,49 @@ export default function TableView({
           </button>
         </form>
 
-        <div className="w-full md:w-64 relative flex items-center">
-          <input
-            type="text"
-            placeholder="Фильтр в таблице..."
-            value={filterText}
-            onChange={(e) => setFilterText(e.target.value)}
-            className="w-full text-xs py-2 px-3 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl border border-slate-205 dark:border-slate-755 focus:outline-none"
-          />
+        <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
+          {/* Sorting Dropdown Controls */}
+          <div className="flex items-center gap-1 p-1 bg-slate-50 dark:bg-slate-800/70 rounded-xl border border-slate-200/60 dark:border-slate-800 text-xs w-full sm:w-auto">
+            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 pl-2 pr-1 select-none whitespace-nowrap">Сортировка:</span>
+            <select
+              value={sortField}
+              aria-label="Поле сортировки"
+              onChange={(e) => handleSort(e.target.value as SortField)}
+              className="bg-transparent border-0 text-slate-700 dark:text-slate-200 text-xs py-1.5 px-2.5 focus:outline-none font-bold cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-750/50"
+            >
+              <option value="text" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 font-semibold">По алфавиту / имени</option>
+              <option value="dueDate" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 font-semibold">По дате выполнения</option>
+              <option value="priority" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 font-semibold">По приоритету</option>
+              <option value="progress" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 font-semibold">По прогрессу</option>
+              <option value="completed" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 font-semibold">По статусу</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+              className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-indigo-650 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-750/70 rounded-lg transition-all cursor-pointer flex items-center justify-center whitespace-nowrap"
+              title={sortOrder === 'asc' ? 'Сортировка по возрастанию (А-Я, от старых к новым)' : 'Сортировка по убыванию (Я-А, от новых к старым)'}
+            >
+              <span className="text-[9px] font-extrabold uppercase mr-1">
+                {sortOrder === 'asc' ? 'А-Я' : 'Я-А'}
+              </span>
+              {sortOrder === 'asc' ? (
+                <ChevronUp className="w-3.5 h-3.5 text-indigo-650 dark:text-indigo-400 font-extrabold" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-indigo-650 dark:text-indigo-400 font-extrabold" />
+              )}
+            </button>
+          </div>
+
+          {/* Filter Input */}
+          <div className="relative w-full sm:w-48 lg:w-56 flex items-center">
+            <input
+              type="text"
+              placeholder="Фильтр в таблице..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              className="w-full text-xs py-2 px-3 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl border border-slate-205 dark:border-slate-755 focus:outline-none focus:ring-1 focus:ring-indigo-550 focus:border-indigo-500"
+            />
+          </div>
         </div>
       </div>
 
@@ -208,43 +263,43 @@ export default function TableView({
           
           <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-150 dark:border-slate-800 h-10 shrink-0 font-extrabold text-[10px] uppercase tracking-wider text-slate-400 sticky top-0 z-20">
             <tr>
-              <th className="w-12 px-4 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" onClick={() => handleSort('completed')}>
+              <th className={getHeaderClass('completed', 'w-16')} onClick={() => handleSort('completed')}>
                 <div className="flex items-center gap-1 justify-center">
                   <span>Статус</span>
-                  <ArrowUpDown className="w-3 h-3 text-slate-350" />
+                  {getSortIcon('completed')}
                 </div>
               </th>
               
-              <th className="w-2/5 px-4 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" onClick={() => handleSort('text')}>
+              <th className={getHeaderClass('text', 'w-2/5')} onClick={() => handleSort('text')}>
                 <div className="flex items-center gap-1.5">
                   <span>Задача / Идея</span>
-                  <ArrowUpDown className="w-3 h-3 text-slate-350" />
+                  {getSortIcon('text')}
                 </div>
               </th>
 
-              <th className="w-32 px-4 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" onClick={() => handleSort('priority')}>
-                <div className="flex items-center gap-1">
+              <th className={getHeaderClass('priority', 'w-32')} onClick={() => handleSort('priority')}>
+                <div className="flex items-center gap-1 justify-between pr-2">
                   <span>Приоритет</span>
-                  <ArrowUpDown className="w-3 h-3 text-slate-350" />
+                  {getSortIcon('priority')}
                 </div>
               </th>
 
-              <th className="w-36 px-4 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" onClick={() => handleSort('dueDate')}>
-                <div className="flex items-center gap-1">
+              <th className={getHeaderClass('dueDate', 'w-36')} onClick={() => handleSort('dueDate')}>
+                <div className="flex items-center gap-1 justify-between pr-2">
                   <span>Срок</span>
-                  <ArrowUpDown className="w-3 h-3 text-slate-350" />
+                  {getSortIcon('dueDate')}
                 </div>
               </th>
 
-              <th className="w-36 px-4 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" onClick={() => handleSort('progress')}>
-                <div className="flex items-center gap-1">
+              <th className={getHeaderClass('progress', 'w-36')} onClick={() => handleSort('progress')}>
+                <div className="flex items-center gap-1 justify-between pr-2">
                   <span>Прогресс</span>
-                  <ArrowUpDown className="w-3 h-3 text-slate-350" />
+                  {getSortIcon('progress')}
                 </div>
               </th>
 
-              <th className="w-36 px-4 py-2">Теги</th>
-              <th className="w-24 px-4 py-2 text-center">Опции</th>
+              <th className="w-36 px-4 py-2 font-extrabold text-[10px] text-slate-400 dark:text-slate-500">Теги</th>
+              <th className="w-24 px-4 py-2 text-center font-extrabold text-[10px] text-slate-400 dark:text-slate-500">Опции</th>
             </tr>
           </thead>
 
