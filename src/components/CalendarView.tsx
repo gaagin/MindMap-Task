@@ -599,7 +599,7 @@ export default function CalendarView({
                                 </div>
 
                                 {/* Column stack of task pills */}
-                                <div className={`flex-1 flex flex-col gap-0.5 overflow-y-auto max-h-[140px] custom-scrollbar ${draggingTaskId ? 'pointer-events-none' : ''}`}>
+                                <div className="flex-1 flex flex-col gap-0.5 overflow-y-auto max-h-[140px] custom-scrollbar">
                                   {visibleTasks.map(task => {
                                     const pillClass = getPillStyles(task);
                                     const iconPrefix = getTaskIcon(task);
@@ -781,7 +781,7 @@ export default function CalendarView({
                       </div>
 
                       {/* Day Tasks List */}
-                      <div className={`flex-1 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar ${draggingTaskId ? 'pointer-events-none' : ''}`}>
+                      <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
                         {dayTasks.map(task => (
                           <div
                             key={task.id}
