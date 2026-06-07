@@ -31,7 +31,7 @@ import {
   MicOff
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
-import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize } from '../utils';
+import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
 
 interface MindMapCanvasProps {
   nodes: TaskNode[];
@@ -2092,7 +2092,7 @@ export default function MindMapCanvas({
                   {isContainerCollapsed ? (
                     <div className="flex-1 flex flex-col items-center justify-center select-none">
                       <span className="text-[10px] bg-amber-100/85 dark:bg-amber-950 text-amber-800 dark:text-amber-400 px-2.5 py-1 rounded-full font-bold">
-                        📦 Свернуто: {totalChildren} задач ({containerProgress}%)
+                        📦 Свернуто: {totalChildren} задач ({containerProgress}%) • ⏱️ {formatTotalPomoTime(getPomoStatsForNode(node, nodes).pomodoroTotalTime)}
                       </span>
                     </div>
                   ) : (
@@ -2107,13 +2107,13 @@ export default function MindMapCanvas({
                               e.stopPropagation();
                               setNotesModalNodeId(node.id);
                             }}
-                            className="text-[9px] text-slate-500 dark:text-slate-400 hover:text-amber-600 shadow-sm flex items-center gap-1 py-0.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md transition-all font-semibold cursor-pointer border border-slate-205 dark:border-slate-750 bg-white/50 dark:bg-slate-900/50"
+                            className="text-[9px] text-slate-500 dark:text-slate-400 hover:text-amber-600 shadow-sm flex items-center gap-1 py-0.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md transition-all font-semibold cursor-pointer border border-slate-205 dark:border-slate-755 bg-white/50 dark:bg-slate-900/50"
                           >
                             <FileText className="w-3 h-3 text-amber-500" /> Описание
                           </button>
 
                           <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 font-sans">
-                            {totalChildren} задач ({completedChildren} выполнено)
+                            {totalChildren} задач ({completedChildren} вып.) • ⏱️ {formatTotalPomoTime(getPomoStatsForNode(node, nodes).pomodoroTotalTime)}
                           </span>
                         </div>
                         

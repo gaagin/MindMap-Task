@@ -533,4 +533,59 @@ export function playNotificationChime(): void {
   }
 }
 
+// Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
+export function isDescendantOrSelf(candidateParentId: string, nodeId: string, allNodes: TaskNode[]): boolean {
+  if (candidateParentId === nodeId) return true;
+  let currentId: string | null = candidateParentId;
+  while (currentId !== null) {
+    const current = allNodes.find(n => n.id === currentId);
+    if (!current) break;
+    if (current.parentId === nodeId) return true;
+    currentId = current.parentId;
+    if (currentId === candidateParentId) break; // cycle protection
+  }
+  return false;
+}
+
+// Calculates Pomodoro total time and sessions count for any node.
+// If the node is a container, it dynamically sums up the statistics from all tasks inside the container.
+export function getPomoStatsForNode(node: TaskNode, allNodes: TaskNode[]) {
+  if (node.isContainer) {
+    let totalTime = 0;
+    let totalSessions = 0;
+    for (const n of allNodes) {
+      if (n.id !== node.id && !n.isContainer && isDescendantOrSelf(n.id, node.id, allNodes)) {
+        totalTime += n.pomodoroTotalTime || 0;
+        totalSessions += n.pomodoroSessionsCount || 0;
+      }
+    }
+    return {
+      pomodoroTotalTime: totalTime,
+      pomodoroSessionsCount: totalSessions,
+      isSummed: true
+    };
+  }
+  return {
+    pomodoroTotalTime: node.pomodoroTotalTime || 0,
+    pomodoroSessionsCount: node.pomodoroSessionsCount || 0,
+    isSummed: false
+  };
+}
+
+// Formats total seconds spent on Pomodoro sessions into human readable string.
+export function formatTotalPomoTime(totalSeconds: number): string {
+  if (!totalSeconds) return '0 сек';
+  const hrs = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+  
+  const parts = [];
+  if (hrs > 0) parts.push(`${hrs} ч`);
+  if (mins > 0) parts.push(`${mins} мин`);
+  if (secs > 0 || parts.length === 0) parts.push(`${secs} сек`);
+  return parts.join(' ');
+}
+
+
+
 
