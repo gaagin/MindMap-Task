@@ -39,6 +39,7 @@ export interface TaskNode {
   reminderDismissed?: boolean; // Optional dismiss marker for reminders
   pomodoroTotalTime?: number; // Optional total focus seconds spent on this task
   pomodoroSessionsCount?: number; // Optional count of completed pomodoro focus sessions
+  archived?: boolean; // Optional flag to mark task as archived
 }
 
 export interface Project {

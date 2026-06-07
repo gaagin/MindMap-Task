@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Menu, 
   Moon, 
@@ -30,7 +30,7 @@ import {
   BellRing
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
-import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, playNotificationChime } from './utils';
+import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
@@ -215,6 +215,57 @@ export default function App() {
     localStorage.setItem('task_mindmap_sidebar_open', String(sidebarOpen));
   }, [sidebarOpen]);
   
+  // Synchronized global state for active Pomodoro session
+  const [globalPomo, setGlobalPomo] = useState<{
+    nodeId: string;
+    nodeText: string;
+    isRunning: boolean;
+    isPaused: boolean;
+    isBreak: boolean;
+    duration: number;
+    endTime: number | null;
+    timeLeft: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const checkPomo = () => {
+      try {
+        const saved = localStorage.getItem('task_mindmap_pomodoro');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.isRunning) {
+            if (parsed.endTime && !parsed.isPaused) {
+              const remaining = Math.max(0, Math.round((parsed.endTime - Date.now()) / 1000));
+              parsed.timeLeft = remaining;
+            }
+            setGlobalPomo(parsed);
+            return;
+          }
+        }
+        setGlobalPomo(null);
+      } catch (e) {
+        setGlobalPomo(null);
+      }
+    };
+
+    checkPomo();
+    const interval = setInterval(checkPomo, 1000);
+    window.addEventListener('storage', checkPomo);
+    window.addEventListener('task_mindmap_pomo_update', checkPomo);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', checkPomo);
+      window.removeEventListener('task_mindmap_pomo_update', checkPomo);
+    };
+  }, []);
+
+  const formatGlobalPomoTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
   // Selected task node for detail panel
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -908,6 +959,15 @@ export default function App() {
   // ----- TASK NODE CANVAS OPERATIONS -----
   const activeNodes = state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : [];
 
+  const displayedNodesForViews = useMemo(() => {
+    return activeNodes.filter(node => {
+      if (filterStatus === "archived") {
+        return !!node.archived;
+      }
+      return !node.archived;
+    });
+  }, [activeNodes, filterStatus]);
+
   // Single node drag updating coordinates with simultaneous movement of all descendant nodes
   const handleUpdateNodeCoordinates = (id: string, x: number, y: number) => {
     const pid = state.activeProjectId;
@@ -1368,6 +1428,11 @@ export default function App() {
         updatedList = toggleNodeAndDescendants(updatedNode.id, updatedNode.completed, updatedList);
       }
 
+      // If archived state was toggled, sync all descendants
+      if (targetNode && targetNode.archived !== updatedNode.archived) {
+        updatedList = toggleNodeArchive(updatedNode.id, !!updatedNode.archived, updatedList);
+      }
+
       // Automatically reconcile bottom-up completion constraints
       const syncedNodes = syncCompletion(updatedList);
 
@@ -1395,8 +1460,13 @@ export default function App() {
     }
 
     // 2. Status filter
-    if (filterStatus === "completed" && !node.completed) return false;
-    if (filterStatus === "active" && node.completed) return false;
+    if (filterStatus === "archived") {
+      if (!node.archived) return false;
+    } else {
+      if (node.archived) return false;
+      if (filterStatus === "completed" && !node.completed) return false;
+      if (filterStatus === "active" && node.completed) return false;
+    }
 
     // 3. Priority filter
     if (filterPriority !== "all" && node.priority !== filterPriority) return false;
@@ -1671,6 +1741,34 @@ export default function App() {
           {/* Center search bar & operations */}
           <div className="flex items-center gap-3">
             
+            {/* Global running Pomodoro indicator widget */}
+            {globalPomo && globalPomo.isRunning && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedNodeId(globalPomo.nodeId);
+                  setIsDrawerOpen(true);
+                }}
+                className={`hidden md:flex items-center gap-2 px-3 py-1.5 border rounded-xl text-xs font-bold cursor-pointer transition-all duration-250 hover:scale-[1.03] select-none shadow-xs ${
+                  globalPomo.isBreak 
+                    ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/25 text-emerald-700 dark:text-emerald-400' 
+                    : 'border-rose-200 bg-rose-50/50 dark:border-rose-900/40 dark:bg-rose-950/25 text-rose-700 dark:text-rose-400'
+                }`}
+                title={`Активная сессия Pomodoro для задачи "${globalPomo.nodeText}". Нажмите для подробностей.`}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${globalPomo.isBreak ? 'bg-emerald-400' : 'bg-rose-450'}`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${globalPomo.isBreak ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                </span>
+                <span className="text-[11px] font-medium max-w-[130px] truncate">
+                  {globalPomo.isBreak ? '☕ Перерыв' : `🎯 ${globalPomo.nodeText}`}
+                </span>
+                <span className="font-mono text-xs font-black tracking-wider leading-none">
+                  {formatGlobalPomoTime(globalPomo.timeLeft)}
+                </span>
+              </button>
+            )}
+            
             {/* Elegant micro search input */}
             <div className="relative hidden md:flex items-center gap-1.5">
               <div className="relative">
@@ -1899,9 +1997,10 @@ export default function App() {
                 onChange={(e) => setFilterStatus(e.target.value)}
                 className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg py-1 px-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 dark:text-slate-300 min-w-[95px]"
               >
-                <option value="all">Все</option>
+                <option value="all">Активные разделы</option>
                 <option value="active">Активные</option>
                 <option value="completed">Выполненные</option>
+                <option value="archived">📦 Архивные</option>
               </select>
             </div>
 
@@ -2017,7 +2116,7 @@ export default function App() {
           {state.activeProjectId ? (
             viewMode === 'mobile-list' ? (
               <MobileListView
-                nodes={activeNodes}
+                nodes={displayedNodesForViews}
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
@@ -2038,7 +2137,7 @@ export default function App() {
               />
             ) : viewMode === 'kanban' ? (
               <KanbanView
-                nodes={activeNodes}
+                nodes={displayedNodesForViews}
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
@@ -2057,7 +2156,7 @@ export default function App() {
               />
             ) : viewMode === 'calendar' ? (
               <CalendarView
-                nodes={activeNodes}
+                nodes={displayedNodesForViews}
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
@@ -2077,7 +2176,7 @@ export default function App() {
               />
             ) : viewMode === 'gantt' ? (
               <GanttView
-                nodes={activeNodes}
+                nodes={displayedNodesForViews}
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
@@ -2097,7 +2196,7 @@ export default function App() {
               />
             ) : viewMode === 'table' ? (
               <TableView
-                nodes={activeNodes}
+                nodes={displayedNodesForViews}
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
@@ -2117,7 +2216,7 @@ export default function App() {
               />
             ) : (
               <MindMapCanvas
-                nodes={activeNodes}
+                nodes={displayedNodesForViews}
                 darkMode={darkMode}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
@@ -2178,6 +2277,37 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Global Floating Active Pomodoro Badge */}
+      {globalPomo && globalPomo.isRunning && (
+        <div 
+          onClick={() => {
+            setSelectedNodeId(globalPomo.nodeId);
+            setIsDrawerOpen(true);
+          }}
+          title={`Активный таймер Pomodoro: кликните, чтобы открыть задачу`}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border border-rose-150 dark:border-rose-950/60 pl-3 pr-2 py-1.5 rounded-2xl shadow-[0_10px_25px_-5px_rgba(239,68,68,0.12),0_8px_10px_-6px_rgba(239,68,68,0.12)] dark:shadow-[0_12px_30px_rgba(0,0,0,0.5)] cursor-pointer hover:scale-[1.04] active:scale-95 transition-all duration-300 select-none"
+        >
+          <div className="relative flex items-center justify-center">
+            <span className="text-xl animate-bounce" style={{ animationDuration: '2s' }}>🍅</span>
+            <span className="absolute -top-1 -right-1 flex h-2 w-2">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${globalPomo.isBreak ? 'bg-emerald-400' : 'bg-rose-450'}`}></span>
+              <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${globalPomo.isBreak ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+            </span>
+          </div>
+          <div className="flex flex-col min-w-0 pr-1">
+            <span className={`text-[9px] font-extrabold uppercase tracking-wider ${globalPomo.isBreak ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-450'}`}>
+              {globalPomo.isBreak ? '☕ Перерыв' : '🎯 Идет фокус'}
+            </span>
+            <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[155px] leading-tight flex items-center">
+              {globalPomo.nodeText || 'Фокусировка'}
+            </span>
+          </div>
+          <div className={`px-2 py-1.5 rounded-xl text-xs font-black font-mono tracking-wider leading-none transition-colors ${globalPomo.isBreak ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400'}`}>
+            {formatGlobalPomoTime(globalPomo.timeLeft)}
+          </div>
+        </div>
+      )}
 
       {/* Symmetrical Sync & Backup Dashboard Full Modal Backdrop Overlay */}
       {isSyncMenuOpen && (() => {

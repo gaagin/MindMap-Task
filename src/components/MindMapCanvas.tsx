@@ -526,8 +526,13 @@ export default function MindMapCanvas({
     }
 
     // 2. Status filter
-    if (filterStatus === "completed" && !node.completed) return false;
-    if (filterStatus === "active" && node.completed) return false;
+    if (filterStatus === "archived") {
+      if (!node.archived) return false;
+    } else {
+      if (node.archived) return false;
+      if (filterStatus === "completed" && !node.completed) return false;
+      if (filterStatus === "active" && node.completed) return false;
+    }
 
     // 3. Priority filter
     if (filterPriority !== "all" && node.priority !== filterPriority) return false;

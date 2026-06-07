@@ -484,6 +484,19 @@ export function toggleNodeAndDescendants(nodeId: string, completed: boolean, all
   });
 }
 
+// Function to toggle a node's archived state and recursively match all of its subtask descendants
+export function toggleNodeArchive(nodeId: string, archived: boolean, allNodes: TaskNode[]): TaskNode[] {
+  const descendants = getDescendants(nodeId, allNodes);
+  const idsToToggle = [nodeId, ...descendants.map(d => d.id)];
+  
+  return allNodes.map(n => {
+    if (idsToToggle.includes(n.id)) {
+      return { ...n, archived: archived };
+    }
+    return n;
+  });
+}
+
 // Function to synthesize a dual-tone pleasant crystal chime for reminder notifications
 export function playNotificationChime(): void {
   try {

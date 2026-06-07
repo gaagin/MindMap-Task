@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { 
   X, 
   Trash2, 
+  Archive,
   Paperclip, 
   FileText, 
   FileImage, 
@@ -70,6 +71,13 @@ export default function TaskDetailsPanel({
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Manual Pomodoro time editing states
+  const [isEditingPomoTime, setIsEditingPomoTime] = useState(false);
+  const [editPomoHours, setEditPomoHours] = useState(0);
+  const [editPomoMinutes, setEditPomoMinutes] = useState(0);
+  const [editPomoSeconds, setEditPomoSeconds] = useState(0);
+  const [editPomoSessions, setEditPomoSessions] = useState(0);
 
   // Custom Pomodoro minutes state
   const [customPomoMinutes, setCustomPomoMinutes] = useState<number>(() => {
@@ -145,6 +153,7 @@ export default function TaskDetailsPanel({
   const savePomoState = (newState: PomodoroState) => {
     setPomo(newState);
     localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(newState));
+    window.dispatchEvent(new Event('task_mindmap_pomo_update'));
   };
 
   const handleChangeCustomMinutes = (mins: number) => {
@@ -732,17 +741,119 @@ export default function TaskDetailsPanel({
           </div>
 
           {/* SESSIONS STATS / ACCUMULATED SAVED TIME */}
-          <div className="text-xs space-y-1 py-1.5 px-2 bg-rose-50/20 dark:bg-rose-950/5 rounded-lg border border-rose-100/30 dark:border-rose-950/20">
-            <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
-              <span className="font-medium text-[11px]">Накоплено времени задачи:</span>
-              <span className="font-bold font-mono text-rose-600 dark:text-rose-400 text-[11px]">
-                {formatTotalPomoTime(node.pomodoroTotalTime || 0)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center text-slate-500 dark:text-slate-500 text-[10px]">
-              <span>Всего запусков («помидоров»):</span>
-              <span className="font-semibold">{node.pomodoroSessionsCount || 0}</span>
-            </div>
+          <div className="text-xs space-y-2 py-2 px-2.5 bg-rose-50/20 dark:bg-rose-950/5 rounded-lg border border-rose-100/30 dark:border-rose-950/20">
+            {!isEditingPomoTime ? (
+              <div className="space-y-1">
+                <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+                  <span className="font-medium text-[11px] flex items-center gap-1">
+                    Накоплено времени задачи:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold font-mono text-rose-600 dark:text-rose-400 text-[11px]">
+                      {formatTotalPomoTime(node.pomodoroTotalTime || 0)}
+                    </span>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const total = node.pomodoroTotalTime || 0;
+                        setEditPomoHours(Math.floor(total / 3600));
+                        setEditPomoMinutes(Math.floor((total % 3600) / 60));
+                        setEditPomoSeconds(total % 60);
+                        setEditPomoSessions(node.pomodoroSessionsCount || 0);
+                        setIsEditingPomoTime(true);
+                      }}
+                      className="p-1 hover:bg-rose-100/50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-450 rounded-md transition-all cursor-pointer"
+                      title="Редактировать время вручную"
+                    >
+                      <Edit className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center text-slate-500 dark:text-slate-500 text-[10px]">
+                  <span>Всего запусков («помидоров»):</span>
+                  <span className="font-semibold">{node.pomodoroSessionsCount || 0}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2.5 py-0.5">
+                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                  Редактирование времени фокусировки
+                </div>
+                
+                <div className="grid grid-cols-3 gap-1.5">
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-slate-400 dark:text-slate-500 block text-center font-bold">ЧАСЫ</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="999"
+                      value={editPomoHours}
+                      onChange={(e) => setEditPomoHours(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-slate-400 dark:text-slate-500 block text-center font-bold">МИН</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={editPomoMinutes}
+                      onChange={(e) => setEditPomoMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                      className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-slate-400 dark:text-slate-500 block text-center font-bold">СЕК</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={editPomoSeconds}
+                      onChange={(e) => setEditPomoSeconds(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                      className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded px-1.5 py-1">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Всего «помидоров»:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="999"
+                    value={editPomoSessions}
+                    onChange={(e) => setEditPomoSessions(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-12 px-1 py-0.5 text-center text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="flex gap-1.5 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingPomoTime(false)}
+                    className="px-2.5 py-1 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-755 text-slate-600 dark:text-slate-350 rounded-md transition-all cursor-pointer flex items-center gap-1"
+                  >
+                    <X className="w-2.5 h-2.5 text-red-500" /> Отмена
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const totalSeconds = (editPomoHours * 3600) + (editPomoMinutes * 60) + editPomoSeconds;
+                      onUpdateNode({
+                        ...node,
+                        pomodoroTotalTime: totalSeconds,
+                        pomodoroSessionsCount: editPomoSessions
+                      });
+                      setIsEditingPomoTime(false);
+                    }}
+                    className="px-2.5 py-1 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                  >
+                    <Check className="w-2.5 h-2.5" /> Сохранить
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {pomo.isRunning && pomo.nodeId !== node.id && (
@@ -1672,7 +1783,27 @@ export default function TaskDetailsPanel({
 
       {/* Dangerous/Root operations */}
       {!isCentralRootNode ? (
-        <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/60">
+        <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/60 space-y-2">
+          {/* Archive / Restore Button */}
+          <button
+            onClick={() => {
+              onUpdateNode({
+                ...node,
+                archived: !node.archived
+              });
+              onClose();
+            }}
+            className={`w-full flex items-center justify-center gap-2 py-2 border text-xs font-semibold rounded-lg transition-all duration-300 cursor-pointer ${
+              node.archived
+                ? "border-amber-200 dark:border-amber-950/40 text-amber-700 dark:text-amber-400 bg-amber-50/30 hover:bg-amber-100/50 dark:bg-amber-950/10 dark:hover:bg-amber-950/20"
+                : "border-indigo-200 dark:border-indigo-950/40 text-indigo-600 dark:text-indigo-400 bg-indigo-50/30 hover:bg-indigo-100/50 dark:bg-indigo-950/10 dark:hover:bg-indigo-950/20"
+            }`}
+          >
+            <Archive className="w-3.5 h-3.5" />
+            {node.archived ? "Восстановить из архива" : "Архивировать задачу и подзадачи"}
+          </button>
+
+          {/* Delete Button */}
           <button
             onClick={() => {
               if (confirmDelete) {
