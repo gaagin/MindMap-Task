@@ -45,6 +45,81 @@ export default function TableView({
   const [filterText, setFilterText] = useState('');
   const [newInlineText, setNewInlineText] = useState('');
 
+  // Column widths state in pixels
+  const [widths, setWidths] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('task_spreadsheet_column_widths');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return {
+      completed: 72,
+      text: 350,
+      priority: 120,
+      dueDate: 140,
+      progress: 140,
+      tags: 150,
+      options: 96
+    };
+  });
+
+  const handleResizeStart = (colKey: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = widths[colKey];
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const nextWidth = Math.max(50, startWidth + deltaX);
+      setWidths(prev => ({
+        ...prev,
+        [colKey]: nextWidth
+      }));
+    };
+
+    const handleMouseUp = (upEvent: MouseEvent) => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      
+      const deltaX = upEvent.clientX - startX;
+      const finalWidth = Math.max(50, startWidth + deltaX);
+      setWidths(prev => {
+        const finalWidths = {
+          ...prev,
+          [colKey]: finalWidth
+        };
+        localStorage.setItem('task_spreadsheet_column_widths', JSON.stringify(finalWidths));
+        return finalWidths;
+      });
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const tableWidth = useMemo(() => {
+    return Object.keys(widths).reduce((acc, key) => acc + widths[key], 0);
+  }, [widths]);
+
+  const renderResizer = (colKey: string) => (
+    <div
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        handleResizeStart(colKey, e);
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }}
+      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-indigo-600 dark:hover:bg-indigo-400 active:bg-indigo-750 transition-colors z-30 group-hover:bg-slate-200 dark:group-hover:bg-slate-800"
+      title="Потяните для изменения ширины столбца"
+    />
+  );
+
   // Priority ranking for sorting
   const priorityLevels: Record<Priority, number> = {
     'urgent': 4,
@@ -180,9 +255,9 @@ export default function TableView({
     );
   };
 
-  const getHeaderClass = (field: SortField, baseWidth: string) => {
+  const getHeaderClass = (field: SortField) => {
     const isActive = sortField === field;
-    return `${baseWidth} px-4 py-2 cursor-pointer transition-colors ${
+    return `relative px-4 py-2 cursor-pointer transition-colors ${
       isActive 
         ? 'bg-indigo-50/40 dark:bg-indigo-950/15 text-indigo-700 dark:text-indigo-400 font-extrabold' 
         : 'hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -259,47 +334,61 @@ export default function TableView({
 
       {/* Spreadsheet grid layout container */}
       <div className="flex-1 overflow-auto custom-scrollbar select-none bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
-        <table className="w-full text-left border-collapse table-fixed min-w-[800px]">
+        <table 
+          className="text-left border-collapse table-fixed"
+          style={{ width: tableWidth, minWidth: '100%' }}
+        >
           
           <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-150 dark:border-slate-800 h-10 shrink-0 font-extrabold text-[10px] uppercase tracking-wider text-slate-400 sticky top-0 z-20">
             <tr>
-              <th className={getHeaderClass('completed', 'w-16')} onClick={() => handleSort('completed')}>
+              <th className={`group ${getHeaderClass('completed')}`} style={{ width: widths.completed }} onClick={() => handleSort('completed')}>
                 <div className="flex items-center gap-1 justify-center">
                   <span>Статус</span>
                   {getSortIcon('completed')}
                 </div>
+                {renderResizer('completed')}
               </th>
               
-              <th className={getHeaderClass('text', 'w-2/5')} onClick={() => handleSort('text')}>
+              <th className={`group ${getHeaderClass('text')}`} style={{ width: widths.text }} onClick={() => handleSort('text')}>
                 <div className="flex items-center gap-1.5">
                   <span>Задача / Идея</span>
                   {getSortIcon('text')}
                 </div>
+                {renderResizer('text')}
               </th>
 
-              <th className={getHeaderClass('priority', 'w-32')} onClick={() => handleSort('priority')}>
+              <th className={`group ${getHeaderClass('priority')}`} style={{ width: widths.priority }} onClick={() => handleSort('priority')}>
                 <div className="flex items-center gap-1 justify-between pr-2">
                   <span>Приоритет</span>
                   {getSortIcon('priority')}
                 </div>
+                {renderResizer('priority')}
               </th>
 
-              <th className={getHeaderClass('dueDate', 'w-36')} onClick={() => handleSort('dueDate')}>
+              <th className={`group ${getHeaderClass('dueDate')}`} style={{ width: widths.dueDate }} onClick={() => handleSort('dueDate')}>
                 <div className="flex items-center gap-1 justify-between pr-2">
                   <span>Срок</span>
                   {getSortIcon('dueDate')}
                 </div>
+                {renderResizer('dueDate')}
               </th>
 
-              <th className={getHeaderClass('progress', 'w-36')} onClick={() => handleSort('progress')}>
+              <th className={`group ${getHeaderClass('progress')}`} style={{ width: widths.progress }} onClick={() => handleSort('progress')}>
                 <div className="flex items-center gap-1 justify-between pr-2">
                   <span>Прогресс</span>
                   {getSortIcon('progress')}
                 </div>
+                {renderResizer('progress')}
               </th>
 
-              <th className="w-36 px-4 py-2 font-extrabold text-[10px] text-slate-400 dark:text-slate-500">Теги</th>
-              <th className="w-24 px-4 py-2 text-center font-extrabold text-[10px] text-slate-400 dark:text-slate-500">Опции</th>
+              <th className="group relative px-4 py-2 font-extrabold text-[10px] text-slate-400 dark:text-slate-500 text-left" style={{ width: widths.tags }}>
+                <span>Теги</span>
+                {renderResizer('tags')}
+              </th>
+              <th className="group relative px-4 py-2 text-center font-extrabold text-[10px] text-slate-400 dark:text-slate-500" style={{ width: widths.options }}>
+                <span>Опции</span>
+                {renderResizer('options')}
+              </th>
             </tr>
           </thead>
 
