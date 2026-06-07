@@ -20,7 +20,12 @@ import {
   Link as LinkIcon,
   Check,
   Bell,
-  BellOff
+  BellOff,
+  Timer,
+  Play,
+  Pause,
+  RotateCcw,
+  Coffee
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime } from '../utils';
@@ -65,6 +70,169 @@ export default function TaskDetailsPanel({
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Pomodoro state definition and operations
+  interface PomodoroState {
+    nodeId: string;
+    nodeText: string;
+    isRunning: boolean;
+    isPaused: boolean;
+    isBreak: boolean; // false = work, true = break
+    duration: number; // in seconds
+    endTime: number | null; // end timestamp
+    timeLeft: number; // remaining seconds
+  }
+
+  const [pomo, setPomo] = useState<PomodoroState>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_pomodoro');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.isRunning && !parsed.isPaused && parsed.endTime) {
+          const now = Date.now();
+          const remaining = Math.max(0, Math.round((parsed.endTime - now) / 1000));
+          if (remaining === 0) {
+            return {
+              ...parsed,
+              timeLeft: 0,
+              isRunning: false,
+              endTime: null
+            };
+          } else {
+            return {
+              ...parsed,
+              timeLeft: remaining
+            };
+          }
+        }
+        return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to parse pomodoro state:', e);
+    }
+    return {
+      nodeId: '',
+      nodeText: '',
+      isRunning: false,
+      isPaused: false,
+      isBreak: false,
+      duration: 1500, // 25 min in seconds
+      endTime: null,
+      timeLeft: 1500
+    };
+  });
+
+  const savePomoState = (newState: PomodoroState) => {
+    setPomo(newState);
+    localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(newState));
+  };
+
+  React.useEffect(() => {
+    if (!pomo.isRunning || pomo.isPaused) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      if (pomo.endTime) {
+        const remaining = Math.max(0, Math.round((pomo.endTime - now) / 1000));
+        if (remaining <= 0) {
+          clearInterval(interval);
+          playNotificationChime();
+          
+          if (!pomo.isBreak) {
+            // Completed 25 mins of work. Go to 5 min break
+            const breakDur = 300;
+            const nextState: PomodoroState = {
+              nodeId: pomo.nodeId,
+              nodeText: pomo.nodeText,
+              isRunning: true,
+              isPaused: false,
+              isBreak: true,
+              duration: breakDur,
+              endTime: Date.now() + breakDur * 1000,
+              timeLeft: breakDur
+            };
+            savePomoState(nextState);
+          } else {
+            // Completed break. Go to IDLE work
+            const nextState: PomodoroState = {
+              nodeId: pomo.nodeId,
+              nodeText: pomo.nodeText,
+              isRunning: false,
+              isPaused: false,
+              isBreak: false,
+              duration: 1500,
+              endTime: null,
+              timeLeft: 1500
+            };
+            savePomoState(nextState);
+          }
+        } else {
+          setPomo(prev => {
+            const next = { ...prev, timeLeft: remaining };
+            localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(next));
+            return next;
+          });
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [pomo.isRunning, pomo.isPaused, pomo.endTime, pomo.isBreak, pomo.nodeId, pomo.nodeText]);
+
+  const handleStartFocus = (customDuration?: number) => {
+    if (!node) return;
+    const duration = customDuration !== undefined ? customDuration : 1500;
+    const newState: PomodoroState = {
+      nodeId: node.id,
+      nodeText: node.text,
+      isRunning: true,
+      isPaused: false,
+      isBreak: false,
+      duration: duration,
+      endTime: Date.now() + duration * 1000,
+      timeLeft: duration
+    };
+    savePomoState(newState);
+  };
+
+  const handleTogglePomoPause = () => {
+    if (pomo.isPaused) {
+      const durationLeft = pomo.timeLeft;
+      const newState: PomodoroState = {
+        ...pomo,
+        isPaused: false,
+        endTime: Date.now() + durationLeft * 1000
+      };
+      savePomoState(newState);
+    } else {
+      const newState: PomodoroState = {
+        ...pomo,
+        isPaused: true,
+        endTime: null
+      };
+      savePomoState(newState);
+    }
+  };
+
+  const handleResetPomo = () => {
+    const newState: PomodoroState = {
+      nodeId: '',
+      nodeText: '',
+      isRunning: false,
+      isPaused: false,
+      isBreak: false,
+      duration: 1500,
+      endTime: null,
+      timeLeft: 1500
+    };
+    savePomoState(newState);
+  };
+
+  const formatPomoTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
   // Copy direct task link handler
   const handleCopyLink = () => {
@@ -432,6 +600,111 @@ export default function TaskDetailsPanel({
             </div>
           );
         })()}
+
+        {/* Pomodoro Timer Section */}
+        <div className="space-y-3 bg-[#FAFBFD]/60 dark:bg-slate-800/30 p-4 rounded-xl border border-slate-150 dark:border-slate-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+              <Timer className="w-4 h-4 text-rose-500 animate-pulse" />
+              Фокусировка Pomodoro
+            </span>
+            {pomo.isRunning && (
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                pomo.isBreak 
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' 
+                  : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-450'
+              }`}>
+                {pomo.isBreak ? 'Перерыв' : 'Фокус'}
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col items-center justify-center py-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800/60 shadow-xs relative overflow-hidden">
+            <div className="text-center z-10">
+              <div className="text-3xl font-extrabold font-mono tracking-tight text-slate-850 dark:text-slate-100 tabular-nums">
+                {formatPomoTime(pomo.timeLeft)}
+              </div>
+              <p className="text-[10px] text-slate-400 dark:text-slate-555 font-medium mt-0.5">
+                {pomo.isRunning 
+                  ? (pomo.isBreak ? 'Время расслабиться ☕' : 'Сконцентрируйтесь на задаче 🎯') 
+                  : 'Готов к запуску на 25 минут'}
+              </p>
+            </div>
+
+            {pomo.isRunning && (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100 dark:bg-slate-800">
+                <div 
+                  className={`h-full transition-all duration-1000 ${pomo.isBreak ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                  style={{ width: `${(pomo.timeLeft / pomo.duration) * 100}%` }}
+                />
+              </div>
+            )}
+          </div>
+
+          {pomo.isRunning && pomo.nodeId !== node.id && (
+            <div className="p-2 border border-dashed border-amber-200 dark:border-amber-905/60 bg-amber-50/40 dark:bg-amber-950/10 rounded-lg text-center">
+              <p className="text-[10px] text-amber-700 dark:text-amber-400 font-medium leading-normal">
+                Запущен таймер для другой задачи:<br />
+                <span className="font-bold">«{pomo.nodeText}»</span>
+              </p>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {!pomo.isRunning ? (
+              <button
+                type="button"
+                onClick={() => handleStartFocus(1500)}
+                className="flex-1 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5" /> Начать 25 мин
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleTogglePomoPause}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    pomo.isPaused 
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs' 
+                      : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-950/20 dark:hover:bg-amber-900/30 dark:text-amber-400 dark:border-amber-900'
+                  }`}
+                >
+                  {pomo.isPaused ? (
+                    <>
+                      <Play className="w-3.5 h-3.5" /> Продолжить
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="w-3.5 h-3.5" /> Пауза
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetPomo}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-750 dark:text-slate-350 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center"
+                  title="Сбросить таймер"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+
+            {!pomo.isRunning && (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleStartFocus(300)}
+                  className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 dark:bg-slate-800/40 dark:hover:bg-slate-800 text-[10px] font-bold rounded-xl border border-slate-200/50 dark:border-slate-800 transition-all cursor-pointer flex items-center gap-1"
+                  title="Запустить короткий перерыв на 5 минут"
+                >
+                  <Coffee className="w-3 h-3 text-emerald-500" /> 5 мин
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Subtasks Section */}
         <div className="space-y-2 bg-[#FAFBFD]/40 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80">
