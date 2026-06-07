@@ -37,6 +37,8 @@ export interface TaskNode {
   reminderTime?: string; // Optional reminder time string (HH:MM)
   reminderMinutesBefore?: number; // Optional offset minutes before dueDate/dueTime (e.g. 0, 5, 15, 30, 60, 1440)
   reminderDismissed?: boolean; // Optional dismiss marker for reminders
+  pomodoroTotalTime?: number; // Optional total focus seconds spent on this task
+  pomodoroSessionsCount?: number; // Optional count of completed pomodoro focus sessions
 }
 
 export interface Project {

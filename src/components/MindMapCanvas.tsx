@@ -368,11 +368,76 @@ export default function MindMapCanvas({
     setIsCanvasListening(false);
   };
 
+  const parseVoiceCommand = (transcript: string) => {
+    const cleanText = transcript.trim().replace(/[.?!,;]+$/, "").trim();
+    const lowerText = cleanText.toLowerCase();
+
+    const englishPrefixes = [
+      "add a task",
+      "create a task",
+      "add task",
+      "create task",
+      "new task",
+      "add",
+      "create",
+      "task"
+    ];
+
+    const russianPrefixes = [
+      "добавить в инбокс",
+      "добавь в инбокс",
+      "добавить задачу",
+      "добавь задачу",
+      "создать задачу",
+      "создай задачу",
+      "новая задача",
+      "добавить",
+      "добавь",
+      "создать",
+      "создай",
+      "задача"
+    ];
+
+    const azPrefixes = [
+      "tapşırıq əlavə et",
+      "yeni tapşırıq",
+      "tapşırıq yaz",
+      "əlavə et",
+      "tapşırıq"
+    ];
+
+    // Try to find the longest matching prefix
+    const allPrefixes = [...englishPrefixes, ...russianPrefixes, ...azPrefixes].sort((a, b) => b.length - a.length);
+
+    let matchedPrefix: string | null = null;
+    let remainingText = cleanText;
+
+    for (const prefix of allPrefixes) {
+      if (lowerText.startsWith(prefix + " ")) {
+        matchedPrefix = prefix;
+        remainingText = cleanText.substring(prefix.length).trim();
+        break;
+      }
+    }
+
+    if (remainingText) {
+      remainingText = remainingText.charAt(0).toUpperCase() + remainingText.slice(1);
+    } else {
+      remainingText = cleanText;
+    }
+
+    return {
+      commandMatched: matchedPrefix,
+      taskText: remainingText
+    };
+  };
+
   const handleCreateCanvasTaskFromSpeech = (text: string) => {
     if (!text.trim()) return;
+    const { taskText } = parseVoiceCommand(text);
     const x = Math.round(-panX / zoom);
     const y = Math.round(-panY / zoom);
-    onAddFloatingNode(x, y, focusedContainerId, text.trim());
+    onAddFloatingNode(x, y, focusedContainerId, taskText);
   };
   // --- END OF WEB SPEECH API INTEGRATION ---
 
@@ -3002,12 +3067,18 @@ const pInfo = getPriorityInfo(node.priority);
               </div>
             </div>
             
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <h3 className="text-sm font-sans font-extrabold text-slate-800 dark:text-slate-100">
-                Голосовой ввод на холст
+                Голосовое управление
               </h3>
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                Скажите название задачи на выбранном языке:
+              <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-450">
+                Создавайте задачи голосом! Вы можете сказать:
+                <br />
+                <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-slate-100 dark:bg-slate-950 px-1 py-0.5 rounded mt-1 inline-block">
+                  "Add task buy groceries"
+                </span>
+                <br />
+                или <span className="font-semibold text-slate-700 dark:text-slate-300">"Добавь задачу купить молоко"</span>, либо просто диктуйте её имя.
               </p>
             </div>
 
@@ -3045,11 +3116,29 @@ const pInfo = getPriorityInfo(node.priority);
               </button>
             </div>
 
-            <div className="w-full min-h-[60px] bg-slate-50 dark:bg-slate-950 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-3 flex items-center justify-center">
+            <div className="w-full min-h-[75px] bg-slate-50 dark:bg-slate-950 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-3 flex flex-col items-center justify-center gap-1.5">
               {canvasSpeechText ? (
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 italic tracking-wide">
-                  « {canvasSpeechText} »
-                </p>
+                <>
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 italic tracking-wide">
+                    « {canvasSpeechText} »
+                  </p>
+                  {(() => {
+                    const parsed = parseVoiceCommand(canvasSpeechText);
+                    if (parsed.commandMatched) {
+                      return (
+                        <div className="flex flex-col items-center gap-0.5 text-[10px] bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded-lg border border-indigo-100/50 dark:border-indigo-900/30">
+                          <span className="font-bold flex items-center gap-1">✨ Команда: "{parsed.commandMatched}"</span>
+                          <span className="text-slate-600 dark:text-slate-400">Задача: <strong className="font-bold">"{parsed.taskText}"</strong></span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                        Будет создана задача: <strong className="font-semibold text-slate-700 dark:text-slate-300">"{parsed.taskText}"</strong>
+                      </div>
+                    );
+                  })()}
+                </>
               ) : (
                 <p className="text-xs text-slate-400 dark:text-slate-600 italic">
                   Слушаем вашу речь...

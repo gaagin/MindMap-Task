@@ -27,7 +27,7 @@ interface TableViewProps {
   onCreateTask?: (text: string, initialTags: string[]) => void;
 }
 
-type SortField = 'text' | 'completed' | 'priority' | 'progress' | 'dueDate';
+type SortField = 'text' | 'completed' | 'priority' | 'progress' | 'dueDate' | 'pomodoroTotalTime';
 type SortOrder = 'asc' | 'desc';
 
 export default function TableView({
@@ -57,10 +57,11 @@ export default function TableView({
     }
     return {
       completed: 72,
-      text: 350,
+      text: 352,
       priority: 120,
       dueDate: 140,
       progress: 140,
+      pomodoro: 122,
       tags: 150,
       options: 96
     };
@@ -213,6 +214,10 @@ export default function TableView({
         const dateA = a.dueDate || '9999-12-31';
         const dateB = b.dueDate || '9999-12-31';
         comparison = dateA.localeCompare(dateB);
+      } else if (sortField === 'pomodoroTotalTime') {
+        const timeA = a.pomodoroTotalTime || 0;
+        const timeB = b.pomodoroTotalTime || 0;
+        comparison = timeA - timeB;
       }
 
       return sortOrder === 'asc' ? comparison : -comparison;
@@ -421,6 +426,14 @@ export default function TableView({
                 {renderResizer('progress')}
               </th>
 
+              <th className={`group ${getHeaderClass('pomodoroTotalTime')}`} style={{ width: widths.pomodoro }} onClick={() => handleSort('pomodoroTotalTime')}>
+                <div className="flex items-center gap-1 justify-between pr-2">
+                  <span>Время Focus (🍅)</span>
+                  {getSortIcon('pomodoroTotalTime')}
+                </div>
+                {renderResizer('pomodoro')}
+              </th>
+
               <th className="group relative px-4 py-2 font-extrabold text-[10px] text-slate-400 dark:text-slate-500 text-left border-r border-slate-200 dark:border-slate-850" style={{ width: widths.tags }}>
                 <span>Теги</span>
                 {renderResizer('tags')}
@@ -435,7 +448,7 @@ export default function TableView({
           <tbody className="divide-y divide-slate-150 dark:divide-slate-800">
             {sortedTasks.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-20 text-center text-slate-400 text-xs">
+                <td colSpan={8} className="py-20 text-center text-slate-400 text-xs">
                   Задачи не найдены. Создайте новую задачу или измените поисковый запрос.
                 </td>
               </tr>
@@ -544,6 +557,22 @@ export default function TableView({
                       </div>
                     </td>
  
+                    {/* Pomodoro Focus Time */}
+                    <td className="px-4 py-2 border-r border-slate-150 dark:border-slate-850/80">
+                      <div className="flex items-center gap-1.5 font-mono text-[10.5px]">
+                        <span className="text-rose-500 font-bold shrink-0">🍅</span>
+                        <span className={task.pomodoroTotalTime ? "font-bold text-slate-700 dark:text-slate-300" : "text-slate-400 dark:text-slate-500 animate-pulse"}>
+                          {task.pomodoroTotalTime ? (() => {
+                            const hrs = Math.floor(task.pomodoroTotalTime / 3600);
+                            const mins = Math.round((task.pomodoroTotalTime % 3600) / 60);
+                            if (hrs > 0) return `${hrs}ч ${mins}м`;
+                            if (mins > 0) return `${mins} м`;
+                            return `${task.pomodoroTotalTime} с`;
+                          })() : '—'}
+                        </span>
+                      </div>
+                    </td>
+
                     {/* Tags block list */}
                     <td className="px-4 py-2 overflow-hidden truncate border-r border-slate-150 dark:border-slate-850/80">
                       <div className="flex flex-wrap gap-1">
