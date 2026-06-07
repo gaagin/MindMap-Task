@@ -100,6 +100,43 @@ export default function TableView({
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  const handleTouchStart = (colKey: string, e: React.TouchEvent) => {
+    e.stopPropagation();
+    const touch = e.touches[0];
+    const startX = touch.clientX;
+    const startWidth = widths[colKey];
+
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      const currentTouch = moveEvent.touches[0];
+      const deltaX = currentTouch.clientX - startX;
+      const nextWidth = Math.max(50, startWidth + deltaX);
+      setWidths(prev => ({
+        ...prev,
+        [colKey]: nextWidth
+      }));
+    };
+
+    const handleTouchEnd = (endEvent: TouchEvent) => {
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+      
+      const lastTouch = endEvent.changedTouches[0];
+      const deltaX = lastTouch.clientX - startX;
+      const finalWidth = Math.max(50, startWidth + deltaX);
+      setWidths(prev => {
+        const finalWidths = {
+          ...prev,
+          [colKey]: finalWidth
+        };
+        localStorage.setItem('task_spreadsheet_column_widths', JSON.stringify(finalWidths));
+        return finalWidths;
+      });
+    };
+
+    document.addEventListener('touchmove', handleTouchMove, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+  };
+
   const tableWidth = useMemo(() => {
     return Object.keys(widths).reduce((acc, key) => acc + widths[key], 0);
   }, [widths]);
@@ -111,11 +148,14 @@ export default function TableView({
         e.preventDefault();
         handleResizeStart(colKey, e);
       }}
+      onTouchStart={(e) => {
+        handleTouchStart(colKey, e);
+      }}
       onClick={(e) => {
         e.stopPropagation();
         e.preventDefault();
       }}
-      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-indigo-600 dark:hover:bg-indigo-400 active:bg-indigo-750 transition-colors z-30 group-hover:bg-slate-200 dark:group-hover:bg-slate-800"
+      className="absolute right-0 top-0 bottom-0 w-3 md:w-1.5 cursor-col-resize hover:bg-indigo-600 dark:hover:bg-indigo-400 active:bg-indigo-750 transition-colors z-30 group-hover:bg-slate-200 dark:group-hover:bg-slate-800 touch-none"
       title="Потяните для изменения ширины столбца"
     />
   );
@@ -257,9 +297,9 @@ export default function TableView({
 
   const getHeaderClass = (field: SortField) => {
     const isActive = sortField === field;
-    return `relative px-4 py-2 cursor-pointer transition-colors ${
+    return `relative px-4 py-2 cursor-pointer transition-colors border-r border-slate-200 dark:border-slate-850 ${
       isActive 
-        ? 'bg-indigo-50/40 dark:bg-indigo-950/15 text-indigo-700 dark:text-indigo-400 font-extrabold' 
+        ? 'bg-indigo-50/40 dark:bg-indigo-950/15 text-indigo-700 dark:text-indigo-400 font-extrabold block-border' 
         : 'hover:bg-slate-100 dark:hover:bg-slate-800'
     }`;
   };
@@ -381,18 +421,18 @@ export default function TableView({
                 {renderResizer('progress')}
               </th>
 
-              <th className="group relative px-4 py-2 font-extrabold text-[10px] text-slate-400 dark:text-slate-500 text-left" style={{ width: widths.tags }}>
+              <th className="group relative px-4 py-2 font-extrabold text-[10px] text-slate-400 dark:text-slate-500 text-left border-r border-slate-200 dark:border-slate-850" style={{ width: widths.tags }}>
                 <span>Теги</span>
                 {renderResizer('tags')}
               </th>
-              <th className="group relative px-4 py-2 text-center font-extrabold text-[10px] text-slate-400 dark:text-slate-500" style={{ width: widths.options }}>
+              <th className="group relative px-4 py-2 text-center font-extrabold text-[10px] text-slate-400 dark:text-slate-500 border-r border-slate-200 dark:border-slate-850" style={{ width: widths.options }}>
                 <span>Опции</span>
                 {renderResizer('options')}
               </th>
             </tr>
           </thead>
-
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+ 
+          <tbody className="divide-y divide-slate-150 dark:divide-slate-800">
             {sortedTasks.length === 0 ? (
               <tr>
                 <td colSpan={7} className="py-20 text-center text-slate-400 text-xs">
@@ -402,7 +442,7 @@ export default function TableView({
             ) : (
               sortedTasks.map(task => {
                 const isSelected = selectedNodeId === task.id;
-
+ 
                 return (
                   <tr
                     key={task.id}
@@ -411,7 +451,7 @@ export default function TableView({
                     }`}
                   >
                     {/* Done Checklist Checkbox */}
-                    <td className="px-4 py-2 text-center">
+                    <td className="px-4 py-2 text-center border-r border-slate-150 dark:border-slate-850/80">
                       <button
                         onClick={() => onUpdateNode({
                           ...task,
@@ -428,9 +468,9 @@ export default function TableView({
                         )}
                       </button>
                     </td>
-
+ 
                     {/* Inline Rename Text */}
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 border-r border-slate-150 dark:border-slate-850/80">
                       <div className="flex items-center gap-1.5 overflow-hidden w-full">
                         <input
                           type="text"
@@ -447,9 +487,9 @@ export default function TableView({
                         />
                       </div>
                     </td>
-
+ 
                     {/* Cyclic Priority Badging */}
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 border-r border-slate-150 dark:border-slate-850/80">
                       <button
                         onClick={() => togglePriority(task)}
                         title="Нажмите для циклической смены приоритета"
@@ -458,9 +498,9 @@ export default function TableView({
                         {getPriorityLabel(task.priority)}
                       </button>
                     </td>
-
+ 
                     {/* Date picker */}
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 border-r border-slate-150 dark:border-slate-850/80">
                       <div className="flex items-center gap-1.5">
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
                         <input
@@ -476,9 +516,9 @@ export default function TableView({
                         />
                       </div>
                     </td>
-
+ 
                     {/* Progress with interactive cycle click / slider */}
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 border-r border-slate-150 dark:border-slate-850/80">
                       <div className="flex items-center gap-2">
                         <input
                           type="range"
@@ -503,9 +543,9 @@ export default function TableView({
                         </button>
                       </div>
                     </td>
-
+ 
                     {/* Tags block list */}
-                    <td className="px-4 py-2 overflow-hidden truncate">
+                    <td className="px-4 py-2 overflow-hidden truncate border-r border-slate-150 dark:border-slate-850/80">
                       <div className="flex flex-wrap gap-1">
                         {task.tags && task.tags.length > 0 ? (
                           task.tags.map(t => (
@@ -521,9 +561,9 @@ export default function TableView({
                         )}
                       </div>
                     </td>
-
+ 
                     {/* Action button menu list rows */}
-                    <td className="px-4 py-2 text-center select-none">
+                    <td className="px-4 py-2 text-center select-none border-r border-slate-150 dark:border-slate-850/80">
                       <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => onSelectNode(task.id)}
