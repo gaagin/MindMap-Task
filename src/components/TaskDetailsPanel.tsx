@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Circle,
   CheckCircle2,
+  Loader2,
   Eye,
   Edit,
   Link as LinkIcon,
@@ -713,7 +714,7 @@ export default function TaskDetailsPanel({
                   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' 
                   : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-450'
               }`}>
-                {pomo.isBreak ? 'Перерыв' : 'Фокус'}
+                {pomo.isBreak ? 'Фокус окончен / Перерыв' : 'Фокус'}
               </span>
             )}
           </div>
@@ -725,7 +726,7 @@ export default function TaskDetailsPanel({
               </div>
               <p className="text-[10px] text-slate-400 dark:text-slate-555 font-medium mt-0.5">
                 {pomo.isRunning 
-                  ? (pomo.isBreak ? 'Время расслабиться ☕' : `Фокусировка на задаче 🎯`) 
+                  ? (pomo.isBreak ? 'Фокус окончен! Время расслабиться ☕' : `Фокусировка на задаче 🎯`) 
                   : `Таймер настроен на ${customPomoMinutes} мин`}
               </p>
             </div>
@@ -1017,6 +1018,11 @@ export default function TaskDetailsPanel({
                         >
                           {child.completed ? (
                             <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-450" />
+                          ) : pomo.isRunning && pomo.nodeId === child.id ? (
+                            <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
+                              <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
+                              <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
+                            </span>
                           ) : (
                             <Circle className="w-4 h-4 text-slate-300 dark:text-slate-600" />
                           )}

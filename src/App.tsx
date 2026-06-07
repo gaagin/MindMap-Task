@@ -1761,7 +1761,7 @@ export default function App() {
                   <span className={`relative inline-flex rounded-full h-2 w-2 ${globalPomo.isBreak ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
                 </span>
                 <span className="text-[11px] font-medium max-w-[130px] truncate">
-                  {globalPomo.isBreak ? '☕ Перерыв' : `🎯 ${globalPomo.nodeText}`}
+                  {globalPomo.isBreak ? '☕ Фокус окончен (Перерыв)' : `🎯 ${globalPomo.nodeText}`}
                 </span>
                 <span className="font-mono text-xs font-black tracking-wider leading-none">
                   {formatGlobalPomoTime(globalPomo.timeLeft)}
@@ -2303,7 +2303,7 @@ export default function App() {
           </div>
           <div className="flex flex-col min-w-0 pr-1">
             <span className={`text-[9px] font-extrabold uppercase tracking-wider ${globalPomo.isBreak ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-450'}`}>
-              {globalPomo.isBreak ? '☕ Перерыв' : '🎯 Идет фокус'}
+              {globalPomo.isBreak ? '☕ Фокус окончен / Перерыв' : '🎯 Идет фокус'}
             </span>
             <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[155px] leading-tight flex items-center">
               {globalPomo.nodeText || 'Фокусировка'}

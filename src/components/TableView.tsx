@@ -4,6 +4,7 @@ import {
   Trash2, 
   Circle, 
   CheckCircle2, 
+  Loader2, 
   Folder, 
   Tag as TagIcon, 
   Calendar, 
@@ -478,6 +479,11 @@ export default function TableView({
                       >
                         {task.completed ? (
                           <CheckCircle2 className="w-4 h-4 shrink-0 inline-block" />
+                        ) : activePomodoroNodeId === task.id ? (
+                          <span className="relative flex items-center justify-center w-4 h-4 shrink-0 inline-block mx-auto">
+                            <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
+                            <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
+                          </span>
                         ) : (
                           <Circle className="w-4 h-4 shrink-0 inline-block" />
                         )}

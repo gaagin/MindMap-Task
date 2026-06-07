@@ -21,7 +21,8 @@ import {
   FolderMinus,
   CheckSquare,
   ListFilter,
-  CheckCircle2,
+  CheckCircle2, 
+  Loader2,
   CalendarCheck,
   GripVertical
 } from 'lucide-react';
@@ -644,12 +645,18 @@ export default function MobileListView({
                     className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 cursor-pointer transition-all ${
                       node.completed
                         ? 'bg-emerald-500 border-emerald-500 text-white'
-                        : `border-slate-300 hover:border-indigo-500 dark:border-slate-700`
+                        : activePomodoroNodeId === node.id
+                          ? 'border-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse'
+                          : `border-slate-300 hover:border-indigo-500 dark:border-slate-700`
                     }`}
                     title={node.completed ? 'Восстановить' : 'Завершить'}
                     style={!node.completed ? { borderColor: pMeta.value !== 'none' ? pMeta.text.replace('text-', '') : undefined } : undefined}
                   >
-                    {node.completed && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                    {node.completed ? (
+                      <Check className="w-2.5 h-2.5 stroke-[3]" />
+                    ) : activePomodoroNodeId === node.id ? (
+                      <Loader2 className="w-2.5 h-2.5 text-rose-500 animate-spin" />
+                    ) : null}
                   </button>
 
                   {/* Core Text Label */}
@@ -881,10 +888,16 @@ export default function MobileListView({
                                 className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 transition-all ${
                                   child.completed
                                     ? 'bg-emerald-500 border-emerald-500 text-white'
-                                    : 'border-slate-300 dark:border-slate-700'
+                                    : activePomodoroNodeId === child.id
+                                      ? 'border-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse'
+                                      : 'border-slate-300 dark:border-slate-700'
                                 }`}
                               >
-                                {child.completed && <Check className="w-2.5 h-2.5 stroke-[2.5]" />}
+                                {child.completed ? (
+                                  <Check className="w-2.5 h-2.5 stroke-[2.5]" />
+                                ) : activePomodoroNodeId === child.id ? (
+                                  <Loader2 className="w-2.5 h-2.5 text-rose-500 animate-spin" />
+                                ) : null}
                               </button>
                               <span className={`truncate min-w-0 ${child.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-700 dark:text-slate-300 font-medium'}`}>
                                 {child.text}

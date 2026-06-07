@@ -6,6 +6,7 @@ import {
   Edit, 
   CheckCircle2, 
   Circle, 
+  Loader2, 
   Paperclip, 
   FileText, 
   Maximize2, 
@@ -2315,6 +2316,11 @@ const pInfo = getPriorityInfo(node.priority);
                       ) : (
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 fill-emerald-50 dark:fill-emerald-950/30" />
                       )
+                    ) : activePomodoroNodeId === node.id ? (
+                      <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-rose-400 opacity-75"></span>
+                        <Loader2 className="w-4 h-4 text-rose-500 dark:text-rose-400 animate-spin" />
+                      </span>
                     ) : (
                       isRoot ? (
                         <Circle className="w-4 h-4 text-indigo-400 grayscale contrast-125" />
@@ -2811,6 +2817,11 @@ const pInfo = getPriorityInfo(node.priority);
                         >
                           {task.completed ? (
                             <CheckCircle2 className="w-3.5 h-3.5" />
+                          ) : activePomodoroNodeId === task.id ? (
+                            <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                              <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
+                              <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                            </span>
                           ) : (
                             <Circle className="w-3.5 h-3.5" />
                           )}

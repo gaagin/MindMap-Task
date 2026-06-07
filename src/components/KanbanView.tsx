@@ -8,6 +8,7 @@ import {
   FileText, 
   CheckCircle2, 
   Circle,
+  Loader2,
   MoreVertical,
   ChevronRight,
   ChevronDown,
@@ -430,6 +431,11 @@ export default function KanbanView({
                             >
                               {node.completed ? (
                                 <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-500 fill-emerald-100 dark:fill-emerald-900/10" />
+                              ) : activePomodoroNodeId === node.id ? (
+                                <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
+                                  <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
+                                  <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
+                                </span>
                               ) : (
                                 <Circle className="w-4 h-4" />
                               )}

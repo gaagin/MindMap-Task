@@ -6,6 +6,7 @@ import {
   Trash2, 
   Circle, 
   CheckCircle2, 
+  Loader2, 
   Calendar, 
   AlertCircle,
   Clock,
@@ -822,6 +823,11 @@ export default function CalendarView({
                             >
                               {task.completed ? (
                                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                              ) : activePomodoroNodeId === task.id ? (
+                                <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                                  <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                                  <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                </span>
                               ) : (
                                 <Circle className="w-3.5 h-3.5 shrink-0" />
                               )}
@@ -960,6 +966,11 @@ export default function CalendarView({
                               >
                                 {task.completed ? (
                                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                ) : activePomodoroNodeId === task.id ? (
+                                  <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                                    <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                  </span>
                                 ) : (
                                   <Circle className="w-3.5 h-3.5 shrink-0" />
                                 )}
@@ -1088,6 +1099,11 @@ export default function CalendarView({
                                       >
                                         {task.completed ? (
                                           <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                        ) : activePomodoroNodeId === task.id ? (
+                                          <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                                            <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                          </span>
                                         ) : (
                                           <Circle className="w-3.5 h-3.5 shrink-0" />
                                         )}
