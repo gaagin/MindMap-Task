@@ -616,6 +616,8 @@ export default function App() {
     const stateChanged = !isFirstTime && state !== lastStateRef.current;
     lastStateRef.current = state;
 
+    let isIncomingSync = false;
+
     if (isFirstTime) {
       if (isFirstRender.current) {
         isFirstRender.current = false;
@@ -626,6 +628,7 @@ export default function App() {
       } else if (ignoreNextStateChangeRef.current) {
         // Skip incrementing unsynced edits count when the update was caused by Google Sheets sync download/merge or Firestore snapshot
         ignoreNextStateChangeRef.current = false;
+        isIncomingSync = true;
       } else {
         setUnsyncedEditsCount(prev => prev + 1);
       }
@@ -636,20 +639,28 @@ export default function App() {
     }
     
     // Only save to Firebase if the state actually changed or there are pending unsynced edits.
-    // This prevents a stale client session from overwriting newer changes in the cloud on auth load.
-    if (currentUser && (stateChanged || unsyncedEditsCountRef.current > 0)) {
+    // And do NOT save if this state change was initiated by an incoming Firebase snapshot with no new local edits.
+    const shouldSave = currentUser && 
+      (stateChanged || unsyncedEditsCountRef.current > 0) && 
+      (!isIncomingSync || unsyncedEditsCountRef.current > 0);
+
+    if (shouldSave) {
       setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
       const timer = setTimeout(async () => {
-        const success = await saveToFirebaseDirectly(currentUser.uid, state);
-        if (success) {
+        const result = await saveToFirebaseDirectly(currentUser.uid, state);
+        if (result.success) {
+          ignoreNextStateChangeRef.current = true;
+          setRawState(result.state);
           setUnsyncedEditsCount(0);
         }
         setSyncStatus(prev => ({
           ...prev,
-          firebase: success ? 'saved' : 'error'
+          firebase: result.success ? 'saved' : 'error'
         }));
       }, 1500); // 1.5s snapshot rate-limiting debounce
       return () => clearTimeout(timer);
+    } else if (currentUser && syncStatus.firebase !== 'saved' && syncStatus.firebase !== 'error') {
+      setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
     }
   }, [state, currentUser]);
 

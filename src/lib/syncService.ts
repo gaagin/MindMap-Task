@@ -77,7 +77,10 @@ function sanitizeForFirestore(obj: any): any {
 /**
  * Saves current WorkspaceState snapshot to firestore database dynamically.
  */
-export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState) {
+export async function saveToFirebaseDirectly(
+  userId: string,
+  state: WorkspaceState
+): Promise<{ success: boolean; state: WorkspaceState }> {
   try {
     const docRef = doc(db, 'workspaces', userId);
     const rawPayload = {
@@ -97,10 +100,18 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
     const payload = sanitizeForFirestore(rawPayload);
     await setDoc(docRef, payload);
     console.log('Firebase cloud sync snapshot completed successfully.');
-    return true;
+    
+    const enrichedState: WorkspaceState = {
+      folders: rawPayload.folders,
+      projects: rawPayload.projects,
+      nodes: rawPayload.nodes,
+      activeProjectId: rawPayload.activeProjectId,
+      tagCategories: rawPayload.tagCategories
+    };
+    return { success: true, state: enrichedState };
   } catch (error) {
     console.error('Firebase snapshot save error:', error);
-    return false;
+    return { success: false, state };
   }
 }
 
@@ -277,7 +288,14 @@ export async function syncWithFirebase(
     clearLocalDeletions(finalDeletions);
     
     console.log('Firebase cloud synchrony completed perfectly.');
-    return { success: true, state: mergedState };
+    const enrichedState: WorkspaceState = {
+      folders: rawPayload.folders,
+      projects: rawPayload.projects,
+      nodes: rawPayload.nodes,
+      activeProjectId: rawPayload.activeProjectId,
+      tagCategories: rawPayload.tagCategories
+    };
+    return { success: true, state: enrichedState };
   } catch (error) {
     console.error('Super sync with Firebase failed:', error);
     return { success: false, state: localState };
