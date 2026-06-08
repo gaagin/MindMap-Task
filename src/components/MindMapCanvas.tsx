@@ -28,7 +28,8 @@ import {
   Eye,
   Link2Off,
   Mic,
-  MicOff
+  MicOff,
+  Archive
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
@@ -2233,40 +2234,24 @@ export default function MindMapCanvas({
     .filter(conn => conn.parent !== undefined && !conn.parent.isContainer) as { child: TaskNode; parent: TaskNode }[];
 
   return (
-    <div 
-      ref={containerRef}
-      className={`relative flex-1 h-full select-none overflow-hidden bg-white dark:bg-slate-950 outline-none transition-all duration-300 ${focusedContainerId ? 'ring-4 ring-amber-500/15 ring-inset shadow-[inset_0_0_80px_rgba(245,158,11,0.05)]' : ''}`}
-      style={{
-        backgroundImage: `radial-gradient(${darkMode ? '#334155' : '#cbd5e1'} 1.2px, transparent 1.2px)`,
-        backgroundSize: '24px 24px',
-        backgroundPosition: `${panX}px ${panY}px`,
-      }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onDoubleClick={handleDoubleClick}
-    >
-      {/* Immersive Focused Container Top Stats Bar */}
+    <div className="flex flex-col h-full w-full overflow-hidden select-none bg-white dark:bg-slate-950">
+      {/* Solid Focused Container Top Stats Bar */}
       {focusedContainerId && (() => {
         const focusedContainer = nodes.find(n => n.id === focusedContainerId);
         if (!focusedContainer) return null;
         
-        const containerChildren = nodes.filter(n => n.parentId === focusedContainerId);
+        const containerChildren = nodes.filter(n => n.id !== focusedContainerId && !n.isContainer && isDescendantOrSelf(n.id, focusedContainerId, nodes));
         const totalChildren = containerChildren.length;
         const completedChildren = containerChildren.filter(n => n.completed).length;
         const progress = totalChildren > 0 ? Math.round((completedChildren / totalChildren) * 100) : 0;
         
         return (
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3 border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl flex flex-col md:flex-row items-center gap-4 transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-[95vw] md:max-w-4xl">
-            <div className="flex items-center gap-2.5 min-w-0 w-full md:w-auto justify-between md:justify-start">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="text-xl shrink-0">📦</span>
-                <div className="min-w-0">
-                  <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans">Режим фокусировки</div>
+          <div className="w-full bg-slate-50 dark:bg-slate-900 border-b border-amber-305 dark:border-amber-950/60 shadow-xs flex flex-col md:flex-row items-center gap-1.5 md:gap-3 px-3 py-1.5 md:px-4 md:py-1.5 shrink-0 select-none animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center justify-between w-full md:w-auto gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-base shrink-0">📦</span>
+                <div className="min-w-0 leading-tight">
+                  <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans leading-none">Режим фокусировки</div>
                   <input
                     type="text"
                     value={focusedContainer.text}
@@ -2276,17 +2261,47 @@ export default function MindMapCanvas({
                         text: e.target.value
                       });
                     }}
-                    className="text-sm font-sans font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b border-dashed border-amber-300 dark:border-amber-800 focus:border-amber-500 focus:outline-none focus:ring-0 px-0.5 py-0 min-w-0 max-w-[130px] sm:max-w-[200px]"
+                    className="text-xs font-sans font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b border-dashed border-amber-300 dark:border-amber-800 focus:border-amber-500 focus:outline-none focus:ring-0 px-0.5 py-0 min-w-0 max-w-[130px] sm:max-w-[200px]"
                     placeholder="Имя контейнера"
                   />
                 </div>
               </div>
+
+              {/* Progress and Return button stacked on mobile next to title for compactness */}
+              <div className="flex items-center gap-2 md:hidden">
+                <div className="flex flex-col items-end text-right leading-none">
+                  <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                    {completedChildren}/{totalChildren} Выполнено
+                  </span>
+                  <div className="w-10 bg-slate-200 dark:bg-slate-800 h-1 mt-0.5 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-amber-500 transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    autoFitContainer(focusedContainerId);
+                    const targetZoom = 0.85;
+                    setZoom(targetZoom);
+                    setPanX(-focusedContainer.x * targetZoom);
+                    setPanY(-focusedContainer.y * targetZoom);
+                    onSelectNode(focusedContainer.id);
+                    setFocusedContainerId(null);
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 hover:bg-rose-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs whitespace-nowrap"
+                >
+                  <Minimize2 className="w-3 h-3 text-rose-500" />
+                  <span>Вернуться</span>
+                </button>
+              </div>
             </div>
             
-            <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
+            <div className="hidden md:block w-[1px] h-6 bg-slate-200 dark:bg-slate-800 shrink-0" />
 
-            {/* View Selector for Focused Mode */}
-            <div className="flex items-center gap-1 bg-slate-100/60 dark:bg-slate-950/40 p-1 rounded-xl border border-slate-200/40 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none shrink-0 max-w-full">
+            {/* View Selector for Focused Mode - 100% width on Mobile for smooth touch scroll */}
+            <div className="flex items-center gap-0.5 bg-slate-200/50 dark:bg-slate-950/40 p-0.5 rounded-lg border border-slate-200/40 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none w-full md:w-auto justify-start md:justify-center">
               {[
                 { id: 'canvas', label: 'Карта', icon: '🕸️' },
                 { id: 'list', label: 'Список', icon: '📋' },
@@ -2305,10 +2320,10 @@ export default function MindMapCanvas({
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     data-drag-ignore
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap ${
                       active 
                         ? 'bg-amber-100 dark:bg-amber-950/75 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 shadow-2xs' 
-                        : 'text-slate-650 dark:text-slate-400 hover:bg-slate-150/40 dark:hover:bg-slate-800/60 border border-transparent'
+                        : 'text-slate-650 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 border border-transparent'
                     }`}
                   >
                     <span className="text-xs">{v.icon}</span>
@@ -2318,14 +2333,15 @@ export default function MindMapCanvas({
               })}
             </div>
             
-            <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
+            <div className="hidden md:block w-[1px] h-6 bg-slate-200 dark:bg-slate-800 shrink-0" />
             
-            <div className="flex items-center gap-3 shrink-0 w-full md:w-auto justify-between md:justify-start">
+            {/* Desktop-only Stats, Progress and Return button */}
+            <div className="hidden md:flex items-center gap-3 shrink-0 ml-auto">
               <div className="flex flex-col items-end gap-0.5 select-none text-right">
                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
                   {completedChildren}/{totalChildren} Выполнено
                 </span>
-                <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-amber-500 transition-all duration-300"
                     style={{ width: `${progress}%` }}
@@ -2343,37 +2359,55 @@ export default function MindMapCanvas({
                   onSelectNode(focusedContainer.id);
                   setFocusedContainerId(null);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg text-[11px] font-extrabold transition-all duration-200 cursor-pointer border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
+                className="flex items-center gap-1 px-2.5 py-1 md:py-1.5 hover:bg-rose-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg text-[10px] md:text-[11px] font-bold transition-all duration-200 cursor-pointer border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs"
               >
-                <Minimize2 className="w-3.5 h-3.5 text-rose-500" />
-                Вернуться
+                <Minimize2 className="w-3 h-3 md:w-3.5 md:h-3.5 text-rose-500" />
+                <span>Вернуться</span>
               </button>
             </div>
           </div>
         );
       })()}
 
-      {/* Immersive Fullscreen View Content for Focused Container */}
-      {focusedContainerId && (() => {
-        const focusedContainer = nodes.find(n => n.id === focusedContainerId);
-        if (!focusedContainer) return null;
-        const viewMode = containerViewModes[focusedContainer.id] || 'canvas';
-        if (viewMode === 'canvas') return null;
+      <div 
+        ref={containerRef}
+        className={`relative flex-1 h-full select-none overflow-hidden bg-white dark:bg-slate-950 outline-none transition-all duration-300 ${focusedContainerId ? 'ring-4 ring-amber-500/15 ring-inset shadow-[inset_0_0_80px_rgba(245,158,11,0.05)]' : ''}`}
+        style={{
+          backgroundImage: `radial-gradient(${darkMode ? '#334155' : '#cbd5e1'} 1.2px, transparent 1.2px)`,
+          backgroundSize: '24px 24px',
+          backgroundPosition: `${panX}px ${panY}px`,
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onDoubleClick={handleDoubleClick}
+      >
+        {/* Immersive Fullscreen View Content for Focused Container */}
+        {focusedContainerId && (() => {
+          const focusedContainer = nodes.find(n => n.id === focusedContainerId);
+          if (!focusedContainer) return null;
+          const viewMode = containerViewModes[focusedContainer.id] || 'canvas';
+          if (viewMode === 'canvas') return null;
 
-        const containerChildren = nodes.filter(n => n.parentId === focusedContainerId);
-        
-        return (
-          <div className="absolute inset-0 bg-slate-550/10 dark:bg-slate-950/40 backdrop-blur-xs z-30 flex items-center justify-center p-4 pt-48 pb-6 sm:p-8 sm:pt-40 md:pt-28">
-            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-200 dark:border-amber-900/50 rounded-3xl shadow-2xl w-full max-w-4xl h-full flex flex-col p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-30">
-              <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden z-30">
-                {renderContainerBody(focusedContainer, containerChildren, true)}
+          const containerChildren = nodes.filter(n => n.id !== focusedContainerId && !n.isContainer && isDescendantOrSelf(n.id, focusedContainerId, nodes));
+          
+          return (
+            <div className="absolute inset-0 bg-slate-550/10 dark:bg-slate-950/40 backdrop-blur-xs z-30 flex items-center justify-center p-4">
+              <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-200 dark:border-amber-900/50 rounded-3xl shadow-2xl w-full max-w-4xl h-full flex flex-col p-4 sm:p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-30">
+                <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden z-30">
+                  {renderContainerBody(focusedContainer, containerChildren, true)}
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })()}
-      {/* Floating Canvas UI Controls */}
-      <div className={`absolute ${focusedContainerId ? 'top-20 sm:top-4' : 'top-4'} left-4 z-10 flex gap-2`}>
+          );
+        })()}
+
+        {/* Floating Canvas UI Controls */}
+        <div className="absolute top-4 left-4 z-10 flex gap-2">
         <button
           onClick={onOpenSidebar}
           title="Открыть боковую панель"
@@ -2545,7 +2579,7 @@ export default function MindMapCanvas({
             const isSelfFocused = focusedContainerId === node.id;
             if (isSelfFocused) return null; // Hide the container visual boundaries entirely to let it replace the canvas!
 
-            const containerChildren = nodes.filter(n => n.parentId === node.id);
+            const containerChildren = nodes.filter(n => n.id !== node.id && !n.isContainer && isDescendantOrSelf(n.id, node.id, nodes));
             const totalChildren = containerChildren.length;
             const completedChildren = containerChildren.filter(n => n.completed).length;
             const containerProgress = totalChildren > 0 ? Math.round((completedChildren / totalChildren) * 100) : 0;
@@ -3209,6 +3243,27 @@ const pInfo = getPriorityInfo(node.priority);
                     <>
                       <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
+                      {/* Button 3.5: Архивировать */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUpdateNode({
+                            ...node,
+                            archived: !node.archived
+                          });
+                        }}
+                        title={node.archived ? "Восстановить из архива" : "Архивировать задачу и подзадачи"}
+                        className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
+                          node.archived
+                            ? "text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-slate-800"
+                            : "text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800"
+                        }`}
+                      >
+                        <Archive className="w-4 h-4" />
+                      </button>
+
+                      <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
                       {/* Button 4: Удалить */}
                       <button
                         onClick={(e) => {
@@ -3288,7 +3343,7 @@ const pInfo = getPriorityInfo(node.priority);
 
       {/* Off-canvas Sticky INBOX Container Widget */}
       <div 
-        className={`absolute ${focusedContainerId ? 'top-20 sm:top-4' : 'top-4'} right-4 z-40 pointer-events-auto select-none`}
+        className="absolute top-4 right-4 z-40 pointer-events-auto select-none"
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >
@@ -3813,6 +3868,7 @@ const pInfo = getPriorityInfo(node.priority);
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
