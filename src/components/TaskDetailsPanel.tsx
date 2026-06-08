@@ -193,6 +193,22 @@ export default function TaskDetailsPanel({
 
   const onUpdateNodeRef = React.useRef(onUpdateNode);
   const allNodesRef = React.useRef(allNodes);
+  const titleTextareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useEffect(() => {
+    if (node && titleTextareaRef.current) {
+      const defaultTexts = ['Новая подзадача', 'Плавающая задача', 'Новый Контейнер', 'Без названия'];
+      if (defaultTexts.includes((node.text || '').trim())) {
+        const timer = setTimeout(() => {
+          if (titleTextareaRef.current) {
+            titleTextareaRef.current.focus();
+            titleTextareaRef.current.select();
+          }
+        }, 120);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [node?.id]);
 
   React.useEffect(() => {
     onUpdateNodeRef.current = onUpdateNode;
@@ -648,6 +664,7 @@ export default function TaskDetailsPanel({
             </button>
           </div>
           <textarea
+            ref={titleTextareaRef}
             value={node.text}
             onChange={(e) => handlePropChange('text', e.target.value)}
             className="w-full text-base font-semibold px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"

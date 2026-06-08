@@ -51,7 +51,9 @@ import {
 import { 
   saveToFirebaseDirectly, 
   loadFromFirebaseDirectly, 
-  logDeletion 
+  logDeletion,
+  syncWithFirebase,
+  mergeWorkspaceStates
 } from './lib/syncService';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { User } from 'firebase/auth';
@@ -521,9 +523,19 @@ export default function App() {
   // 1. Firebase Auth listener registration
   useEffect(() => {
     const unsubscribe = initAuth(
-      (user) => {
+      async (user) => {
         setCurrentUser(user);
-        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+        // Trigger super bidirectional synchronization on login/reload to preserve any latest offline work
+        const result = await syncWithFirebase(user.uid, stateRef.current);
+        if (result.success) {
+          ignoreNextStateChangeRef.current = true;
+          setRawState(result.state);
+          setUnsyncedEditsCount(0);
+          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        } else {
+          setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
+        }
       },
       () => {
         setCurrentUser(null);
@@ -577,8 +589,10 @@ export default function App() {
         // Only absorb incoming changes if we are not actively typing/syncing locally.
         // This avoids typing collisions and key cursor resets when editing.
         if (unsyncedEditsCountRef.current === 0) {
+          // Perform full merge to guarantee flawless conflict resolution even on real-time syncs!
+          const mergeResult = mergeWorkspaceStates(currentState, cloudData as any, [], cloudData.deletions || []);
           ignoreNextStateChangeRef.current = true;
-          setRawState(cloudState);
+          setRawState(mergeResult.mergedState);
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         }
       }
@@ -622,6 +636,9 @@ export default function App() {
       setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
       const timer = setTimeout(async () => {
         const success = await saveToFirebaseDirectly(currentUser.uid, state);
+        if (success) {
+          setUnsyncedEditsCount(0);
+        }
         setSyncStatus(prev => ({
           ...prev,
           firebase: success ? 'saved' : 'error'
