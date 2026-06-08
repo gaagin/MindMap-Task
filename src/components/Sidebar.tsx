@@ -14,7 +14,13 @@ import {
   RotateCcw,
   X,
   FolderOpen,
-  AlertCircle
+  AlertCircle,
+  Cloud,
+  CloudOff,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  User
 } from 'lucide-react';
 import { Folder, Project, TagCategory, WorkspaceState } from '../types';
 
@@ -41,6 +47,16 @@ interface SidebarProps {
   currentWorkspaceState: WorkspaceState;
   onApplySyncedState: (state: WorkspaceState) => void;
   version?: string;
+  // Firebase Auth additions to prevent "Local vs Cloud" confusion
+  currentUser?: any;
+  syncStatus?: {
+    local: 'saved' | 'saving' | 'error';
+    firebase: 'idle' | 'saved' | 'syncing' | 'error';
+  };
+  onGoogleSignIn?: () => Promise<void>;
+  onLogout?: () => Promise<void>;
+  onForceSync?: () => Promise<void>;
+  unsyncedCount?: number;
 }
 
 export default function Sidebar({
@@ -65,7 +81,13 @@ export default function Sidebar({
   onDeleteTagCategory,
   currentWorkspaceState,
   onApplySyncedState,
-  version = "2.5.0"
+  version = "2.5.0",
+  currentUser,
+  syncStatus,
+  onGoogleSignIn,
+  onLogout,
+  onForceSync,
+  unsyncedCount = 0
 }: SidebarProps) {
   // Folder tree expansion state, loaded and persisted in localStorage
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
@@ -920,10 +942,107 @@ export default function Sidebar({
         </div>
 
         {/* Footer (Sync, Export/Import, Reset) */}
-        <div className="border-t border-slate-200 dark:border-slate-800 p-4 space-y-2 bg-[#FAFBFD]/30 dark:bg-slate-900/30">
-          <div className="flex items-center justify-between text-xs text-slate-400 py-1 font-mono">
-            <span>Локальное хранилище</span>
-            <span className="text-indigo-500 font-semibold">Активно</span>
+        <div className="border-t border-slate-200 dark:border-slate-800 p-4 space-y-3 bg-[#FAFBFD]/30 dark:bg-slate-900/30">
+          
+          {/* Symmetrical Sync Status & Google Auth Card */}
+          <div className="space-y-2 select-none">
+            {!currentUser ? (
+              <div className="bg-amber-50/50 dark:bg-amber-950/15 border border-amber-200/50 dark:border-amber-900/35 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-extrabold text-[10px] uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    <span>Локальный режим</span>
+                  </div>
+                  <span className="text-[9px] text-slate-400 font-medium font-mono">Без облака</span>
+                </div>
+                
+                <p className="text-[10px] text-slate-500 dark:text-slate-455 leading-normal font-sans">
+                  Ваши карты хранятся в браузере. Войдите, чтобы они автоматически синхронизировались на всех устройствах.
+                </p>
+
+                {onGoogleSignIn && (
+                  <button
+                    type="button"
+                    onClick={onGoogleSignIn}
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-[#6366f1] hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white text-xs font-bold rounded-lg cursor-pointer transition-all duration-150 active:scale-[0.98] shadow-xs"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>Войти через Google</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="bg-emerald-50/30 dark:bg-emerald-950/10 border border-emerald-200/40 dark:border-emerald-900/30 rounded-xl p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-extrabold text-[10px] uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.55)]" />
+                    <span>Облако Firebase</span>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-[9px]">
+                    {syncStatus?.firebase === 'syncing' ? (
+                      <span className="text-indigo-500 animate-pulse flex items-center gap-0.5">
+                        <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                        сохранение...
+                      </span>
+                    ) : syncStatus?.firebase === 'error' ? (
+                      <span className="text-rose-500 font-bold">ошибка</span>
+                    ) : (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold">сохранено</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Profile info and Sync Controls */}
+                <div className="flex items-center justify-between gap-2 bg-white/70 dark:bg-slate-900/40 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {currentUser.photoURL ? (
+                      <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-slate-100 shrink-0" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950/60 flex items-center justify-center font-bold text-[10px] text-indigo-700 dark:text-indigo-400 shrink-0">
+                        <User className="w-3 h-3" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-slate-700 dark:text-slate-200 text-[10px] truncate leading-tight flex items-center">
+                        {currentUser.displayName || 'Пользователь Google'}
+                      </p>
+                      <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5 font-mono">
+                        {currentUser.email}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    {onForceSync && (
+                      <button
+                        type="button"
+                        onClick={onForceSync}
+                        title="Синхронизировать принудительно"
+                        className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md transition-colors cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${syncStatus?.firebase === 'syncing' ? 'animate-spin text-indigo-500' : ''}`} />
+                      </button>
+                    )}
+                    {onLogout && (
+                      <button
+                        type="button"
+                        onClick={onLogout}
+                        title="Выйти из аккаунта Google"
+                        className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-955/20 text-slate-400 hover:text-rose-600 rounded-md transition-colors cursor-pointer"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                {unsyncedCount > 0 && (
+                  <div className="text-[9px] text-amber-600 dark:text-amber-450 flex items-center gap-1 font-medium bg-amber-50/25 dark:bg-amber-950/10 p-1 rounded-md border border-amber-200/20 font-mono">
+                    ⚠️ Несинхронизировано: {unsyncedCount}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2">

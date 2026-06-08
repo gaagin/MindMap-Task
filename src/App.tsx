@@ -587,8 +587,13 @@ export default function App() {
 
       if (JSON.stringify(localCompare) !== JSON.stringify(cloudCompare)) {
         // Only absorb incoming changes if we are not actively typing/syncing locally.
-        // This avoids typing collisions and key cursor resets when editing.
-        if (unsyncedEditsCountRef.current === 0) {
+        // This avoids key cursor resets and typing interference.
+        const isTyping = document.activeElement && (
+          document.activeElement.tagName === 'INPUT' || 
+          document.activeElement.tagName === 'TEXTAREA'
+        );
+
+        if (!isTyping) {
           // Perform full merge to guarantee flawless conflict resolution even on real-time syncs!
           const mergeResult = mergeWorkspaceStates(currentState, cloudData as any, [], cloudData.deletions || []);
           ignoreNextStateChangeRef.current = true;
@@ -1793,6 +1798,49 @@ export default function App() {
     e.target.value = '';
   };
 
+  const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setCurrentUser(res.user);
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+      }
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      console.error("Sign in failed:", err);
+      if (msg.includes("unauthorized-domain") || (err?.code && err.code.includes("unauthorized-domain"))) {
+        setAuthError("unauthorized-domain");
+      } else {
+        setAuthError(msg);
+      }
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setCurrentUser(null);
+      setSyncStatus(prev => ({ ...prev, firebase: 'idle' }));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleForceSync = async () => {
+    if (!currentUser) return;
+    setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+    const result = await syncWithFirebase(currentUser.uid, stateRef.current);
+    if (result.success) {
+      ignoreNextStateChangeRef.current = true;
+      setRawState(result.state);
+      setUnsyncedEditsCount(0);
+      setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+    } else {
+      setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
+    }
+  };
+
   const handleResetDemo = () => {
     localStorage.removeItem('task_mindmaps_state');
     window.location.reload();
@@ -1829,6 +1877,12 @@ export default function App() {
         currentWorkspaceState={state}
         onApplySyncedState={setState}
         version={APP_VERSION}
+        currentUser={currentUser}
+        syncStatus={syncStatus}
+        onGoogleSignIn={handleGoogleSignIn}
+        onLogout={handleLogout}
+        onForceSync={handleForceSync}
+        unsyncedCount={unsyncedEditsCount}
       />
 
       {/* Main Workspace Frame */}
