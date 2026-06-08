@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Plus, 
   PlusCircle,
@@ -9,6 +10,7 @@ import {
   Loader2, 
   Paperclip, 
   FileText, 
+  FileImage, 
   Maximize2, 
   Minimize2,
   ZoomIn, 
@@ -29,7 +31,8 @@ import {
   Link2Off,
   Mic,
   MicOff,
-  Archive
+  Archive,
+  RotateCcw
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
@@ -179,6 +182,39 @@ export default function MindMapCanvas({
   const [nodeOffsetStart, setNodeOffsetStart] = useState({ x: 0, y: 0 });
   const [hasDraggedNode, setHasDraggedNode] = useState(false);
   const [priorityViewActive, setPriorityViewActive] = useState<boolean>(false);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [dragStartImage, setDragStartImage] = useState({ x: 0, y: 0 });
+
+  const openPreviewImage = (url: string, name: string) => {
+    setZoomScale(1);
+    setDragOffset({ x: 0, y: 0 });
+    setPreviewImage({ url, name });
+  };
+
+  const closePreviewImage = () => {
+    setPreviewImage(null);
+    setZoomScale(1);
+    setDragOffset({ x: 0, y: 0 });
+    setIsDraggingImage(false);
+  };
+
+  // Keyboard shortcut listener for escape key to close image lightbox
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closePreviewImage();
+      }
+    };
+    if (previewImage) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [previewImage]);
 
   // States of container view modes (e.g., list, kanban, calendar, gantt, table, canvas)
   const [containerViewModes, setContainerViewModes] = useState<Record<string, 'list' | 'kanban' | 'calendar' | 'gantt' | 'table' | 'canvas'>>(() => {
@@ -339,7 +375,7 @@ export default function MindMapCanvas({
     if (viewMode === 'list') {
       return (
         <div className="flex-1 flex flex-col min-h-0">
-          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin ${isFullScreen ? 'max-h-[50vh] text-xs' : 'max-h-[220px]'}`}>
+          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin ${isFullScreen ? 'max-h-[70vh] text-xs' : 'max-h-[220px]'}`}>
             {containerChildren.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[120px] text-center my-auto">
                 <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач в списке нет</span>
@@ -676,7 +712,7 @@ export default function MindMapCanvas({
                   <span className="text-[8.5px] font-extrabold bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.2 rounded-full font-mono">{col.tasks.length}</span>
                 </div>
                 
-                <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[175px]'}`}>
+                <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[175px]'}`}>
                   {col.tasks.map(child => (
                     <div 
                       key={child.id} 
@@ -864,7 +900,7 @@ export default function MindMapCanvas({
       const groups = getCalendarGroups(containerChildren);
       return (
         <div className="flex-1 flex flex-col min-h-0">
-          <div className={`flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[220px]'}`}>
+          <div className={`flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar ${isFullScreen ? 'max-h-[70vh]' : 'max-h-[220px]'}`}>
             {groups.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto">
                 <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач с датами нет</span>
@@ -942,7 +978,7 @@ export default function MindMapCanvas({
                 </div>
               </div>
               
-              <div className={`flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[170px]'}`}>
+              <div className={`flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[70vh]' : 'max-h-[170px]'}`}>
                 {ganttTasks.map(child => {
                   const startDate = child.startDate || child.dueDate;
                   const endDate = child.dueDate || child.startDate;
@@ -993,7 +1029,7 @@ export default function MindMapCanvas({
             <div className="w-1/4 text-right">Срок</div>
           </div>
           
-          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[200px]'}`}>
+          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[70vh]' : 'max-h-[200px]'}`}>
             {containerChildren.length === 0 ? (
               <div className="flex-1 flex items-center justify-center py-6 border border-dashed border-slate-200/40 dark:border-slate-850 rounded-lg select-none">
                 <span className="text-[8.5px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Нет данных</span>
@@ -2783,7 +2819,7 @@ export default function MindMapCanvas({
           
           return (
             <div className="absolute inset-0 bg-slate-550/10 dark:bg-slate-950/40 backdrop-blur-xs z-30 flex items-center justify-center p-4">
-              <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-200 dark:border-amber-900/50 rounded-3xl shadow-2xl w-full max-w-4xl h-full flex flex-col p-4 sm:p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-30">
+              <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-200 dark:border-amber-900/50 rounded-3xl shadow-2xl w-full max-w-none h-full flex flex-col p-4 sm:p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-30">
                 <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden z-30">
                   {renderContainerBody(focusedContainer, containerChildren, true)}
                 </div>
@@ -4081,44 +4117,70 @@ const pInfo = getPriorityInfo(node.priority);
 
                   {node.files && node.files.length > 0 ? (
                     <div className="space-y-1.5 max-h-[140px] overflow-y-auto">
-                      {node.files.map((file) => (
-                        <div 
-                          key={file.id} 
-                          className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-750 text-xs text-slate-700 dark:text-slate-300"
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-                            <Paperclip className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                            <span className="truncate font-medium">{file.name}</span>
-                            <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 flex-shrink-0">
-                              ({formatFileSize(file.size)})
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1">
-                            {/* Download */}
-                            <a
-                              href={file.dataUrl}
-                              download={file.name}
-                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
-                              title="Скачать файл"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </a>
-
-                            {/* Remove */}
-                            <button
+                      {node.files.map((file) => {
+                        const isImg = file.type?.startsWith('image/') || /\.(png|jpe?g|gif|svg|webp)$/i.test(file.name);
+                        return (
+                          <div 
+                            key={file.id} 
+                            className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-750 text-xs text-slate-700 dark:text-slate-300 hover:border-slate-200 dark:hover:border-slate-700 transition-all duration-200"
+                          >
+                            <div 
                               onClick={() => {
-                                const updatedFiles = node.files.filter(f => f.id !== file.id);
-                                onUpdateNode({ ...node, files: updatedFiles });
+                                if (isImg && file.dataUrl) {
+                                  openPreviewImage(file.dataUrl, file.name);
+                                }
                               }}
-                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-rose-500 hover:text-rose-600"
-                              title="Удалить файл"
+                              className={`flex items-center gap-2 min-w-0 flex-1 mr-2 ${isImg ? 'cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors' : ''}`}
+                              title={isImg ? "Нажмите для просмотра изображения" : undefined}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                              {isImg ? (
+                                <FileImage className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                              ) : (
+                                <Paperclip className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                              )}
+                              <span className={`truncate font-semibold ${isImg ? 'underline decoration-dotted decoration-emerald-500/50 hover:decoration-emerald-500' : 'text-slate-755 dark:text-slate-255'}`}>{file.name}</span>
+                              <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 flex-shrink-0">
+                                ({formatFileSize(file.size)})
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              {isImg && file.dataUrl && (
+                                <button
+                                  onClick={() => openPreviewImage(file.dataUrl, file.name)}
+                                  className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-605 dark:hover:text-indigo-405"
+                                  title="Просмотреть изображение"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              {/* Download */}
+                              {file.dataUrl && (
+                                <a
+                                  href={file.dataUrl}
+                                  download={file.name}
+                                  className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+                                  title="Скачать файл"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+
+                              {/* Remove */}
+                              <button
+                                onClick={() => {
+                                  const updatedFiles = node.files.filter(f => f.id !== file.id);
+                                  onUpdateNode({ ...node, files: updatedFiles });
+                                }}
+                                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-rose-500 hover:text-rose-600"
+                                title="Удалить файл"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="p-3 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center text-xs text-slate-400 dark:text-slate-500 italic font-sans animate-fade-in">
@@ -4253,6 +4315,131 @@ const pInfo = getPriorityInfo(node.priority);
             </div>
           </div>
         </div>
+      )}
+
+      {/* Lightbox Modal for Image Preview */}
+      {previewImage && createPortal(
+        <div 
+          className="fixed inset-0 z-[10000] bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-4 select-none animate-fade-in"
+          onClick={closePreviewImage}
+          onWheel={(e) => {
+            e.stopPropagation();
+            const delta = e.deltaY;
+            setZoomScale(prev => {
+              const zoomFactor = delta < 0 ? 1.15 : 0.85;
+              const next = prev * zoomFactor;
+              return Math.min(Math.max(next, 0.4), 12);
+            });
+          }}
+        >
+          {/* Header toolbar */}
+          <div 
+            className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Title / Name */}
+            <div className="bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-xl border border-slate-800 text-white text-xs font-bold font-sans max-w-[50vw] truncate pointer-events-auto shadow-lg select-all">
+              {previewImage.name}
+            </div>
+
+            {/* Quick Actions */}
+            <div className="flex gap-2 pointer-events-auto">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomScale(prev => Math.min(prev * 1.25, 12));
+                }}
+                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center"
+                title="Увеличить (Колесо мыши вверх)"
+              >
+                <ZoomIn className="w-5 h-5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomScale(prev => Math.max(prev * 0.8, 0.4));
+                }}
+                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center"
+                title="Уменьшить (Колесо мыши вниз)"
+              >
+                <ZoomOut className="w-5 h-5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomScale(1);
+                  setDragOffset({ x: 0, y: 0 });
+                }}
+                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center font-bold text-xs"
+                title="Сбросить масштаб"
+              >
+                <RotateCcw className="w-5 h-5" />
+              </button>
+              <a
+                href={previewImage.url}
+                download={previewImage.name}
+                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center"
+                title="Скачать изображение"
+              >
+                <Download className="w-5 h-5" />
+              </a>
+              <button
+                onClick={closePreviewImage}
+                className="p-2.5 bg-slate-900/80 hover:bg-rose-950 text-white hover:text-rose-450 rounded-full transition border border-slate-800 hover:border-rose-900 shadow-lg cursor-pointer flex items-center justify-center"
+                title="Закрыть (Esc)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Image Container */}
+          <div 
+            className="w-full h-full flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing"
+            onClick={closePreviewImage}
+            onMouseDown={(e) => {
+              if (e.button !== 0) return; // Only left click
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingImage(true);
+              setDragStartImage({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
+            }}
+            onMouseMove={(e) => {
+              if (!isDraggingImage) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setDragOffset({
+                x: e.clientX - dragStartImage.x,
+                y: e.clientY - dragStartImage.y
+              });
+            }}
+            onMouseUp={(e) => {
+              e.stopPropagation();
+              setIsDraggingImage(false);
+            }}
+            onMouseLeave={() => {
+              setIsDraggingImage(false);
+            }}
+          >
+            <img 
+              src={previewImage.url} 
+              alt={previewImage.name} 
+              referrerPolicy="no-referrer"
+              draggable="false"
+              className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl shadow-2xl transition-transform duration-75 ease-out select-none"
+              style={{
+                transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${zoomScale})`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+
+          {/* Bottom Info Hint */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[10px] text-slate-400 bg-slate-900/60 backdrop-blur-sm px-4 py-1.5 rounded-full pointer-events-none font-medium text-center">
+            Используйте колесо мыши для масштабирования • Зажмите левую кнопку мыши для перемещения
+          </div>
+        </div>,
+        document.body
       )}
     </div>
     </div>

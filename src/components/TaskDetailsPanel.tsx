@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, 
   Trash2, 
@@ -27,7 +28,9 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Coffee
+  Coffee,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode } from '../utils';
@@ -72,6 +75,24 @@ export default function TaskDetailsPanel({
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [dragStartImage, setDragStartImage] = useState({ x: 0, y: 0 });
+
+  const openPreviewImage = (url: string, name: string) => {
+    setZoomScale(1);
+    setDragOffset({ x: 0, y: 0 });
+    setPreviewImage({ url, name });
+  };
+
+  const closePreviewImage = () => {
+    setPreviewImage(null);
+    setZoomScale(1);
+    setDragOffset({ x: 0, y: 0 });
+    setIsDraggingImage(false);
+  };
 
   // Manual Pomodoro time editing states
   const [isEditingPomoTime, setIsEditingPomoTime] = useState(false);
@@ -397,6 +418,21 @@ export default function TaskDetailsPanel({
     setConfirmDeleteSubtaskId(null);
     setConfirmDeleteCatId(null);
   }, [node?.id]);
+
+  // Key event listeners for lightbox
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closePreviewImage();
+      }
+    };
+    if (previewImage) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [previewImage]);
 
   if (!node) return null;
 
@@ -1778,16 +1814,24 @@ export default function TaskDetailsPanel({
                 return (
                   <div 
                     key={file.id}
-                    className="flex items-center justify-between p-2 bg-[#FAFBFD]/60 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs"
+                    className="flex items-center justify-between p-2 bg-[#FAFBFD]/60 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200"
                   >
-                    <div className="flex items-center gap-2 min-w-0 pr-2">
+                    <div 
+                      onClick={() => {
+                        if (isImg && file.dataUrl) {
+                          openPreviewImage(file.dataUrl, file.name);
+                        }
+                      }}
+                      className={`flex items-center gap-2 min-w-0 pr-2 flex-1 ${isImg ? 'cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors' : ''}`}
+                      title={isImg ? "Нажмите для просмотра изображения" : undefined}
+                    >
                       {isImg ? (
                         <FileImage className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                       ) : (
                         <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" />
                       )}
                       <div className="min-w-0">
-                        <p className="text-slate-700 dark:text-slate-300 font-medium truncate" title={file.name}>
+                        <p className={`font-semibold truncate ${isImg ? 'underline decoration-dotted decoration-emerald-500/50 hover:decoration-emerald-500' : 'text-slate-700 dark:text-slate-300'}`} title={file.name}>
                           {file.name}
                         </p>
                         <p className="text-[10px] text-slate-400">{formatFileSize(file.size)}</p>
@@ -1795,6 +1839,15 @@ export default function TaskDetailsPanel({
                     </div>
 
                     <div className="flex gap-1.5 flex-shrink-0">
+                      {isImg && file.dataUrl && (
+                        <button
+                          onClick={() => openPreviewImage(file.dataUrl, file.name)}
+                          className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-605 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs cursor-pointer"
+                          title="Просмотреть изображение"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       {file.dataUrl && (
                         <a
                           href={file.dataUrl}
@@ -1873,6 +1926,131 @@ export default function TaskDetailsPanel({
         <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/20 text-center text-slate-400 dark:text-slate-500 text-[10px] font-mono select-none">
           Это корневой узел интеллект-карты. Его нельзя удалить.
         </div>
+      )}
+
+      {/* Lightbox Modal for Image Preview */}
+      {previewImage && createPortal(
+        <div 
+          className="fixed inset-0 z-[10000] bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-4 select-none animate-fade-in"
+          onClick={closePreviewImage}
+          onWheel={(e) => {
+            e.stopPropagation();
+            const delta = e.deltaY;
+            setZoomScale(prev => {
+              const zoomFactor = delta < 0 ? 1.15 : 0.85;
+              const next = prev * zoomFactor;
+              return Math.min(Math.max(next, 0.4), 12);
+            });
+          }}
+        >
+          {/* Header toolbar */}
+          <div 
+            className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Title / Name */}
+            <div className="bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-xl border border-slate-800 text-white text-xs font-bold font-sans max-w-[50vw] truncate pointer-events-auto shadow-lg select-all">
+              {previewImage.name}
+            </div>
+
+            {/* Quick Actions */}
+            <div className="flex gap-2 pointer-events-auto">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomScale(prev => Math.min(prev * 1.25, 12));
+                }}
+                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center"
+                title="Увеличить (Колесо мыши вверх)"
+              >
+                <ZoomIn className="w-5 h-5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomScale(prev => Math.max(prev * 0.8, 0.4));
+                }}
+                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center"
+                title="Уменьшить (Колесо мыши вниз)"
+              >
+                <ZoomOut className="w-5 h-5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomScale(1);
+                  setDragOffset({ x: 0, y: 0 });
+                }}
+                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center font-bold text-xs"
+                title="Сбросить масштаб"
+              >
+                <RotateCcw className="w-5 h-5" />
+              </button>
+              <a
+                href={previewImage.url}
+                download={previewImage.name}
+                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center"
+                title="Скачать изображение"
+              >
+                <Download className="w-5 h-5" />
+              </a>
+              <button
+                onClick={closePreviewImage}
+                className="p-2.5 bg-slate-900/80 hover:bg-rose-950 text-white hover:text-rose-450 rounded-full transition border border-slate-800 hover:border-rose-900 shadow-lg cursor-pointer flex items-center justify-center"
+                title="Закрыть (Esc)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Image Container */}
+          <div 
+            className="w-full h-full flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing"
+            onClick={closePreviewImage}
+            onMouseDown={(e) => {
+              if (e.button !== 0) return; // Only left click
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingImage(true);
+              setDragStartImage({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
+            }}
+            onMouseMove={(e) => {
+              if (!isDraggingImage) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setDragOffset({
+                x: e.clientX - dragStartImage.x,
+                y: e.clientY - dragStartImage.y
+              });
+            }}
+            onMouseUp={(e) => {
+              e.stopPropagation();
+              setIsDraggingImage(false);
+            }}
+            onMouseLeave={() => {
+              setIsDraggingImage(false);
+            }}
+          >
+            <img 
+              src={previewImage.url} 
+              alt={previewImage.name} 
+              referrerPolicy="no-referrer"
+              draggable="false"
+              className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl shadow-2xl transition-transform duration-75 ease-out select-none"
+              style={{
+                transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${zoomScale})`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+
+          {/* Bottom Info Hint */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[10px] text-slate-400 bg-slate-900/60 backdrop-blur-sm px-4 py-1.5 rounded-full pointer-events-none font-medium text-center">
+            Используйте колесо мыши для масштабирования • Зажмите левую кнопку мыши для перемещения
+          </div>
+        </div>,
+        document.body
       )}
     </aside>
   );
