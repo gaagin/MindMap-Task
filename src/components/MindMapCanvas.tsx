@@ -42,9 +42,13 @@ interface MindMapCanvasProps {
   darkMode: boolean;
   activeProjectId: string | null;
   selectedNodeId: string | null;
+  selectedNodeIds?: string[];
+  onToggleSelectNode?: (id: string, isMulti: boolean) => void;
+  onSelectMultipleNodes?: (ids: string[]) => void;
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNodeCoordinates: (id: string, x: number, y: number) => void;
+  onUpdateMultipleNodesCoordinates?: (updates: { id: string; x: number; y: number }[]) => void;
   onUpdateNodeParent: (id: string, newParentId: string | null) => void;
   onAddChildNode: (parentId: string) => void;
   onAddFloatingNode: (x: number, y: number, parentId?: string | null, customText?: string, extraProps?: Partial<TaskNode>) => void;
@@ -90,9 +94,13 @@ export default function MindMapCanvas({
   darkMode,
   activeProjectId,
   selectedNodeId,
+  selectedNodeIds = [],
+  onToggleSelectNode,
+  onSelectMultipleNodes,
   activePomodoroNodeId,
   onSelectNode,
   onUpdateNodeCoordinates,
+  onUpdateMultipleNodesCoordinates,
   onUpdateNodeParent,
   onAddChildNode,
   onAddFloatingNode,
@@ -120,6 +128,8 @@ export default function MindMapCanvas({
   tagCategories = []
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const selectedNodesStartPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
+  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   
   // States for Notes and file upload handling
   const [notesModalNodeId, setNotesModalNodeId] = useState<string | null>(null);
@@ -177,6 +187,7 @@ export default function MindMapCanvas({
   const wheelTimeoutRef = useRef<any>(null);
 
   // Drag states for dragging a specific card
+  const [isMultiSelectActive, setIsMultiSelectActive] = useState<boolean>(false);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [nodeOffsetStart, setNodeOffsetStart] = useState({ x: 0, y: 0 });
@@ -1413,14 +1424,23 @@ export default function MindMapCanvas({
   const potentialNodeOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Prevent parent canvas mouse down actions when clicking cards or buttons
-  const isButtonOrCardInput = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    return (
-      target.closest('button') || 
-      target.closest('input') || 
-      target.closest('select') || 
-      target.closest('[data-drag-ignore]')
-    );
+  const isButtonOrCardInput = (e: React.MouseEvent | React.TouchEvent) => {
+    let target = e.target as any;
+    while (target && target !== document) {
+      if (
+        (target.tagName && (
+          target.tagName.toLowerCase() === 'button' ||
+          target.tagName.toLowerCase() === 'input' ||
+          target.tagName.toLowerCase() === 'select' ||
+          target.tagName.toLowerCase() === 'textarea'
+        )) ||
+        (target.getAttribute && target.getAttribute('data-drag-ignore') !== null)
+      ) {
+        return true;
+      }
+      target = target.parentNode || target.parentElement;
+    }
+    return false;
   };
 
   // Convert screen coordinates to canvas space coordinates
@@ -1676,11 +1696,33 @@ export default function MindMapCanvas({
     // Deselect selected node when clicking on an empty space
     onSelectNode(null);
 
+    // If Shift key is pressed, initiate selection frame instead of panning
+    if (e.shiftKey) {
+      setIsPanning(false);
+      setSelectionBox({
+        startX: e.clientX,
+        startY: e.clientY,
+        endX: e.clientX,
+        endY: e.clientY
+      });
+      return;
+    }
+
     setIsPanning(true);
     setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    // 00. Update selection frame
+    if (selectionBox) {
+      setSelectionBox(prev => prev ? {
+        ...prev,
+        endX: e.clientX,
+        endY: e.clientY
+      } : null);
+      return;
+    }
+
     // 0. Resize container operation
     if (resizingNodeId) {
       const node = nodes.find(n => n.id === resizingNodeId);
@@ -1758,7 +1800,7 @@ export default function MindMapCanvas({
 
       const deltaX = (e.clientX - dragStart.x) / zoom;
       const deltaY = (e.clientY - dragStart.y) / zoom;
-      
+
       const newX = Math.round(nodeOffsetStart.x + deltaX);
       const newY = Math.round(nodeOffsetStart.y + deltaY);
 
@@ -1766,7 +1808,43 @@ export default function MindMapCanvas({
         setHasDraggedNode(true);
       }
 
-      onUpdateNodeCoordinates(draggingNodeId, newX, newY);
+      // If we are dragging a multi-selected group of nodes, move them all!
+      const isDraggingMulti = Object.keys(selectedNodesStartPositionsRef.current).length > 1;
+
+      if (isDraggingMulti) {
+        const updates: { id: string; x: number; y: number }[] = [];
+        const draggingIds = Object.keys(selectedNodesStartPositionsRef.current);
+        
+        const independentDraggingIds = draggingIds.filter(id => {
+          let currentId = nodes.find(n => n.id === id)?.parentId;
+          while (currentId) {
+            if (draggingIds.includes(currentId)) {
+              return false;
+            }
+            currentId = nodes.find(n => n.id === currentId)?.parentId || null;
+          }
+          return true;
+        });
+
+        independentDraggingIds.forEach(id => {
+          const startPos = selectedNodesStartPositionsRef.current[id];
+          if (startPos) {
+            const nextX = Math.round(startPos.x + deltaX);
+            const nextY = Math.round(startPos.y + deltaY);
+            updates.push({ id, x: nextX, y: nextY });
+          }
+        });
+        
+        if (updates.length > 0) {
+          if (onUpdateMultipleNodesCoordinates) {
+            onUpdateMultipleNodesCoordinates(updates);
+          } else {
+            updates.forEach(u => onUpdateNodeCoordinates(u.id, u.x, u.y));
+          }
+        }
+      } else {
+        onUpdateNodeCoordinates(draggingNodeId, newX, newY);
+      }
 
       // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
       const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
@@ -1873,6 +1951,56 @@ export default function MindMapCanvas({
     setResizingNodeId(null);
     setResizeDirection(null);
 
+    if (selectionBox) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const x1 = Math.min(selectionBox.startX, selectionBox.endX);
+        const x2 = Math.max(selectionBox.startX, selectionBox.endX);
+        const y1 = Math.min(selectionBox.startY, selectionBox.endY);
+        const y2 = Math.max(selectionBox.startY, selectionBox.endY);
+
+        // Convert client selection coords to scene coords using standardized helper:
+        const coords1 = getCanvasCoordinates(x1, y1);
+        const coords2 = getCanvasCoordinates(x2, y2);
+        const sceneX1 = Math.min(coords1.x, coords2.x);
+        const sceneX2 = Math.max(coords1.x, coords2.x);
+        const sceneY1 = Math.min(coords1.y, coords2.y);
+        const sceneY2 = Math.max(coords1.y, coords2.y);
+
+        // Collect matching nodes inside visibleNodes (AABB bounding box overlap)
+        const selected = visibleNodes.filter(n => {
+          if (focusedContainerId) {
+            const isChild = n.id !== focusedContainerId && !n.isContainer && isDescendantOrSelf(n.id, focusedContainerId, nodes);
+            if (!isChild) return false;
+          }
+          
+          let w = 210;
+          let h = 110;
+          if (n.isContainer) {
+            w = n.collapsed ? 220 : (n.width || 520);
+            h = n.collapsed ? 100 : (n.height || 400);
+          }
+          
+          const halfW = w / 2;
+          const halfH = h / 2;
+          
+          const nodeLeft = n.x - halfW;
+          const nodeRight = n.x + halfW;
+          const nodeTop = n.y - halfH;
+          const nodeBottom = n.y + halfH;
+          
+          return !(nodeRight < sceneX1 || nodeLeft > sceneX2 || nodeBottom < sceneY1 || nodeTop > sceneY2);
+        });
+
+        const selectedIds = selected.map(n => n.id);
+        if (onSelectMultipleNodes) {
+          onSelectMultipleNodes(selectedIds);
+        }
+      }
+      setSelectionBox(null);
+      return;
+    }
+
     if (draggingNodeId && hasDraggedNode) {
       const node = nodes.find(n => n.id === draggingNodeId);
       if (node) {
@@ -1939,9 +2067,6 @@ export default function MindMapCanvas({
     }
 
     setDraggingNodeId(null);
-    if (hasDraggedNode) {
-      onSelectNode(null);
-    }
     setHasDraggedNode(false);
     
     // Clear hover timing
@@ -2013,7 +2138,26 @@ export default function MindMapCanvas({
             setDragStart(potentialDragStartRef.current);
             setNodeOffsetStart(potentialNodeOffsetRef.current);
             setHasDraggedNode(true);
-            onSelectNode(nodeId);
+            
+            const isAlreadySelected = selectedNodeIds.includes(nodeId) || selectedNodeId === nodeId;
+            if (!isAlreadySelected) {
+              onSelectNode(nodeId);
+            }
+
+            // Capture initial positions of all dragged selected nodes
+            const dragGroup = isAlreadySelected ? [...selectedNodeIds] : [nodeId];
+            if (!dragGroup.includes(nodeId)) {
+              dragGroup.push(nodeId);
+            }
+            
+            const startPositions: Record<string, { x: number; y: number }> = {};
+            dragGroup.forEach(id => {
+              const n = nodes.find(item => item.id === id);
+              if (n) {
+                startPositions[id] = { x: n.x, y: n.y };
+              }
+            });
+            selectedNodesStartPositionsRef.current = startPositions;
 
             if (navigator.vibrate) {
               try { navigator.vibrate(60); } catch (err) {}
@@ -2176,7 +2320,7 @@ export default function MindMapCanvas({
 
       const deltaX = (touch.clientX - dragStart.x) / zoom;
       const deltaY = (touch.clientY - dragStart.y) / zoom;
-      
+
       const newX = Math.round(nodeOffsetStart.x + deltaX);
       const newY = Math.round(nodeOffsetStart.y + deltaY);
 
@@ -2184,7 +2328,43 @@ export default function MindMapCanvas({
         setHasDraggedNode(true);
       }
 
-      onUpdateNodeCoordinates(draggingNodeId, newX, newY);
+      // If we are dragging a multi-selected group of nodes, move them all!
+      const isDraggingMulti = Object.keys(selectedNodesStartPositionsRef.current).length > 1;
+
+      if (isDraggingMulti) {
+        const updates: { id: string; x: number; y: number }[] = [];
+        const draggingIds = Object.keys(selectedNodesStartPositionsRef.current);
+        
+        const independentDraggingIds = draggingIds.filter(id => {
+          let currentId = nodes.find(n => n.id === id)?.parentId;
+          while (currentId) {
+            if (draggingIds.includes(currentId)) {
+              return false;
+            }
+            currentId = nodes.find(n => n.id === currentId)?.parentId || null;
+          }
+          return true;
+        });
+
+        independentDraggingIds.forEach(id => {
+          const startPos = selectedNodesStartPositionsRef.current[id];
+          if (startPos) {
+            const nextX = Math.round(startPos.x + deltaX);
+            const nextY = Math.round(startPos.y + deltaY);
+            updates.push({ id, x: nextX, y: nextY });
+          }
+        });
+        
+        if (updates.length > 0) {
+          if (onUpdateMultipleNodesCoordinates) {
+            onUpdateMultipleNodesCoordinates(updates);
+          } else {
+            updates.forEach(u => onUpdateNodeCoordinates(u.id, u.x, u.y));
+          }
+        }
+      } else {
+        onUpdateNodeCoordinates(draggingNodeId, newX, newY);
+      }
 
       // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
       const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
@@ -2383,8 +2563,6 @@ export default function MindMapCanvas({
 
       if (!isLongPressDragging && potentialDragNodeIdRef.current) {
         onSelectNode(potentialDragNodeIdRef.current);
-      } else if (hasDraggedNode || isLongPressDragging) {
-        onSelectNode(null);
       }
       setIsPanning(false);
       setDraggingNodeId(null);
@@ -2400,11 +2578,31 @@ export default function MindMapCanvas({
     if (node.id === focusedContainerId) return; // Disable dragging the container if it's currently focused in fullscreen
     
     e.stopPropagation();
-    onSelectNode(node.id);
+    
+    const isAlreadySelected = selectedNodeIds.includes(node.id) || selectedNodeId === node.id;
+    if (!isAlreadySelected) {
+      onSelectNode(node.id);
+    }
+    
     setDraggingNodeId(node.id);
     setDragStart({ x: e.clientX, y: e.clientY });
     setNodeOffsetStart({ x: node.x, y: node.y });
     setHasDraggedNode(false);
+
+    // Capture initial positions of all dragged selected nodes
+    const dragGroup = isAlreadySelected ? [...selectedNodeIds] : [node.id];
+    if (!dragGroup.includes(node.id)) {
+      dragGroup.push(node.id);
+    }
+    
+    const startPositions: Record<string, { x: number; y: number }> = {};
+    dragGroup.forEach(id => {
+      const n = nodes.find(item => item.id === id);
+      if (n) {
+        startPositions[id] = { x: n.x, y: n.y };
+      }
+    });
+    selectedNodesStartPositionsRef.current = startPositions;
   };
 
   // Start container resizing from Mouse Down
@@ -2808,6 +3006,27 @@ export default function MindMapCanvas({
         onTouchEnd={handleTouchEnd}
         onDoubleClick={handleDoubleClick}
       >
+        {/* Lasso selection box visualization */}
+        {selectionBox && (() => {
+          const rect = containerRef.current?.getBoundingClientRect();
+          if (!rect) return null;
+          const x1 = Math.min(selectionBox.startX, selectionBox.endX) - rect.left;
+          const x2 = Math.max(selectionBox.startX, selectionBox.endX) - rect.left;
+          const y1 = Math.min(selectionBox.startY, selectionBox.endY) - rect.top;
+          const y2 = Math.max(selectionBox.startY, selectionBox.endY) - rect.top;
+          return (
+            <div
+              className="absolute bg-indigo-500/10 border-2 border-indigo-500/60 rounded-xs pointer-events-none z-[9999]"
+              style={{
+                left: `${x1}px`,
+                top: `${y1}px`,
+                width: `${x2 - x1}px`,
+                height: `${y2 - y1}px`,
+              }}
+            />
+          );
+        })()}
+
         {/* Immersive Fullscreen View Content for Focused Container */}
         {focusedContainerId && (() => {
           const focusedContainer = nodes.find(n => n.id === focusedContainerId);
@@ -2871,6 +3090,21 @@ export default function MindMapCanvas({
         >
           <Maximize2 className="w-4 h-4" />
           <span className="hidden sm:inline">Сбросить</span>
+        </button>
+
+        <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
+
+        <button
+          onClick={() => setIsMultiSelectActive(prev => !prev)}
+          title="Мультивыбор: кликайте по карточкам для множественного выделения без Shift/Ctrl"
+          className={`p-1.5 sm:p-1.5 px-2 rounded-lg transition-all duration-200 flex items-center gap-1 text-xs font-semibold cursor-pointer shrink-0 border ${
+            isMultiSelectActive
+              ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm hover:bg-indigo-700'
+              : 'text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 border-transparent'
+          }`}
+        >
+          <Move className="w-3.5 h-3.5 shrink-0" />
+          <span className="hidden sm:inline">{isMultiSelectActive ? 'Выбор: вкл' : 'Мультивыбор'}</span>
         </button>
 
         <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
@@ -2994,8 +3228,14 @@ export default function MindMapCanvas({
         </svg>
 
         {/* Task Nodes Render */}
-        {visibleNodes.map((node) => {
-          const isSelected = selectedNodeId === node.id;
+        {[...visibleNodes]
+          .sort((a, b) => {
+            if (a.isContainer && !b.isContainer) return -1;
+            if (!a.isContainer && b.isContainer) return 1;
+            return 0;
+          })
+          .map((node) => {
+          const isSelected = selectedNodeId === node.id || selectedNodeIds.includes(node.id);
 
           if (node.isContainer) {
             const isSelfFocused = focusedContainerId === node.id;
@@ -3027,20 +3267,24 @@ export default function MindMapCanvas({
                   isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                 } ${
                   hoverTargetId === node.id
-                    ? 'bg-amber-50/20 dark:bg-amber-950/20 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
+                    ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
                     : isContainerSelected
-                      ? 'bg-slate-50/40 dark:bg-slate-900/40 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
-                      : 'bg-slate-50/10 dark:bg-slate-900/15 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
+                      ? 'bg-slate-50 dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
+                      : 'bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
                 } flex flex-col`}
                 onMouseDown={(e) => startDragNode(e, node)}
                 onClick={(e) => {
                   if (hasDraggedNode) return;
                   e.stopPropagation();
-                  onSelectNode(node.id);
+                  if (onToggleSelectNode) {
+                    onToggleSelectNode(node.id, e.ctrlKey || e.metaKey || e.shiftKey || isMultiSelectActive);
+                  } else {
+                    onSelectNode(node.id);
+                  }
                 }}
               >
                 {/* Header of Container Canvas */}
-                <div className={`p-3 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white/40 dark:bg-slate-950/40 select-none pb-2.5`}>
+                <div className={`p-3 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white dark:bg-slate-950 select-none pb-2.5`}>
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="text-amber-500 dark:text-amber-400 shrink-0 text-sm">
                       📦
@@ -3125,7 +3369,7 @@ export default function MindMapCanvas({
 
                 {/* Secondary toolbar for View Selection within Container */}
                 {!isContainerCollapsed && (
-                  <div className="px-3 py-1.5 flex items-center gap-1 bg-slate-50/50 dark:bg-slate-950/20 border-b border-slate-100 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none z-10 shrink-0">
+                  <div className="px-3 py-1.5 flex items-center gap-1 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none z-10 shrink-0">
                     <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mr-1 shrink-0">Вид:</span>
                     {[
                       { id: 'canvas', label: 'Карта', icon: '🕸️' },
@@ -3148,7 +3392,7 @@ export default function MindMapCanvas({
                           className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold transition-all cursor-pointer whitespace-nowrap ${
                             active 
                               ? 'bg-amber-100 dark:bg-amber-950/75 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 shadow-2xs' 
-                              : 'text-slate-550 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
+                              : 'text-slate-555 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
                           }`}
                         >
                           <span className="text-[10px]">{v.icon}</span>
@@ -3175,14 +3419,14 @@ export default function MindMapCanvas({
                       </div>
 
                       {/* Small dynamic status overview bar at the bottom */}
-                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex items-center justify-between select-none bg-white/20 dark:bg-slate-950/20 px-2 py-1.5 rounded-lg z-10 shrink-0">
+                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex items-center justify-between select-none bg-slate-50 dark:bg-slate-900 px-2 py-1.5 rounded-lg z-10 shrink-0">
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setNotesModalNodeId(node.id);
                             }}
-                            className="text-[9px] text-slate-500 dark:text-slate-400 hover:text-amber-600 shadow-sm flex items-center gap-1 py-0.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md transition-all font-semibold cursor-pointer border border-slate-205 dark:border-slate-755 bg-white/50 dark:bg-slate-900/50"
+                            className="text-[9px] text-slate-500 dark:text-slate-400 hover:text-amber-600 shadow-sm flex items-center gap-1 py-0.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-md transition-all font-semibold cursor-pointer border border-slate-205 dark:border-slate-755 bg-white dark:bg-slate-850"
                           >
                             <FileText className="w-3 h-3 text-amber-500" /> Описание
                           </button>
@@ -3311,6 +3555,14 @@ const pInfo = getPriorityInfo(node.priority);
             }
           })();
 
+          const isChildOfContainer = currentParentForNode && currentParentForNode.isContainer;
+          const parentContainerSelected = isChildOfContainer && (selectedNodeId === currentParentForNode.id || selectedNodeIds.includes(currentParentForNode.id));
+
+          let nodeZIndex = isSelected ? 35 : 10;
+          if (isChildOfContainer) {
+            nodeZIndex = parentContainerSelected ? (isSelected ? 35 : 31) : (isSelected ? 35 : 11);
+          }
+
           return (
             <div
               key={node.id}
@@ -3319,7 +3571,7 @@ const pInfo = getPriorityInfo(node.priority);
                 left: node.x,
                 top: node.y,
                 transform: 'translate(-50%, -50%)',
-                zIndex: isSelected ? 30 : 10,
+                zIndex: nodeZIndex,
               }}
               className={`absolute group cursor-grab active:cursor-grabbing w-[210px] rounded-xl border ${isDraggingThisNode ? '' : 'transition-all duration-150'} ${
                 isDimmed 
@@ -3342,7 +3594,11 @@ const pInfo = getPriorityInfo(node.priority);
               onClick={(e) => {
                 if (hasDraggedNode) return; // ignore click if dragged
                 e.stopPropagation();
-                onSelectNode(node.id);
+                if (onToggleSelectNode) {
+                  onToggleSelectNode(node.id, e.ctrlKey || e.metaKey || e.shiftKey || isMultiSelectActive);
+                } else {
+                  onSelectNode(node.id);
+                }
               }}
             >
               {showDetachHint && (

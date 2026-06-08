@@ -24,6 +24,8 @@ interface KanbanViewProps {
   tagCategories: TagCategory[];
   activeProjectId: string;
   selectedNodeId: string | null;
+  selectedNodeIds?: string[];
+  onToggleSelectNode?: (id: string, isMulti: boolean) => void;
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNode: (node: TaskNode) => void;
@@ -37,6 +39,8 @@ export default function KanbanView({
   tagCategories,
   activeProjectId,
   selectedNodeId,
+  selectedNodeIds = [],
+  onToggleSelectNode,
   activePomodoroNodeId,
   onSelectNode,
   onUpdateNode,
@@ -402,15 +406,21 @@ export default function KanbanView({
                           id={`kanban-card-${node.id}`}
                           draggable="true"
                           onDragStart={(e) => handleDragStart(e, node.id)}
-                          onClick={() => onSelectNode(node.id)}
+                          onClick={(e) => {
+                            if (onToggleSelectNode) {
+                              onToggleSelectNode(node.id, e.ctrlKey || e.metaKey || e.shiftKey);
+                            } else {
+                              onSelectNode(node.id);
+                            }
+                          }}
                           layoutId={`kanban-card-motion-${node.id}`}
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.95 }}
                           transition={{ duration: 0.15 }}
                           className={`group select-none bg-white dark:bg-slate-900 border hover:border-slate-350 dark:hover:border-slate-700/80 rounded-xl p-3 hover:shadow-xs transition-all cursor-grab active:cursor-grabbing relative flex flex-col gap-2.5 ${
-                            node.id === selectedNodeId 
-                              ? 'border-indigo-500 dark:border-indigo-400 ring-2 ring-indigo-500/10 shadow-xs' 
+                            (node.id === selectedNodeId || selectedNodeIds.includes(node.id))
+                              ? 'border-indigo-500 dark:border-indigo-400 ring-2 ring-indigo-500/25 bg-indigo-50/5 dark:bg-indigo-950/5 shadow-md scale-[1.015]' 
                               : 'border-slate-200 dark:border-slate-850'
                           }`}
                         >

@@ -260,9 +260,145 @@ export default function App() {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
+  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'
+  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'>('canvas');
+
   // Selected task node for detail panel
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [bulkDropdown, setBulkDropdown] = useState<'priority' | 'tag' | null>(null);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+
+  // Clear multi selection on project or view switch
+  useEffect(() => {
+    setSelectedNodeIds([]);
+  }, [state.activeProjectId, viewMode]);
+
+  useEffect(() => {
+    setBulkDropdown(null);
+    setShowBulkDeleteConfirm(false);
+  }, [selectedNodeIds]);
+
+  useEffect(() => {
+    if (bulkDropdown === null) return;
+    const handleOutsideClick = () => {
+      setBulkDropdown(null);
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => {
+      document.removeEventListener('click', handleOutsideClick);
+    };
+  }, [bulkDropdown]);
+
+  // Handle single and multi node selection
+  const handleToggleSelectNode = (id: string, isMulti: boolean) => {
+    if (isMulti) {
+      setSelectedNodeIds(prev => {
+        const isAlreadySelected = prev.includes(id);
+        const next = isAlreadySelected ? prev.filter(nid => nid !== id) : [...prev, id];
+        if (next.length === 1) {
+          setSelectedNodeId(next[0]);
+        } else {
+          setSelectedNodeId(null);
+        }
+        return next;
+      });
+    } else {
+      setSelectedNodeIds([id]);
+      setSelectedNodeId(id);
+      setIsDrawerOpen(true);
+    }
+  };
+
+  const handleSelectMultipleNodes = (ids: string[]) => {
+    setSelectedNodeIds(ids);
+    if (ids.length === 1) {
+      setSelectedNodeId(ids[0]);
+    } else {
+      setSelectedNodeId(null);
+    }
+  };
+
+  const handleBulkUpdate = (ids: string[], updates: Partial<TaskNode>) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+    setState(prev => {
+      const uNodes = currentNodes.map(node => {
+        if (ids.includes(node.id)) {
+          return { ...node, ...updates };
+        }
+        return node;
+      });
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncCompletion(uNodes)
+        }
+      };
+    });
+  };
+
+  const handleBulkToggleComplete = (ids: string[], completed: boolean) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+    setState(prev => {
+      let uNodes = [...currentNodes];
+      ids.forEach(id => {
+        uNodes = toggleNodeAndDescendants(id, completed, uNodes);
+      });
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncCompletion(uNodes)
+        }
+      };
+    });
+  };
+
+  const handleBulkDelete = (ids: string[]) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const collectIdsToDelete = (targetId: string, list: string[] = []): string[] => {
+      if (list.includes(targetId)) return list;
+      list.push(targetId);
+      const children = currentNodes.filter(n => n.parentId === targetId);
+      children.forEach(child => collectIdsToDelete(child.id, list));
+      return list;
+    };
+
+    const allIdsToDeleteArray: string[] = [];
+    ids.forEach(id => {
+      collectIdsToDelete(id, allIdsToDeleteArray);
+    });
+
+    allIdsToDeleteArray.forEach(nid => logDeletion('node', nid));
+
+    setState(prev => {
+      const remainingNodes = currentNodes.filter(n => !allIdsToDeleteArray.includes(n.id));
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncCompletion(remainingNodes)
+        }
+      };
+    });
+
+    if (selectedNodeId && allIdsToDeleteArray.includes(selectedNodeId)) {
+      setSelectedNodeId(null);
+    }
+    setSelectedNodeIds([]);
+  };
 
   // Sync isDrawerOpen when selectedNodeId becomes null
   useEffect(() => {
@@ -354,9 +490,6 @@ export default function App() {
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
-
-  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'
-  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'>('canvas');
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
@@ -923,6 +1056,61 @@ export default function App() {
           };
         }
         return n;
+      });
+
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: updatedProjectNodes
+        }
+      };
+    });
+  };
+
+  // Bulk update multiple nodes coordinates with simultanous movement of their children/descendents
+  const handleUpdateMultipleNodesCoordinates = (updates: { id: string; x: number; y: number }[]) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
+    setState(prev => {
+      const projectNodes = prev.nodes[pid] || [];
+      let updatedProjectNodes = [...projectNodes];
+
+      updates.forEach(u => {
+        const targetNode = updatedProjectNodes.find(n => n.id === u.id);
+        if (!targetNode) return;
+
+        const dx = u.x - targetNode.x;
+        const dy = u.y - targetNode.y;
+
+        if (dx === 0 && dy === 0) return;
+
+        // Find descendants within the currently updated list to preserve chain updates
+        const isDescendant = (candidateId: string): boolean => {
+          if (candidateId === u.id) return true;
+          let currentId: string | null = candidateId;
+          let iterations = 0;
+          while (currentId !== null && iterations < 100) {
+            iterations++;
+            const current = updatedProjectNodes.find(n => n.id === currentId);
+            if (!current) break;
+            if (current.parentId === u.id) return true;
+            currentId = current.parentId;
+          }
+          return false;
+        };
+
+        updatedProjectNodes = updatedProjectNodes.map(n => {
+          if (isDescendant(n.id)) {
+            return {
+              ...n,
+              x: n.id === u.id ? u.x : n.x + dx,
+              y: n.id === u.id ? u.y : n.y + dy
+            };
+          }
+          return n;
+        });
       });
 
       return {
@@ -2028,7 +2216,7 @@ export default function App() {
         )}
 
         {/* The Mind Map Interactive Canvas Frame. Occupies 100% space! */}
-        <div className="flex-1 w-full h-full relative bg-[#FAFBFD] dark:bg-slate-950/20">
+        <div className="flex-1 w-full h-full relative bg-[#FAFBFD] dark:bg-slate-950/20 shadow-inner">
           
           {state.activeProjectId ? (
             viewMode === 'mobile-list' ? (
@@ -2037,6 +2225,8 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
+                onToggleSelectNode={handleToggleSelectNode}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2059,6 +2249,8 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
+                onToggleSelectNode={handleToggleSelectNode}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2079,6 +2271,8 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
+                onToggleSelectNode={handleToggleSelectNode}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2100,6 +2294,8 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
+                onToggleSelectNode={handleToggleSelectNode}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2121,6 +2317,8 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
+                onToggleSelectNode={handleToggleSelectNode}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2142,6 +2340,9 @@ export default function App() {
                 darkMode={darkMode}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
+                onToggleSelectNode={handleToggleSelectNode}
+                onSelectMultipleNodes={handleSelectMultipleNodes}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2152,6 +2353,7 @@ export default function App() {
                   }
                 }}
                 onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
+                onUpdateMultipleNodesCoordinates={handleUpdateMultipleNodesCoordinates}
                 onUpdateNodeParent={handleUpdateNodeParent}
                 onAddChildNode={handleAddChildNode}
                 onAddFloatingNode={handleAddFloatingNode}
@@ -2184,6 +2386,163 @@ export default function App() {
               <p className="text-sm text-slate-400 font-serif max-w-sm">
                 Нет открытых интеллект-карт. Создайте новую карту в левой панели, чтобы развернуть интерактивный холст целей!
               </p>
+            </div>
+          )}
+
+          {/* Bulk Actions Floating Bar */}
+          {selectedNodeIds.length > 1 && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-[0_12px_40px_rgba(0,0,0,0.35)] border border-slate-800 text-white animate-in slide-in-from-bottom-5 duration-200 flex-wrap sm:flex-nowrap">
+              {showBulkDeleteConfirm ? (
+                <div className="flex items-center gap-3.5" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-2">
+                    <Trash2 className="w-4 h-4 text-rose-500 animate-pulse" />
+                    <span className="text-xs font-semibold text-rose-300">
+                      Удалить {selectedNodeIds.length} эл.? (и всё вложенное)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 animate-in fade-in duration-200">
+                    <button
+                      onClick={() => {
+                        handleBulkDelete(selectedNodeIds);
+                        setShowBulkDeleteConfirm(false);
+                      }}
+                      className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors"
+                    >
+                      Да, удалить
+                    </button>
+                    <button
+                      onClick={() => setShowBulkDeleteConfirm(false)}
+                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold rounded-lg cursor-pointer transition-colors"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 border-r border-slate-800 pr-3 mr-1 shrink-0">
+                    <span className="flex items-center justify-center bg-indigo-600/30 text-indigo-400 font-bold rounded-lg px-2 py-0.5 text-xs">
+                      {selectedNodeIds.length}
+                    </span>
+                    <span className="text-xs text-slate-300 font-medium">выбрано</span>
+                  </div>
+
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    {/* Complete state button */}
+                    <button
+                      onClick={() => {
+                        const currentNodes = state.nodes[state.activeProjectId!] || [];
+                        const selectedNodes = currentNodes.filter(n => selectedNodeIds.includes(n.id));
+                        const anyIncomplete = selectedNodes.some(n => !n.completed);
+                        handleBulkToggleComplete(selectedNodeIds, anyIncomplete);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-indigo-600/20 text-xs font-semibold rounded-lg cursor-pointer transition-colors border border-transparent hover:border-slate-700 text-emerald-400"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      Готово
+                    </button>
+
+                    {/* Priority Selector */}
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBulkDropdown(prev => prev === 'priority' ? null : 'priority');
+                        }}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg cursor-pointer transition-colors border ${bulkDropdown === 'priority' ? 'border-indigo-500 bg-slate-750 text-white' : 'border-transparent text-slate-200'} hover:border-slate-705`}
+                      >
+                        🔥 Сменить приоритет
+                      </button>
+                      <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 ${bulkDropdown === 'priority' ? 'block' : 'hidden'} bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-xl z-50 min-w-[120px]`}>
+                        {(['none', 'low', 'medium', 'high', 'urgent'] as Priority[]).map((p) => {
+                          const labelMap: Record<Priority, string> = {
+                            none: 'Обычный',
+                            low: 'Низкий',
+                            medium: 'Средний',
+                            high: 'Высокий',
+                            urgent: 'Срочный'
+                          };
+                          return (
+                            <button
+                              key={p}
+                              onClick={() => {
+                                handleBulkUpdate(selectedNodeIds, { priority: p });
+                                setBulkDropdown(null);
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 hover:bg-slate-850 rounded-md text-[11px] font-medium text-slate-300 hover:text-white transition-colors cursor-pointer"
+                            >
+                              {labelMap[p]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Tag Selector */}
+                    {(() => {
+                      const activeProj = state.projects.find(p => p.id === state.activeProjectId);
+                      const tagCats = activeProj?.tagCategories || [];
+                      if (tagCats.length === 0) return null;
+                      return (
+                        <div className="relative">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBulkDropdown(prev => prev === 'tag' ? null : 'tag');
+                            }}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg cursor-pointer transition-colors border ${bulkDropdown === 'tag' ? 'border-indigo-500 bg-slate-750 text-white' : 'border-transparent text-slate-200'} hover:border-slate-705`}
+                          >
+                            🏷️ Назначить тег
+                          </button>
+                          <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 ${bulkDropdown === 'tag' ? 'block' : 'hidden'} bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-xl z-50 min-w-[140px] max-h-48 overflow-y-auto scrollbar-thin`}>
+                            {tagCats.flatMap(cat => cat.tags.map(t => ({ cat, tag: t }))).map(({ cat, tag }) => {
+                              return (
+                                <button
+                                  key={`${cat.id}-${tag}`}
+                                  onClick={() => {
+                                    const currentNodes = state.nodes[state.activeProjectId!] || [];
+                                    const selectedNodes = currentNodes.filter(n => selectedNodeIds.includes(n.id));
+                                    selectedNodes.forEach(node => {
+                                      if (!node.tags.includes(tag)) {
+                                        handleBulkUpdate([node.id], { tags: [...node.tags, tag] });
+                                      }
+                                    });
+                                    setBulkDropdown(null);
+                                  }}
+                                  className="w-full text-left px-2.5 py-1.5 hover:bg-slate-850 rounded-md text-[11px] font-medium text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                                  <span className="truncate">{tag}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Delete button */}
+                    <button
+                      onClick={() => {
+                        setShowBulkDeleteConfirm(true);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-955/40 hover:bg-rose-900/40 text-rose-300 active:bg-rose-950 text-xs font-semibold rounded-lg cursor-pointer transition-colors border border-transparent hover:border-rose-900/50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      Удалить
+                    </button>
+
+                    {/* Reset button */}
+                    <button
+                      onClick={() => setSelectedNodeIds([])}
+                      className="flex items-center justify-center p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg cursor-pointer transition-colors"
+                      title="Снять выделение"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
