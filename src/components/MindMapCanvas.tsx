@@ -1,5 +1,4 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { 
   Plus, 
   PlusCircle,
@@ -10,7 +9,6 @@ import {
   Loader2, 
   Paperclip, 
   FileText, 
-  FileImage, 
   Maximize2, 
   Minimize2,
   ZoomIn, 
@@ -30,9 +28,7 @@ import {
   Eye,
   Link2Off,
   Mic,
-  MicOff,
-  Archive,
-  RotateCcw
+  MicOff
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
@@ -42,16 +38,12 @@ interface MindMapCanvasProps {
   darkMode: boolean;
   activeProjectId: string | null;
   selectedNodeId: string | null;
-  selectedNodeIds?: string[];
-  onToggleSelectNode?: (id: string, isMulti: boolean) => void;
-  onSelectMultipleNodes?: (ids: string[]) => void;
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNodeCoordinates: (id: string, x: number, y: number) => void;
-  onUpdateMultipleNodesCoordinates?: (updates: { id: string; x: number; y: number }[]) => void;
   onUpdateNodeParent: (id: string, newParentId: string | null) => void;
   onAddChildNode: (parentId: string) => void;
-  onAddFloatingNode: (x: number, y: number, parentId?: string | null, customText?: string, extraProps?: Partial<TaskNode>) => void;
+  onAddFloatingNode: (x: number, y: number, parentId?: string | null, customText?: string) => void;
   onAddContainerNode: (x: number, y: number) => void;
   onAddInboxTask?: (text: string) => void;
   onDeleteNode: (id: string) => void;
@@ -94,13 +86,9 @@ export default function MindMapCanvas({
   darkMode,
   activeProjectId,
   selectedNodeId,
-  selectedNodeIds = [],
-  onToggleSelectNode,
-  onSelectMultipleNodes,
   activePomodoroNodeId,
   onSelectNode,
   onUpdateNodeCoordinates,
-  onUpdateMultipleNodesCoordinates,
   onUpdateNodeParent,
   onAddChildNode,
   onAddFloatingNode,
@@ -128,8 +116,6 @@ export default function MindMapCanvas({
   tagCategories = []
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const selectedNodesStartPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
-  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   
   // States for Notes and file upload handling
   const [notesModalNodeId, setNotesModalNodeId] = useState<string | null>(null);
@@ -187,45 +173,11 @@ export default function MindMapCanvas({
   const wheelTimeoutRef = useRef<any>(null);
 
   // Drag states for dragging a specific card
-  const [isMultiSelectActive, setIsMultiSelectActive] = useState<boolean>(false);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [nodeOffsetStart, setNodeOffsetStart] = useState({ x: 0, y: 0 });
   const [hasDraggedNode, setHasDraggedNode] = useState(false);
   const [priorityViewActive, setPriorityViewActive] = useState<boolean>(false);
-  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
-  const [zoomScale, setZoomScale] = useState(1);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [isDraggingImage, setIsDraggingImage] = useState(false);
-  const [dragStartImage, setDragStartImage] = useState({ x: 0, y: 0 });
-
-  const openPreviewImage = (url: string, name: string) => {
-    setZoomScale(1);
-    setDragOffset({ x: 0, y: 0 });
-    setPreviewImage({ url, name });
-  };
-
-  const closePreviewImage = () => {
-    setPreviewImage(null);
-    setZoomScale(1);
-    setDragOffset({ x: 0, y: 0 });
-    setIsDraggingImage(false);
-  };
-
-  // Keyboard shortcut listener for escape key to close image lightbox
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        closePreviewImage();
-      }
-    };
-    if (previewImage) {
-      window.addEventListener('keydown', handleKeyDown);
-    }
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [previewImage]);
 
   // States of container view modes (e.g., list, kanban, calendar, gantt, table, canvas)
   const [containerViewModes, setContainerViewModes] = useState<Record<string, 'list' | 'kanban' | 'calendar' | 'gantt' | 'table' | 'canvas'>>(() => {
@@ -248,53 +200,6 @@ export default function MindMapCanvas({
       return updated;
     });
   };
-
-  // States of container Kanban grouping modes (e.g. status, priority, category, tag)
-  const [containerKanbanGroupings, setContainerKanbanGroupings] = useState<Record<string, 'status' | 'priority' | 'category' | 'tag'>>(() => {
-    try {
-      const saved = localStorage.getItem('task_mindmap_container_kanban_group');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  const setContainerKanbanGrouping = (containerId: string, grouping: 'status' | 'priority' | 'category' | 'tag') => {
-    setContainerKanbanGroupings(prev => {
-      const updated = { ...prev, [containerId]: grouping };
-      try {
-        localStorage.setItem('task_mindmap_container_kanban_group', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Failed to persist container kanban group:', e);
-      }
-      return updated;
-    });
-  };
-
-  // State to track which Category is active in each container for Kanbans
-  const [containerActiveCategoryIds, setContainerActiveCategoryIds] = useState<Record<string, string>>(() => {
-    try {
-      const saved = localStorage.getItem('task_mindmap_container_active_cat');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  const setContainerActiveCategoryId = (containerId: string, catId: string) => {
-    setContainerActiveCategoryIds(prev => {
-      const updated = { ...prev, [containerId]: catId };
-      try {
-        localStorage.setItem('task_mindmap_container_active_cat', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Failed to persist container active category ID:', e);
-      }
-      return updated;
-    });
-  };
-
-  // State to track quick task add text per column in Kanbans
-  const [inlineColAddTexts, setInlineColAddTexts] = useState<Record<string, string>>({});
 
   const [inlineAddTexts, setInlineAddTexts] = useState<Record<string, string>>({});
 
@@ -386,7 +291,7 @@ export default function MindMapCanvas({
     if (viewMode === 'list') {
       return (
         <div className="flex-1 flex flex-col min-h-0">
-          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin ${isFullScreen ? 'max-h-[70vh] text-xs' : 'max-h-[220px]'}`}>
+          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin ${isFullScreen ? 'max-h-[50vh] text-xs' : 'max-h-[220px]'}`}>
             {containerChildren.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[120px] text-center my-auto">
                 <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач в списке нет</span>
@@ -472,7 +377,7 @@ export default function MindMapCanvas({
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
               data-drag-ignore
-              className="p-1 px-[10px] rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer text-[10px] font-bold"
+              className="p-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer text-[10px] font-bold"
             >
               +
             </button>
@@ -482,427 +387,89 @@ export default function MindMapCanvas({
     }
 
     if (viewMode === 'kanban') {
-      const grouping = containerKanbanGroupings[node.id] || 'status';
-
-      let kanbanCols: {
-        id: string;
-        title: string;
-        tasks: TaskNode[];
-        bg: string;
-        border: string;
-        bulletColor?: string;
-      }[] = [];
-
-      if (grouping === 'status') {
-        const todoTasks = containerChildren.filter(c => !c.completed && (!c.progress || c.progress === 0));
-        const progressTasks = containerChildren.filter(c => !c.completed && (c.progress && c.progress > 0));
-        const doneTasks = containerChildren.filter(c => c.completed);
-
-        kanbanCols = [
-          { id: 'todo', title: 'План', tasks: todoTasks, bg: 'bg-slate-500/5 dark:bg-slate-900/40', border: 'border-slate-150 dark:border-slate-800/60', bulletColor: '#475569' },
-          { id: 'progress', title: 'В работе', tasks: progressTasks, bg: 'bg-amber-500/5 dark:bg-amber-950/10', border: 'border-amber-200/20 dark:border-amber-900/30', bulletColor: '#f59e0b' },
-          { id: 'done', title: 'Готово', tasks: doneTasks, bg: 'bg-emerald-500/5 dark:bg-emerald-950/10', border: 'border-emerald-200/20 dark:border-emerald-900/30', bulletColor: '#10b981' }
-        ];
-      } else if (grouping === 'priority') {
-        const urgentTasks = containerChildren.filter(c => c.priority === 'urgent');
-        const highTasks = containerChildren.filter(c => c.priority === 'high');
-        const mediumTasks = containerChildren.filter(c => c.priority === 'medium');
-        const lowTasks = containerChildren.filter(c => c.priority === 'low' || c.priority === 'none' || !c.priority);
-
-        kanbanCols = [
-          { id: 'urgent', title: 'Срочно', tasks: urgentTasks, bg: 'bg-rose-500/5 dark:bg-rose-950/10', border: 'border-rose-200/20 dark:border-rose-900/30', bulletColor: '#f43f5e' },
-          { id: 'high', title: 'Высокий', tasks: highTasks, bg: 'bg-amber-500/5 dark:bg-amber-950/10', border: 'border-amber-200/20 dark:border-amber-900/30', bulletColor: '#f59e0b' },
-          { id: 'medium', title: 'Средний', tasks: mediumTasks, bg: 'bg-yellow-500/5 dark:bg-yellow-950/10', border: 'border-yellow-250/20 dark:border-yellow-904/30', bulletColor: '#eab308' },
-          { id: 'low', title: 'Низкий', tasks: lowTasks, bg: 'bg-slate-500/5 dark:bg-slate-900/40', border: 'border-slate-150 dark:border-slate-800/60', bulletColor: '#64748b' }
-        ];
-      } else if (grouping === 'category') {
-        const activeCatId = containerActiveCategoryIds[node.id] || (tagCategories[0]?.id || '');
-        const activeCat = tagCategories.find(cat => cat.id === activeCatId) || tagCategories[0];
-        const activeCatTags = activeCat?.tags || [];
-
-        kanbanCols = activeCatTags.map(tag => {
-          const tasks = containerChildren.filter(c => (c.tags || []).includes(tag));
-          return {
-            id: `tagcol_${tag}`,
-            title: `#${tag}`,
-            tasks,
-            bg: 'bg-indigo-500/5 dark:bg-indigo-950/10',
-            border: 'border-indigo-200/20 dark:border-indigo-900/30',
-            bulletColor: activeCat?.color || '#6366f1'
-          };
-        });
-
-        // "Без тега" column
-        const uncategorizedTasks = containerChildren.filter(c => {
-          return !(c.tags || []).some(t => activeCatTags.includes(t));
-        });
-
-        kanbanCols.unshift({
-          id: 'tagcol_none',
-          title: 'Без тега',
-          tasks: uncategorizedTasks,
-          bg: 'bg-slate-500/5 dark:bg-slate-900/40',
-          border: 'border-slate-150 dark:border-slate-800/60',
-          bulletColor: '#94a3b8'
-        });
-      } else if (grouping === 'tag') {
-        const allTagsSet = new Set<string>();
-        containerChildren.forEach(c => {
-          if (c.tags) {
-            c.tags.forEach(t => allTagsSet.add(t));
-          }
-        });
-        const allTags = Array.from(allTagsSet);
-
-        kanbanCols = allTags.map(tag => {
-          const tasks = containerChildren.filter(c => (c.tags || []).includes(tag));
-          return {
-            id: `tag_${tag}`,
-            title: `#${tag}`,
-            tasks,
-            bg: 'bg-teal-500/5 dark:bg-teal-950/10',
-            border: 'border-teal-200/20 dark:border-teal-900/30',
-            bulletColor: '#14b8a6'
-          };
-        });
-
-        // "Без тегов" column
-        const noTagsTasks = containerChildren.filter(c => !c.tags || c.tags.length === 0);
-        kanbanCols.unshift({
-          id: 'tag_none',
-          title: 'Без тегов',
-          tasks: noTagsTasks,
-          bg: 'bg-slate-500/5 dark:bg-slate-900/40',
-          border: 'border-slate-150 dark:border-slate-800/60',
-          bulletColor: '#94a3b8'
-        });
-      }
-
-      const handleDragTaskStart = (e: React.DragEvent, taskId: string) => {
-        e.stopPropagation();
-        e.dataTransfer.setData('text/plain', taskId);
-      };
-
-      const handleDragOverCol = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-      };
-
-      const handleDropOnCol = (e: React.DragEvent, targetColId: string) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const taskId = e.dataTransfer.getData('text/plain');
-        if (!taskId) return;
-        const child = containerChildren.find(c => c.id === taskId);
-        if (!child) return;
-
-        if (grouping === 'status') {
-          if (targetColId === 'todo') {
-            onUpdateNode({ ...child, completed: false, progress: 0 });
-          } else if (targetColId === 'progress') {
-            onUpdateNode({ ...child, completed: false, progress: 50 });
-          } else if (targetColId === 'done') {
-            onUpdateNode({ ...child, completed: true, progress: 100 });
-          }
-        } else if (grouping === 'priority') {
-          onUpdateNode({ ...child, priority: targetColId as Priority });
-        } else if (grouping === 'category') {
-          const activeCatId = containerActiveCategoryIds[node.id] || (tagCategories[0]?.id || '');
-          const activeCat = tagCategories.find(cat => cat.id === activeCatId) || tagCategories[0];
-          const activeCatTags = activeCat?.tags || [];
-
-          if (targetColId === 'tagcol_none') {
-            const cleanTags = (child.tags || []).filter(t => !activeCatTags.includes(t));
-            onUpdateNode({ ...child, tags: cleanTags });
-          } else {
-            const targetTagName = targetColId.replace('tagcol_', '');
-            const cleanTags = (child.tags || []).filter(t => !activeCatTags.includes(t));
-            if (!cleanTags.includes(targetTagName)) {
-              cleanTags.push(targetTagName);
-            }
-            onUpdateNode({ ...child, tags: cleanTags });
-          }
-        } else if (grouping === 'tag') {
-          if (targetColId === 'tag_none') {
-            onUpdateNode({ ...child, tags: [] });
-          } else {
-            const targetTagName = targetColId.replace('tag_', '');
-            if (!(child.tags || []).includes(targetTagName)) {
-              onUpdateNode({ ...child, tags: [targetTagName] });
-            }
-          }
-        }
-      };
+      const todoTasks = containerChildren.filter(c => !c.completed && (!c.progress || c.progress === 0));
+      const progressTasks = containerChildren.filter(c => !c.completed && (c.progress && c.progress > 0));
+      const doneTasks = containerChildren.filter(c => c.completed);
 
       return (
-        <div className="flex-1 flex flex-col min-h-0 select-text">
-          {/* Header switch buttons and category pills */}
-          <div className="flex items-center justify-between w-full mb-3 select-none shrink-0 gap-3 flex-wrap animate-fade-in" onMouseDown={e => e.stopPropagation()}>
-            <div className="flex items-center gap-1.5 bg-slate-100/80 dark:bg-slate-950/50 p-1 rounded-xl overflow-x-auto max-w-full scrollbar-none">
-              <span className="text-[9px] text-slate-450 dark:text-slate-500 font-bold px-1.5 whitespace-nowrap uppercase tracking-widest">Вид:</span>
-              {[
-                { id: 'status', label: 'Статусы', icon: '🚦' },
-                { id: 'priority', label: 'Приоритеты', icon: '⚡' },
-                { id: 'category', label: 'Категории', icon: '📁' }
-              ].map(grp => {
-                const active = grouping === grp.id;
-                return (
-                  <button
-                    key={grp.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setContainerKanbanGrouping(node.id, grp.id as any);
-                    }}
-                    className={`flex items-center gap-1 py-0.5 px-2 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
-                      active 
-                        ? 'bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 shadow-3xs text-indigo-650 dark:text-indigo-400 font-extrabold' 
-                        : 'text-slate-500 hover:text-slate-850 dark:hover:text-slate-200 border border-transparent'
-                    }`}
-                  >
-                    <span>{grp.icon}</span>
-                    <span className="whitespace-nowrap">{grp.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {grouping === 'category' && tagCategories.length > 0 && (
-              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950/40 p-1 rounded-full overflow-x-auto max-w-full scrollbar-none border border-slate-100 dark:border-slate-900/20">
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold px-2 whitespace-nowrap uppercase tracking-widest">ГРУППИРОВКА:</span>
-                {tagCategories.map(cat => {
-                  const activeCatId = containerActiveCategoryIds[node.id] || (tagCategories[0]?.id || '');
-                  const active = cat.id === activeCatId;
-                  const catTags = cat.tags || [];
-                  const count = containerChildren.filter(c => (c.tags || []).some(t => catTags.includes(t))).length;
-
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setContainerActiveCategoryId(node.id, cat.id);
-                      }}
-                      className={`flex items-center gap-1.5 py-0.8 px-3 rounded-full text-[10.5px] font-bold transition-all border cursor-pointer ${
-                        active
-                          ? 'bg-indigo-50/80 border-indigo-200/50 text-indigo-750 dark:bg-indigo-950/50 dark:border-indigo-900/60 dark:text-indigo-350 shadow-2xs font-extrabold'
-                          : 'bg-white/80 dark:bg-slate-900/85 border-slate-200/50 text-slate-500 hover:text-slate-800 dark:border-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                      }`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
-                      <span className="whitespace-nowrap">{cat.name}</span>
-                      <span className={`px-1.5 py-0.2 rounded-full text-[8.5px] font-bold font-mono ${
-                        active 
-                          ? 'bg-indigo-200/50 text-indigo-850 dark:bg-indigo-900/50 dark:text-indigo-350' 
-                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
-                      }`}>
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
+        <div className="flex-1 flex gap-1.5 overflow-x-auto min-h-0 pb-1 scrollbar-none">
+          {[
+            { id: 'todo', title: 'План', tasks: todoTasks, bg: 'bg-slate-500/5 dark:bg-slate-900/40', border: 'border-slate-150 dark:border-slate-800/60' },
+            { id: 'progress', title: 'В работе', tasks: progressTasks, bg: 'bg-amber-500/5 dark:bg-amber-950/10', border: 'border-amber-200/20 dark:border-amber-900/30' },
+            { id: 'done', title: 'Готово', tasks: doneTasks, bg: 'bg-emerald-500/5 dark:bg-emerald-950/10', border: 'border-emerald-200/20 dark:border-emerald-900/30' }
+          ].map(col => (
+            <div key={col.id} className={`flex-1 rounded-xl border ${col.border} ${col.bg} p-1.5 flex flex-col min-h-0 ${isFullScreen ? 'min-w-[200px]' : 'min-w-[130px] max-w-[170px]'}`}>
+              <div className="flex items-center justify-between mb-1.5 px-0.5 select-none shrink-0">
+                <span className="text-[9px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{col.title}</span>
+                <span className="text-[8px] font-extrabold bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1 py-0.2 rounded font-mono">{col.tasks.length}</span>
               </div>
-            )}
-          </div>
-
-          <div className="flex-1 flex gap-2.5 overflow-x-auto min-h-0 pb-1.5 scrollbar-thin select-none" onMouseDown={e => e.stopPropagation()}>
-            {kanbanCols.map(col => (
-              <div 
-                key={col.id} 
-                onDragOver={handleDragOverCol}
-                onDrop={(e) => handleDropOnCol(e, col.id)}
-                className={`flex-1 rounded-2xl border ${col.border} ${col.bg} p-2 flex flex-col min-h-0 ${isFullScreen ? 'min-w-[210px]' : 'min-w-[135px] max-w-[170px]'}`}
-              >
-                <div className="flex items-center justify-between mb-2 px-1 select-none shrink-0 border-b border-dashed border-slate-200/40 pb-1.5">
-                  <div className="flex items-center gap-1.5 truncate max-w-[80%]">
+              
+              <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[175px]'}`}>
+                {col.tasks.map(child => (
+                  <div key={child.id} className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item">
                     <span 
-                      className="inline-block w-2 h-2 rounded-full shrink-0" 
-                      style={{ backgroundColor: col.bulletColor || '#475569' }} 
-                    />
-                    <span className="text-[10px] font-extrabold text-slate-650 dark:text-slate-350 uppercase tracking-wide truncate">{col.title}</span>
-                  </div>
-                  <span className="text-[8.5px] font-extrabold bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.2 rounded-full font-mono">{col.tasks.length}</span>
-                </div>
-                
-                <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[175px]'}`}>
-                  {col.tasks.map(child => (
-                    <div 
-                      key={child.id} 
-                      draggable
-                      onDragStart={(e) => handleDragTaskStart(e, child.id)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectNode(child.id);
-                      }}
-                      className="p-2 rounded-xl border border-slate-150/80 dark:border-slate-800 bg-white dark:bg-slate-950 hover:border-indigo-400 dark:hover:border-indigo-800 shadow-2xs flex flex-col group/item cursor-pointer transition-all hover:shadow-2xs"
+                      onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                      className={`font-semibold leading-normal cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
                     >
-                      <div className="flex items-start gap-2">
-                        {/* Custom styled circle checkbox */}
-                        <div 
-                          className="pt-0.5 shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleNodeCompleted(child.id);
-                          }}
-                        >
-                          {child.completed ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500 hover:text-emerald-600 transition-all cursor-pointer shrink-0" />
-                          ) : (
-                            <Circle className="w-4 h-4 text-slate-300 dark:text-slate-700 hover:text-indigo-500 transition-all cursor-pointer shrink-0" />
-                          )}
-                        </div>
-                        <span 
-                          className={`font-semibold leading-normal break-words flex-1 text-[10px] ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-750 dark:text-slate-200'}`}
-                        >
-                          {child.text}
-                        </span>
+                      {child.text}
+                    </span>
+                    <div className="flex items-center justify-between mt-1 pt-1 border-t border-slate-100/40 dark:border-slate-900/40 shrink-0">
+                      <div className="flex gap-0.5">
+                        {col.id === 'todo' && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({ ...child, progress: 50 });
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            data-drag-ignore
+                            className="p-0.5 px-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[7.5px] font-black cursor-pointer transition-colors"
+                            title="Начать работу (In Progress)"
+                          >
+                            ▶ Раб.
+                          </button>
+                        )}
+                        {col.id === 'progress' && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({ ...child, progress: 0 });
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            data-drag-ignore
+                            className="p-0.5 px-1 rounded bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[7.5px] font-black cursor-pointer transition-colors"
+                            title="Вернуть в бэклог"
+                          >
+                            ◀ План
+                          </button>
+                        )}
                       </div>
-
-                      {/* Info indicators */}
-                      {(child.priority || child.dueDate || child.notes || (child.files && child.files.length > 0)) && (
-                        <div className="flex flex-wrap items-center gap-1 mt-2 pt-1.5 border-t border-slate-100/50 dark:border-slate-900/50 shrink-0">
-                          {child.priority && child.priority !== 'none' && (
-                            <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-md ${
-                              child.priority === 'urgent' 
-                                ? 'bg-rose-50 border border-rose-200 text-rose-600 dark:bg-rose-950/40 dark:border-rose-900/50 dark:text-rose-400' 
-                                : child.priority === 'high' 
-                                ? 'bg-amber-50 border border-amber-200 text-amber-600 dark:bg-amber-950/40 dark:border-amber-900/50 dark:text-amber-400'
-                                : child.priority === 'medium'
-                                ? 'bg-yellow-55/60 border border-yellow-250 text-yellow-600 dark:bg-yellow-950/40 dark:border-yellow-900/50 dark:text-yellow-450'
-                                : 'bg-emerald-50 border border-emerald-250 text-emerald-600 dark:bg-emerald-950/40 dark:border-emerald-900/50 dark:text-emerald-450'
-                            }`}>
-                              {child.priority === 'urgent' ? 'Срочно' : child.priority === 'high' ? 'Высокий' : child.priority === 'medium' ? 'Средний' : 'Низкий'}
-                            </span>
-                          )}
-
-                          {child.dueDate && (
-                            <span className="flex items-center gap-0.5 text-[8px] font-extrabold px-1.5 py-0.2 rounded-md bg-slate-50 border border-slate-200 text-slate-450 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-500 font-mono">
-                              <Calendar className="w-2.5 h-2.5" />
-                              {formatDisplayDate(child.dueDate)}
-                            </span>
-                          )}
-
-                          {child.notes && (
-                            <FileText className="w-3 h-3 text-slate-400 dark:text-slate-550" title="Есть описание" />
-                          )}
-
-                          {child.files && child.files.length > 0 && (
-                            <Paperclip className="w-3 h-3 text-slate-400 dark:text-slate-550" title={`Файлов: ${child.files.length}`} />
-                          )}
-                        </div>
-                      )}
-
-                      {/* Render custom tag pills inside card */}
-                      {child.tags && child.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-0.5 mt-2 shrink-0">
-                          {child.tags.map(t => (
-                            <span 
-                              key={t}
-                              className="text-[7.5px] font-black px-1.2 py-0.2 rounded-md bg-slate-50 border border-slate-150/60 text-slate-450 dark:bg-slate-900/50 dark:border-slate-800/60 dark:text-slate-500 truncate max-w-[50px]"
-                            >
-                              #{t}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  
-                  {col.tasks.length === 0 && (
-                    <div className="flex-1 flex flex-col items-center justify-center py-6 px-3 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl select-none bg-slate-50/20 dark:bg-slate-900/10 transition-all hover:bg-slate-50/30">
-                      <span className="text-[8.5px] font-bold text-slate-400 dark:text-slate-500 text-center leading-normal">Перетащите карточки сюда</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Quick Inline add form */}
-                <div className="mt-2 shrink-0 border-t border-slate-100/40 dark:border-slate-900/40 pt-2" onMouseDown={e => e.stopPropagation()}>
-                  {inlineColAddTexts[col.id] !== undefined ? (
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const txt = inlineColAddTexts[col.id] || '';
-                        if (txt.trim()) {
-                          let extraProps: Partial<TaskNode> = {};
-                          if (grouping === 'status') {
-                            if (col.id === 'todo') {
-                              extraProps = { completed: false, progress: 0 };
-                            } else if (col.id === 'progress') {
-                              extraProps = { completed: false, progress: 50 };
-                            } else if (col.id === 'done') {
-                              extraProps = { completed: true, progress: 100 };
-                            }
-                          } else if (grouping === 'priority') {
-                            extraProps = { priority: col.id as Priority };
-                          } else if (grouping === 'category') {
-                            if (col.id !== 'tagcol_none') {
-                              const tagName = col.id.replace('tagcol_', '');
-                              extraProps = { tags: [tagName] };
-                            }
-                          } else if (grouping === 'tag') {
-                            if (col.id !== 'tag_none') {
-                              const tagName = col.id.replace('tag_', '');
-                              extraProps = { tags: [tagName] };
-                            }
-                          }
-                          
-                          onAddFloatingNode(node.x, node.y, node.id, txt.trim(), extraProps);
-                          setInlineColAddTexts(prev => {
-                            const updated = { ...prev };
-                            delete updated[col.id];
-                            return updated;
-                          });
-                        }
-                      }}
-                      className="flex items-center gap-1 shrink-0"
-                    >
-                      <input
-                        autoFocus
-                        type="text"
-                        placeholder="Название..."
-                        value={inlineColAddTexts[col.id]}
-                        onChange={(e) => setInlineColAddTexts(prev => ({ ...prev, [col.id]: e.target.value }))}
-                        onBlur={() => {
-                          if (!(inlineColAddTexts[col.id] || '').trim()) {
-                            setInlineColAddTexts(prev => {
-                              const updated = { ...prev };
-                              delete updated[col.id];
-                              return updated;
-                            });
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
-                            setInlineColAddTexts(prev => {
-                              const updated = { ...prev };
-                              delete updated[col.id];
-                              return updated;
-                            });
-                          }
-                        }}
-                        className="flex-1 text-[9px] py-1 px-2 border border-slate-205 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-lg text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 placeholder-slate-400"
-                      />
                       <button
-                        type="submit"
-                        className="p-1 px-2 text-[9px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg cursor-pointer shrink-0 shadow-3xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleNodeCompleted(child.id);
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        data-drag-ignore
+                        className={`p-0.5 px-1 rounded text-[7.5px] font-extrabold cursor-pointer transition-all ${
+                          child.completed 
+                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-455' 
+                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        }`}
                       >
-                        +
+                        {child.completed ? '↩ Отмена' : '✓ Вып.'}
                       </button>
-                    </form>
-                  ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setInlineColAddTexts(prev => ({ ...prev, [col.id]: '' }));
-                      }}
-                      className="w-full flex items-center justify-center gap-1 py-1 px-2.5 rounded-lg border border-dashed border-slate-200/80 dark:border-slate-800 text-slate-450 dark:text-slate-500 hover:bg-slate-100/50 dark:hover:bg-slate-900/30 text-[9.5px] font-bold cursor-pointer transition-all"
-                    >
-                      <span>+</span> Добавить задачу
-                    </button>
-                  )}
+                    </div>
+                  </div>
+                ))}
+                {col.tasks.length === 0 && (
+                  <div className="flex-1 flex items-center justify-center py-4 border border-dashed border-slate-200/50 dark:border-slate-800/45 rounded-lg select-none">
+                    <span className="text-[8px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Пусто</span>
                 </div>
+                )}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       );
     }
@@ -911,7 +478,7 @@ export default function MindMapCanvas({
       const groups = getCalendarGroups(containerChildren);
       return (
         <div className="flex-1 flex flex-col min-h-0">
-          <div className={`flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar ${isFullScreen ? 'max-h-[70vh]' : 'max-h-[220px]'}`}>
+          <div className={`flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[220px]'}`}>
             {groups.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto">
                 <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач с датами нет</span>
@@ -989,7 +556,7 @@ export default function MindMapCanvas({
                 </div>
               </div>
               
-              <div className={`flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[70vh]' : 'max-h-[170px]'}`}>
+              <div className={`flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[170px]'}`}>
                 {ganttTasks.map(child => {
                   const startDate = child.startDate || child.dueDate;
                   const endDate = child.dueDate || child.startDate;
@@ -1040,7 +607,7 @@ export default function MindMapCanvas({
             <div className="w-1/4 text-right">Срок</div>
           </div>
           
-          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[70vh]' : 'max-h-[200px]'}`}>
+          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[200px]'}`}>
             {containerChildren.length === 0 ? (
               <div className="flex-1 flex items-center justify-center py-6 border border-dashed border-slate-200/40 dark:border-slate-850 rounded-lg select-none">
                 <span className="text-[8.5px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Нет данных</span>
@@ -1424,23 +991,14 @@ export default function MindMapCanvas({
   const potentialNodeOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Prevent parent canvas mouse down actions when clicking cards or buttons
-  const isButtonOrCardInput = (e: React.MouseEvent | React.TouchEvent) => {
-    let target = e.target as any;
-    while (target && target !== document) {
-      if (
-        (target.tagName && (
-          target.tagName.toLowerCase() === 'button' ||
-          target.tagName.toLowerCase() === 'input' ||
-          target.tagName.toLowerCase() === 'select' ||
-          target.tagName.toLowerCase() === 'textarea'
-        )) ||
-        (target.getAttribute && target.getAttribute('data-drag-ignore') !== null)
-      ) {
-        return true;
-      }
-      target = target.parentNode || target.parentElement;
-    }
-    return false;
+  const isButtonOrCardInput = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    return (
+      target.closest('button') || 
+      target.closest('input') || 
+      target.closest('select') || 
+      target.closest('[data-drag-ignore]')
+    );
   };
 
   // Convert screen coordinates to canvas space coordinates
@@ -1486,8 +1044,7 @@ export default function MindMapCanvas({
     if (filterStatus === "archived") {
       if (!node.archived) return false;
     } else {
-      const isSearching = searchQuery.trim() !== "";
-      if (node.archived && !isSearching) return false;
+      if (node.archived) return false;
       if (filterStatus === "completed" && !node.completed) return false;
       if (filterStatus === "active" && node.completed) return false;
     }
@@ -1696,33 +1253,11 @@ export default function MindMapCanvas({
     // Deselect selected node when clicking on an empty space
     onSelectNode(null);
 
-    // If Shift key is pressed, initiate selection frame instead of panning
-    if (e.shiftKey) {
-      setIsPanning(false);
-      setSelectionBox({
-        startX: e.clientX,
-        startY: e.clientY,
-        endX: e.clientX,
-        endY: e.clientY
-      });
-      return;
-    }
-
     setIsPanning(true);
     setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    // 00. Update selection frame
-    if (selectionBox) {
-      setSelectionBox(prev => prev ? {
-        ...prev,
-        endX: e.clientX,
-        endY: e.clientY
-      } : null);
-      return;
-    }
-
     // 0. Resize container operation
     if (resizingNodeId) {
       const node = nodes.find(n => n.id === resizingNodeId);
@@ -1800,7 +1335,7 @@ export default function MindMapCanvas({
 
       const deltaX = (e.clientX - dragStart.x) / zoom;
       const deltaY = (e.clientY - dragStart.y) / zoom;
-
+      
       const newX = Math.round(nodeOffsetStart.x + deltaX);
       const newY = Math.round(nodeOffsetStart.y + deltaY);
 
@@ -1808,43 +1343,7 @@ export default function MindMapCanvas({
         setHasDraggedNode(true);
       }
 
-      // If we are dragging a multi-selected group of nodes, move them all!
-      const isDraggingMulti = Object.keys(selectedNodesStartPositionsRef.current).length > 1;
-
-      if (isDraggingMulti) {
-        const updates: { id: string; x: number; y: number }[] = [];
-        const draggingIds = Object.keys(selectedNodesStartPositionsRef.current);
-        
-        const independentDraggingIds = draggingIds.filter(id => {
-          let currentId = nodes.find(n => n.id === id)?.parentId;
-          while (currentId) {
-            if (draggingIds.includes(currentId)) {
-              return false;
-            }
-            currentId = nodes.find(n => n.id === currentId)?.parentId || null;
-          }
-          return true;
-        });
-
-        independentDraggingIds.forEach(id => {
-          const startPos = selectedNodesStartPositionsRef.current[id];
-          if (startPos) {
-            const nextX = Math.round(startPos.x + deltaX);
-            const nextY = Math.round(startPos.y + deltaY);
-            updates.push({ id, x: nextX, y: nextY });
-          }
-        });
-        
-        if (updates.length > 0) {
-          if (onUpdateMultipleNodesCoordinates) {
-            onUpdateMultipleNodesCoordinates(updates);
-          } else {
-            updates.forEach(u => onUpdateNodeCoordinates(u.id, u.x, u.y));
-          }
-        }
-      } else {
-        onUpdateNodeCoordinates(draggingNodeId, newX, newY);
-      }
+      onUpdateNodeCoordinates(draggingNodeId, newX, newY);
 
       // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
       const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
@@ -1951,56 +1450,6 @@ export default function MindMapCanvas({
     setResizingNodeId(null);
     setResizeDirection(null);
 
-    if (selectionBox) {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (rect) {
-        const x1 = Math.min(selectionBox.startX, selectionBox.endX);
-        const x2 = Math.max(selectionBox.startX, selectionBox.endX);
-        const y1 = Math.min(selectionBox.startY, selectionBox.endY);
-        const y2 = Math.max(selectionBox.startY, selectionBox.endY);
-
-        // Convert client selection coords to scene coords using standardized helper:
-        const coords1 = getCanvasCoordinates(x1, y1);
-        const coords2 = getCanvasCoordinates(x2, y2);
-        const sceneX1 = Math.min(coords1.x, coords2.x);
-        const sceneX2 = Math.max(coords1.x, coords2.x);
-        const sceneY1 = Math.min(coords1.y, coords2.y);
-        const sceneY2 = Math.max(coords1.y, coords2.y);
-
-        // Collect matching nodes inside visibleNodes (AABB bounding box overlap)
-        const selected = visibleNodes.filter(n => {
-          if (focusedContainerId) {
-            const isChild = n.id !== focusedContainerId && !n.isContainer && isDescendantOrSelf(n.id, focusedContainerId, nodes);
-            if (!isChild) return false;
-          }
-          
-          let w = 210;
-          let h = 110;
-          if (n.isContainer) {
-            w = n.collapsed ? 220 : (n.width || 520);
-            h = n.collapsed ? 100 : (n.height || 400);
-          }
-          
-          const halfW = w / 2;
-          const halfH = h / 2;
-          
-          const nodeLeft = n.x - halfW;
-          const nodeRight = n.x + halfW;
-          const nodeTop = n.y - halfH;
-          const nodeBottom = n.y + halfH;
-          
-          return !(nodeRight < sceneX1 || nodeLeft > sceneX2 || nodeBottom < sceneY1 || nodeTop > sceneY2);
-        });
-
-        const selectedIds = selected.map(n => n.id);
-        if (onSelectMultipleNodes) {
-          onSelectMultipleNodes(selectedIds);
-        }
-      }
-      setSelectionBox(null);
-      return;
-    }
-
     if (draggingNodeId && hasDraggedNode) {
       const node = nodes.find(n => n.id === draggingNodeId);
       if (node) {
@@ -2067,6 +1516,9 @@ export default function MindMapCanvas({
     }
 
     setDraggingNodeId(null);
+    if (hasDraggedNode) {
+      onSelectNode(null);
+    }
     setHasDraggedNode(false);
     
     // Clear hover timing
@@ -2138,26 +1590,7 @@ export default function MindMapCanvas({
             setDragStart(potentialDragStartRef.current);
             setNodeOffsetStart(potentialNodeOffsetRef.current);
             setHasDraggedNode(true);
-            
-            const isAlreadySelected = selectedNodeIds.includes(nodeId) || selectedNodeId === nodeId;
-            if (!isAlreadySelected) {
-              onSelectNode(nodeId);
-            }
-
-            // Capture initial positions of all dragged selected nodes
-            const dragGroup = isAlreadySelected ? [...selectedNodeIds] : [nodeId];
-            if (!dragGroup.includes(nodeId)) {
-              dragGroup.push(nodeId);
-            }
-            
-            const startPositions: Record<string, { x: number; y: number }> = {};
-            dragGroup.forEach(id => {
-              const n = nodes.find(item => item.id === id);
-              if (n) {
-                startPositions[id] = { x: n.x, y: n.y };
-              }
-            });
-            selectedNodesStartPositionsRef.current = startPositions;
+            onSelectNode(nodeId);
 
             if (navigator.vibrate) {
               try { navigator.vibrate(60); } catch (err) {}
@@ -2320,7 +1753,7 @@ export default function MindMapCanvas({
 
       const deltaX = (touch.clientX - dragStart.x) / zoom;
       const deltaY = (touch.clientY - dragStart.y) / zoom;
-
+      
       const newX = Math.round(nodeOffsetStart.x + deltaX);
       const newY = Math.round(nodeOffsetStart.y + deltaY);
 
@@ -2328,43 +1761,7 @@ export default function MindMapCanvas({
         setHasDraggedNode(true);
       }
 
-      // If we are dragging a multi-selected group of nodes, move them all!
-      const isDraggingMulti = Object.keys(selectedNodesStartPositionsRef.current).length > 1;
-
-      if (isDraggingMulti) {
-        const updates: { id: string; x: number; y: number }[] = [];
-        const draggingIds = Object.keys(selectedNodesStartPositionsRef.current);
-        
-        const independentDraggingIds = draggingIds.filter(id => {
-          let currentId = nodes.find(n => n.id === id)?.parentId;
-          while (currentId) {
-            if (draggingIds.includes(currentId)) {
-              return false;
-            }
-            currentId = nodes.find(n => n.id === currentId)?.parentId || null;
-          }
-          return true;
-        });
-
-        independentDraggingIds.forEach(id => {
-          const startPos = selectedNodesStartPositionsRef.current[id];
-          if (startPos) {
-            const nextX = Math.round(startPos.x + deltaX);
-            const nextY = Math.round(startPos.y + deltaY);
-            updates.push({ id, x: nextX, y: nextY });
-          }
-        });
-        
-        if (updates.length > 0) {
-          if (onUpdateMultipleNodesCoordinates) {
-            onUpdateMultipleNodesCoordinates(updates);
-          } else {
-            updates.forEach(u => onUpdateNodeCoordinates(u.id, u.x, u.y));
-          }
-        }
-      } else {
-        onUpdateNodeCoordinates(draggingNodeId, newX, newY);
-      }
+      onUpdateNodeCoordinates(draggingNodeId, newX, newY);
 
       // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
       const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
@@ -2563,6 +1960,8 @@ export default function MindMapCanvas({
 
       if (!isLongPressDragging && potentialDragNodeIdRef.current) {
         onSelectNode(potentialDragNodeIdRef.current);
+      } else if (hasDraggedNode || isLongPressDragging) {
+        onSelectNode(null);
       }
       setIsPanning(false);
       setDraggingNodeId(null);
@@ -2578,31 +1977,11 @@ export default function MindMapCanvas({
     if (node.id === focusedContainerId) return; // Disable dragging the container if it's currently focused in fullscreen
     
     e.stopPropagation();
-    
-    const isAlreadySelected = selectedNodeIds.includes(node.id) || selectedNodeId === node.id;
-    if (!isAlreadySelected) {
-      onSelectNode(node.id);
-    }
-    
+    onSelectNode(node.id);
     setDraggingNodeId(node.id);
     setDragStart({ x: e.clientX, y: e.clientY });
     setNodeOffsetStart({ x: node.x, y: node.y });
     setHasDraggedNode(false);
-
-    // Capture initial positions of all dragged selected nodes
-    const dragGroup = isAlreadySelected ? [...selectedNodeIds] : [node.id];
-    if (!dragGroup.includes(node.id)) {
-      dragGroup.push(node.id);
-    }
-    
-    const startPositions: Record<string, { x: number; y: number }> = {};
-    dragGroup.forEach(id => {
-      const n = nodes.find(item => item.id === id);
-      if (n) {
-        startPositions[id] = { x: n.x, y: n.y };
-      }
-    });
-    selectedNodesStartPositionsRef.current = startPositions;
   };
 
   // Start container resizing from Mouse Down
@@ -2854,24 +2233,40 @@ export default function MindMapCanvas({
     .filter(conn => conn.parent !== undefined && !conn.parent.isContainer) as { child: TaskNode; parent: TaskNode }[];
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden select-none bg-white dark:bg-slate-950">
-      {/* Solid Focused Container Top Stats Bar */}
+    <div 
+      ref={containerRef}
+      className={`relative flex-1 h-full select-none overflow-hidden bg-white dark:bg-slate-950 outline-none transition-all duration-300 ${focusedContainerId ? 'ring-4 ring-amber-500/15 ring-inset shadow-[inset_0_0_80px_rgba(245,158,11,0.05)]' : ''}`}
+      style={{
+        backgroundImage: `radial-gradient(${darkMode ? '#334155' : '#cbd5e1'} 1.2px, transparent 1.2px)`,
+        backgroundSize: '24px 24px',
+        backgroundPosition: `${panX}px ${panY}px`,
+      }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onDoubleClick={handleDoubleClick}
+    >
+      {/* Immersive Focused Container Top Stats Bar */}
       {focusedContainerId && (() => {
         const focusedContainer = nodes.find(n => n.id === focusedContainerId);
         if (!focusedContainer) return null;
         
-        const containerChildren = nodes.filter(n => n.id !== focusedContainerId && !n.isContainer && isDescendantOrSelf(n.id, focusedContainerId, nodes));
+        const containerChildren = nodes.filter(n => n.parentId === focusedContainerId);
         const totalChildren = containerChildren.length;
         const completedChildren = containerChildren.filter(n => n.completed).length;
         const progress = totalChildren > 0 ? Math.round((completedChildren / totalChildren) * 100) : 0;
         
         return (
-          <div className="w-full bg-slate-50 dark:bg-slate-900 border-b border-amber-305 dark:border-amber-950/60 shadow-xs flex flex-col md:flex-row items-center gap-1.5 md:gap-3 px-3 py-1.5 md:px-4 md:py-1.5 shrink-0 select-none animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="flex items-center justify-between w-full md:w-auto gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-base shrink-0">📦</span>
-                <div className="min-w-0 leading-tight">
-                  <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans leading-none">Режим фокусировки</div>
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3 border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl flex flex-col md:flex-row items-center gap-4 transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-[95vw] md:max-w-4xl">
+            <div className="flex items-center gap-2.5 min-w-0 w-full md:w-auto justify-between md:justify-start">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="text-xl shrink-0">📦</span>
+                <div className="min-w-0">
+                  <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans">Режим фокусировки</div>
                   <input
                     type="text"
                     value={focusedContainer.text}
@@ -2881,47 +2276,17 @@ export default function MindMapCanvas({
                         text: e.target.value
                       });
                     }}
-                    className="text-xs font-sans font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b border-dashed border-amber-300 dark:border-amber-800 focus:border-amber-500 focus:outline-none focus:ring-0 px-0.5 py-0 min-w-0 max-w-[130px] sm:max-w-[200px]"
+                    className="text-sm font-sans font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b border-dashed border-amber-300 dark:border-amber-800 focus:border-amber-500 focus:outline-none focus:ring-0 px-0.5 py-0 min-w-0 max-w-[130px] sm:max-w-[200px]"
                     placeholder="Имя контейнера"
                   />
                 </div>
               </div>
-
-              {/* Progress and Return button stacked on mobile next to title for compactness */}
-              <div className="flex items-center gap-2 md:hidden">
-                <div className="flex flex-col items-end text-right leading-none">
-                  <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                    {completedChildren}/{totalChildren} Выполнено
-                  </span>
-                  <div className="w-10 bg-slate-200 dark:bg-slate-800 h-1 mt-0.5 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-amber-500 transition-all duration-300"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    autoFitContainer(focusedContainerId);
-                    const targetZoom = 0.85;
-                    setZoom(targetZoom);
-                    setPanX(-focusedContainer.x * targetZoom);
-                    setPanY(-focusedContainer.y * targetZoom);
-                    onSelectNode(focusedContainer.id);
-                    setFocusedContainerId(null);
-                  }}
-                  className="flex items-center gap-1 px-2 py-1 hover:bg-rose-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs whitespace-nowrap"
-                >
-                  <Minimize2 className="w-3 h-3 text-rose-500" />
-                  <span>Вернуться</span>
-                </button>
-              </div>
             </div>
             
-            <div className="hidden md:block w-[1px] h-6 bg-slate-200 dark:bg-slate-800 shrink-0" />
+            <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
 
-            {/* View Selector for Focused Mode - 100% width on Mobile for smooth touch scroll */}
-            <div className="flex items-center gap-0.5 bg-slate-200/50 dark:bg-slate-950/40 p-0.5 rounded-lg border border-slate-200/40 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none w-full md:w-auto justify-start md:justify-center">
+            {/* View Selector for Focused Mode */}
+            <div className="flex items-center gap-1 bg-slate-100/60 dark:bg-slate-950/40 p-1 rounded-xl border border-slate-200/40 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none shrink-0 max-w-full">
               {[
                 { id: 'canvas', label: 'Карта', icon: '🕸️' },
                 { id: 'list', label: 'Список', icon: '📋' },
@@ -2940,10 +2305,10 @@ export default function MindMapCanvas({
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     data-drag-ignore
-                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
                       active 
                         ? 'bg-amber-100 dark:bg-amber-950/75 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 shadow-2xs' 
-                        : 'text-slate-650 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 border border-transparent'
+                        : 'text-slate-650 dark:text-slate-400 hover:bg-slate-150/40 dark:hover:bg-slate-800/60 border border-transparent'
                     }`}
                   >
                     <span className="text-xs">{v.icon}</span>
@@ -2953,15 +2318,14 @@ export default function MindMapCanvas({
               })}
             </div>
             
-            <div className="hidden md:block w-[1px] h-6 bg-slate-200 dark:bg-slate-800 shrink-0" />
+            <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
             
-            {/* Desktop-only Stats, Progress and Return button */}
-            <div className="hidden md:flex items-center gap-3 shrink-0 ml-auto">
+            <div className="flex items-center gap-3 shrink-0 w-full md:w-auto justify-between md:justify-start">
               <div className="flex flex-col items-end gap-0.5 select-none text-right">
                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
                   {completedChildren}/{totalChildren} Выполнено
                 </span>
-                <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1 rounded-full overflow-hidden">
+                <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-amber-500 transition-all duration-300"
                     style={{ width: `${progress}%` }}
@@ -2979,76 +2343,37 @@ export default function MindMapCanvas({
                   onSelectNode(focusedContainer.id);
                   setFocusedContainerId(null);
                 }}
-                className="flex items-center gap-1 px-2.5 py-1 md:py-1.5 hover:bg-rose-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg text-[10px] md:text-[11px] font-bold transition-all duration-200 cursor-pointer border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs"
+                className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg text-[11px] font-extrabold transition-all duration-200 cursor-pointer border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
               >
-                <Minimize2 className="w-3 h-3 md:w-3.5 md:h-3.5 text-rose-500" />
-                <span>Вернуться</span>
+                <Minimize2 className="w-3.5 h-3.5 text-rose-500" />
+                Вернуться
               </button>
             </div>
           </div>
         );
       })()}
 
-      <div 
-        ref={containerRef}
-        className={`relative flex-1 h-full select-none overflow-hidden bg-white dark:bg-slate-950 outline-none transition-all duration-300 ${focusedContainerId ? 'ring-4 ring-amber-500/15 ring-inset shadow-[inset_0_0_80px_rgba(245,158,11,0.05)]' : ''}`}
-        style={{
-          backgroundImage: `radial-gradient(${darkMode ? '#334155' : '#cbd5e1'} 1.2px, transparent 1.2px)`,
-          backgroundSize: '24px 24px',
-          backgroundPosition: `${panX}px ${panY}px`,
-        }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onDoubleClick={handleDoubleClick}
-      >
-        {/* Lasso selection box visualization */}
-        {selectionBox && (() => {
-          const rect = containerRef.current?.getBoundingClientRect();
-          if (!rect) return null;
-          const x1 = Math.min(selectionBox.startX, selectionBox.endX) - rect.left;
-          const x2 = Math.max(selectionBox.startX, selectionBox.endX) - rect.left;
-          const y1 = Math.min(selectionBox.startY, selectionBox.endY) - rect.top;
-          const y2 = Math.max(selectionBox.startY, selectionBox.endY) - rect.top;
-          return (
-            <div
-              className="absolute bg-indigo-500/10 border-2 border-indigo-500/60 rounded-xs pointer-events-none z-[9999]"
-              style={{
-                left: `${x1}px`,
-                top: `${y1}px`,
-                width: `${x2 - x1}px`,
-                height: `${y2 - y1}px`,
-              }}
-            />
-          );
-        })()}
+      {/* Immersive Fullscreen View Content for Focused Container */}
+      {focusedContainerId && (() => {
+        const focusedContainer = nodes.find(n => n.id === focusedContainerId);
+        if (!focusedContainer) return null;
+        const viewMode = containerViewModes[focusedContainer.id] || 'canvas';
+        if (viewMode === 'canvas') return null;
 
-        {/* Immersive Fullscreen View Content for Focused Container */}
-        {focusedContainerId && (() => {
-          const focusedContainer = nodes.find(n => n.id === focusedContainerId);
-          if (!focusedContainer) return null;
-          const viewMode = containerViewModes[focusedContainer.id] || 'canvas';
-          if (viewMode === 'canvas') return null;
-
-          const containerChildren = nodes.filter(n => n.id !== focusedContainerId && !n.isContainer && isDescendantOrSelf(n.id, focusedContainerId, nodes));
-          
-          return (
-            <div className="absolute inset-0 bg-slate-550/10 dark:bg-slate-950/40 backdrop-blur-xs z-30 flex items-center justify-center p-4">
-              <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-200 dark:border-amber-900/50 rounded-3xl shadow-2xl w-full max-w-none h-full flex flex-col p-4 sm:p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-30">
-                <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden z-30">
-                  {renderContainerBody(focusedContainer, containerChildren, true)}
-                </div>
+        const containerChildren = nodes.filter(n => n.parentId === focusedContainerId);
+        
+        return (
+          <div className="absolute inset-0 bg-slate-550/10 dark:bg-slate-950/40 backdrop-blur-xs z-30 flex items-center justify-center p-4 pt-48 pb-6 sm:p-8 sm:pt-40 md:pt-28">
+            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-200 dark:border-amber-900/50 rounded-3xl shadow-2xl w-full max-w-4xl h-full flex flex-col p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-30">
+              <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden z-30">
+                {renderContainerBody(focusedContainer, containerChildren, true)}
               </div>
             </div>
-          );
-        })()}
-
-        {/* Floating Canvas UI Controls */}
-        <div className="absolute top-4 left-4 z-10 flex gap-2">
+          </div>
+        );
+      })()}
+      {/* Floating Canvas UI Controls */}
+      <div className={`absolute ${focusedContainerId ? 'top-20 sm:top-4' : 'top-4'} left-4 z-10 flex gap-2`}>
         <button
           onClick={onOpenSidebar}
           title="Открыть боковую панель"
@@ -3090,21 +2415,6 @@ export default function MindMapCanvas({
         >
           <Maximize2 className="w-4 h-4" />
           <span className="hidden sm:inline">Сбросить</span>
-        </button>
-
-        <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
-
-        <button
-          onClick={() => setIsMultiSelectActive(prev => !prev)}
-          title="Мультивыбор: кликайте по карточкам для множественного выделения без Shift/Ctrl"
-          className={`p-1.5 sm:p-1.5 px-2 rounded-lg transition-all duration-200 flex items-center gap-1 text-xs font-semibold cursor-pointer shrink-0 border ${
-            isMultiSelectActive
-              ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm hover:bg-indigo-700'
-              : 'text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 border-transparent'
-          }`}
-        >
-          <Move className="w-3.5 h-3.5 shrink-0" />
-          <span className="hidden sm:inline">{isMultiSelectActive ? 'Выбор: вкл' : 'Мультивыбор'}</span>
         </button>
 
         <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
@@ -3228,20 +2538,14 @@ export default function MindMapCanvas({
         </svg>
 
         {/* Task Nodes Render */}
-        {[...visibleNodes]
-          .sort((a, b) => {
-            if (a.isContainer && !b.isContainer) return -1;
-            if (!a.isContainer && b.isContainer) return 1;
-            return 0;
-          })
-          .map((node) => {
-          const isSelected = selectedNodeId === node.id || selectedNodeIds.includes(node.id);
+        {visibleNodes.map((node) => {
+          const isSelected = selectedNodeId === node.id;
 
           if (node.isContainer) {
             const isSelfFocused = focusedContainerId === node.id;
             if (isSelfFocused) return null; // Hide the container visual boundaries entirely to let it replace the canvas!
 
-            const containerChildren = nodes.filter(n => n.id !== node.id && !n.isContainer && isDescendantOrSelf(n.id, node.id, nodes));
+            const containerChildren = nodes.filter(n => n.parentId === node.id);
             const totalChildren = containerChildren.length;
             const completedChildren = containerChildren.filter(n => n.completed).length;
             const containerProgress = totalChildren > 0 ? Math.round((completedChildren / totalChildren) * 100) : 0;
@@ -3267,24 +2571,20 @@ export default function MindMapCanvas({
                   isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                 } ${
                   hoverTargetId === node.id
-                    ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
+                    ? 'bg-amber-50/20 dark:bg-amber-950/20 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
                     : isContainerSelected
-                      ? 'bg-slate-50 dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
-                      : 'bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
+                      ? 'bg-slate-50/40 dark:bg-slate-900/40 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
+                      : 'bg-slate-50/10 dark:bg-slate-900/15 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
                 } flex flex-col`}
                 onMouseDown={(e) => startDragNode(e, node)}
                 onClick={(e) => {
                   if (hasDraggedNode) return;
                   e.stopPropagation();
-                  if (onToggleSelectNode) {
-                    onToggleSelectNode(node.id, e.ctrlKey || e.metaKey || e.shiftKey || isMultiSelectActive);
-                  } else {
-                    onSelectNode(node.id);
-                  }
+                  onSelectNode(node.id);
                 }}
               >
                 {/* Header of Container Canvas */}
-                <div className={`p-3 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white dark:bg-slate-950 select-none pb-2.5`}>
+                <div className={`p-3 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white/40 dark:bg-slate-950/40 select-none pb-2.5`}>
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="text-amber-500 dark:text-amber-400 shrink-0 text-sm">
                       📦
@@ -3369,7 +2669,7 @@ export default function MindMapCanvas({
 
                 {/* Secondary toolbar for View Selection within Container */}
                 {!isContainerCollapsed && (
-                  <div className="px-3 py-1.5 flex items-center gap-1 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none z-10 shrink-0">
+                  <div className="px-3 py-1.5 flex items-center gap-1 bg-slate-50/50 dark:bg-slate-950/20 border-b border-slate-100 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none z-10 shrink-0">
                     <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mr-1 shrink-0">Вид:</span>
                     {[
                       { id: 'canvas', label: 'Карта', icon: '🕸️' },
@@ -3392,7 +2692,7 @@ export default function MindMapCanvas({
                           className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold transition-all cursor-pointer whitespace-nowrap ${
                             active 
                               ? 'bg-amber-100 dark:bg-amber-950/75 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 shadow-2xs' 
-                              : 'text-slate-555 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
+                              : 'text-slate-550 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
                           }`}
                         >
                           <span className="text-[10px]">{v.icon}</span>
@@ -3419,14 +2719,14 @@ export default function MindMapCanvas({
                       </div>
 
                       {/* Small dynamic status overview bar at the bottom */}
-                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex items-center justify-between select-none bg-slate-50 dark:bg-slate-900 px-2 py-1.5 rounded-lg z-10 shrink-0">
+                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex items-center justify-between select-none bg-white/20 dark:bg-slate-950/20 px-2 py-1.5 rounded-lg z-10 shrink-0">
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setNotesModalNodeId(node.id);
                             }}
-                            className="text-[9px] text-slate-500 dark:text-slate-400 hover:text-amber-600 shadow-sm flex items-center gap-1 py-0.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-md transition-all font-semibold cursor-pointer border border-slate-205 dark:border-slate-755 bg-white dark:bg-slate-850"
+                            className="text-[9px] text-slate-500 dark:text-slate-400 hover:text-amber-600 shadow-sm flex items-center gap-1 py-0.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md transition-all font-semibold cursor-pointer border border-slate-205 dark:border-slate-755 bg-white/50 dark:bg-slate-900/50"
                           >
                             <FileText className="w-3 h-3 text-amber-500" /> Описание
                           </button>
@@ -3555,14 +2855,6 @@ const pInfo = getPriorityInfo(node.priority);
             }
           })();
 
-          const isChildOfContainer = currentParentForNode && currentParentForNode.isContainer;
-          const parentContainerSelected = isChildOfContainer && (selectedNodeId === currentParentForNode.id || selectedNodeIds.includes(currentParentForNode.id));
-
-          let nodeZIndex = isSelected ? 35 : 10;
-          if (isChildOfContainer) {
-            nodeZIndex = parentContainerSelected ? (isSelected ? 35 : 31) : (isSelected ? 35 : 11);
-          }
-
           return (
             <div
               key={node.id}
@@ -3571,7 +2863,7 @@ const pInfo = getPriorityInfo(node.priority);
                 left: node.x,
                 top: node.y,
                 transform: 'translate(-50%, -50%)',
-                zIndex: nodeZIndex,
+                zIndex: isSelected ? 30 : 10,
               }}
               className={`absolute group cursor-grab active:cursor-grabbing w-[210px] rounded-xl border ${isDraggingThisNode ? '' : 'transition-all duration-150'} ${
                 isDimmed 
@@ -3594,11 +2886,7 @@ const pInfo = getPriorityInfo(node.priority);
               onClick={(e) => {
                 if (hasDraggedNode) return; // ignore click if dragged
                 e.stopPropagation();
-                if (onToggleSelectNode) {
-                  onToggleSelectNode(node.id, e.ctrlKey || e.metaKey || e.shiftKey || isMultiSelectActive);
-                } else {
-                  onSelectNode(node.id);
-                }
+                onSelectNode(node.id);
               }}
             >
               {showDetachHint && (
@@ -3921,27 +3209,6 @@ const pInfo = getPriorityInfo(node.priority);
                     <>
                       <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
-                      {/* Button 3.5: Архивировать */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onUpdateNode({
-                            ...node,
-                            archived: !node.archived
-                          });
-                        }}
-                        title={node.archived ? "Восстановить из архива" : "Архивировать задачу и подзадачи"}
-                        className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
-                          node.archived
-                            ? "text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-slate-800"
-                            : "text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800"
-                        }`}
-                      >
-                        <Archive className="w-4 h-4" />
-                      </button>
-
-                      <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
-
                       {/* Button 4: Удалить */}
                       <button
                         onClick={(e) => {
@@ -4021,7 +3288,7 @@ const pInfo = getPriorityInfo(node.priority);
 
       {/* Off-canvas Sticky INBOX Container Widget */}
       <div 
-        className="absolute top-4 right-4 z-40 pointer-events-auto select-none"
+        className={`absolute ${focusedContainerId ? 'top-20 sm:top-4' : 'top-4'} right-4 z-40 pointer-events-auto select-none`}
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >
@@ -4373,70 +3640,44 @@ const pInfo = getPriorityInfo(node.priority);
 
                   {node.files && node.files.length > 0 ? (
                     <div className="space-y-1.5 max-h-[140px] overflow-y-auto">
-                      {node.files.map((file) => {
-                        const isImg = file.type?.startsWith('image/') || /\.(png|jpe?g|gif|svg|webp)$/i.test(file.name);
-                        return (
-                          <div 
-                            key={file.id} 
-                            className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-750 text-xs text-slate-700 dark:text-slate-300 hover:border-slate-200 dark:hover:border-slate-700 transition-all duration-200"
-                          >
-                            <div 
-                              onClick={() => {
-                                if (isImg && file.dataUrl) {
-                                  openPreviewImage(file.dataUrl, file.name);
-                                }
-                              }}
-                              className={`flex items-center gap-2 min-w-0 flex-1 mr-2 ${isImg ? 'cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors' : ''}`}
-                              title={isImg ? "Нажмите для просмотра изображения" : undefined}
-                            >
-                              {isImg ? (
-                                <FileImage className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                              ) : (
-                                <Paperclip className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                              )}
-                              <span className={`truncate font-semibold ${isImg ? 'underline decoration-dotted decoration-emerald-500/50 hover:decoration-emerald-500' : 'text-slate-755 dark:text-slate-255'}`}>{file.name}</span>
-                              <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 flex-shrink-0">
-                                ({formatFileSize(file.size)})
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-1">
-                              {isImg && file.dataUrl && (
-                                <button
-                                  onClick={() => openPreviewImage(file.dataUrl, file.name)}
-                                  className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-605 dark:hover:text-indigo-405"
-                                  title="Просмотреть изображение"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {/* Download */}
-                              {file.dataUrl && (
-                                <a
-                                  href={file.dataUrl}
-                                  download={file.name}
-                                  className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
-                                  title="Скачать файл"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                </a>
-                              )}
-
-                              {/* Remove */}
-                              <button
-                                onClick={() => {
-                                  const updatedFiles = node.files.filter(f => f.id !== file.id);
-                                  onUpdateNode({ ...node, files: updatedFiles });
-                                }}
-                                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-rose-500 hover:text-rose-600"
-                                title="Удалить файл"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                      {node.files.map((file) => (
+                        <div 
+                          key={file.id} 
+                          className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-750 text-xs text-slate-700 dark:text-slate-300"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                            <Paperclip className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                            <span className="truncate font-medium">{file.name}</span>
+                            <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 flex-shrink-0">
+                              ({formatFileSize(file.size)})
+                            </span>
                           </div>
-                        );
-                      })}
+
+                          <div className="flex items-center gap-1">
+                            {/* Download */}
+                            <a
+                              href={file.dataUrl}
+                              download={file.name}
+                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+                              title="Скачать файл"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </a>
+
+                            {/* Remove */}
+                            <button
+                              onClick={() => {
+                                const updatedFiles = node.files.filter(f => f.id !== file.id);
+                                onUpdateNode({ ...node, files: updatedFiles });
+                              }}
+                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-rose-500 hover:text-rose-600"
+                              title="Удалить файл"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : (
                     <div className="p-3 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center text-xs text-slate-400 dark:text-slate-500 italic font-sans animate-fade-in">
@@ -4572,132 +3813,6 @@ const pInfo = getPriorityInfo(node.priority);
           </div>
         </div>
       )}
-
-      {/* Lightbox Modal for Image Preview */}
-      {previewImage && createPortal(
-        <div 
-          className="fixed inset-0 z-[10000] bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-4 select-none animate-fade-in"
-          onClick={closePreviewImage}
-          onWheel={(e) => {
-            e.stopPropagation();
-            const delta = e.deltaY;
-            setZoomScale(prev => {
-              const zoomFactor = delta < 0 ? 1.15 : 0.85;
-              const next = prev * zoomFactor;
-              return Math.min(Math.max(next, 0.4), 12);
-            });
-          }}
-        >
-          {/* Header toolbar */}
-          <div 
-            className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Title / Name */}
-            <div className="bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-xl border border-slate-800 text-white text-xs font-bold font-sans max-w-[50vw] truncate pointer-events-auto shadow-lg select-all">
-              {previewImage.name}
-            </div>
-
-            {/* Quick Actions */}
-            <div className="flex gap-2 pointer-events-auto">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setZoomScale(prev => Math.min(prev * 1.25, 12));
-                }}
-                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center"
-                title="Увеличить (Колесо мыши вверх)"
-              >
-                <ZoomIn className="w-5 h-5" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setZoomScale(prev => Math.max(prev * 0.8, 0.4));
-                }}
-                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center"
-                title="Уменьшить (Колесо мыши вниз)"
-              >
-                <ZoomOut className="w-5 h-5" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setZoomScale(1);
-                  setDragOffset({ x: 0, y: 0 });
-                }}
-                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center font-bold text-xs"
-                title="Сбросить масштаб"
-              >
-                <RotateCcw className="w-5 h-5" />
-              </button>
-              <a
-                href={previewImage.url}
-                download={previewImage.name}
-                className="p-2.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full transition border border-slate-800 shadow-lg cursor-pointer flex items-center justify-center"
-                title="Скачать изображение"
-              >
-                <Download className="w-5 h-5" />
-              </a>
-              <button
-                onClick={closePreviewImage}
-                className="p-2.5 bg-slate-900/80 hover:bg-rose-950 text-white hover:text-rose-450 rounded-full transition border border-slate-800 hover:border-rose-900 shadow-lg cursor-pointer flex items-center justify-center"
-                title="Закрыть (Esc)"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Interactive Image Container */}
-          <div 
-            className="w-full h-full flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing"
-            onClick={closePreviewImage}
-            onMouseDown={(e) => {
-              if (e.button !== 0) return; // Only left click
-              e.preventDefault();
-              e.stopPropagation();
-              setIsDraggingImage(true);
-              setDragStartImage({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
-            }}
-            onMouseMove={(e) => {
-              if (!isDraggingImage) return;
-              e.preventDefault();
-              e.stopPropagation();
-              setDragOffset({
-                x: e.clientX - dragStartImage.x,
-                y: e.clientY - dragStartImage.y
-              });
-            }}
-            onMouseUp={(e) => {
-              e.stopPropagation();
-              setIsDraggingImage(false);
-            }}
-            onMouseLeave={() => {
-              setIsDraggingImage(false);
-            }}
-          >
-            <img 
-              src={previewImage.url} 
-              alt={previewImage.name} 
-              referrerPolicy="no-referrer"
-              draggable="false"
-              className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl shadow-2xl transition-transform duration-75 ease-out select-none"
-              style={{
-                transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${zoomScale})`,
-              }}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-
-          {/* Bottom Info Hint */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[10px] text-slate-400 bg-slate-900/60 backdrop-blur-sm px-4 py-1.5 rounded-full pointer-events-none font-medium text-center">
-            Используйте колесо мыши для масштабирования • Зажмите левую кнопку мыши для перемещения
-          </div>
-        </div>,
-        document.body
-      )}
-    </div>
     </div>
   );
 }

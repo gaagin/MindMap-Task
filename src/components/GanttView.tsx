@@ -23,8 +23,6 @@ interface GanttViewProps {
   tagCategories: TagCategory[];
   activeProjectId: string;
   selectedNodeId: string | null;
-  selectedNodeIds?: string[];
-  onToggleSelectNode?: (id: string, isMulti: boolean) => void;
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNode: (node: TaskNode) => void;
@@ -37,8 +35,6 @@ export default function GanttView({
   tagCategories,
   activeProjectId,
   selectedNodeId,
-  selectedNodeIds = [],
-  onToggleSelectNode,
   activePomodoroNodeId,
   onSelectNode,
   onUpdateNode,
@@ -327,15 +323,9 @@ export default function GanttView({
               tasks.map(task => (
                 <div
                   key={task.id}
-                  onClick={(e) => {
-                    if (onToggleSelectNode) {
-                      onToggleSelectNode(task.id, e.ctrlKey || e.metaKey || e.shiftKey);
-                    } else {
-                      onSelectNode(task.id);
-                    }
-                  }}
+                  onClick={() => onSelectNode(task.id)}
                   className={`h-11 px-3.5 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors border-l-4 ${
-                    (selectedNodeId === task.id || selectedNodeIds.includes(task.id))
+                    selectedNodeId === task.id 
                       ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-500' 
                       : 'border-transparent'
                   }`}
@@ -449,7 +439,7 @@ export default function GanttView({
               ) : (
                 tasks.map(task => {
                   const range = getTaskRangeColIndices(task);
-                  const isSelected = selectedNodeId === task.id || selectedNodeIds.includes(task.id);
+                  const isSelected = selectedNodeId === task.id;
 
                   return (
                     <div
@@ -461,13 +451,7 @@ export default function GanttView({
                       {/* Gantt Bar spanning multiple days based on dueDate */}
                       {range ? (
                         <div
-                          onClick={(e) => {
-                            if (onToggleSelectNode) {
-                              onToggleSelectNode(task.id, e.ctrlKey || e.metaKey || e.shiftKey);
-                            } else {
-                              onSelectNode(task.id);
-                            }
-                          }}
+                          onClick={() => onSelectNode(task.id)}
                           style={{
                             left: `${(range.start / 28) * 100}%`,
                             width: `${(range.span / 28) * 100}%`

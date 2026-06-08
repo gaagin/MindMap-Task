@@ -20,8 +20,6 @@ interface CalendarViewProps {
   tagCategories: TagCategory[];
   activeProjectId: string;
   selectedNodeId: string | null;
-  selectedNodeIds?: string[];
-  onToggleSelectNode?: (id: string, isMulti: boolean) => void;
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNode: (node: TaskNode) => void;
@@ -41,8 +39,6 @@ export default function CalendarView({
   tagCategories,
   activeProjectId,
   selectedNodeId,
-  selectedNodeIds = [],
-  onToggleSelectNode,
   activePomodoroNodeId,
   onSelectNode,
   onUpdateNode,
@@ -50,15 +46,6 @@ export default function CalendarView({
   onCreateTask
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(() => new Date());
-
-  const handleTaskClick = (e: React.MouseEvent, taskId: string) => {
-    e.stopPropagation();
-    if (onToggleSelectNode) {
-      onToggleSelectNode(taskId, e.ctrlKey || e.metaKey || e.shiftKey);
-    } else {
-      onSelectNode(taskId);
-    }
-  };
   
   const formatTaskTime = (task: TaskNode) => {
     if (task.startTime && task.dueTime) {
@@ -622,7 +609,10 @@ export default function CalendarView({
                                     return (
                                       <div
                                         key={task.id}
-                                        onClick={(e) => handleTaskClick(e, task.id)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onSelectNode(task.id);
+                                        }}
                                         draggable={true}
                                         onDragStart={(e) => {
                                           e.stopPropagation();
@@ -635,8 +625,6 @@ export default function CalendarView({
                                         }}
                                         className={`text-[9px] md:text-[10px] py-0.5 md:py-1 px-1 md:px-1.5 rounded-md flex flex-col justify-center border-l-2 md:border-l-4 transition-all hover:scale-[1.015] active:scale-98 cursor-grab active:cursor-grabbing select-none relative pointer-events-auto ${pillClass} ${
                                           draggingTaskId === task.id ? 'opacity-35 border-dashed border-indigo-400' : ''
-                                        } ${
-                                          (selectedNodeId === task.id || selectedNodeIds.includes(task.id)) ? 'ring-2 ring-indigo-500/80 dark:ring-indigo-400 scale-[1.015] shadow-xs' : ''
                                         }`}
                                         title={task.text}
                                       >
@@ -803,7 +791,10 @@ export default function CalendarView({
                         {dayTasks.map(task => (
                           <div
                             key={task.id}
-                            onClick={(e) => handleTaskClick(e, task.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectNode(task.id);
+                            }}
                             draggable={true}
                             onDragStart={(e) => {
                               e.stopPropagation();
@@ -816,8 +807,6 @@ export default function CalendarView({
                             }}
                             className={`group/task border text-[11px] leading-snug p-2 rounded-xl flex items-start gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative ${getPriorityColor(task.priority)} ${
                               draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                            } ${
-                              (selectedNodeId === task.id || selectedNodeIds.includes(task.id)) ? 'ring-2 ring-indigo-500/80 dark:ring-indigo-400 scale-[1.015] shadow-xs' : ''
                             }`}
                           >
                             <button
@@ -945,7 +934,10 @@ export default function CalendarView({
                           {allDayTasks.map(task => (
                             <div
                               key={task.id}
-                              onClick={(e) => handleTaskClick(e, task.id)}
+                              onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectNode(task.id);
+                              }}
                               draggable={true}
                               onDragStart={(e) => {
                                 e.stopPropagation();
@@ -958,8 +950,6 @@ export default function CalendarView({
                               }}
                               className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative cursor-grab active:cursor-grabbing ${getPriorityColor(task.priority)} ${
                                 draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                              } ${
-                                (selectedNodeId === task.id || selectedNodeIds.includes(task.id)) ? 'ring-2 ring-indigo-500/80 dark:ring-indigo-400 scale-[1.015] shadow-xs' : ''
                               }`}
                             >
                               <button
@@ -1079,7 +1069,10 @@ export default function CalendarView({
                                   {hourTasks.map(task => (
                                     <div
                                       key={task.id}
-                                      onClick={(e) => handleTaskClick(e, task.id)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSelectNode(task.id);
+                                      }}
                                       draggable={true}
                                       onDragStart={(e) => {
                                         e.stopPropagation();
@@ -1092,8 +1085,6 @@ export default function CalendarView({
                                       }}
                                       className={`group/task border text-[11px] leading-snug py-1 px-2.5 rounded-xl flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative shadow-xs shrink-0 max-w-[240px] ${getPriorityColor(task.priority)} ${
                                         draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                                      } ${
-                                        (selectedNodeId === task.id || selectedNodeIds.includes(task.id)) ? 'ring-2 ring-indigo-500/80 dark:ring-indigo-400 scale-[1.015] shadow-xs' : ''
                                       }`}
                                     >
                                       <button
@@ -1260,7 +1251,7 @@ export default function CalendarView({
             unscheduledTasks.map(task => (
               <div
                 key={task.id}
-                onClick={(e) => handleTaskClick(e, task.id)}
+                onClick={() => onSelectNode(task.id)}
                 draggable={true}
                 onDragStart={(e) => {
                   e.dataTransfer.setData('text/plain', task.id);
@@ -1269,8 +1260,6 @@ export default function CalendarView({
                 onDragEnd={() => setDraggingTaskId(null)}
                 className={`group border border-slate-150 dark:border-slate-800/80 p-2.5 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-850 rounded-xl shadow-xs transition-all flex flex-col gap-2 cursor-grab active:cursor-grabbing hover:border-slate-300 dark:hover:border-slate-700 ${
                   draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-400' : ''
-                } ${
-                  (selectedNodeId === task.id || selectedNodeIds.includes(task.id)) ? 'ring-2 ring-indigo-500/85 dark:ring-indigo-450 scale-[1.01] shadow-md bg-indigo-50/5 dark:bg-indigo-950/5 border-indigo-300 dark:border-indigo-850' : ''
                 }`}
               >
                 <div className="flex items-start gap-1.5 justify-between">

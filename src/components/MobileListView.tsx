@@ -34,8 +34,6 @@ interface MobileListViewProps {
   tagCategories: TagCategory[];
   activeProjectId: string;
   selectedNodeId: string | null;
-  selectedNodeIds?: string[];
-  onToggleSelectNode?: (id: string, isMulti: boolean) => void;
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNode: (node: TaskNode) => void;
@@ -56,8 +54,6 @@ export default function MobileListView({
   tagCategories = [],
   activeProjectId,
   selectedNodeId,
-  selectedNodeIds = [],
-  onToggleSelectNode,
   activePomodoroNodeId,
   onSelectNode,
   onUpdateNode,
@@ -565,7 +561,7 @@ export default function MobileListView({
   const renderTreeItem = (item: TaskTreeItem, depth: number = 0): React.ReactNode => {
     const { node, children } = item;
     const pMeta = priorityMap[node.priority] || priorityMap.none;
-    const isSelected = selectedNodeId === node.id || selectedNodeIds.includes(node.id);
+    const isSelected = selectedNodeId === node.id;
     const isEditing = editingNodeId === node.id;
     const isCollapsed = !!collapsedParents[node.id];
     const allDirectChildren = childrenByParentId[node.id] || [];
@@ -774,12 +770,8 @@ export default function MobileListView({
 
                   <button
                     type="button"
-                    onClick={(e) => {
-                      if (onToggleSelectNode) {
-                        onToggleSelectNode(node.id, e.ctrlKey || e.metaKey || e.shiftKey);
-                      } else {
-                        onSelectNode(node.id === selectedNodeId ? null : node.id);
-                      }
+                    onClick={() => {
+                      onSelectNode(node.id === selectedNodeId ? null : node.id);
                     }}
                     className={`p-1 rounded-md border cursor-pointer transition-all ${
                       isSelected

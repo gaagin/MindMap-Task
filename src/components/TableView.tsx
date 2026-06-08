@@ -22,8 +22,6 @@ interface TableViewProps {
   tagCategories: TagCategory[];
   activeProjectId: string;
   selectedNodeId: string | null;
-  selectedNodeIds?: string[];
-  onToggleSelectNode?: (id: string, isMulti: boolean) => void;
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNode: (node: TaskNode) => void;
@@ -39,8 +37,6 @@ export default function TableView({
   tagCategories,
   activeProjectId,
   selectedNodeId,
-  selectedNodeIds = [],
-  onToggleSelectNode,
   activePomodoroNodeId,
   onSelectNode,
   onUpdateNode,
@@ -461,21 +457,12 @@ export default function TableView({
               </tr>
             ) : (
               sortedTasks.map(task => {
-                const isSelected = selectedNodeId === task.id || selectedNodeIds.includes(task.id);
+                const isSelected = selectedNodeId === task.id;
  
                 return (
                   <tr
                     key={task.id}
-                    onClick={(e) => {
-                      if ((e.target as HTMLElement).tagName === 'TD') {
-                        if (onToggleSelectNode) {
-                          onToggleSelectNode(task.id, e.ctrlKey || e.metaKey || e.shiftKey);
-                        } else {
-                          onSelectNode(task.id);
-                        }
-                      }
-                    }}
-                    className={`group/row transition-all h-12 text-xs hover:bg-slate-50/55 dark:hover:bg-slate-850/45 cursor-pointer ${
+                    className={`group/row transition-all h-12 text-xs hover:bg-slate-50/55 dark:hover:bg-slate-850/45 ${
                       isSelected ? 'bg-indigo-50/30 dark:bg-indigo-950/15' : ''
                     }`}
                   >

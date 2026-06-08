@@ -27,8 +27,7 @@ import {
   GanttChart,
   Table,
   Bell,
-  BellRing,
-  Shield
+  BellRing
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
@@ -41,19 +40,19 @@ import CalendarView from './components/CalendarView';
 import GanttView from './components/GanttView';
 import TableView from './components/TableView';
 
-// Import Firebase Auth system
+// Import Google Sheets & Firebase Auth systems
 import { 
   initAuth, 
   googleSignIn, 
   logout,
+  setAccessToken,
   db
 } from './lib/firebase';
 import { 
   saveToFirebaseDirectly, 
   loadFromFirebaseDirectly, 
-  logDeletion,
-  syncWithFirebase,
-  mergeWorkspaceStates
+  syncWithGoogleSheets, 
+  logDeletion 
 } from './lib/syncService';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { User } from 'firebase/auth';
@@ -161,16 +160,22 @@ export default function App() {
     });
   };
 
-  // Google Authentication statuses
+  // Google Authentication & Symmetrical Sync statuses
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [sheetsError, setSheetsError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{
     local: 'saved' | 'saving' | 'error';
     firebase: 'idle' | 'saved' | 'syncing' | 'error';
+    sheets: 'idle' | 'synced' | 'syncing' | 'error';
+    lastSyncedTime?: string;
   }>({
     local: 'saved',
-    firebase: 'idle'
+    firebase: 'idle',
+    sheets: 'idle'
   });
 
   const [unsyncedEditsCount, setUnsyncedEditsCount] = useState<number>(() => {
@@ -262,145 +267,9 @@ export default function App() {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'
-  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'>('canvas');
-
   // Selected task node for detail panel
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [bulkDropdown, setBulkDropdown] = useState<'priority' | 'tag' | null>(null);
-  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
-
-  // Clear multi selection on project or view switch
-  useEffect(() => {
-    setSelectedNodeIds([]);
-  }, [state.activeProjectId, viewMode]);
-
-  useEffect(() => {
-    setBulkDropdown(null);
-    setShowBulkDeleteConfirm(false);
-  }, [selectedNodeIds]);
-
-  useEffect(() => {
-    if (bulkDropdown === null) return;
-    const handleOutsideClick = () => {
-      setBulkDropdown(null);
-    };
-    document.addEventListener('click', handleOutsideClick);
-    return () => {
-      document.removeEventListener('click', handleOutsideClick);
-    };
-  }, [bulkDropdown]);
-
-  // Handle single and multi node selection
-  const handleToggleSelectNode = (id: string, isMulti: boolean) => {
-    if (isMulti) {
-      setSelectedNodeIds(prev => {
-        const isAlreadySelected = prev.includes(id);
-        const next = isAlreadySelected ? prev.filter(nid => nid !== id) : [...prev, id];
-        if (next.length === 1) {
-          setSelectedNodeId(next[0]);
-        } else {
-          setSelectedNodeId(null);
-        }
-        return next;
-      });
-    } else {
-      setSelectedNodeIds([id]);
-      setSelectedNodeId(id);
-      setIsDrawerOpen(true);
-    }
-  };
-
-  const handleSelectMultipleNodes = (ids: string[]) => {
-    setSelectedNodeIds(ids);
-    if (ids.length === 1) {
-      setSelectedNodeId(ids[0]);
-    } else {
-      setSelectedNodeId(null);
-    }
-  };
-
-  const handleBulkUpdate = (ids: string[], updates: Partial<TaskNode>) => {
-    const pid = state.activeProjectId;
-    if (!pid) return;
-    const currentNodes = state.nodes[pid] || [];
-    pushToUndo(pid, currentNodes);
-    setState(prev => {
-      const uNodes = currentNodes.map(node => {
-        if (ids.includes(node.id)) {
-          return { ...node, ...updates };
-        }
-        return node;
-      });
-      return {
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [pid]: syncCompletion(uNodes)
-        }
-      };
-    });
-  };
-
-  const handleBulkToggleComplete = (ids: string[], completed: boolean) => {
-    const pid = state.activeProjectId;
-    if (!pid) return;
-    const currentNodes = state.nodes[pid] || [];
-    pushToUndo(pid, currentNodes);
-    setState(prev => {
-      let uNodes = [...currentNodes];
-      ids.forEach(id => {
-        uNodes = toggleNodeAndDescendants(id, completed, uNodes);
-      });
-      return {
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [pid]: syncCompletion(uNodes)
-        }
-      };
-    });
-  };
-
-  const handleBulkDelete = (ids: string[]) => {
-    const pid = state.activeProjectId;
-    if (!pid) return;
-    const currentNodes = state.nodes[pid] || [];
-    pushToUndo(pid, currentNodes);
-
-    const collectIdsToDelete = (targetId: string, list: string[] = []): string[] => {
-      if (list.includes(targetId)) return list;
-      list.push(targetId);
-      const children = currentNodes.filter(n => n.parentId === targetId);
-      children.forEach(child => collectIdsToDelete(child.id, list));
-      return list;
-    };
-
-    const allIdsToDeleteArray: string[] = [];
-    ids.forEach(id => {
-      collectIdsToDelete(id, allIdsToDeleteArray);
-    });
-
-    allIdsToDeleteArray.forEach(nid => logDeletion('node', nid));
-
-    setState(prev => {
-      const remainingNodes = currentNodes.filter(n => !allIdsToDeleteArray.includes(n.id));
-      return {
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [pid]: syncCompletion(remainingNodes)
-        }
-      };
-    });
-
-    if (selectedNodeId && allIdsToDeleteArray.includes(selectedNodeId)) {
-      setSelectedNodeId(null);
-    }
-    setSelectedNodeIds([]);
-  };
 
   // Sync isDrawerOpen when selectedNodeId becomes null
   useEffect(() => {
@@ -493,6 +362,9 @@ export default function App() {
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
 
+  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'
+  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'>('canvas');
+
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('task_mindmap_dark');
@@ -523,23 +395,15 @@ export default function App() {
   // 1. Firebase Auth listener registration
   useEffect(() => {
     const unsubscribe = initAuth(
-      async (user) => {
+      (user, token) => {
         setCurrentUser(user);
-        setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
-        // Trigger super bidirectional synchronization on login/reload to preserve any latest offline work
-        const result = await syncWithFirebase(user.uid, stateRef.current);
-        if (result.success) {
-          ignoreNextStateChangeRef.current = true;
-          setRawState(result.state);
-          setUnsyncedEditsCount(0);
-          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-        } else {
-          setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
-        }
+        setGoogleToken(token);
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
       },
       () => {
         setCurrentUser(null);
-        setSyncStatus(prev => ({ ...prev, firebase: 'idle' }));
+        setGoogleToken(null);
+        setSyncStatus(prev => ({ ...prev, firebase: 'idle', sheets: 'idle' }));
       }
     );
     return () => unsubscribe();
@@ -587,17 +451,10 @@ export default function App() {
 
       if (JSON.stringify(localCompare) !== JSON.stringify(cloudCompare)) {
         // Only absorb incoming changes if we are not actively typing/syncing locally.
-        // This avoids key cursor resets and typing interference.
-        const isTyping = document.activeElement && (
-          document.activeElement.tagName === 'INPUT' || 
-          document.activeElement.tagName === 'TEXTAREA'
-        );
-
-        if (!isTyping) {
-          // Perform full merge to guarantee flawless conflict resolution even on real-time syncs!
-          const mergeResult = mergeWorkspaceStates(currentState, cloudData as any, [], cloudData.deletions || []);
+        // This avoids typing collisions and key cursor resets when editing.
+        if (unsyncedEditsCountRef.current === 0) {
           ignoreNextStateChangeRef.current = true;
-          setRawState(mergeResult.mergedState);
+          setRawState(cloudState);
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         }
       }
@@ -616,8 +473,6 @@ export default function App() {
     const stateChanged = !isFirstTime && state !== lastStateRef.current;
     lastStateRef.current = state;
 
-    let isIncomingSync = false;
-
     if (isFirstTime) {
       if (isFirstRender.current) {
         isFirstRender.current = false;
@@ -628,7 +483,6 @@ export default function App() {
       } else if (ignoreNextStateChangeRef.current) {
         // Skip incrementing unsynced edits count when the update was caused by Google Sheets sync download/merge or Firestore snapshot
         ignoreNextStateChangeRef.current = false;
-        isIncomingSync = true;
       } else {
         setUnsyncedEditsCount(prev => prev + 1);
       }
@@ -639,30 +493,120 @@ export default function App() {
     }
     
     // Only save to Firebase if the state actually changed or there are pending unsynced edits.
-    // And do NOT save if this state change was initiated by an incoming Firebase snapshot with no new local edits.
-    const shouldSave = currentUser && 
-      (stateChanged || unsyncedEditsCountRef.current > 0) && 
-      (!isIncomingSync || unsyncedEditsCountRef.current > 0);
-
-    if (shouldSave) {
+    // This prevents a stale client session from overwriting newer changes in the cloud on auth load.
+    if (currentUser && (stateChanged || unsyncedEditsCountRef.current > 0)) {
       setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
       const timer = setTimeout(async () => {
-        const result = await saveToFirebaseDirectly(currentUser.uid, state);
-        if (result.success) {
-          ignoreNextStateChangeRef.current = true;
-          setRawState(result.state);
-          setUnsyncedEditsCount(0);
-        }
+        const success = await saveToFirebaseDirectly(currentUser.uid, state);
         setSyncStatus(prev => ({
           ...prev,
-          firebase: result.success ? 'saved' : 'error'
+          firebase: success ? 'saved' : 'error'
         }));
       }, 1500); // 1.5s snapshot rate-limiting debounce
       return () => clearTimeout(timer);
-    } else if (currentUser && syncStatus.firebase !== 'saved' && syncStatus.firebase !== 'error') {
-      setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
     }
   }, [state, currentUser]);
+
+  // Symmetrical Google Sheets merge trigger method
+  const runSheetsSymmetricalSync = async (token: string, currentWorkspace: WorkspaceState) => {
+    if (isSyncingSheets) return;
+    setIsSyncingSheets(true);
+    setSyncStatus(prev => ({ ...prev, sheets: 'syncing' }));
+    setSheetsError(null);
+
+    try {
+      const result = await syncWithGoogleSheets(token, currentWorkspace);
+      if (result.success) {
+        // Correctly set block flag before state reset to prevent trigger loop
+        ignoreNextStateChangeRef.current = true;
+        setRawState(result.state);
+        setSyncStatus(prev => ({
+          ...prev,
+          sheets: 'synced',
+          lastSyncedTime: new Date().toLocaleTimeString() + ', ' + new Date().toLocaleDateString()
+        }));
+        
+        if (result.report) {
+          setSyncReport(result.report);
+          localStorage.setItem('milli_last_sync_report', JSON.stringify(result.report));
+        }
+        
+        // Zero out progress tracking on successful symmetrical sheet consolidation
+        setUnsyncedEditsCount(0);
+        setSheetsError(null);
+      } else {
+        setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+        const errMsg = result.error || 'Failed to synchronize. Response state was not successful.';
+        
+        const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
+        if (isStaleToken) {
+          setSheetsError('Сессия Google Таблиц истекла. Пожалуйста, выйдите и авторизуйтесь заново в меню "Google Таблицы".');
+          setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
+          setAccessToken(null); // Clear stored token from localStorage
+        } else {
+          setSheetsError(errMsg);
+        }
+      }
+    } catch (e: any) {
+      console.error('Error running symmetrical sheets sync:', e);
+      setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+      
+      const errMsg = e?.message || String(e);
+      const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
+      if (isStaleToken) {
+        setSheetsError('Сессия Google Таблиц истекла. Пожалуйста, выйдите и авторизуйтесь заново в меню "Google Таблицы".');
+        setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
+        setAccessToken(null); // Clear stored token from localStorage
+      } else {
+        setSheetsError(errMsg);
+      }
+    } finally {
+      setIsSyncingSheets(false);
+    }
+  };
+
+  // 3. Auto Symmetrical Google Sheets merge on startup / login auth
+  useEffect(() => {
+    if (googleToken) {
+      runSheetsSymmetricalSync(googleToken, state);
+    }
+  }, [googleToken]);
+
+  // 4. Background Symmetrical Sheets Sync with 25s/10s debounce during continuous editing states (rate-limit protection)
+  // Only triggers background auto-sync when there are actual unsynced edits, saving Google API quota limits!
+  useEffect(() => {
+    if (googleToken && unsyncedEditsCount > 0) {
+      const isMobile = viewMode === 'mobile-list' || (typeof window !== 'undefined' && window.innerWidth < 768);
+      const debounceTime = isMobile ? 10000 : 25000; // 10s for mobile, 25s for desktop
+      const timer = setTimeout(() => {
+        runSheetsSymmetricalSync(googleToken, state);
+      }, debounceTime); // Optimized rate-limiting debounce
+      return () => clearTimeout(timer);
+    }
+  }, [state, googleToken, unsyncedEditsCount, viewMode]);
+
+  // 5. Symmetrical Sheets Sync instantly on window tab switch or pageunload (visibilitychange / pagehide)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && googleToken) {
+        syncWithGoogleSheets(googleToken, state);
+      }
+    };
+
+    const handlePageHide = () => {
+      if (googleToken) {
+        syncWithGoogleSheets(googleToken, state);
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [googleToken, state]);
 
   // Handle media/dark mode class on body element
   useEffect(() => {
@@ -1037,17 +981,9 @@ export default function App() {
       if (filterStatus === "archived") {
         return !!node.archived;
       }
-      if (searchQuery.trim() !== "" && node.archived) {
-        // If searching is active, only include archived tasks if they match the search query
-        const q = searchQuery.toLowerCase();
-        const textMatches = (node.text || "").toLowerCase().includes(q);
-        const tagMatches = (node.tags || []).some(t => t.toLowerCase().includes(q));
-        const notesMatches = (node.notes || "").toLowerCase().includes(q);
-        return textMatches || tagMatches || notesMatches;
-      }
       return !node.archived;
     });
-  }, [activeNodes, filterStatus, searchQuery]);
+  }, [activeNodes, filterStatus]);
 
   // Single node drag updating coordinates with simultaneous movement of all descendant nodes
   const handleUpdateNodeCoordinates = (id: string, x: number, y: number) => {
@@ -1089,61 +1025,6 @@ export default function App() {
           };
         }
         return n;
-      });
-
-      return {
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [pid]: updatedProjectNodes
-        }
-      };
-    });
-  };
-
-  // Bulk update multiple nodes coordinates with simultanous movement of their children/descendents
-  const handleUpdateMultipleNodesCoordinates = (updates: { id: string; x: number; y: number }[]) => {
-    const pid = state.activeProjectId;
-    if (!pid) return;
-
-    setState(prev => {
-      const projectNodes = prev.nodes[pid] || [];
-      let updatedProjectNodes = [...projectNodes];
-
-      updates.forEach(u => {
-        const targetNode = updatedProjectNodes.find(n => n.id === u.id);
-        if (!targetNode) return;
-
-        const dx = u.x - targetNode.x;
-        const dy = u.y - targetNode.y;
-
-        if (dx === 0 && dy === 0) return;
-
-        // Find descendants within the currently updated list to preserve chain updates
-        const isDescendant = (candidateId: string): boolean => {
-          if (candidateId === u.id) return true;
-          let currentId: string | null = candidateId;
-          let iterations = 0;
-          while (currentId !== null && iterations < 100) {
-            iterations++;
-            const current = updatedProjectNodes.find(n => n.id === currentId);
-            if (!current) break;
-            if (current.parentId === u.id) return true;
-            currentId = current.parentId;
-          }
-          return false;
-        };
-
-        updatedProjectNodes = updatedProjectNodes.map(n => {
-          if (isDescendant(n.id)) {
-            return {
-              ...n,
-              x: n.id === u.id ? u.x : n.x + dx,
-              y: n.id === u.id ? u.y : n.y + dy
-            };
-          }
-          return n;
-        });
       });
 
       return {
@@ -1314,7 +1195,7 @@ export default function App() {
   };
 
   // Add a fully independent floating node anywhere on the canvas
-  const handleAddFloatingNode = (x: number, y: number, parentId: string | null = null, customText?: string, extraProps?: Partial<TaskNode>) => {
+  const handleAddFloatingNode = (x: number, y: number, parentId: string | null = null, customText?: string) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
@@ -1340,8 +1221,7 @@ export default function App() {
           : 'Это полностью независимая задача, свободная от основной ветви. Вы можете свободно перемещать её по холсту, а также добавлять к ней дочерние подзадачи через кнопку "+".'),
       completed: false,
       files: [],
-      color: isInsideContainer ? '#3b82f6' : '#10b981', // Blue inside container, green otherwise
-      ...extraProps
+      color: isInsideContainer ? '#3b82f6' : '#10b981' // Blue inside container, green otherwise
     };
 
     setState(prev => ({
@@ -1566,7 +1446,7 @@ export default function App() {
       }
 
       // If archived state was toggled, sync all descendants
-      if (targetNode && !!targetNode.archived !== !!updatedNode.archived) {
+      if (targetNode && targetNode.archived !== updatedNode.archived) {
         updatedList = toggleNodeArchive(updatedNode.id, !!updatedNode.archived, updatedList);
       }
 
@@ -1600,8 +1480,7 @@ export default function App() {
     if (filterStatus === "archived") {
       if (!node.archived) return false;
     } else {
-      const isSearching = searchQuery.trim() !== "";
-      if (node.archived && !isSearching) return false;
+      if (node.archived) return false;
       if (filterStatus === "completed" && !node.completed) return false;
       if (filterStatus === "active" && node.completed) return false;
     }
@@ -1809,49 +1688,6 @@ export default function App() {
     e.target.value = '';
   };
 
-  const handleGoogleSignIn = async () => {
-    setAuthError(null);
-    try {
-      const res = await googleSignIn();
-      if (res) {
-        setCurrentUser(res.user);
-        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-      }
-    } catch (err: any) {
-      const msg = err?.message || String(err);
-      console.error("Sign in failed:", err);
-      if (msg.includes("unauthorized-domain") || (err?.code && err.code.includes("unauthorized-domain"))) {
-        setAuthError("unauthorized-domain");
-      } else {
-        setAuthError(msg);
-      }
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      setCurrentUser(null);
-      setSyncStatus(prev => ({ ...prev, firebase: 'idle' }));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleForceSync = async () => {
-    if (!currentUser) return;
-    setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
-    const result = await syncWithFirebase(currentUser.uid, stateRef.current);
-    if (result.success) {
-      ignoreNextStateChangeRef.current = true;
-      setRawState(result.state);
-      setUnsyncedEditsCount(0);
-      setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-    } else {
-      setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
-    }
-  };
-
   const handleResetDemo = () => {
     localStorage.removeItem('task_mindmaps_state');
     window.location.reload();
@@ -1859,7 +1695,7 @@ export default function App() {
 
   const selectedNode = activeNodes.find(n => n.id === selectedNodeId) || null;
 
-  const hasSyncOrAuthError = !!authError || syncStatus.local === 'error';
+  const hasSyncOrAuthError = !!authError || !!sheetsError || syncStatus.sheets === 'error' || syncStatus.local === 'error';
 
   return (
     <div className="flex h-screen h-[100dvh] overflow-hidden text-slate-900 bg-white dark:bg-slate-950 dark:text-slate-100 font-sans transition-colors duration-150">
@@ -1888,12 +1724,6 @@ export default function App() {
         currentWorkspaceState={state}
         onApplySyncedState={setState}
         version={APP_VERSION}
-        currentUser={currentUser}
-        syncStatus={syncStatus}
-        onGoogleSignIn={handleGoogleSignIn}
-        onLogout={handleLogout}
-        onForceSync={handleForceSync}
-        unsyncedCount={unsyncedEditsCount}
       />
 
       {/* Main Workspace Frame */}
@@ -2146,7 +1976,7 @@ export default function App() {
               type="button"
               onClick={() => setIsSyncMenuOpen(true)}
               className={`flex items-center gap-1.5 py-1.5 px-3 border rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:scale-[1.01] shrink-0 ${
-                syncStatus.firebase === 'syncing'
+                isSyncingSheets || syncStatus.firebase === 'syncing'
                   ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
                   : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
               }`}
@@ -2298,7 +2128,7 @@ export default function App() {
         )}
 
         {/* The Mind Map Interactive Canvas Frame. Occupies 100% space! */}
-        <div className="flex-1 w-full h-full relative bg-[#FAFBFD] dark:bg-slate-950/20 shadow-inner">
+        <div className="flex-1 w-full h-full relative bg-[#FAFBFD] dark:bg-slate-950/20">
           
           {state.activeProjectId ? (
             viewMode === 'mobile-list' ? (
@@ -2307,8 +2137,6 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
-                selectedNodeIds={selectedNodeIds}
-                onToggleSelectNode={handleToggleSelectNode}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2331,8 +2159,6 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
-                selectedNodeIds={selectedNodeIds}
-                onToggleSelectNode={handleToggleSelectNode}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2353,8 +2179,6 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
-                selectedNodeIds={selectedNodeIds}
-                onToggleSelectNode={handleToggleSelectNode}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2376,8 +2200,6 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
-                selectedNodeIds={selectedNodeIds}
-                onToggleSelectNode={handleToggleSelectNode}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2399,8 +2221,6 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
-                selectedNodeIds={selectedNodeIds}
-                onToggleSelectNode={handleToggleSelectNode}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
@@ -2422,20 +2242,9 @@ export default function App() {
                 darkMode={darkMode}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
-                selectedNodeIds={selectedNodeIds}
-                onToggleSelectNode={handleToggleSelectNode}
-                onSelectMultipleNodes={handleSelectMultipleNodes}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={(id) => {
-                  setSelectedNodeId(id);
-                  if (id) {
-                    setIsDrawerOpen(true);
-                  } else {
-                    setIsDrawerOpen(false);
-                  }
-                }}
+                onSelectNode={setSelectedNodeId}
                 onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
-                onUpdateMultipleNodesCoordinates={handleUpdateMultipleNodesCoordinates}
                 onUpdateNodeParent={handleUpdateNodeParent}
                 onAddChildNode={handleAddChildNode}
                 onAddFloatingNode={handleAddFloatingNode}
@@ -2468,163 +2277,6 @@ export default function App() {
               <p className="text-sm text-slate-400 font-serif max-w-sm">
                 Нет открытых интеллект-карт. Создайте новую карту в левой панели, чтобы развернуть интерактивный холст целей!
               </p>
-            </div>
-          )}
-
-          {/* Bulk Actions Floating Bar */}
-          {selectedNodeIds.length > 1 && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-[0_12px_40px_rgba(0,0,0,0.35)] border border-slate-800 text-white animate-in slide-in-from-bottom-5 duration-200 flex-wrap sm:flex-nowrap">
-              {showBulkDeleteConfirm ? (
-                <div className="flex items-center gap-3.5" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center gap-2">
-                    <Trash2 className="w-4 h-4 text-rose-500 animate-pulse" />
-                    <span className="text-xs font-semibold text-rose-300">
-                      Удалить {selectedNodeIds.length} эл.? (и всё вложенное)
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 animate-in fade-in duration-200">
-                    <button
-                      onClick={() => {
-                        handleBulkDelete(selectedNodeIds);
-                        setShowBulkDeleteConfirm(false);
-                      }}
-                      className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors"
-                    >
-                      Да, удалить
-                    </button>
-                    <button
-                      onClick={() => setShowBulkDeleteConfirm(false)}
-                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold rounded-lg cursor-pointer transition-colors"
-                    >
-                      Отмена
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2 border-r border-slate-800 pr-3 mr-1 shrink-0">
-                    <span className="flex items-center justify-center bg-indigo-600/30 text-indigo-400 font-bold rounded-lg px-2 py-0.5 text-xs">
-                      {selectedNodeIds.length}
-                    </span>
-                    <span className="text-xs text-slate-300 font-medium">выбрано</span>
-                  </div>
-
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    {/* Complete state button */}
-                    <button
-                      onClick={() => {
-                        const currentNodes = state.nodes[state.activeProjectId!] || [];
-                        const selectedNodes = currentNodes.filter(n => selectedNodeIds.includes(n.id));
-                        const anyIncomplete = selectedNodes.some(n => !n.completed);
-                        handleBulkToggleComplete(selectedNodeIds, anyIncomplete);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-indigo-600/20 text-xs font-semibold rounded-lg cursor-pointer transition-colors border border-transparent hover:border-slate-700 text-emerald-400"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      Готово
-                    </button>
-
-                    {/* Priority Selector */}
-                    <div className="relative">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setBulkDropdown(prev => prev === 'priority' ? null : 'priority');
-                        }}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg cursor-pointer transition-colors border ${bulkDropdown === 'priority' ? 'border-indigo-500 bg-slate-750 text-white' : 'border-transparent text-slate-200'} hover:border-slate-705`}
-                      >
-                        🔥 Сменить приоритет
-                      </button>
-                      <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 ${bulkDropdown === 'priority' ? 'block' : 'hidden'} bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-xl z-50 min-w-[120px]`}>
-                        {(['none', 'low', 'medium', 'high', 'urgent'] as Priority[]).map((p) => {
-                          const labelMap: Record<Priority, string> = {
-                            none: 'Обычный',
-                            low: 'Низкий',
-                            medium: 'Средний',
-                            high: 'Высокий',
-                            urgent: 'Срочный'
-                          };
-                          return (
-                            <button
-                              key={p}
-                              onClick={() => {
-                                handleBulkUpdate(selectedNodeIds, { priority: p });
-                                setBulkDropdown(null);
-                              }}
-                              className="w-full text-left px-2.5 py-1.5 hover:bg-slate-850 rounded-md text-[11px] font-medium text-slate-300 hover:text-white transition-colors cursor-pointer"
-                            >
-                              {labelMap[p]}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Tag Selector */}
-                    {(() => {
-                      const activeProj = state.projects.find(p => p.id === state.activeProjectId);
-                      const tagCats = activeProj?.tagCategories || [];
-                      if (tagCats.length === 0) return null;
-                      return (
-                        <div className="relative">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setBulkDropdown(prev => prev === 'tag' ? null : 'tag');
-                            }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg cursor-pointer transition-colors border ${bulkDropdown === 'tag' ? 'border-indigo-500 bg-slate-750 text-white' : 'border-transparent text-slate-200'} hover:border-slate-705`}
-                          >
-                            🏷️ Назначить тег
-                          </button>
-                          <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 ${bulkDropdown === 'tag' ? 'block' : 'hidden'} bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-xl z-50 min-w-[140px] max-h-48 overflow-y-auto scrollbar-thin`}>
-                            {tagCats.flatMap(cat => cat.tags.map(t => ({ cat, tag: t }))).map(({ cat, tag }) => {
-                              return (
-                                <button
-                                  key={`${cat.id}-${tag}`}
-                                  onClick={() => {
-                                    const currentNodes = state.nodes[state.activeProjectId!] || [];
-                                    const selectedNodes = currentNodes.filter(n => selectedNodeIds.includes(n.id));
-                                    selectedNodes.forEach(node => {
-                                      if (!node.tags.includes(tag)) {
-                                        handleBulkUpdate([node.id], { tags: [...node.tags, tag] });
-                                      }
-                                    });
-                                    setBulkDropdown(null);
-                                  }}
-                                  className="w-full text-left px-2.5 py-1.5 hover:bg-slate-850 rounded-md text-[11px] font-medium text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
-                                >
-                                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                                  <span className="truncate">{tag}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Delete button */}
-                    <button
-                      onClick={() => {
-                        setShowBulkDeleteConfirm(true);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-955/40 hover:bg-rose-900/40 text-rose-300 active:bg-rose-950 text-xs font-semibold rounded-lg cursor-pointer transition-colors border border-transparent hover:border-rose-900/50"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                      Удалить
-                    </button>
-
-                    {/* Reset button */}
-                    <button
-                      onClick={() => setSelectedNodeIds([])}
-                      className="flex items-center justify-center p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg cursor-pointer transition-colors"
-                      title="Снять выделение"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
           )}
 
@@ -2680,8 +2332,17 @@ export default function App() {
         </div>
       )}
 
-      {/* Cloud Backup Dialog Menu */}
+      {/* Symmetrical Sync & Backup Dashboard Full Modal Backdrop Overlay */}
       {isSyncMenuOpen && (() => {
+        const getQueuedDeletionsCount = () => {
+          try {
+            const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
+            return JSON.parse(listJson).length;
+          } catch {
+            return 0;
+          }
+        };
+        
         const totalItemsCount = state.folders.length + 
           state.projects.length + 
           Object.values(state.nodes).flat().length + 
@@ -2693,7 +2354,7 @@ export default function App() {
             onClick={() => setIsSyncMenuOpen(false)}
           >
             <div 
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-4 max-h-[92vh] relative text-left"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-4 max-h-[92vh] relative text-left"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
@@ -2704,10 +2365,10 @@ export default function App() {
                   </div>
                   <div>
                     <h3 className="text-sm sm:text-base font-extrabold text-slate-800 dark:text-slate-100 leading-tight">
-                      Облачное резервное копирование
+                      Резервное копирование и дельта-синхронизация
                     </h3>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                      Мгновенная репликация структуры интеллект-карт в безопасную базу данных Firestore
+                      Взаимный обмен изменениями напрямую с вашей личной Google Таблицей
                     </p>
                   </div>
                 </div>
@@ -2721,22 +2382,24 @@ export default function App() {
               </div>
 
               {/* Modal Content Scroll */}
-              <div className="p-6 overflow-y-auto space-y-5 text-xs text-slate-700 dark:text-slate-300">
+              <div className="p-6 overflow-y-auto space-y-5.5 text-xs text-slate-700 dark:text-slate-300">
                 
                 {/* Connection status section */}
                 <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-450 uppercase tracking-wider block mb-1">
+                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block mb-1">
                       СТАТУС ПОДКЛЮЧЕНИЯ:
                     </span>
                     <div className="flex items-center gap-2">
                       <span className={`w-2.5 h-2.5 rounded-full ${
-                        currentUser 
-                          ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
-                          : 'bg-amber-500'
+                        hasSyncOrAuthError 
+                          ? 'bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]' 
+                          : currentUser 
+                            ? 'bg-emerald-500 animate-pulse' 
+                            : 'bg-amber-500 animate-ping'
                       }`} />
                       <span className="font-extrabold text-xs text-slate-800 dark:text-slate-150">
-                        {currentUser ? 'Авторизован (Облачная синхронизация)' : 'Не авторизован (Локальный буфер)'}
+                        {hasSyncOrAuthError ? 'Ошибка синхронизации / авторизации' : currentUser ? 'Авторизован (Облачная синхронизация)' : 'Не авторизован (Локальный буфер)'}
                       </span>
                     </div>
                     
@@ -2805,6 +2468,7 @@ export default function App() {
                             const res = await googleSignIn();
                             if (res) {
                               setCurrentUser(res.user);
+                              setGoogleToken(res.accessToken);
                               setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
                             }
                           } catch (err: any) {
@@ -2822,7 +2486,7 @@ export default function App() {
                         <svg className="w-3.5 h-3.5 fill-current text-white" viewBox="0 0 24 24">
                           <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.414 0-6.19-2.77-6.19-6.19 0-3.418 2.776-6.19 6.19-6.19 1.483 0 2.844.52 3.917 1.391l3.056-3.056C19.11 2.8 15.86 1.332 12.24 1.332 6.136 1.332 1.2 6.268 1.2 12.37s4.936 11.04 11.04 11.04c6.264 0 10.8-4.4 10.8-10.74 0-.74-.065-1.3-.18-1.85H12.24z"/>
                         </svg>
-                        <span>Войти через Google</span>
+                        <span>Авторизоваться через Google</span>
                       </button>
                     )}
                   </div>
@@ -2835,15 +2499,20 @@ export default function App() {
                       <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
                       <span>Ошибка авторизации (Unauthorized Domain)</span>
                     </div>
+                    
                     {authError === 'unauthorized-domain' ? (
                       <div className="space-y-3 text-slate-600 dark:text-slate-350">
                         <p className="leading-relaxed">
                           Домен этой страницы не добавлен в список разрешённых для OAuth-авторизации в настройках вашего Firebase-проекта.
                         </p>
+                        
                         <div className="bg-white dark:bg-slate-900 border border-red-105 dark:border-red-950 p-3 rounded-lg space-y-1.5">
-                          <p className="font-bold text-slate-700 dark:text-slate-200">Как исправить:</p>
+                          <p className="font-bold text-slate-700 dark:text-slate-200">Как исправить за 1 минуту:</p>
                           <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400 text-[11px]">
-                            <li>Добавьте домен в Firebase Console Authorized domains:</li>
+                            <li>Перейдите в <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-650 dark:text-indigo-400 underline font-semibold">Консоль Firebase</a>.</li>
+                            <li>Откройте проект <b>"Default Gemini Project"</b>.</li>
+                            <li>Перейдите в раздел <b>Authentication</b> → вкладка <b>Settings</b> → <b>Authorized domains</b> (Разрешенные домены).</li>
+                            <li>Нажмите кнопку <b>Add domain</b> и добавьте этот домен:</li>
                           </ol>
                           <div className="mt-2 flex items-center justify-between bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded border border-slate-200 dark:border-slate-800 font-mono text-[10px]">
                             <span className="select-all truncate">{window.location.hostname}</span>
@@ -2868,20 +2537,20 @@ export default function App() {
                 )}
 
                 {/* Symmetrical Sync explainer section */}
-                <div className="bg-teal-50/45 dark:bg-teal-950/10 border border-teal-100/50 dark:border-teal-900/30 p-4 rounded-xl space-y-2">
+                <div className="bg-indigo-50/45 dark:bg-indigo-950/15 border border-indigo-100/50 dark:border-indigo-900/35 p-4 rounded-xl space-y-2">
                   <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 leading-none">
-                    <Shield className="w-3.5 h-3.5 text-teal-500" />
-                    Защищенное облако Firebase Firestore
+                    <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                    Как работает дельта-синхронизация?
                   </h4>
                   <ul className="list-disc list-inside space-y-1.5 text-slate-550 dark:text-slate-400 leading-relaxed font-normal text-[11px]">
                     <li>
-                      <span className="font-semibold text-slate-700 dark:text-slate-350">Мгновенное автоматическое сохранение</span>: любые переименования, изменения веток, тегов и приоритетов задач мгновенно отражаются в вашей личной защищенной базе данных.
+                      <span className="font-semibold text-slate-700 dark:text-slate-350">Импортируются и экспортируются все данные</span>: папки, проекты, задачи и категории тегов на основе точных временных меток изменений.
                     </li>
                     <li>
-                      <span className="font-semibold text-slate-700 dark:text-slate-350">Кросс-платформенность</span>: открывайте доску на смартфоне, ПК или планшете под одной учетной записью Google для совместной мгновенной работы без конфликтов слияния.
+                      <span className="font-semibold text-slate-700 dark:text-slate-350">Двусторонний обмен</span>: любые новые элементы или корректировки (включая изменения на смартфонах или ПК) будут синхронизированы в обе стороны.
                     </li>
                     <li>
-                      <span className="font-bold text-teal-600 dark:text-teal-400">Синхронизация Google Таблиц отключена</span>: интеграция Google Таблиц и Google Диска полностью удалена по вашему запросу. Приложение не запрашивает доступ к вашим личным файлам и дискам Google.
+                      <span className="font-semibold text-slate-700 dark:text-slate-350">Безопасное удаление</span>: ветви, задачи или категории, удаленные вами локально, автоматически списываются из облака при сеансе связи.
                     </li>
                   </ul>
                 </div>
@@ -2890,30 +2559,196 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-slate-50/80 dark:bg-slate-850 border border-slate-200/50 dark:border-slate-855 p-4 rounded-xl flex flex-col items-center justify-center text-center">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                      ВСЕГО ЭЛЕМЕНТОВ
+                      ВСЕГО ОПЕРАЦИЙ В ПРИЛОЖЕНИИ
                     </span>
                     <span className="text-3xl font-extrabold text-indigo-650 dark:text-indigo-400 font-mono">
                       {totalItemsCount}
                     </span>
                     <span className="text-[9px] text-slate-400 mt-1">
-                      папки, карты и задачи в базе
+                      общая емкость структуры
                     </span>
                   </div>
 
                   <div className="bg-slate-50/80 dark:bg-slate-850 border border-slate-200/50 dark:border-slate-855 p-4 rounded-xl flex flex-col items-center justify-center text-center">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                      СТАТУС ОБЛАКА
+                      ИЗМЕНЕНИЙ В ОЧЕРЕДИ
                     </span>
-                    <span className="text-sm font-extrabold text-emerald-500 uppercase tracking-wide">
-                      {currentUser ? 'СИНХРОНИЗИРОВАНО' : 'ЛОКАЛЬНЫЙ РЕЖИМ'}
+                    <span className="text-3xl font-extrabold text-amber-500 font-mono">
+                      {unsyncedEditsCount + getQueuedDeletionsCount()}
                     </span>
                     <span className="text-[9px] text-slate-400 mt-1">
-                      {currentUser ? 'Авто-копирование активно' : 'Данные сохранены локально'}
+                      редактирований: {unsyncedEditsCount}, удаления: {getQueuedDeletionsCount()}
                     </span>
                   </div>
                 </div>
 
+                {/* Large Sync trigger button */}
+                <div className="flex flex-col items-center gap-3 py-4 border-y border-slate-100 dark:border-slate-800">
+                  {googleToken ? (
+                    <button
+                      type="button"
+                      disabled={isSyncingSheets}
+                      onClick={() => runSheetsSymmetricalSync(googleToken, state)}
+                      className="w-full max-w-md bg-emerald-400 hover:bg-emerald-500 disabled:bg-emerald-400/55 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-slate-900 font-extrabold text-xs tracking-wider uppercase py-3.5 px-6 rounded-xl border border-emerald-400 dark:border-emerald-500 cursor-pointer shadow-md transition-all hover:scale-[1.015] flex items-center justify-center gap-2"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
+                      <span>СИНХРОНИЗИРОВАТЬ С GOOGLE SHEETS</span>
+                    </button>
+                  ) : (
+                    <div className="w-full max-w-md text-center p-3 border border-dashed border-slate-205 dark:border-slate-800 text-slate-400 rounded-xl bg-slate-50/30 italic">
+                      Авторизуйтесь, чтобы запустить слияние с Google Sheets
+                    </div>
+                  )}
+
+                  {syncStatus.sheets === 'synced' && syncStatus.lastSyncedTime && (
+                    <div className="text-[10px] text-slate-455 dark:text-slate-400 italic">
+                      Последняя синхронизация: {syncStatus.lastSyncedTime}
+                    </div>
+                  )}
+
+                  {isSyncingSheets && (
+                    <div className="text-[10px] text-indigo-505 font-bold animate-pulse">
+                      Слияние изменений структуры дерева... Пожалуйста, подождите.
+                    </div>
+                  )}
+
+                  {syncStatus.sheets === 'error' && (
+                    <div className="w-full max-w-md bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 shadow-sm rounded-xl p-4 text-xs text-slate-700 dark:text-slate-300 space-y-2.5 mt-2">
+                      <div className="flex items-center gap-2 text-rose-600 dark:text-rose-450 font-bold">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500 animate-bounce" />
+                        <span>Ошибка дельта-синхронизации (Google Sheets)</span>
+                      </div>
+                      
+                      <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded border border-rose-100 dark:border-rose-900 font-mono text-[10px] text-rose-700 dark:text-rose-300 select-all overflow-x-auto whitespace-pre-wrap">
+                        {sheetsError || 'Bilateral Symmetrical Sync Error: Failed to fetch'}
+                      </div>
+
+                      {sheetsError && (sheetsError.includes('401') || sheetsError.toUpperCase().includes('UNAUTHENTICATED')) && (
+                        <div className="pt-1.5 pb-1">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                setSheetsError(null);
+                                setSyncStatus(prev => ({ ...prev, sheets: 'syncing' }));
+                                const res = await googleSignIn();
+                                if (res) {
+                                  setCurrentUser(res.user);
+                                  setGoogleToken(res.accessToken);
+                                  // Changing googleToken will auto-trigger sync inside useEffect
+                                } else {
+                                  setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+                                  setSheetsError('Не удалось войти.');
+                                }
+                              } catch (err: any) {
+                                setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+                                setSheetsError(err?.message || String(err));
+                              }
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer transition-all shadow-md active:scale-[0.98]"
+                          >
+                            <span>Обновить авторизацию Google</span>
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="text-[10.5px] space-y-2 text-slate-600 dark:text-slate-400 leading-relaxed font-normal">
+                        <p className="font-bold text-slate-700 dark:text-slate-300">💡 Как это исправить:</p>
+                        <ul className="list-decimal list-inside space-y-1.5 pl-1 leading-snug">
+                          <li>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">Истекшее время авторизации</span>: 
+                            Ваша сессия и Google-токен настроены на длительное действие до одного дня (24 часов). Если сессия завершилась, просто нажмите кнопку <b>"Выйти"</b> в окне "Статус подключения" выше, а затем повторно нажмите <b>"Авторизоваться через Google"</b> для полного обновления.
+                          </li>
+                          <li>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">Отключены Google API</span>: 
+                            В консоли Google Cloud / Firebase проекта должны быть включены <b>Google Sheets API</b> и <b>Google Drive API</b>. Без этого запросы со стороны браузера отклоняются с ошибкой CORS.
+                          </li>
+                          <li>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">Блокировщики скриптов</span>: 
+                            Ваш браузер или плагин (uBlock, AdBlock, Brave Shield) может блокировать сторонние запросы к доменам <i>googleapi</i>. Попробуйте отключить их для этого сайта.
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sync Report detail lists */}
+                <div className="space-y-3.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                    ОТЧЕТ ПО СИНХРОНИЗАЦИИ ИЗМЕНЕНИЙ:
+                  </span>
+
+                  {syncReport ? (
+                    <div className="space-y-4">
+                      {/* Summary row */}
+                      <div className="grid grid-cols-4 gap-2 bg-slate-50/50 dark:bg-slate-950/25 p-3 rounded-xl border border-slate-150 dark:border-slate-850 text-center text-xs font-mono font-bold">
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Выгружено</span>
+                          <span className="text-emerald-550 dark:text-emerald-400">{syncReport.uploadedCount}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Закачано</span>
+                          <span className="text-indigo-600 dark:text-indigo-400">{syncReport.downloadedCount}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Удалено в обл.</span>
+                          <span className="text-rose-600 dark:text-rose-450">{syncReport.deletedTableCount}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Удалено лок.</span>
+                          <span className="text-amber-600 dark:text-amber-500">{syncReport.deletedLocallyCount}</span>
+                        </div>
+                      </div>
+
+                      {/* Detailed rows */}
+                      <div className="border border-slate-150 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+                        <div className="px-3.5 py-1.5 bg-slate-50 dark:bg-slate-850 font-bold text-slate-400 uppercase tracking-wider text-[8px]">
+                          ДЕТАЛИЗАЦИЯ ИЗМЕНЕНИЙ:
+                        </div>
+                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-650 dark:text-slate-350">Папки (Folders):</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.foldersAdded} доб. / {syncReport.foldersUpdated} обн.</span>
+                        </div>
+                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-650 dark:text-slate-350">Проекты (Projects):</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.projectsAdded} доб. / {syncReport.projectsUpdated} обн.</span>
+                        </div>
+                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-650 dark:text-slate-350">Задачи / Ветки (Nodes):</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.nodesAdded} доб. / {syncReport.nodesUpdated} обн.</span>
+                        </div>
+                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-650 dark:text-slate-350">Категории тегов (Tag Categories):</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.tagCategoriesAdded} r. / {syncReport.tagCategoriesUpdated} o.</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 border border-dashed border-slate-155 dark:border-slate-800 rounded-xl text-slate-400 italic bg-slate-50/20">
+                      Выполните первую синхронизацию, чтобы сформировать отчет по изменениям.
+                    </div>
+                  )}
+                </div>
+
               </div>
+
+              {/* Modal Footer (direct sheet link) */}
+              {localStorage.getItem('google_sheets_sync_file_id') && (
+                <div className="border-t border-slate-150 dark:border-slate-850 p-4.5 bg-slate-50 dark:bg-slate-900/60 flex items-center shrink-0">
+                  <a
+                    href={`https://docs.google.com/spreadsheets/d/${localStorage.getItem('google_sheets_sync_file_id')}/edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-indigo-655 dark:text-indigo-400 hover:underline font-bold text-[11px]"
+                  >
+                    <svg className="w-4 h-4 fill-current text-emerald-500 shrink-0" viewBox="0 0 24 24">
+                      <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3.5 14h-7V7h7v10z"/>
+                    </svg>
+                    <span>Открыть личную таблицу MindMap_Sync_Workbook ↗</span>
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         );
