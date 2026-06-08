@@ -871,9 +871,17 @@ export default function App() {
       if (filterStatus === "archived") {
         return !!node.archived;
       }
+      if (searchQuery.trim() !== "" && node.archived) {
+        // If searching is active, only include archived tasks if they match the search query
+        const q = searchQuery.toLowerCase();
+        const textMatches = (node.text || "").toLowerCase().includes(q);
+        const tagMatches = (node.tags || []).some(t => t.toLowerCase().includes(q));
+        const notesMatches = (node.notes || "").toLowerCase().includes(q);
+        return textMatches || tagMatches || notesMatches;
+      }
       return !node.archived;
     });
-  }, [activeNodes, filterStatus]);
+  }, [activeNodes, filterStatus, searchQuery]);
 
   // Single node drag updating coordinates with simultaneous movement of all descendant nodes
   const handleUpdateNodeCoordinates = (id: string, x: number, y: number) => {
@@ -1085,7 +1093,7 @@ export default function App() {
   };
 
   // Add a fully independent floating node anywhere on the canvas
-  const handleAddFloatingNode = (x: number, y: number, parentId: string | null = null, customText?: string) => {
+  const handleAddFloatingNode = (x: number, y: number, parentId: string | null = null, customText?: string, extraProps?: Partial<TaskNode>) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
@@ -1111,7 +1119,8 @@ export default function App() {
           : 'Это полностью независимая задача, свободная от основной ветви. Вы можете свободно перемещать её по холсту, а также добавлять к ней дочерние подзадачи через кнопку "+".'),
       completed: false,
       files: [],
-      color: isInsideContainer ? '#3b82f6' : '#10b981' // Blue inside container, green otherwise
+      color: isInsideContainer ? '#3b82f6' : '#10b981', // Blue inside container, green otherwise
+      ...extraProps
     };
 
     setState(prev => ({
@@ -1370,7 +1379,8 @@ export default function App() {
     if (filterStatus === "archived") {
       if (!node.archived) return false;
     } else {
-      if (node.archived) return false;
+      const isSearching = searchQuery.trim() !== "";
+      if (node.archived && !isSearching) return false;
       if (filterStatus === "completed" && !node.completed) return false;
       if (filterStatus === "active" && node.completed) return false;
     }
@@ -2133,7 +2143,14 @@ export default function App() {
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={setSelectedNodeId}
+                onSelectNode={(id) => {
+                  setSelectedNodeId(id);
+                  if (id) {
+                    setIsDrawerOpen(true);
+                  } else {
+                    setIsDrawerOpen(false);
+                  }
+                }}
                 onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
                 onUpdateNodeParent={handleUpdateNodeParent}
                 onAddChildNode={handleAddChildNode}
