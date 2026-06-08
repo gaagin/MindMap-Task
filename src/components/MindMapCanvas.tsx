@@ -596,8 +596,7 @@ export default function MindMapCanvas({
               {[
                 { id: 'status', label: 'Статусы', icon: '🚦' },
                 { id: 'priority', label: 'Приоритеты', icon: '⚡' },
-                { id: 'category', label: 'Категории', icon: '📁' },
-                { id: 'tag', label: 'Теги', icon: '🏷️' }
+                { id: 'category', label: 'Категории', icon: '📁' }
               ].map(grp => {
                 const active = grouping === grp.id;
                 return (
