@@ -3378,7 +3378,7 @@ const pInfo = getPriorityInfo(node.priority);
                     {node.tags && node.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
                         {node.tags.map((tag) => {
-                          const matchedCategory = tagCategories.find(cat => cat.tags && cat.tags.includes(tag));
+                          const matchedCategory = (node.tagCategories || tagCategories || []).find(cat => cat.tags && cat.tags.includes(tag));
                           const color = matchedCategory?.color;
                           
                           // Style based on whether a category is found with this tag

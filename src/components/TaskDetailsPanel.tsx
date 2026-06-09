@@ -373,20 +373,45 @@ export default function TaskDetailsPanel({
   const [newCatTagName, setNewCatTagName] = useState('');
 
 
+  // Local active categories for this specific node
+  const activeCategories = node.tagCategories || categories || [];
+
   const handleUpdateCategories = (newCategories: TagCategory[]) => {
-    // Logic as discussed
+    onUpdateNode({
+      ...node,
+      tagCategories: newCategories
+    });
   };
 
   const handleCreateTagCategory = (name: string, color: string) => {
-    if (onCreateTagCategory) onCreateTagCategory(name, color);
+    const newCat: TagCategory = {
+      id: 'cat-' + generateId(),
+      name,
+      color,
+      tags: []
+    };
+    onUpdateNode({
+      ...node,
+      tagCategories: [...activeCategories, newCat]
+    });
   };
 
   const handleUpdateTagCategory = (id: string, name: string, color: string, tags: string[]) => {
-    if (onUpdateTagCategory) onUpdateTagCategory(id, name, color, tags);
+    const nextCategories = activeCategories.map(c => 
+      c.id === id ? { ...c, name, color, tags, updatedAt: new Date().toISOString() } : c
+    );
+    onUpdateNode({
+      ...node,
+      tagCategories: nextCategories
+    });
   };
 
   const handleDeleteTagCategory = (id: string) => {
-    if (onDeleteTagCategory) onDeleteTagCategory(id);
+    const nextCategories = activeCategories.filter(c => c.id !== id);
+    onUpdateNode({
+      ...node,
+      tagCategories: nextCategories
+    });
   };
 
   // Category collapse state, loaded and persisted in localStorage using the same key as Sidebar for 100% synchronization
@@ -1678,7 +1703,7 @@ export default function TaskDetailsPanel({
           {node.tags && node.tags.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {node.tags.map((tag, index) => {
-                const matchedCategory = categories.find(cat => cat.tags && cat.tags.includes(tag));
+                const matchedCategory = activeCategories.find(cat => cat.tags && cat.tags.includes(tag));
                 const color = matchedCategory?.color;
                 const style = color ? {
                   backgroundColor: `${color}18`,
@@ -1780,7 +1805,7 @@ export default function TaskDetailsPanel({
                     type="button"
                     onClick={() => {
                       if (newCatName.trim()) {
-                        onCreateTagCategory(newCatName.trim(), newCatColor);
+                        handleCreateTagCategory(newCatName.trim(), newCatColor);
                         setShowNewCatForm(false);
                       }
                     }}
@@ -1794,8 +1819,8 @@ export default function TaskDetailsPanel({
 
             {/* List of categories */}
             <div className="space-y-3">
-              {categories && categories.length > 0 ? (
-                categories.map(cat => {
+              {activeCategories && activeCategories.length > 0 ? (
+                activeCategories.map(cat => {
                   const isAddingTag = addingTagToCatId === cat.id;
                   return (
                     <div key={cat.id} className="space-y-1.5 bg-slate-50/40 dark:bg-slate-800/10 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800/50">
@@ -1843,7 +1868,7 @@ export default function TaskDetailsPanel({
                               type="button"
                               onClick={() => {
                                 if (confirmDeleteCatId === cat.id) {
-                                  onDeleteTagCategory(cat.id);
+                                  handleDeleteTagCategory(cat.id);
                                   setConfirmDeleteCatId(null);
                                 } else {
                                   setConfirmDeleteCatId(cat.id);
@@ -1879,7 +1904,7 @@ export default function TaskDetailsPanel({
                                   const alreadyInCat = cat.tags && cat.tags.includes(trimmed);
                                   if (!alreadyInCat) {
                                     const updatedTags = cat.tags ? [...cat.tags, trimmed] : [trimmed];
-                                    onUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
+                                    handleUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
                                   }
                                 }
                                 setAddingTagToCatId(null);
@@ -1899,7 +1924,7 @@ export default function TaskDetailsPanel({
                                 const alreadyInCat = cat.tags && cat.tags.includes(trimmed);
                                 if (!alreadyInCat) {
                                   const updatedTags = cat.tags ? [...cat.tags, trimmed] : [trimmed];
-                                  onUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
+                                  handleUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
                                 }
                               }
                               setAddingTagToCatId(null);
@@ -1942,7 +1967,7 @@ export default function TaskDetailsPanel({
                                       type="button"
                                       onClick={() => {
                                         const updatedTags = cat.tags.filter(tagItem => tagItem !== t);
-                                        onUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
+                                        handleUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
                                       }}
                                       className="p-1 hover:bg-rose-50 dark:hover:bg-rose-955/20 text-slate-400 hover:text-rose-500 rounded-r-md cursor-pointer shrink-0 transition-colors"
                                       title={`Исключить #${t} из категории`}
