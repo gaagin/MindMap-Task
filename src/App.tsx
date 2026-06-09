@@ -294,12 +294,108 @@ export default function App() {
   }, []);
 
   const getSyncHash = (wsState: WorkspaceState) => {
+    if (!wsState) return '';
+    const ws = normalizeWorkspaceState(wsState);
+    
+    // Sort folders by ID
+    const sortedFolders = [...(ws.folders || [])]
+      .map(f => ({
+        id: f.id,
+        name: f.name || '',
+        parentId: f.parentId || null,
+        updatedAt: f.updatedAt || ''
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    // Sort projects by ID (and sort nested tagCategories if any)
+    const sortedProjects = [...(ws.projects || [])]
+      .map(p => {
+        const sortedCats = [...(p.tagCategories || [])]
+          .map(c => ({
+            id: c.id,
+            name: c.name || '',
+            color: c.color || '',
+            tags: [...(c.tags || [])].sort(),
+            updatedAt: c.updatedAt || ''
+          }))
+          .sort((a, b) => a.id.localeCompare(b.id));
+        
+        return {
+          id: p.id,
+          name: p.name || '',
+          folderId: p.folderId || null,
+          createdAt: p.createdAt || '',
+          updatedAt: p.updatedAt || '',
+          tagCategories: sortedCats
+        };
+      })
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    // Sort nodes: sort project IDs as keys, then sort the nodes arrays inside
+    const sortedNodes: Record<string, any[]> = {};
+    const sortedProjectIds = Object.keys(ws.nodes || {}).sort();
+    
+    for (const pid of sortedProjectIds) {
+      if (!sortedProjects.some(p => p.id === pid)) {
+        continue; // Exclude orphaned node entries
+      }
+      const nodesArr = ws.nodes[pid] || [];
+      sortedNodes[pid] = [...nodesArr]
+        .map(n => {
+          const sortedNodeTags = [...(n.tags || [])].sort();
+          const sortedFiles = [...(n.files || [])]
+            .map(f => ({
+              id: f.id,
+              name: f.name || '',
+              size: f.size || 0,
+              type: f.type || '',
+              dataUrl: f.dataUrl ? f.dataUrl.substring(0, 100) : '' // Only compare first 100 chars of base64
+            }))
+            .sort((a, b) => a.id.localeCompare(b.id));
+
+          return {
+            id: n.id,
+            projectId: n.projectId,
+            text: n.text || '',
+            x: Math.round(n.x) || 0,
+            y: Math.round(n.y) || 0,
+            parentId: n.parentId || null,
+            priority: n.priority || 'none',
+            tags: sortedNodeTags,
+            notes: n.notes || '',
+            completed: !!n.completed,
+            color: n.color || null,
+            collapsed: !!n.collapsed,
+            dueDate: n.dueDate || null,
+            progress: n.progress !== undefined ? n.progress : null,
+            isFloating: !!n.isFloating,
+            isContainer: !!n.isContainer,
+            width: n.width !== undefined ? Math.round(n.width) : null,
+            height: n.height !== undefined ? Math.round(n.height) : null,
+            files: sortedFiles,
+            updatedAt: n.updatedAt || ''
+          };
+        })
+        .sort((a, b) => a.id.localeCompare(b.id));
+    }
+
+    // Sort tag categories by ID
+    const sortedTagCats = [...(ws.tagCategories || [])]
+      .map(c => ({
+        id: c.id,
+        name: c.name || '',
+        color: c.color || '',
+        tags: [...(c.tags || [])].sort(),
+        updatedAt: c.updatedAt || ''
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
     return JSON.stringify({
-      folders: wsState.folders,
-      projects: wsState.projects,
-      nodes: wsState.nodes,
-      activeProjectId: wsState.activeProjectId,
-      tagCategories: wsState.tagCategories || []
+      folders: sortedFolders,
+      projects: sortedProjects,
+      nodes: sortedNodes,
+      activeProjectId: ws.activeProjectId || null,
+      tagCategories: sortedTagCats
     });
   };
 

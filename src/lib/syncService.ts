@@ -213,6 +213,9 @@ export function mergeWorkspaceStates(
   const mergedNodes: Record<string, TaskNode[]> = {};
 
   projectList.forEach(projId => {
+    if (!mergedProjects.some(p => p.id === projId)) {
+      return;
+    }
     const localProjNodes = local.nodes?.[projId] || [];
     const remoteProjNodes = remote.nodes?.[projId] || [];
     const nodeMap = new Map<string, TaskNode>();
