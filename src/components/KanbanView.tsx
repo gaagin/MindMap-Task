@@ -28,7 +28,7 @@ interface KanbanViewProps {
   onSelectNode: (id: string | null) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
-  onCreateTask: (text: string, initialTags: string[]) => void;
+  onCreateTask: (text: string, initialTags: string[], priority?: Priority) => void;
   onCreateTagCategory: (name: string, color: string) => void;
 }
 
@@ -44,6 +44,10 @@ export default function KanbanView({
   onCreateTask,
   onCreateTagCategory,
 }: KanbanViewProps) {
+  const [groupBy, setGroupBy] = useState<'category' | 'priority'>(() => {
+    return tagCategories.length === 0 ? 'priority' : 'category';
+  });
+
   // Try to pre-select the first category if any exists
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(() => {
     return tagCategories.length > 0 ? tagCategories[0].id : null;
@@ -84,32 +88,6 @@ export default function KanbanView({
     }
   }, [tagCategories, selectedCategoryId]);
 
-  if (tagCategories.length === 0) {
-    return (
-      <div id="kanban-empty-state" className="flex flex-col items-center justify-center p-8 text-center h-[calc(100vh-12rem)] max-w-xl mx-auto">
-        <div className="w-16 h-16 bg-slate-50 dark:bg-slate-900 rounded-2xl flex items-center justify-center shadow-xs border border-slate-200 dark:border-slate-800 animate-pulse mb-4">
-          <KanbanIcon className="w-8 h-8 text-indigo-500" />
-        </div>
-        <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 mb-2">Создайте категории тегов</h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
-          Канбан-доска автоматически группирует ваши задачи по тегам выбранной категории. Сначала добавьте категории тегов (например, «Этап разработки», «Приоритет» или «Исполнитель») в левой панели или в параметрах задач.
-        </p>
-        <button
-          id="kanban-create-first-cat-btn"
-          onClick={() => {
-            const name = prompt('Введите название новой категории тегов (например, Статус):');
-            if (name && name.trim()) {
-              onCreateTagCategory(name.trim(), '#6366f1');
-            }
-          }}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" /> Добавить первую категорию
-        </button>
-      </div>
-    );
-  }
-
   // Get tags of the active category
   const activeTags = activeCategory?.tags || [];
 
@@ -121,38 +99,48 @@ export default function KanbanView({
     return found || null;
   };
 
-  // Classify nodes in columns
+  // Classify nodes in columns based on groupBy
   const columns: { id: string; title: string; color: string; isUncategorized: boolean; items: TaskNode[] }[] = [];
 
-  // 1. Column for Uncategorized (Без тегов текущей категории)
-  const uncategorizedItems = nodes.filter(n => {
-    const nodeTag = getNodeCategoryTag(n);
-    return nodeTag === null;
-  });
-
-  columns.push({
-    id: 'uncategorized',
-    title: 'Без тега',
-    color: '#94a3b8', // slate-400 color
-    isUncategorized: true,
-    items: uncategorizedItems
-  });
-
-  // 2. Column for each tag in active category
-  activeTags.forEach(tag => {
-    const items = nodes.filter(n => {
+  if (groupBy === 'priority') {
+    columns.push(
+      { id: 'urgent', title: 'Критический', color: '#f43f5e', isUncategorized: false, items: nodes.filter(n => n.priority === 'urgent') },
+      { id: 'high', title: 'Высокий', color: '#f59e0b', isUncategorized: false, items: nodes.filter(n => n.priority === 'high') },
+      { id: 'medium', title: 'Средний', color: '#3b82f6', isUncategorized: false, items: nodes.filter(n => n.priority === 'medium') },
+      { id: 'low', title: 'Низкий', color: '#10b981', isUncategorized: false, items: nodes.filter(n => n.priority === 'low') },
+      { id: 'none', title: 'Без приоритета', color: '#64748b', isUncategorized: true, items: nodes.filter(n => !n.priority || n.priority === 'none') }
+    );
+  } else {
+    // 1. Column for Uncategorized (Без тегов текущей категории)
+    const uncategorizedItems = nodes.filter(n => {
       const nodeTag = getNodeCategoryTag(n);
-      return nodeTag === tag;
+      return nodeTag === null;
     });
 
     columns.push({
-      id: tag,
-      title: '#' + tag,
-      color: activeCategory.color,
-      isUncategorized: false,
-      items
+      id: 'uncategorized',
+      title: 'Без тега',
+      color: '#94a3b8', // slate-400 color
+      isUncategorized: true,
+      items: uncategorizedItems
     });
-  });
+
+    // 2. Column for each tag in active category
+    activeTags.forEach(tag => {
+      const items = nodes.filter(n => {
+        const nodeTag = getNodeCategoryTag(n);
+        return nodeTag === tag;
+      });
+
+      columns.push({
+        id: tag,
+        title: '#' + tag,
+        color: activeCategory?.color || '#6366f1',
+        isUncategorized: false,
+        items
+      });
+    });
+  }
 
   // Drag and Drop implementation
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -189,33 +177,43 @@ export default function KanbanView({
   };
 
   const moveCardToColumn = (node: TaskNode, targetColumnId: string) => {
-    // Create new list of tags
-    let updatedTags = node.tags ? [...node.tags] : [];
+    if (groupBy === 'priority') {
+      onUpdateNode({
+        ...node,
+        priority: targetColumnId as Priority
+      });
+    } else {
+      // Create new list of tags
+      let updatedTags = node.tags ? [...node.tags] : [];
 
-    // Remove any Tag from this category that is currently present in node.tags
-    updatedTags = updatedTags.filter(t => !activeTags.includes(t));
+      // Remove any Tag from this category that is currently present in node.tags
+      updatedTags = updatedTags.filter(t => !activeTags.includes(t));
 
-    // If we're dropping in a specific tag column, add that tag
-    if (targetColumnId !== 'uncategorized') {
-      updatedTags.push(targetColumnId);
+      // If we're dropping in a specific tag column, add that tag
+      if (targetColumnId !== 'uncategorized') {
+        updatedTags.push(targetColumnId);
+      }
+
+      onUpdateNode({
+        ...node,
+        tags: updatedTags
+      });
     }
-
-    onUpdateNode({
-      ...node,
-      tags: updatedTags
-    });
   };
 
   const handleCreateTaskInColumn = (columnId: string) => {
     const text = newTaskNameInColumn.trim();
     if (!text) return;
 
-    const tagsToAssign: string[] = [];
-    if (columnId !== 'uncategorized') {
-      tagsToAssign.push(columnId);
+    if (groupBy === 'priority') {
+      onCreateTask(text, [], columnId as Priority);
+    } else {
+      const tagsToAssign: string[] = [];
+      if (columnId !== 'uncategorized') {
+        tagsToAssign.push(columnId);
+      }
+      onCreateTask(text, tagsToAssign, 'none');
     }
-
-    onCreateTask(text, tagsToAssign);
 
     // Reset inline input
     setActiveAddInColumn(null);
@@ -277,75 +275,121 @@ export default function KanbanView({
       {/* Category selector panel */}
       <div 
         id="kanban-categories-bar" 
-        className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800/80 px-4 sm:px-6 py-2 select-none"
+        className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800/80 px-4 sm:px-6 py-2.5 select-none space-y-2"
       >
-        {/* Mobile Header Toggle, visible on mobile, hidden on tablet/desktop */}
-        <div className="flex md:hidden items-center justify-between">
-          <button 
-            type="button"
-            onClick={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
-            className="flex items-center gap-2 cursor-pointer py-1 text-left focus:outline-none"
-          >
-            <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Группировка:
-            </span>
-            {activeCategory && (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700/60 text-[11px] font-bold text-slate-705 dark:text-slate-200">
-                <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-subtle" style={{ backgroundColor: activeCategory.color }} />
-                <span>{activeCategory.name}</span>
-              </span>
-            )}
-            <ChevronDown 
-              className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${
-                isCategoriesExpanded ? 'rotate-180' : ''
-              }`} 
-            />
-          </button>
-        </div>
-
-        {/* Categories container: always visible on desktop, conditionally collapsed/expanded with animation on mobile */}
-        <div className={`${isCategoriesExpanded ? 'flex' : 'hidden md:flex'} mt-1.5 md:mt-0 flex-col md:flex-row md:items-center gap-3 overflow-x-auto scrollbar-none`}>
-          <span className="hidden md:inline text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0">
-            Группировка:
-          </span>
-          
-          <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5 overflow-[x-auto] py-0.5 scrollbar-none">
-            {tagCategories.map(cat => {
-              const isSelected = cat.id === selectedCategoryId;
-              
-              // Count cards belonging to this category overall
-              const count = nodes.filter(n => {
-                if (!n.tags) return false;
-                return n.tags.some(t => cat.tags?.includes(t));
-              }).length;
-
-              return (
-                <button
-                  key={cat.id}
-                  id={`kanban-cat-tab-${cat.id}`}
-                  onClick={() => {
-                    setSelectedCategoryId(cat.id);
-                    // Automatically collapse picker on mobile/tablet after selection
-                    if (window.innerWidth < 768) {
-                      setIsCategoriesExpanded(false);
-                    }
-                  }}
-                  className={`px-2.5 py-1 rounded-md border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all shrink-0 ${
-                    isSelected 
-                      ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 font-bold ring-2 ring-indigo-500/5'
-                      : 'bg-slate-50/50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800/60 text-slate-450 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                  <span>{cat.name}</span>
-                  <span className="text-[9.5px] font-mono px-1.5 py-0.2 rounded-full bg-slate-200/60 dark:bg-slate-800/60 text-slate-505 dark:text-slate-400">
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-slate-800/40">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Группировка Kanban:</span>
+            <div className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200/50 dark:border-slate-700/50">
+              <button
+                type="button"
+                onClick={() => setGroupBy('category')}
+                className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${groupBy === 'category' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs' : 'text-slate-500 hover:text-slate-750 dark:hover:text-slate-300'}`}
+              >
+                По категориям
+              </button>
+              <button
+                type="button"
+                onClick={() => setGroupBy('priority')}
+                className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${groupBy === 'priority' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs' : 'text-slate-500 hover:text-slate-750 dark:hover:text-slate-300'}`}
+              >
+                По приоритетам
+              </button>
+            </div>
           </div>
+          {groupBy === 'category' && (
+            <button
+              id="kanban-create-first-cat-btn"
+              onClick={() => {
+                const name = prompt('Введите название новой категории тегов (например, Статус):');
+                if (name && name.trim()) {
+                  onCreateTagCategory(name.trim(), '#6366f1');
+                }
+              }}
+              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-semibold shadow-xs transition-all cursor-pointer flex items-center gap-1 shrink-0"
+            >
+              <Plus className="w-3 h-3" /> Добавить категорию
+            </button>
+          )}
         </div>
+
+        {groupBy === 'category' && tagCategories.length > 0 && (
+          <>
+            {/* Mobile Header Toggle, visible on mobile, hidden on tablet/desktop */}
+            <div className="flex md:hidden items-center justify-between">
+              <button 
+                type="button"
+                onClick={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
+                className="flex items-center gap-2 cursor-pointer py-1 text-left focus:outline-none"
+              >
+                <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Категория тегов:
+                </span>
+                {activeCategory && (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700/60 text-[11px] font-bold text-slate-705 dark:text-slate-200">
+                    <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-subtle" style={{ backgroundColor: activeCategory.color }} />
+                    <span>{activeCategory.name}</span>
+                  </span>
+                )}
+                <ChevronDown 
+                  className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${
+                    isCategoriesExpanded ? 'rotate-180' : ''
+                  }`} 
+                />
+              </button>
+            </div>
+
+            {/* Categories container: always visible on desktop, conditionally collapsed/expanded with animation on mobile */}
+            <div className={`${isCategoriesExpanded ? 'flex' : 'hidden md:flex'} mt-1 flex-col md:flex-row md:items-center gap-3 overflow-x-auto scrollbar-none`}>
+              <span className="hidden md:inline text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0">
+                Категория:
+              </span>
+              
+              <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5 overflow-[x-auto] py-0.5 scrollbar-none">
+                {tagCategories.map(cat => {
+                  const isSelected = cat.id === selectedCategoryId;
+                  
+                  // Count cards belonging to this category overall
+                  const count = nodes.filter(n => {
+                    if (!n.tags) return false;
+                    return n.tags.some(t => cat.tags?.includes(t));
+                  }).length;
+
+                  return (
+                    <button
+                      key={cat.id}
+                      id={`kanban-cat-tab-${cat.id}`}
+                      onClick={() => {
+                        setSelectedCategoryId(cat.id);
+                        // Automatically collapse picker on mobile/tablet after selection
+                        if (window.innerWidth < 768) {
+                          setIsCategoriesExpanded(false);
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-md border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all shrink-0 ${
+                        isSelected 
+                          ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 font-bold ring-2 ring-indigo-500/5'
+                          : 'bg-slate-50/50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800/60 text-slate-450 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                      <span>{cat.name}</span>
+                      <span className="text-[9.5px] font-mono px-1.5 py-0.2 rounded-full bg-slate-200/60 dark:bg-slate-800/60 text-slate-500 dark:text-slate-450">
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+
+        {groupBy === 'category' && tagCategories.length === 0 && (
+          <div className="text-center py-2 text-[10.5px] text-slate-500 dark:text-slate-450 font-medium">
+            Нет категорий. Вы всегда можете переключиться на вид по приоритетам выше!
+          </div>
+        )}
       </div>
 
       {/* Pillars Columns Area */}

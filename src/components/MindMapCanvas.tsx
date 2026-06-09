@@ -119,6 +119,110 @@ export default function MindMapCanvas({
   
   // States for Notes and file upload handling
   const [notesModalNodeId, setNotesModalNodeId] = useState<string | null>(null);
+  const [nestedDragNodeId, setNestedDragNodeId] = useState<string | null>(null);
+
+  const handleContainerChildDrop = (draggedId: string, targetId: string) => {
+    const draggedNode = nodes.find(n => n.id === draggedId);
+    const targetNode = nodes.find(n => n.id === targetId);
+    if (!draggedNode || !targetNode) return;
+    
+    // Swap coordinates
+    const tempX = draggedNode.x;
+    const tempY = draggedNode.y;
+    onUpdateNode({
+      ...draggedNode,
+      x: targetNode.x,
+      y: targetNode.y
+    });
+    onUpdateNode({
+      ...targetNode,
+      x: tempX,
+      y: tempY
+    });
+  };
+
+  const handleNestedKanbanDrop = (draggedId: string, colId: string) => {
+    const node = nodes.find(n => n.id === draggedId);
+    if (!node) return;
+    if (colId === 'todo') {
+      onUpdateNode({ ...node, completed: false, progress: 0 });
+    } else if (colId === 'progress') {
+      onUpdateNode({ ...node, completed: false, progress: 50 });
+    } else if (colId === 'done') {
+      onUpdateNode({ ...node, completed: true });
+    }
+  };
+
+  const handleNestedCalendarDrop = (draggedId: string, groupId: string) => {
+    const node = nodes.find(n => n.id === draggedId);
+    if (!node) return;
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 4);
+    const nextWeekStr = nextWeek.toISOString().split('T')[0];
+
+    if (groupId === 'today') {
+      onUpdateNode({ ...node, dueDate: todayStr });
+    } else if (groupId === 'tomorrow') {
+      onUpdateNode({ ...node, dueDate: tomorrowStr });
+    } else if (groupId === 'week') {
+      onUpdateNode({ ...node, dueDate: nextWeekStr });
+    } else if (groupId === 'later') {
+      const later = new Date(today);
+      later.setDate(today.getDate() + 8);
+      onUpdateNode({ ...node, dueDate: later.toISOString().split('T')[0] });
+    } else if (groupId === 'nodate') {
+      onUpdateNode({ ...node, dueDate: '' });
+    }
+  };
+
+  const handleNestedGanttDrop = (draggedId: string, dateStr: string) => {
+    const node = nodes.find(n => n.id === draggedId);
+    if (!node) return;
+    onUpdateNode({ ...node, dueDate: dateStr, startDate: dateStr });
+  };
+  const [originalText, setOriginalText] = useState('');
+  const [originalNotes, setOriginalNotes] = useState('');
+
+  // Sync original state when mind map canvas quick edit modal opens/updates
+  useEffect(() => {
+    if (notesModalNodeId) {
+      const activeNode = nodes.find(n => n.id === notesModalNodeId);
+      if (activeNode) {
+        setOriginalText(activeNode.text || '');
+        setOriginalNotes(activeNode.notes || '');
+      }
+    }
+  }, [notesModalNodeId]);
+
+  const recordCanvasHistoryVersion = (targetNode: TaskNode, prevText: string, prevNotes: string, label: string) => {
+    const currentHistory = targetNode.history || [];
+    const lastVersion = currentHistory[0];
+    if (lastVersion && lastVersion.text === prevText && lastVersion.notes === prevNotes) {
+      return;
+    }
+
+    const newVersion = {
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      text: prevText,
+      notes: prevNotes,
+      description: label
+    };
+
+    onUpdateNode({
+      ...targetNode,
+      history: [newVersion, ...currentHistory].slice(0, 30)
+    });
+  };
+
   const cardFileInputRef = useRef<HTMLInputElement>(null);
   const [fileUploadNodeId, setFileUploadNodeId] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -340,8 +444,30 @@ export default function MindMapCanvas({
                 <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач в списке нет</span>
               </div>
             ) : (
-              containerChildren.map(child => (
-                <div key={child.id} className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-xs hover:border-slate-200 group/item">
+              [...containerChildren].sort((a, b) => a.y - b.y).map(child => (
+                <div 
+                  key={child.id} 
+                  draggable={true}
+                  onDragStart={(e) => {
+                    e.stopPropagation();
+                    e.dataTransfer.setData('text/plain', child.id);
+                    setNestedDragNodeId(child.id);
+                  }}
+                  onDragEnd={() => setNestedDragNodeId(null)}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                    if (draggedId && draggedId !== child.id) {
+                      handleContainerChildDrop(draggedId, child.id);
+                    }
+                  }}
+                  className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-xs hover:border-slate-200 group/item cursor-grab active:cursor-grabbing text-slate-800 dark:text-slate-250 select-none"
+                >
                   <div className="flex items-center gap-1.5 min-w-0">
                     <button 
                       onClick={(e) => { e.stopPropagation(); onToggleNodeCompleted(child.id); }}
@@ -357,7 +483,7 @@ export default function MindMapCanvas({
                     </button>
                     <span 
                       onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
-                      className={`font-medium leading-relaxed truncate cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
+                      className={`font-semibold leading-relaxed truncate cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
                     >
                       {child.text}
                     </span>
@@ -441,7 +567,22 @@ export default function MindMapCanvas({
             { id: 'progress', title: 'В работе', tasks: progressTasks, bg: 'bg-amber-500/5 dark:bg-amber-950/10', border: 'border-amber-200/20 dark:border-amber-900/30' },
             { id: 'done', title: 'Готово', tasks: doneTasks, bg: 'bg-emerald-500/5 dark:bg-emerald-950/10', border: 'border-emerald-200/20 dark:border-emerald-900/30' }
           ].map(col => (
-            <div key={col.id} className={`flex-1 rounded-xl border ${col.border} ${col.bg} p-1.5 flex flex-col min-h-0 ${isFullScreen ? 'min-w-[200px]' : 'min-w-[130px] max-w-[170px]'}`}>
+            <div 
+              key={col.id} 
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                if (draggedId) {
+                  handleNestedKanbanDrop(draggedId, col.id);
+                }
+              }}
+              className={`flex-1 rounded-xl border ${col.border} ${col.bg} p-1.5 flex flex-col min-h-0 ${isFullScreen ? 'min-w-[200px]' : 'min-w-[130px] max-w-[170px]'}`}
+            >
               <div className="flex items-center justify-between mb-1.5 px-0.5 select-none shrink-0">
                 <span className="text-[9px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{col.title}</span>
                 <span className="text-[8px] font-extrabold bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1 py-0.2 rounded font-mono">{col.tasks.length}</span>
@@ -449,7 +590,17 @@ export default function MindMapCanvas({
               
               <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[175px]'}`}>
                 {col.tasks.map(child => (
-                  <div key={child.id} className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item">
+                  <div 
+                    key={child.id} 
+                    draggable={true}
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      e.dataTransfer.setData('text/plain', child.id);
+                      setNestedDragNodeId(child.id);
+                    }}
+                    onDragEnd={() => setNestedDragNodeId(null)}
+                    className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item cursor-grab active:cursor-grabbing select-none"
+                  >
                     <span 
                       onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
                       className={`font-semibold leading-normal cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
@@ -508,7 +659,7 @@ export default function MindMapCanvas({
                 {col.tasks.length === 0 && (
                   <div className="flex-1 flex items-center justify-center py-4 border border-dashed border-slate-200/50 dark:border-slate-800/45 rounded-lg select-none">
                     <span className="text-[8px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Пусто</span>
-                </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -528,7 +679,22 @@ export default function MindMapCanvas({
               </div>
             ) : (
               groups.map(g => (
-                <div key={g.id} className="space-y-1">
+                <div 
+                  key={g.id} 
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                    if (draggedId) {
+                      handleNestedCalendarDrop(draggedId, g.id);
+                    }
+                  }}
+                  className="space-y-1 p-1 rounded-xl border border-slate-100/30 bg-slate-50/10 dark:bg-slate-900/10"
+                >
                   <div className="flex items-center gap-1.5 mb-1 shrink-0 select-none">
                     <span className={`text-[8.5px] font-black px-1.5 py-0.2 rounded-md ${g.color} shadow-2xs`}>
                       {g.title}
@@ -540,8 +706,15 @@ export default function MindMapCanvas({
                     {g.tasks.map(child => (
                       <div 
                         key={child.id} 
+                        draggable={true}
+                        onDragStart={(e) => {
+                          e.stopPropagation();
+                          e.dataTransfer.setData('text/plain', child.id);
+                          setNestedDragNodeId(child.id);
+                        }}
+                        onDragEnd={() => setNestedDragNodeId(null)}
                         onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
-                        className="p-1 px-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-2xs flex items-center justify-between gap-2 hover:border-slate-200 group/item cursor-pointer"
+                        className="p-1 px-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-2xs flex items-center justify-between gap-2 hover:border-slate-200 group/item cursor-grab active:cursor-grabbing select-none"
                       >
                         <span className={`font-semibold truncate flex-1 ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-205'}`}>
                           {child.text}
@@ -567,6 +740,11 @@ export default function MindMapCanvas({
                         </div>
                       </div>
                     ))}
+                    {g.tasks.length === 0 && (
+                      <div className="text-center py-2 text-[8px] text-slate-400 uppercase tracking-widest border border-dashed border-slate-100 dark:border-dashed dark:border-slate-800 rounded-lg select-none">
+                        Перетяните задачу сюда
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
@@ -604,7 +782,17 @@ export default function MindMapCanvas({
                   const startDate = child.startDate || child.dueDate;
                   const endDate = child.dueDate || child.startDate;
                   return (
-                    <div key={child.id} className="flex items-center gap-1 text-[9.5px]">
+                    <div 
+                      key={child.id} 
+                      draggable={true}
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        e.dataTransfer.setData('text/plain', child.id);
+                        setNestedDragNodeId(child.id);
+                      }}
+                      onDragEnd={() => setNestedDragNodeId(null)}
+                      className="flex items-center gap-1 text-[9.5px] cursor-grab active:cursor-grabbing select-none"
+                    >
                       <div className="w-1/3 min-w-0 pr-1 shrink-0">
                         <span 
                           onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
@@ -619,14 +807,26 @@ export default function MindMapCanvas({
                           return (
                             <div 
                               key={d.dateStr} 
-                              className={`flex-1 rounded-xs border ${
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                                if (draggedId) {
+                                  handleNestedGanttDrop(draggedId, d.dateStr);
+                                }
+                              }}
+                              className={`flex-1 rounded-xs border transition-all ${
                                 isDayOfTask 
                                   ? child.completed 
                                     ? 'bg-emerald-500/20 border-emerald-400/30' 
-                                    : 'bg-amber-500/70 border-amber-400 shadow-3xs' 
-                                  : 'bg-slate-100/10 border-slate-100/50 dark:bg-slate-900/10 dark:border-slate-805/30'
+                                    : 'bg-amber-500/70 border-amber-400 shadow-3xs hover:bg-amber-400/90' 
+                                  : 'bg-slate-100/10 border-slate-100/50 dark:bg-slate-900/10 dark:border-slate-800/30 hover:bg-slate-200/20 dark:hover:bg-slate-800/40'
                               }`}
-                              title={`${child.text} (${startDate ?? ''} — ${endDate ?? ''})`}
+                              title={`${child.text} (${startDate ?? ''} — ${endDate ?? ''}). Перетяните задачу на клетку для планирования.`}
                             />
                           );
                         })}
@@ -656,12 +856,31 @@ export default function MindMapCanvas({
                 <span className="text-[8.5px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Нет данных</span>
               </div>
             ) : (
-              containerChildren.map(child => {
+              [...containerChildren].sort((a, b) => a.y - b.y).map(child => {
                 const pDot = child.priority === 'urgent' ? '🔴' : child.priority === 'high' ? '🟠' : child.priority === 'medium' ? '🔵' : child.priority === 'low' ? '🟢' : '⚪';
                 return (
                   <div 
                     key={child.id} 
-                    className="w-full flex items-center py-1.5 border-b border-slate-100/50 dark:border-slate-850/60 hover:bg-slate-50/40 dark:hover:bg-slate-900/20 group/row"
+                    draggable={true}
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      e.dataTransfer.setData('text/plain', child.id);
+                      setNestedDragNodeId(child.id);
+                    }}
+                    onDragEnd={() => setNestedDragNodeId(null)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                      if (draggedId && draggedId !== child.id) {
+                        handleContainerChildDrop(draggedId, child.id);
+                      }
+                    }}
+                    className="w-full flex items-center py-1.5 border-b border-slate-100/50 dark:border-slate-850/60 hover:bg-slate-50/40 dark:hover:bg-slate-900/20 group/row cursor-grab active:cursor-grabbing text-slate-850 dark:text-slate-200 select-none"
                   >
                     <div className="w-1/2 min-w-0 pr-2 flex items-center gap-1.5">
                        <button 
@@ -2653,6 +2872,9 @@ export default function MindMapCanvas({
                   if (hasDraggedNode) return;
                   e.stopPropagation();
                   onSelectNode(node.id);
+                  if (node.collapsed) {
+                    onToggleNodeCollapse(node.id);
+                  }
                 }}
               >
                 {/* Header of Container Canvas */}
@@ -3657,6 +3879,15 @@ const pInfo = getPriorityInfo(node.priority);
                     type="text"
                     value={node.text}
                     onChange={(e) => onUpdateNode({ ...node, text: e.target.value })}
+                    onFocus={() => {
+                      setOriginalText(node.text);
+                      setOriginalNotes(node.notes || '');
+                    }}
+                    onBlur={() => {
+                      if (node.text !== originalText) {
+                        recordCanvasHistoryVersion(node, originalText, originalNotes, 'Правка названия');
+                      }
+                    }}
                     className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
                     placeholder="Введите текст..."
                   />
@@ -3699,6 +3930,15 @@ const pInfo = getPriorityInfo(node.priority);
                   <textarea
                     value={node.notes || ''}
                     onChange={(e) => onUpdateNode({ ...node, notes: e.target.value })}
+                    onFocus={() => {
+                      setOriginalText(node.text);
+                      setOriginalNotes(node.notes || '');
+                    }}
+                    onBlur={() => {
+                      if ((node.notes || '') !== originalNotes) {
+                        recordCanvasHistoryVersion(node, originalText, originalNotes, 'Правка заметок');
+                      }
+                    }}
                     rows={5}
                     className="w-full text-xs font-medium px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-sans leading-relaxed"
                     placeholder="Здесь можно записать любые идеи, подзадачи, шаги, ссылки или текстовую справку к этой задаче..."

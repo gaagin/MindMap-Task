@@ -11,6 +11,14 @@ export interface AttachmentFile {
   webContentLink?: string; // Optional Google Drive direct download/content link
 }
 
+export interface TaskVersion {
+  id: string;
+  timestamp: string; // ISO string
+  text: string;
+  notes: string;
+  description?: string; // Description of the change (auto/manual/restore etc.)
+}
+
 export interface TaskNode {
   id: string;
   projectId: string;
@@ -43,6 +51,7 @@ export interface TaskNode {
   pomodoroTotalTime?: number; // Optional total focus seconds spent on this task
   pomodoroSessionsCount?: number; // Optional count of completed pomodoro focus sessions
   archived?: boolean; // Optional flag to mark task as archived
+  history?: TaskVersion[]; // Version history stack/list for tracking edits
 }
 
 export interface Project {

@@ -1456,7 +1456,7 @@ export default function App() {
   };
 
   // Create a new task originating from the Kanban Board view
-  const handleCreateKanbanTask = (text: string, initialTags: string[]) => {
+  const handleCreateKanbanTask = (text: string, initialTags: string[], initialPriority: Priority = 'none') => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
@@ -1471,7 +1471,7 @@ export default function App() {
       y: 350 + Math.random() * 200,
       parentId: null,
       isFloating: true,
-      priority: 'low',
+      priority: initialPriority,
       tags: initialTags,
       notes: 'Создано на Канбан-доске.',
       completed: false,
@@ -2344,7 +2344,14 @@ export default function App() {
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={setSelectedNodeId}
+                onSelectNode={(id) => {
+                  setSelectedNodeId(id);
+                  if (id) {
+                    setIsDrawerOpen(true);
+                  } else {
+                    setIsDrawerOpen(false);
+                  }
+                }}
                 onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
                 onUpdateNodeParent={handleUpdateNodeParent}
                 onAddChildNode={handleAddChildNode}

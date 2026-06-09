@@ -27,7 +27,8 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Coffee
+  Coffee,
+  History
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode } from '../utils';
@@ -75,6 +76,20 @@ export default function TaskDetailsPanel({
   const [fileError, setFileError] = useState<string | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Version history states
+  const [originalText, setOriginalText] = useState('');
+  const [originalNotes, setOriginalNotes] = useState('');
+  const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
+  const [isHistorySectionOpen, setIsHistorySectionOpen] = useState(false);
+
+  // Sync original state whenever node switches
+  React.useEffect(() => {
+    if (node) {
+      setOriginalText(node.text || '');
+      setOriginalNotes(node.notes || '');
+    }
+  }, [node?.id]);
 
   // Manual Pomodoro time editing states
   const [isEditingPomoTime, setIsEditingPomoTime] = useState(false);
@@ -414,6 +429,88 @@ export default function TaskDetailsPanel({
     });
   };
 
+  // Version History record helper
+  const recordHistoryVersion = (prevText: string, prevNotes: string, label: string) => {
+    if (!node) return;
+    const currentHistory = node.history || [];
+    
+    // Prevent recording duplicate if nothing actually changed from previous history
+    const lastVersion = currentHistory[0];
+    if (lastVersion && lastVersion.text === prevText && lastVersion.notes === prevNotes) {
+      return;
+    }
+
+    const newVersion = {
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      text: prevText,
+      notes: prevNotes,
+      description: label
+    };
+
+    onUpdateNode({
+      ...node,
+      history: [newVersion, ...currentHistory].slice(0, 30)
+    });
+  };
+
+  const handleSaveManualCheckpoint = () => {
+    if (!node) return;
+    const currentHistory = node.history || [];
+    const newVersion = {
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      text: node.text,
+      notes: node.notes || '',
+      description: 'Ручная контрольная точка'
+    };
+    onUpdateNode({
+      ...node,
+      history: [newVersion, ...currentHistory].slice(0, 30)
+    });
+  };
+
+  const handleRestoreVersion = (version: any) => {
+    if (!node) return;
+    const currentHistory = node.history || [];
+    
+    // Create an automatic backup of the current state before we overwrite it
+    const backupVersion = {
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      text: node.text,
+      notes: node.notes || '',
+      description: `Авто-сохранение перед откатом`
+    };
+
+    onUpdateNode({
+      ...node,
+      text: version.text,
+      notes: version.notes,
+      history: [backupVersion, ...currentHistory.filter(h => h.id !== version.id)].slice(0, 30)
+    });
+
+    // Sync original text / notes to prevent immediate back-trigger on blur
+    setOriginalText(version.text);
+    setOriginalNotes(version.notes);
+  };
+
+  const handleDeleteVersion = (versionId: string) => {
+    if (!node || !node.history) return;
+    onUpdateNode({
+      ...node,
+      history: node.history.filter(h => h.id !== versionId)
+    });
+  };
+
+  const handleClearHistory = () => {
+    if (!node) return;
+    onUpdateNode({
+      ...node,
+      history: []
+    });
+  };
+
   const handleSetRelativeReminder = (minutesBefore: number | undefined) => {
     if (minutesBefore === undefined) {
       onUpdateNode({
@@ -746,6 +843,15 @@ export default function TaskDetailsPanel({
           <textarea
             value={node.text}
             onChange={(e) => handlePropChange('text', e.target.value)}
+            onFocus={() => {
+              setOriginalText(node.text);
+              setOriginalNotes(node.notes || '');
+            }}
+            onBlur={() => {
+              if (node.text !== originalText) {
+                recordHistoryVersion(originalText, originalNotes, 'Правка названия');
+              }
+            }}
             className="w-full text-base font-semibold px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
             rows={2}
             placeholder="Введите название задачи..."
@@ -1872,10 +1978,171 @@ export default function TaskDetailsPanel({
           <textarea
             value={node.notes}
             onChange={(e) => handlePropChange('notes', e.target.value)}
+            onFocus={() => {
+              setOriginalText(node.text);
+              setOriginalNotes(node.notes || '');
+            }}
+            onBlur={() => {
+              if ((node.notes || '') !== originalNotes) {
+                recordHistoryVersion(originalText, originalNotes, 'Правка заметок');
+              }
+            }}
             className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-sans"
             rows={5}
             placeholder="Опишите задачу поподробнее (поддерживается текстовая спецификация)..."
           />
+        </div>
+
+        {/* Version History Section */}
+        <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mt-2 bg-[#FAFBFD]/30 dark:bg-slate-800/20">
+          <button
+            type="button"
+            onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)}
+            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-850/80 transition-all select-none cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-indigo-500" />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-350 uppercase tracking-wider">
+                История изменений
+              </span>
+              <span className="text-[10px] font-extrabold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 px-2 py-0.5 rounded-full font-mono">
+                {(node.history || []).length}
+              </span>
+            </div>
+            {isHistorySectionOpen ? (
+              <ChevronDown className="w-4 h-4 text-slate-500" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-slate-500" />
+            )}
+          </button>
+
+          {isHistorySectionOpen && (
+            <div className="p-4 space-y-4 bg-white dark:bg-slate-900 animate-fade-in">
+              <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 italic leading-normal">
+                  Автосохранение при выходе из полей названия и заметок.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSaveManualCheckpoint}
+                  className="px-2.5 py-1 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-950/30 dark:hover:bg-indigo-900/40 dark:text-indigo-400 rounded-md transition-all cursor-pointer shadow-2xs shrink-0"
+                  title="Сохранить текущую версию как снимок"
+                >
+                  + Снимок
+                </button>
+              </div>
+
+              {(node.history || []).length === 0 ? (
+                <div className="text-center py-4 text-xs text-slate-400 dark:text-slate-555 italic font-medium">
+                  История изменений пока пуста
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                  {(node.history || []).map((ver) => {
+                    const isExpanded = expandedVersionId === ver.id;
+                    const canRestore = ver.text !== node.text || ver.notes !== node.notes;
+
+                    return (
+                      <div
+                        key={ver.id}
+                        className="p-2.5 border border-slate-105 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 rounded-lg hover:border-slate-200 dark:hover:border-slate-700 transition-all flex flex-col gap-1.5"
+                      >
+                        <div className="flex items-start justify-between gap-1.5">
+                          <div className="space-y-0.5">
+                            <div className="text-[11px] font-extrabold text-slate-700 dark:text-slate-300">
+                              {ver.description || 'Правка'}
+                            </div>
+                            <div className="text-[9px] text-slate-400 font-medium font-mono">
+                              {new Date(ver.timestamp).toLocaleString()}
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedVersionId(isExpanded ? null : ver.id)}
+                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded transition"
+                              title="Посмотреть изменения"
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="w-3 h-3" />
+                              ) : (
+                                <ChevronRight className="w-3 h-3" />
+                              )}
+                            </button>
+                            
+                            <button
+                              type="button"
+                              disabled={!canRestore}
+                              onClick={() => handleRestoreVersion(ver)}
+                              className={`px-1.5 py-0.5 text-[9px] font-extrabold rounded select-none cursor-pointer transition ${
+                                canRestore 
+                                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/30 dark:text-emerald-450 border border-emerald-200/45' 
+                                  : 'bg-slate-105 text-slate-405 dark:bg-slate-800 dark:text-slate-600 border border-transparent cursor-not-allowed'
+                              }`}
+                              title={canRestore ? "Восстановить эту версию" : "Текущая версия совпадает"}
+                            >
+                              Откат
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteVersion(ver.id)}
+                              className="p-1 hover:bg-rose-100 dark:hover:bg-rose-950/20 text-rose-500 rounded transition"
+                              title="Удалить запись"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Collapsible Differences Preview */}
+                        {isExpanded && (
+                          <div className="mt-1.5 pt-1.5 border-t border-slate-150/40 dark:border-slate-800/40 space-y-2">
+                            <div className="space-y-0.5">
+                              <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest font-sans block">
+                                Версия названия:
+                              </span>
+                              <div className="bg-white dark:bg-slate-800/80 p-1.5 rounded text-[10px] font-medium text-slate-700 dark:text-slate-350 border border-slate-100 dark:border-slate-850 break-words font-mono line-clamp-3">
+                                {ver.text}
+                              </div>
+                            </div>
+                            
+                            {ver.notes ? (
+                              <div className="space-y-0.5">
+                                <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest font-sans block">
+                                  Версия заметок:
+                                </span>
+                                <div className="bg-white dark:bg-slate-800/80 p-1.5 rounded text-[10px] font-medium text-slate-600 dark:text-slate-400 border border-slate-100 dark:border-slate-850 break-all font-mono line-clamp-4 whitespace-pre-wrap">
+                                  {ver.notes}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-[9px] text-slate-400 italic">
+                                Заметки пусты
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {(node.history || []).length > 0 && (
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={handleClearHistory}
+                    className="text-[9px] font-bold text-rose-600 hover:underline transition-colors cursor-pointer"
+                  >
+                    Очистить всю историю
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Files Attached list & input */}
