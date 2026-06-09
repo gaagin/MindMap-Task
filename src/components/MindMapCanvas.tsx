@@ -82,7 +82,7 @@ function isDescendantOrSelf(candidateParentId: string, nodeId: string, allNodes:
 }
 
 export default function MindMapCanvas({
-  nodes,
+  nodes: incomingNodes,
   darkMode,
   activeProjectId,
   selectedNodeId,
@@ -174,6 +174,49 @@ export default function MindMapCanvas({
 
   // Drag states for dragging a specific card
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [localNodes, setLocalNodes] = useState<TaskNode[]>(incomingNodes);
+
+  useEffect(() => {
+    setLocalNodes(incomingNodes);
+  }, [incomingNodes]);
+
+  const nodes = draggingNodeId ? localNodes : incomingNodes;
+
+  const handleLocalUpdateCoordinates = (id: string, x: number, y: number) => {
+    setLocalNodes(prev => {
+      const targetNode = prev.find(n => n.id === id);
+      if (!targetNode) return prev;
+      const dx = x - targetNode.x;
+      const dy = y - targetNode.y;
+      if (dx === 0 && dy === 0) return prev;
+
+      const isDescendant = (candidateId: string): boolean => {
+        if (candidateId === id) return true;
+        let currentId: string | null = candidateId;
+        let iterations = 0;
+        while (currentId !== null && iterations < 100) {
+          iterations++;
+          const current = prev.find(n => n.id === currentId);
+          if (!current) break;
+          if (current.parentId === id) return true;
+          currentId = current.parentId;
+        }
+        return false;
+      };
+
+      return prev.map(n => {
+        if (isDescendant(n.id)) {
+          return {
+            ...n,
+            x: n.id === id ? x : n.x + dx,
+            y: n.id === id ? y : n.y + dy
+          };
+        }
+        return n;
+      });
+    });
+  };
+
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [nodeOffsetStart, setNodeOffsetStart] = useState({ x: 0, y: 0 });
   const [hasDraggedNode, setHasDraggedNode] = useState(false);
@@ -1343,7 +1386,7 @@ export default function MindMapCanvas({
         setHasDraggedNode(true);
       }
 
-      onUpdateNodeCoordinates(draggingNodeId, newX, newY);
+      handleLocalUpdateCoordinates(draggingNodeId, newX, newY);
 
       // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
       const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
@@ -1453,6 +1496,7 @@ export default function MindMapCanvas({
     if (draggingNodeId && hasDraggedNode) {
       const node = nodes.find(n => n.id === draggingNodeId);
       if (node) {
+        onUpdateNodeCoordinates(draggingNodeId, node.x, node.y);
         const overlap = getOverlapParent(draggingNodeId, node.x, node.y);
         const currentParent = nodes.find(p => p.id === node.parentId);
         
@@ -1761,7 +1805,7 @@ export default function MindMapCanvas({
         setHasDraggedNode(true);
       }
 
-      onUpdateNodeCoordinates(draggingNodeId, newX, newY);
+      handleLocalUpdateCoordinates(draggingNodeId, newX, newY);
 
       // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
       const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
@@ -1896,6 +1940,7 @@ export default function MindMapCanvas({
       if (draggingNodeId && hasDraggedNode) {
         const node = nodes.find(n => n.id === draggingNodeId);
         if (node) {
+          onUpdateNodeCoordinates(draggingNodeId, node.x, node.y);
           const overlap = getOverlapParent(draggingNodeId, node.x, node.y);
           const currentParent = nodes.find(p => p.id === node.parentId);
           

@@ -197,6 +197,24 @@ export default function App() {
     localStorage.setItem('unsynced_edits_count', String(unsyncedEditsCount));
   }, [unsyncedEditsCount]);
 
+  const getSyncHash = (wsState: WorkspaceState) => {
+    return JSON.stringify({
+      folders: wsState.folders,
+      projects: wsState.projects,
+      nodes: wsState.nodes,
+      activeProjectId: wsState.activeProjectId,
+      tagCategories: wsState.tagCategories || []
+    });
+  };
+
+  const lastSyncedStateHashRef = React.useRef<string>('');
+
+  useEffect(() => {
+    if (state && !lastSyncedStateHashRef.current) {
+      lastSyncedStateHashRef.current = getSyncHash(state);
+    }
+  }, []);
+
   const [syncReport, setSyncReport] = useState<SyncReport | null>(() => {
     try {
       const saved = localStorage.getItem('milli_last_sync_report');
@@ -466,6 +484,7 @@ export default function App() {
         if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
           isFirstSnapshotRef.current = false;
           ignoreNextStateChangeRef.current = true;
+          lastSyncedStateHashRef.current = getSyncHash(cloudState); // Update hash to prevent loops
           setRawState(cloudState);
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
           setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
@@ -510,6 +529,11 @@ export default function App() {
     // Only save to Firebase if the state actually changed or there are pending unsynced edits.
     // This prevents a stale client session from overwriting newer changes in the cloud on auth load.
     if (currentUser && (stateChanged || unsyncedEditsCountRef.current > 0)) {
+      const currentHash = getSyncHash(state);
+      if (currentHash === lastSyncedStateHashRef.current) {
+        return; // Already synced! Prevents infinite trigger loops
+      }
+
       setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
       const countSaved = unsyncedEditsCount;
       const timer = setTimeout(async () => {
@@ -519,6 +543,7 @@ export default function App() {
           firebase: res.success ? 'saved' : 'error'
         }));
         if (res.success) {
+          lastSyncedStateHashRef.current = getSyncHash(state); // Update hash on successful upload
           setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
         }
       }, 1500); // 1.5s snapshot rate-limiting debounce
@@ -538,6 +563,7 @@ export default function App() {
       if (result.success) {
         // Correctly set block flag before state reset to prevent trigger loop
         ignoreNextStateChangeRef.current = true;
+        lastSyncedStateHashRef.current = getSyncHash(result.state); // Update hash to prevent loop reflection
         setRawState(result.state);
         setSyncStatus(prev => ({
           ...prev,
@@ -592,6 +618,7 @@ export default function App() {
     try {
       const res = await saveToFirebaseDirectly(currentUser.uid, currentWorkspace);
       if (res.success) {
+        lastSyncedStateHashRef.current = getSyncHash(currentWorkspace); // Update hash to prevent reflection loops
         setUnsyncedEditsCount(0);
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         setForceCloudSyncFeedback('Успешно выгружено в облако! Теперь откройте это приложение на другом устройстве и нажмите кнопку "Загрузить из облака".');
@@ -620,6 +647,7 @@ export default function App() {
           tagCategories: cloudData.tagCategories || []
         };
         ignoreNextStateChangeRef.current = true;
+        lastSyncedStateHashRef.current = getSyncHash(cloudState); // Update hash to prevent reflection loops
         setRawState(cloudState);
         setUnsyncedEditsCount(0);
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
@@ -641,18 +669,22 @@ export default function App() {
     }
   }, [googleToken]);
 
-  // 4. Background Symmetrical Sheets Sync with 25s/10s debounce during continuous editing states (rate-limit protection)
+  // 4. Background Symmetrical Sheets Sync with 3s fast responsive debounce during continuous editing states
   // Only triggers background auto-sync when there are actual unsynced edits, saving Google API quota limits!
   useEffect(() => {
     if (googleToken && unsyncedEditsCount > 0) {
-      const isMobile = viewMode === 'mobile-list' || (typeof window !== 'undefined' && window.innerWidth < 768);
-      const debounceTime = isMobile ? 10000 : 25000; // 10s for mobile, 25s for desktop
+      const currentHash = getSyncHash(state);
+      if (currentHash === lastSyncedStateHashRef.current) {
+        return; // Already synced! Prevents infinite trigger loops
+      }
+
+      const debounceTime = 3000; // Fast responsive 3s debounce after user stops editing the mind map
       const timer = setTimeout(() => {
         runSheetsSymmetricalSync(googleToken, state);
       }, debounceTime); // Optimized rate-limiting debounce
       return () => clearTimeout(timer);
     }
-  }, [state, googleToken, unsyncedEditsCount, viewMode]);
+  }, [state, googleToken, unsyncedEditsCount]);
 
   // 5. Symmetrical Sheets Sync instantly on window tab switch or pageunload (visibilitychange / pagehide)
   useEffect(() => {
