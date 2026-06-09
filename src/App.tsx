@@ -17,6 +17,10 @@ import {
   Smartphone,
   ChevronRight,
   Cloud,
+  CloudOff,
+  Wifi,
+  WifiOff,
+  Check,
   Database,
   RefreshCw,
   LogOut,
@@ -229,24 +233,18 @@ export default function App() {
     });
   };
 
-  // Google Authentication & Symmetrical Sync statuses
+  // Google Authentication & Real-time Cloud Sync States (Notion-style)
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
-  const [isSyncingSheets, setIsSyncingSheets] = useState(false);
-  const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
-  const [forceCloudSyncLoading, setForceCloudSyncLoading] = useState<'upload' | 'download' | null>(null);
-  const [forceCloudSyncFeedback, setForceCloudSyncFeedback] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [sheetsError, setSheetsError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{
     local: 'saved' | 'saving' | 'error';
     firebase: 'idle' | 'saved' | 'syncing' | 'error';
-    sheets: 'idle' | 'synced' | 'syncing' | 'error';
-    lastSyncedTime?: string;
   }>({
     local: 'saved',
-    firebase: 'idle',
-    sheets: 'idle'
+    firebase: 'idle'
   });
 
   // Real-time Cloud Conflict resolution & alerts based on user requests
@@ -277,6 +275,23 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('unsynced_edits_count', String(unsyncedEditsCount));
   }, [unsyncedEditsCount]);
+
+  // Network offline/online listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const getSyncHash = (wsState: WorkspaceState) => {
     return JSON.stringify({
@@ -638,120 +653,13 @@ export default function App() {
     }
   }, [state, currentUser]);
 
-  // Symmetrical Google Sheets merge trigger method
-  const runSheetsSymmetricalSync = async (token: string, currentWorkspace: WorkspaceState) => {
-    if (isSyncingSheets) return;
-    setIsSyncingSheets(true);
-    setSyncStatus(prev => ({ ...prev, sheets: 'syncing' }));
-    setSheetsError(null);
-
-    try {
-      const result = await syncWithGoogleSheets(token, currentWorkspace);
-      if (result.success) {
-        // Correctly set block flag before state reset to prevent trigger loop
-        ignoreNextStateChangeRef.current = true;
-        const normalized = normalizeWorkspaceState(result.state);
-        lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent loop reflection
-        setRawState(normalized);
-        setSyncStatus(prev => ({
-          ...prev,
-          sheets: 'synced',
-          lastSyncedTime: new Date().toLocaleTimeString() + ', ' + new Date().toLocaleDateString()
-        }));
-        
-        if (result.report) {
-          setSyncReport(result.report);
-          localStorage.setItem('milli_last_sync_report', JSON.stringify(result.report));
-        }
-        
-        // Zero out progress tracking on successful symmetrical sheet consolidation
-        setUnsyncedEditsCount(0);
-        setSheetsError(null);
-      } else {
-        setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
-        const errMsg = result.error || 'Failed to synchronize. Response state was not successful.';
-        
-        const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
-        if (isStaleToken) {
-          setSheetsError('Сессия Google Таблиц истекла. Пожалуйста, выйдите и авторизуйтесь заново в меню "Google Таблицы".');
-          setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
-          setAccessToken(null); // Clear stored token from localStorage
-        } else {
-          setSheetsError(errMsg);
-        }
-      }
-    } catch (e: any) {
-      console.error('Error running symmetrical sheets sync:', e);
-      setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
-      
-      const errMsg = e?.message || String(e);
-      const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
-      if (isStaleToken) {
-        setSheetsError('Сессия Google Таблиц истекла. Пожалуйста, выйдите и авторизуйтесь заново в меню "Google Таблицы".');
-        setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
-        setAccessToken(null); // Clear stored token from localStorage
-      } else {
-        setSheetsError(errMsg);
-      }
-    } finally {
-      setIsSyncingSheets(false);
-    }
-  };
+  // Symmetrical Google Sheets merge trigger method (Deprecated in favor of Notion-style Firebase sync)
+  const runSheetsSymmetricalSync = async (token: string, currentWorkspace: WorkspaceState) => {};
 
   // Manual forced cloud sync actions to solve multi-device desynchronizations immediately
-  const forceUploadToCloud = async (currentWorkspace: WorkspaceState) => {
-    if (!currentUser) return;
-    setForceCloudSyncLoading('upload');
-    setForceCloudSyncFeedback(null);
-    try {
-      const res = await saveToFirebaseDirectly(currentUser.uid, currentWorkspace);
-      if (res.success) {
-        lastSyncedStateHashRef.current = getSyncHash(currentWorkspace); // Update hash to prevent reflection loops
-        setUnsyncedEditsCount(0);
-        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-        setForceCloudSyncFeedback('Успешно выгружено в облако! Теперь откройте это приложение на другом устройстве и нажмите кнопку "Загрузить из облака".');
-      } else {
-        setForceCloudSyncFeedback(`Ошибка выгрузки: ${res.error || 'Проверьте интернет-соединение или права доступа.'}`);
-      }
-    } catch (e: any) {
-      setForceCloudSyncFeedback(`Ошибка: ${e?.message || String(e)}`);
-    } finally {
-      setForceCloudSyncLoading(null);
-    }
-  };
-
-  const forceDownloadFromCloud = async () => {
-    if (!currentUser) return;
-    setForceCloudSyncLoading('download');
-    setForceCloudSyncFeedback(null);
-    try {
-      const cloudData = await loadFromFirebaseDirectly(currentUser.uid);
-      if (cloudData) {
-        const cloudState: WorkspaceState = {
-          folders: cloudData.folders || [],
-          projects: cloudData.projects || [],
-          nodes: cloudData.nodes || {},
-          activeProjectId: cloudData.activeProjectId || null,
-          tagCategories: cloudData.tagCategories || []
-        };
-        ignoreNextStateChangeRef.current = true;
-        const normalized = normalizeWorkspaceState(cloudState);
-        lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent reflection loops
-        setRawState(normalized);
-        setUnsyncedEditsCount(0);
-        setHasCloudUpdates(false);
-        setCloudUpdateState(null);
-        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-        setForceCloudSyncFeedback('Успешно загружено! Данные на этом устройстве полностью заменены версией из вашего облака.');
-      } else {
-        setForceCloudSyncFeedback('В облаке не найдено сохраненных данных. Пожалуйста, сначала сделайте "Выгрузить в облако" на первом устройстве!');
-      }
-    } catch (e: any) {
-      setForceCloudSyncFeedback(`Ошибка загрузки: ${e?.message || String(e)}`);
-    } finally {
-      setForceCloudSyncLoading(null);
-    }
-  };
+  // Legacy manual cloud overrides (Notion-style Firebase sync is fully automatic now)
+  const forceUploadToCloud = async (currentWorkspace: WorkspaceState) => {};
+  const forceDownloadFromCloud = async () => {};
 
   // 3. Auto Symmetrical Google Sheets merge on startup / login auth
   useEffect(() => {
@@ -1874,7 +1782,7 @@ export default function App() {
 
   const selectedNode = activeNodes.find(n => n.id === selectedNodeId) || null;
 
-  const hasSyncOrAuthError = !!authError || !!sheetsError || syncStatus.sheets === 'error' || syncStatus.local === 'error';
+  const hasSyncOrAuthError = !!authError || syncStatus.firebase === 'error' || syncStatus.local === 'error';
 
   return (
     <div className="flex h-screen h-[100dvh] overflow-hidden text-slate-900 bg-white dark:bg-slate-950 dark:text-slate-100 font-sans transition-colors duration-150">
@@ -2149,28 +2057,143 @@ export default function App() {
               </div>
             )}
 
-            {/* Symmetrical Sync and Backup Trigger Button */}
-            <button
-              id="milli-sync-dashboard-btn"
-              type="button"
-              onClick={() => setIsSyncMenuOpen(true)}
-              className={`flex items-center gap-1.5 py-1.5 px-3 border rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:scale-[1.01] shrink-0 ${
-                isSyncingSheets || syncStatus.firebase === 'syncing'
-                  ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
-                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
-              }`}
-              title="Открыть панель резервного копирования и синхронизации"
-            >
-              <Database className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-              <span className="hidden sm:inline">Резервная копия и синхронизация</span>
-              {hasSyncOrAuthError ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
-              ) : currentUser ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-              )}
-            </button>
+            {/* Symmetrical Sync and Backup Status Pill (Notion style) */}
+            {!currentUser ? (
+              <button
+                id="milli-google-auth-btn"
+                type="button"
+                onClick={async () => {
+                  setAuthError(null);
+                  try {
+                    const res = await googleSignIn();
+                    if (res) {
+                      setCurrentUser(res.user);
+                      setGoogleToken(res.accessToken);
+                      setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+                    }
+                  } catch (err: any) {
+                    const msg = err?.message || String(err);
+                    console.error("Sign in failed:", err);
+                    if (msg.includes("unauthorized-domain") || (err?.code && err.code.includes("unauthorized-domain"))) {
+                      setAuthError("unauthorized-domain");
+                    } else {
+                      setAuthError(msg);
+                    }
+                  }
+                }}
+                className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-650 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-550 active:scale-[0.98] text-white text-xs font-extrabold rounded-lg cursor-pointer transition-all shrink-0 select-none border border-indigo-700/40 shadow-xs"
+                title="Войти через Google для автоматической автосинхронизации, как в Notion"
+              >
+                <svg className="w-3.5 h-3.5 fill-current text-white shrink-0" viewBox="0 0 24 24">
+                  <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.414 0-6.19-2.77-6.19-6.19 0-3.418 2.776-6.19 6.19-6.19 1.483 0 2.844.52 3.917 1.391l3.056-3.056C19.11 2.8 15.86 1.332 12.24 1.332 6.136 1.332 1.2 6.268 1.2 12.37s4.936 11.04 11.04 11.04c6.264 0 10.8-4.4 10.8-10.74 0-.74-.065-1.3-.18-1.85H12.24z"/>
+                </svg>
+                <span className="hidden xs:inline">Войти через Google</span>
+                <span className="inline xs:hidden">Войти</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                {/* Connection & Sync Status Indicator pill */}
+                {!isOnline ? (
+                  <div className="flex items-center gap-1.5 py-1.5 px-3 bg-amber-500/10 dark:bg-amber-500/5 text-amber-600 dark:text-amber-400 border border-amber-300/30 dark:border-amber-900/30 rounded-lg text-xs font-bold font-sans">
+                    <CloudOff className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden md:inline">Вне сети (сохранено на устройстве)</span>
+                    <span className="inline md:hidden">Вне сети</span>
+                  </div>
+                ) : syncStatus.firebase === 'syncing' ? (
+                  <div className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-900/50 rounded-lg text-xs font-bold font-sans animate-pulse">
+                    <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-indigo-500" />
+                    <span>Сохранение...</span>
+                  </div>
+                ) : syncStatus.firebase === 'error' || authError ? (
+                  <div className="flex items-center gap-1.5 py-1.5 px-3 bg-rose-500/10 dark:bg-rose-500/5 text-rose-600 dark:text-rose-400 border border-rose-300/30 dark:border-rose-900/30 rounded-lg text-xs font-bold font-sans">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden md:inline">Ошибка синхронизации</span>
+                    <span className="inline md:hidden">Ошибка</span>
+                  </div>
+                ) : (
+                  <div className="group relative flex items-center gap-1.5 py-1.5 px-3 bg-emerald-500/10 dark:bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 border border-emerald-300/20 dark:border-emerald-900/20 rounded-lg text-xs font-bold font-sans cursor-default select-none transition-all hover:bg-emerald-500/15 dark:hover:bg-emerald-500/10">
+                    <Check className="w-3.5 h-3.5 text-emerald-500 font-bold shrink-0" />
+                    <span className="hidden md:inline">Синхронизировано</span>
+                    <span className="inline md:hidden">В облаке</span>
+                    
+                    {/* Hover explanation tooltip */}
+                    <div className="absolute top-10 right-0 sm:left-1/2 sm:-translate-x-1/2 w-max max-w-xs scale-0 group-hover:scale-100 transition-all origin-top duration-150 p-2 bg-slate-900 text-white text-[10px] sm:text-xs rounded-lg shadow-lg pointer-events-none z-50">
+                      Все данные успешно сохранены в Google Firebase (Firestore) в реальном времени
+                    </div>
+                  </div>
+                )}
+
+                {/* Avatar with dropdown sign out */}
+                <div id="milli-avatar-dropdown-container" className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="w-8 h-8 rounded-full border border-slate-250 dark:border-slate-800 hover:ring-2 hover:ring-indigo-500/80 transition-all overflow-hidden flex items-center justify-center shrink-0 cursor-pointer bg-white dark:bg-slate-900 shadow-xs"
+                    title={currentUser.displayName || currentUser.email || 'Профиль пользователя'}
+                  >
+                    {currentUser.photoURL ? (
+                      <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400 font-bold flex items-center justify-center text-xs">
+                        {currentUser.email?.[0].toUpperCase() || 'U'}
+                      </div>
+                    )}
+                  </button>
+
+                  {isProfileDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40 cursor-default" onClick={() => setIsProfileDropdownOpen(false)} />
+                      <div className="absolute right-0 mt-2.5 w-64 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl shadow-xl p-4 z-50 text-xs text-slate-850 dark:text-slate-100 animate-in fade-in slide-in-from-top-1.5 duration-200">
+                        <div className="flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-800/60 pb-3 mb-2.5">
+                          {currentUser.photoURL ? (
+                            <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-9 h-9 rounded-full border border-slate-200 shrink-0" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-indigo-50 dark:bg-indigo-950 font-bold flex items-center justify-center text-sm text-indigo-700 dark:text-indigo-400 shrink-0">
+                              {currentUser.email?.[0].toUpperCase() || 'U'}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-bold truncate leading-none text-slate-800 dark:text-slate-100 text-[12px]">{currentUser.displayName || 'Пользователь'}</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate leading-none mt-1" title={currentUser.email || ''}>{currentUser.email}</p>
+                          </div>
+                        </div>
+
+                        <div className="py-1 space-y-2 select-none font-sans border-b border-slate-100 dark:border-slate-800/60 pb-2.5">
+                          <div className="flex items-center justify-between text-[10px] text-slate-400">
+                            <span>Канал связи:</span>
+                            <span className={isOnline ? 'text-emerald-500 font-extrabold' : 'text-amber-500 font-extrabold'}>
+                              {isOnline ? 'ОНЛАЙН' : 'ОФФЛАЙН'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-slate-400">
+                            <span>Синхронизация:</span>
+                            <span className="text-slate-700 dark:text-slate-300 font-bold uppercase text-[9px] bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded leading-none">
+                              {syncStatus.firebase === 'syncing' ? 'Сохранение...' : 'Синхронно'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await logout();
+                            } catch (e) {
+                              console.error(e);
+                            }
+                            setIsProfileDropdownOpen(false);
+                          }}
+                          className="w-full mt-2.5 flex items-center justify-center gap-2 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 hover:text-rose-600 text-slate-600 dark:text-slate-300 font-extrabold rounded-lg transition-colors cursor-pointer text-[11px]"
+                        >
+                          <LogOut className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          Выйти из аккаунта
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Dark light theme toggler */}
             <button
@@ -2553,21 +2576,19 @@ export default function App() {
       )}
 
       {/* Symmetrical Sync & Backup Dashboard Full Modal Backdrop Overlay */}
-      {isSyncMenuOpen && (() => {
-        const getQueuedDeletionsCount = () => {
-          try {
-            const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
-            return JSON.parse(listJson).length;
-          } catch {
-            return 0;
-          }
-        };
-        
-        const totalItemsCount = state.folders.length + 
-          state.projects.length + 
-          Object.values(state.nodes).flat().length + 
-          (state.tagCategories || []).length;
-
+      {false && (() => {
+        const isSyncMenuOpen = false;
+        const setIsSyncMenuOpen = (v: any) => {};
+        const isSyncingSheets = false;
+        const forceCloudSyncLoading: any = null;
+        const setForceCloudSyncLoading = (v: any) => {};
+        const forceCloudSyncFeedback = "";
+        const setForceCloudSyncFeedback = (v: any) => {};
+        const sheetsError = "";
+        const setSheetsError = (v: any) => {};
+        const runSheetsSymmetricalSync = (...args: any[]) => {};
+        const getQueuedDeletionsCount = () => 0;
+        const totalItemsCount = 0;
         return (
           <div 
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[999] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
