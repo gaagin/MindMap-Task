@@ -2480,9 +2480,7 @@ export default function App() {
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
-                  if (id) {
-                    setIsDrawerOpen(true);
-                  } else {
+                  if (!id) {
                     setIsDrawerOpen(false);
                   }
                 }}
