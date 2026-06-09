@@ -2264,7 +2264,34 @@ export default function MindMapCanvas({
           <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3 border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl flex flex-col md:flex-row items-center gap-4 transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-[98vw] md:max-w-[96vw]">
             <div className="flex items-center gap-2.5 min-w-0 w-full md:w-auto justify-between md:justify-start">
               <div className="flex items-center gap-2.5 min-w-0">
-                <span className="text-xl shrink-0">📦</span>
+                <div className="relative w-11 h-11 flex items-center justify-center shrink-0">
+                  <svg className="w-full h-full transform -rotate-90 select-none" viewBox="0 0 36 36">
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="15"
+                      className="text-slate-100 dark:text-slate-800"
+                      strokeWidth="3"
+                      stroke="currentColor"
+                      fill="transparent"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="15"
+                      className="text-amber-500 dark:text-amber-400 transition-all duration-300"
+                      strokeWidth="3"
+                      strokeDasharray={2 * Math.PI * 15}
+                      strokeDashoffset={2 * Math.PI * 15 * (1 - progress / 100)}
+                      strokeLinecap="round"
+                      stroke="currentColor"
+                      fill="transparent"
+                    />
+                  </svg>
+                  <span className="absolute text-[9.5px] font-black text-slate-800 dark:text-slate-200 font-mono">
+                    {progress}%
+                  </span>
+                </div>
                 <div className="min-w-0">
                   <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans">Режим фокусировки</div>
                   <input
@@ -2586,9 +2613,34 @@ export default function MindMapCanvas({
                 {/* Header of Container Canvas */}
                 <div className={`p-3 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white dark:bg-slate-950 select-none pb-2.5`}>
                   <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className="text-amber-500 dark:text-amber-400 shrink-0 text-sm">
-                      📦
-                    </span>
+                    <div className="relative w-8 h-8 flex items-center justify-center shrink-0 mr-1.5">
+                      <svg className="w-full h-full transform -rotate-90 select-none" viewBox="0 0 32 32">
+                        <circle
+                          cx="16"
+                          cy="16"
+                          r="13"
+                          className="text-slate-100 dark:text-slate-800"
+                          strokeWidth="2.5"
+                          stroke="currentColor"
+                          fill="transparent"
+                        />
+                        <circle
+                          cx="16"
+                          cy="16"
+                          r="13"
+                          className="text-amber-500 dark:text-amber-400 transition-all duration-300"
+                          strokeWidth="2.5"
+                          strokeDasharray={2 * Math.PI * 13}
+                          strokeDashoffset={2 * Math.PI * 13 * (1 - containerProgress / 100)}
+                          strokeLinecap="round"
+                          stroke="currentColor"
+                          fill="transparent"
+                        />
+                      </svg>
+                      <span className="absolute text-[8px] font-black text-slate-700 dark:text-slate-300 font-mono">
+                        {containerProgress}%
+                      </span>
+                    </div>
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate font-sans tracking-wide">
                       {node.text || 'Новый холст-контейнер'}
                     </span>

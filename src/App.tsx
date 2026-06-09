@@ -496,12 +496,16 @@ export default function App() {
     // This prevents a stale client session from overwriting newer changes in the cloud on auth load.
     if (currentUser && (stateChanged || unsyncedEditsCountRef.current > 0)) {
       setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+      const countSaved = unsyncedEditsCount;
       const timer = setTimeout(async () => {
         const success = await saveToFirebaseDirectly(currentUser.uid, state);
         setSyncStatus(prev => ({
           ...prev,
           firebase: success ? 'saved' : 'error'
         }));
+        if (success) {
+          setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
+        }
       }, 1500); // 1.5s snapshot rate-limiting debounce
       return () => clearTimeout(timer);
     }
