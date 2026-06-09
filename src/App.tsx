@@ -143,9 +143,71 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
   };
 }
 
+
+/**
+ * Keeps global WorkspaceState and all active projects fully in sync regarding tagCategories.
+ * This guarantees categories and tags do not disappear when restoring snapshots from Firestore or Google Sheets.
+ */
+function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
+  if (!wsState) return wsState;
+
+  const folders = wsState.folders || [];
+  const projects = wsState.projects || [];
+  const nodes = wsState.nodes || {};
+  let tagCategories = wsState.tagCategories || [];
+
+  // If root tagCategories are empty but projects have them, extract them
+  if (tagCategories.length === 0) {
+    const projectCats = projects.flatMap(p => p.tagCategories || []);
+    const seen = new Set<string>();
+    tagCategories = projectCats.filter(cat => {
+      if (seen.has(cat.id)) return false;
+      seen.add(cat.id);
+      return true;
+    });
+  }
+
+  // Hydrate empty projects, and merge tags globally to avoid losing any categories
+  const updatedProjects = projects.map(p => {
+    const pCats = p.tagCategories || [];
+    
+    // Merge project-specific and global categories
+    const mergedCatsMap = new Map<string, TagCategory>();
+    tagCategories.forEach(c => mergedCatsMap.set(c.id, c));
+    pCats.forEach(c => {
+      const existing = mergedCatsMap.get(c.id);
+      if (!existing || new Date(c.updatedAt || 0).getTime() > new Date(existing.updatedAt || 0).getTime()) {
+        mergedCatsMap.set(c.id, c);
+      }
+    });
+
+    return {
+      ...p,
+      tagCategories: Array.from(mergedCatsMap.values())
+    };
+  });
+
+  // Re-flatten to root categories to maintain absolute synchronization
+  const finalRootCats = updatedProjects.flatMap(p => p.tagCategories || []);
+  const seenIds = new Set<string>();
+  const deduplicatedRootCats = finalRootCats.filter(cat => {
+    if (seenIds.has(cat.id)) return false;
+    seenIds.add(cat.id);
+    return true;
+  });
+
+  return {
+    ...wsState,
+    folders,
+    projects: updatedProjects,
+    nodes,
+    tagCategories: deduplicatedRootCats
+  };
+}
+
 export default function App() {
   // Load initial state
-  const [state, setRawState] = useState<WorkspaceState>(() => loadWorkspace());
+  const [state, setRawState] = useState<WorkspaceState>(() => normalizeWorkspaceState(loadWorkspace()));
   const isFirstRender = React.useRef(true);
   const ignoreNextStateChangeRef = React.useRef(false);
   const hasCheckedUrlParamRef = React.useRef(false);
@@ -160,7 +222,8 @@ export default function App() {
         ...nextTyped,
         tagCategories: nextTyped.projects.flatMap(p => p.tagCategories || [])
       };
-      return enrichStateWithTimestamps(prev, next);
+      const enriched = enrichStateWithTimestamps(prev, next);
+      return normalizeWorkspaceState(enriched);
     });
   };
 
@@ -183,6 +246,22 @@ export default function App() {
     firebase: 'idle',
     sheets: 'idle'
   });
+
+  // Real-time Cloud Conflict resolution & alerts based on user requests
+  const [hasCloudUpdates, setHasCloudUpdates] = useState(false);
+  const [cloudUpdateState, setCloudUpdateState] = useState<WorkspaceState | null>(null);
+
+  const handleApplyCloudState = () => {
+    if (!cloudUpdateState) return;
+    ignoreNextStateChangeRef.current = true;
+    const normalized = normalizeWorkspaceState(cloudUpdateState);
+    lastSyncedStateHashRef.current = getSyncHash(normalized);
+    setRawState(normalized);
+    setUnsyncedEditsCount(0);
+    setHasCloudUpdates(false);
+    setCloudUpdateState(null);
+    setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+  };
 
   const [unsyncedEditsCount, setUnsyncedEditsCount] = useState<number>(() => {
     try {
@@ -484,13 +563,22 @@ export default function App() {
         if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
           isFirstSnapshotRef.current = false;
           ignoreNextStateChangeRef.current = true;
-          lastSyncedStateHashRef.current = getSyncHash(cloudState); // Update hash to prevent loops
-          setRawState(cloudState);
+          const normalized = normalizeWorkspaceState(cloudState);
+          lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent loops
+          setRawState(normalized);
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
           setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
+          setHasCloudUpdates(false);
+          setCloudUpdateState(null);
+        } else {
+          // Force notification to user that another device has fresher updates
+          setHasCloudUpdates(true);
+          setCloudUpdateState(cloudState);
         }
       } else {
         isFirstSnapshotRef.current = false;
+        setHasCloudUpdates(false);
+        setCloudUpdateState(null);
       }
     }, (error) => {
       console.error('[Firebase snapshot listener error]:', error);
@@ -563,8 +651,9 @@ export default function App() {
       if (result.success) {
         // Correctly set block flag before state reset to prevent trigger loop
         ignoreNextStateChangeRef.current = true;
-        lastSyncedStateHashRef.current = getSyncHash(result.state); // Update hash to prevent loop reflection
-        setRawState(result.state);
+        const normalized = normalizeWorkspaceState(result.state);
+        lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent loop reflection
+        setRawState(normalized);
         setSyncStatus(prev => ({
           ...prev,
           sheets: 'synced',
@@ -647,9 +736,12 @@ export default function App() {
           tagCategories: cloudData.tagCategories || []
         };
         ignoreNextStateChangeRef.current = true;
-        lastSyncedStateHashRef.current = getSyncHash(cloudState); // Update hash to prevent reflection loops
-        setRawState(cloudState);
+        const normalized = normalizeWorkspaceState(cloudState);
+        lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent reflection loops
+        setRawState(normalized);
         setUnsyncedEditsCount(0);
+        setHasCloudUpdates(false);
+        setCloudUpdateState(null);
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         setForceCloudSyncFeedback('Успешно загружено! Данные на этом устройстве полностью заменены версией из вашего облака.');
       } else {
@@ -2104,6 +2196,39 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {/* Real-time Cloud conflict warning banner */}
+        {hasCloudUpdates && currentUser && (
+          <div className="bg-amber-500/10 dark:bg-amber-500/5 border-b border-amber-500/25 px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs z-10 animate-in slide-in-from-top-1">
+            <div className="flex items-center gap-2.5 text-amber-800 dark:text-amber-300 min-w-0">
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+              </span>
+              <span className="font-semibold leading-tight text-left">
+                Обнаружены новые изменения на другом устройстве! {unsyncedEditsCount > 0 ? `(Автоматическая загрузка приостановлена, чтобы не перезаписать ваши ${unsyncedEditsCount} несинхронизированных изменений).` : `Рекомендуется обновиться.`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={handleApplyCloudState}
+                className="py-1 px-3 bg-amber-650 hover:bg-amber-700 text-white dark:bg-amber-600 dark:hover:bg-amber-550 rounded-md text-[11px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Принять изменения из облака
+              </button>
+              <button
+                type="button"
+                onClick={() => setHasCloudUpdates(false)}
+                className="p-1 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 rounded-md transition-colors cursor-pointer shrink-0"
+                title="Скрыть предупреждение"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Collapsible advanced filters subheader panel */}
         {isFilterPanelOpen && (
