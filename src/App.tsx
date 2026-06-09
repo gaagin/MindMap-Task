@@ -282,7 +282,9 @@ export default function App() {
       projects: wsState.projects,
       nodes: wsState.nodes,
       activeProjectId: wsState.activeProjectId,
-      tagCategories: wsState.tagCategories || []
+      tagCategories: wsState.tagCategories || [],
+      googleSheetsFileId: wsState.googleSheetsFileId,
+      taskSheetsSpreadsheetId: wsState.taskSheetsSpreadsheetId
     });
   };
 
@@ -536,7 +538,9 @@ export default function App() {
         projects: cloudData.projects || [],
         nodes: cloudData.nodes || {},
         activeProjectId: cloudData.activeProjectId || null,
-        tagCategories: cloudData.tagCategories || []
+        tagCategories: cloudData.tagCategories || [],
+        googleSheetsFileId: cloudData.googleSheetsFileId || undefined,
+        taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined
       };
 
       const currentState = stateRef.current;
@@ -546,7 +550,9 @@ export default function App() {
         projects: currentState.projects,
         nodes: currentState.nodes,
         activeProjectId: currentState.activeProjectId,
-        tagCategories: currentState.tagCategories || []
+        tagCategories: currentState.tagCategories || [],
+        googleSheetsFileId: currentState.googleSheetsFileId,
+        taskSheetsSpreadsheetId: currentState.taskSheetsSpreadsheetId
       };
 
       const cloudCompare = {
@@ -554,7 +560,9 @@ export default function App() {
         projects: cloudState.projects,
         nodes: cloudState.nodes,
         activeProjectId: cloudState.activeProjectId,
-        tagCategories: cloudState.tagCategories || []
+        tagCategories: cloudState.tagCategories || [],
+        googleSheetsFileId: cloudState.googleSheetsFileId,
+        taskSheetsSpreadsheetId: cloudState.taskSheetsSpreadsheetId
       };
 
       if (JSON.stringify(localCompare) !== JSON.stringify(cloudCompare)) {
@@ -800,6 +808,16 @@ export default function App() {
       window.removeEventListener('pagehide', handlePageHide);
     };
   }, [googleToken, state]);
+
+  // Synchronize Google Sheets IDs from state to localStorage
+  useEffect(() => {
+    if (state.googleSheetsFileId) {
+      localStorage.setItem('google_sheets_sync_file_id', state.googleSheetsFileId);
+    }
+    if (state.taskSheetsSpreadsheetId) {
+      localStorage.setItem('task_sheets_spreadsheet_id', state.taskSheetsSpreadsheetId);
+    }
+  }, [state.googleSheetsFileId, state.taskSheetsSpreadsheetId]);
 
   // Handle media/dark mode class on body element
   useEffect(() => {

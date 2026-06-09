@@ -384,6 +384,12 @@ export function loadWorkspace(): WorkspaceState {
     if (!state.activeProjectId && state.projects.length > 0) {
       state.activeProjectId = state.projects[0].id;
     }
+    if (!state.googleSheetsFileId) {
+      state.googleSheetsFileId = localStorage.getItem('google_sheets_sync_file_id') || undefined;
+    }
+    if (!state.taskSheetsSpreadsheetId) {
+      state.taskSheetsSpreadsheetId = localStorage.getItem('task_sheets_spreadsheet_id') || undefined;
+    }
     return state;
   } catch (error) {
     console.error('Failed to load workspace, starting clean demo', error);

@@ -90,6 +90,8 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
       }, {} as Record<string, TaskNode[]>),
       activeProjectId: state.activeProjectId,
       tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
+      googleSheetsFileId: state.googleSheetsFileId || localStorage.getItem('google_sheets_sync_file_id') || null,
+      taskSheetsSpreadsheetId: state.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || null,
       updatedAt: new Date().toISOString()
     };
     
@@ -283,7 +285,7 @@ export async function syncWithGoogleSheets(
   localState: WorkspaceState
 ): Promise<{ state: WorkspaceState; success: boolean; report?: SyncReport; error?: string }> {
   try {
-    let fileId = await findSpreadsheet(accessToken);
+    let fileId = localState.googleSheetsFileId || await findSpreadsheet(accessToken);
     if (!fileId) {
       console.log('Sync spreadsheet not found. Creating a new one in Google Drive');
       fileId = await createSpreadsheet(accessToken);
@@ -626,7 +628,9 @@ export async function syncWithGoogleSheets(
       projects: finalProjects,
       nodes: finalNodesMap,
       activeProjectId: finalActiveProjectId,
-      tagCategories: finalTagCats
+      tagCategories: finalTagCats,
+      googleSheetsFileId: fileId,
+      taskSheetsSpreadsheetId: localState.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || undefined
     };
 
     // 8. Write updated lists back to Google Sheets (Overwrite to ensure exact symmetry)

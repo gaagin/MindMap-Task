@@ -38,6 +38,14 @@ export default function GoogleSheetsSync({
   const [clientId, setClientId] = useState(() => localStorage.getItem('task_sheets_client_id') || '');
   const [spreadsheetId, setSpreadsheetId] = useState(() => localStorage.getItem('task_sheets_spreadsheet_id') || '');
   
+  // Synchronize spreadsheetId from currentWorkspaceState (cross-device cloud updates)
+  useEffect(() => {
+    if (currentWorkspaceState.taskSheetsSpreadsheetId && currentWorkspaceState.taskSheetsSpreadsheetId !== spreadsheetId) {
+      setSpreadsheetId(currentWorkspaceState.taskSheetsSpreadsheetId);
+      localStorage.setItem('task_sheets_spreadsheet_id', currentWorkspaceState.taskSheetsSpreadsheetId);
+    }
+  }, [currentWorkspaceState.taskSheetsSpreadsheetId]);
+  
   // Auth & Token (stored strictly in memory as per guidelines)
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
@@ -167,6 +175,10 @@ export default function GoogleSheetsSync({
       const newId = await createSyncSpreadsheet(accessToken, name || 'Синхронизация Интеллект-Карты Задач');
       setSpreadsheetId(newId);
       saveConfigToStorage(clientId, newId);
+      onApplySyncedState({
+        ...currentWorkspaceState,
+        taskSheetsSpreadsheetId: newId
+      });
       await loadSpreadsheetList();
       setStatusMsg({ text: 'Успешно создана новая таблица с вкладками SyncState и Tasks_View!', type: 'success' });
     } catch (err: any) {
@@ -429,6 +441,10 @@ export default function GoogleSheetsSync({
                     const sid = e.target.value;
                     setSpreadsheetId(sid);
                     saveConfigToStorage(clientId, sid);
+                    onApplySyncedState({
+                      ...currentWorkspaceState,
+                      taskSheetsSpreadsheetId: sid || undefined
+                    });
                   }}
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-8 pr-2 py-1.5 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
                 >
@@ -461,6 +477,10 @@ export default function GoogleSheetsSync({
                   const sid = e.target.value.trim();
                   setSpreadsheetId(sid);
                   saveConfigToStorage(clientId, sid);
+                  onApplySyncedState({
+                    ...currentWorkspaceState,
+                    taskSheetsSpreadsheetId: sid || undefined
+                  });
                 }}
                 className="w-full bg-slate-50/50 dark:bg-slate-850 border border-dashed border-slate-250 dark:border-slate-800 rounded px-2 py-1 text-[10px] text-slate-500 dark:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
               />

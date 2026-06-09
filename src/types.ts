@@ -85,6 +85,8 @@ export interface WorkspaceState {
   nodes: Record<string, TaskNode[]>; // projectId maps to task nodes
   activeProjectId: string | null;
   tagCategories?: TagCategory[];
+  googleSheetsFileId?: string;       // ID of the background sync Google Spreadsheet, synchronized across devices
+  taskSheetsSpreadsheetId?: string;  // ID of the manual sync Google Spreadsheet, synchronized across devices
 }
 
 export interface SyncReport {
