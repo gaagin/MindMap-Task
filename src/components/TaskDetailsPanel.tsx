@@ -44,6 +44,7 @@ interface TaskDetailsPanelProps {
   onCreateTagCategory?: (name: string, color: string) => void;
   onUpdateTagCategory?: (id: string, name: string, color: string, tags: string[]) => void;
   onDeleteTagCategory?: (id: string) => void;
+  googleToken?: string | null;
 }
 
 const PASTEL_COLORS = [
@@ -67,10 +68,12 @@ export default function TaskDetailsPanel({
   categories = [],
   onCreateTagCategory,
   onUpdateTagCategory,
-  onDeleteTagCategory
+  onDeleteTagCategory,
+  googleToken = null
 }: TaskDetailsPanelProps) {
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // Manual Pomodoro time editing states
@@ -505,44 +508,173 @@ export default function TaskDetailsPanel({
     }
   };
 
-  // Upload attachment and convert to base64
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Helper to get or create a folder on Google Drive
+  const getOrCreateGoogleDriveFolder = async (token: string): Promise<string | null> => {
+    try {
+      const q = encodeURIComponent("name='MindMap_Attachments' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        if (searchData.files && searchData.files.length > 0) {
+          return searchData.files[0].id;
+        }
+      }
+
+      // Create folder if not found
+      const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: 'MindMap_Attachments',
+          mimeType: 'application/vnd.google-apps.folder'
+        })
+      });
+      if (createRes.ok) {
+        const createData = await createRes.json();
+        return createData.id;
+      }
+    } catch (e) {
+      console.error('Error getting/creating Drive folder:', e);
+    }
+    return null;
+  };
+
+  // Upload attachment either to local base64 or directly to Google Drive
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const filesList = e.target.files;
     if (!filesList || filesList.length === 0) return;
     
     setFileError(null);
     const file = filesList[0];
 
-    // Safety: limit file uploads to 1.5MB to stay within LocalStorage limits comfortably
-    const MAX_BYTES = 1.5 * 1024 * 1024;
-    if (file.size > MAX_BYTES) {
-      setFileError('Размер файла превышает 1.5 МБ. Выберите файл меньшего размера для стабильного сохранения.');
-      return;
-    }
+    if (googleToken) {
+      setIsUploadingFile(true);
+      try {
+        // 1. Get or create special folder on Google Drive
+        const folderId = await getOrCreateGoogleDriveFolder(googleToken);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64Data = reader.result as string;
-      const newAttachment: AttachmentFile = {
-        id: generateId(),
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl: base64Data,
+        // 2. Create the file metadata reference on Google Drive
+        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${googleToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            parents: folderId ? [folderId] : undefined
+          })
+        });
+
+        if (!createRes.ok) {
+          const errText = await createRes.text();
+          throw new Error(`Не удалось создать метаданные на Диске: ${errText}`);
+        }
+
+        const createData = await createRes.json();
+        const driveFileId = createData.id;
+
+        // 3. Upload raw file body as media
+        const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${googleToken}`,
+            'Content-Type': file.type || 'application/octet-stream'
+          },
+          body: file
+        });
+
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text();
+          throw new Error(`Не удалось загрузить тело файла: ${errText}`);
+        }
+
+        // 4. Retrieve web links
+        const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
+          headers: {
+            'Authorization': `Bearer ${googleToken}`
+          }
+        });
+
+        if (!finalRes.ok) {
+          throw new Error('Не удалось получить ссылки на файл с Диска');
+        }
+
+        const finalData = await finalRes.json();
+
+        // 5. Build and save attachment record
+        const newAttachment: AttachmentFile = {
+          id: generateId(),
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          dataUrl: finalData.webViewLink || finalData.webContentLink || '',
+          googleDriveId: driveFileId,
+          webViewLink: finalData.webViewLink,
+          webContentLink: finalData.webContentLink,
+        };
+
+        const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
+        handlePropChange('files', updatedFiles);
+      } catch (err: any) {
+        console.error(err);
+        setFileError(`Не удалось сохранить на Google Диск: ${err.message || err}`);
+      } finally {
+        setIsUploadingFile(false);
+      }
+    } else {
+      // Local Base64 storage
+      const MAX_BYTES = 1.5 * 1024 * 1024;
+      if (file.size > MAX_BYTES) {
+        setFileError('Размер файла превышает 1.5 МБ. Пожалуйста, авторизуйте Google Sheets в шапке, чтобы разблокировать неограниченные вложения на Google Диск!');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64Data = reader.result as string;
+        const newAttachment: AttachmentFile = {
+          id: generateId(),
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          dataUrl: base64Data,
+        };
+
+        const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
+        handlePropChange('files', updatedFiles);
       };
-
-      const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
-      handlePropChange('files', updatedFiles);
-    };
-    reader.onerror = () => {
-      setFileError('Ошибка считывания файла.');
-    };
-    reader.readAsDataURL(file);
+      reader.onerror = () => {
+        setFileError('Ошибка считывания файла.');
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
-  // Remove individual attachment
-  const handleRemoveFile = (fileId: string) => {
+  // Remove individual attachment and destroy its cloud file if applicable
+  const handleRemoveFile = async (fileId: string) => {
     if (!node.files) return;
+    const fileToRemove = node.files.find(f => f.id === fileId);
+
+    if (fileToRemove && fileToRemove.googleDriveId && googleToken) {
+      try {
+        await fetch(`https://www.googleapis.com/drive/v3/files/${fileToRemove.googleDriveId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${googleToken}`
+          }
+        });
+      } catch (e) {
+        console.error('Failed to delete cloud Google Drive file:', e);
+      }
+    }
+
     const updatedFiles = node.files.filter(f => f.id !== fileId);
     handlePropChange('files', updatedFiles);
   };
@@ -1756,15 +1888,29 @@ export default function TaskDetailsPanel({
             <input
               type="file"
               onChange={handleFileUpload}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              disabled={isUploadingFile}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
             />
-            <Paperclip className="w-5 h-5 mx-auto text-slate-400" />
-            <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-1.5">
-              Нажмите для выбора файла
-            </p>
-            <p className="text-[10px] text-slate-400 mt-1">
-              Максимум 1.5 МБ для оптимального кэша
-            </p>
+            {isUploadingFile ? (
+              <div className="flex flex-col items-center justify-center gap-1">
+                <Loader2 className="w-5 h-5 animate-spin text-amber-500" />
+                <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold mt-1">
+                  Загрузка в Google Диск...
+                </p>
+              </div>
+            ) : (
+              <>
+                <Paperclip className="w-5 h-5 mx-auto text-slate-400" />
+                <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-1.5">
+                  Нажмите для выбора файла
+                </p>
+                <p className="text-[10px] text-slate-400 mt-1 leading-normal">
+                  {googleToken 
+                    ? "✓ Файл загрузится напрямую в облако на ваш Google Диск!"
+                    : "До 1.5 МБ локально. Войдите через Google вверху для хранения файлов на Диске без лимитов!"}
+                </p>
+              </>
+            )}
           </div>
 
           {fileError && (
@@ -1775,6 +1921,7 @@ export default function TaskDetailsPanel({
             <div className="space-y-1.5 mt-3">
               {node.files.map((file) => {
                 const isImg = file.type.startsWith('image/');
+                const isCloud = !!file.googleDriveId;
                 return (
                   <div 
                     key={file.id}
@@ -1790,17 +1937,37 @@ export default function TaskDetailsPanel({
                         <p className="text-slate-700 dark:text-slate-300 font-medium truncate" title={file.name}>
                           {file.name}
                         </p>
-                        <p className="text-[10px] text-slate-400">{formatFileSize(file.size)}</p>
+                        <p className="text-[10px] text-slate-450 flex items-center gap-1">
+                          <span>{formatFileSize(file.size)}</span>
+                          {isCloud && (
+                            <span className="font-extrabold text-[8px] bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded px-1 py-0.2 select-none uppercase tracking-wide">
+                              Google Drive
+                            </span>
+                          )}
+                        </p>
                       </div>
                     </div>
 
                     <div className="flex gap-1.5 flex-shrink-0">
+                      {isCloud && file.webViewLink && (
+                        <a
+                          href={file.webViewLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
+                          title="Просмотреть на Google Диске"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </a>
+                      )}
                       {file.dataUrl && (
                         <a
-                          href={file.dataUrl}
-                          download={file.name}
+                          href={file.webContentLink || file.dataUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          download={!isCloud ? file.name : undefined}
                           className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
-                          title="Скачать файл"
+                          title={isCloud ? "Скачать с Google Диска" : "Скачать файл"}
                         >
                           <Download className="w-3.5 h-3.5" />
                         </a>
@@ -1808,7 +1975,7 @@ export default function TaskDetailsPanel({
                       <button
                         onClick={() => handleRemoveFile(file.id)}
                         className="p-1.5 bg-white dark:bg-slate-700 text-slate-400 hover:text-rose-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
-                        title="Удалить файл"
+                        title={isCloud ? "Удалить вложение (также удалится с вашего Google Диска)" : "Удалить файл"}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

@@ -291,7 +291,7 @@ export default function MindMapCanvas({
     if (viewMode === 'list') {
       return (
         <div className="flex-1 flex flex-col min-h-0">
-          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin ${isFullScreen ? 'max-h-[50vh] text-xs' : 'max-h-[220px]'}`}>
+          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin ${isFullScreen ? 'max-h-[66vh] text-xs' : 'max-h-[220px]'}`}>
             {containerChildren.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[120px] text-center my-auto">
                 <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач в списке нет</span>
@@ -404,7 +404,7 @@ export default function MindMapCanvas({
                 <span className="text-[8px] font-extrabold bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1 py-0.2 rounded font-mono">{col.tasks.length}</span>
               </div>
               
-              <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[175px]'}`}>
+              <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[175px]'}`}>
                 {col.tasks.map(child => (
                   <div key={child.id} className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item">
                     <span 
@@ -478,7 +478,7 @@ export default function MindMapCanvas({
       const groups = getCalendarGroups(containerChildren);
       return (
         <div className="flex-1 flex flex-col min-h-0">
-          <div className={`flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[220px]'}`}>
+          <div className={`flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[220px]'}`}>
             {groups.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto">
                 <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач с датами нет</span>
@@ -556,7 +556,7 @@ export default function MindMapCanvas({
                 </div>
               </div>
               
-              <div className={`flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[170px]'}`}>
+              <div className={`flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[170px]'}`}>
                 {ganttTasks.map(child => {
                   const startDate = child.startDate || child.dueDate;
                   const endDate = child.dueDate || child.startDate;
@@ -607,7 +607,7 @@ export default function MindMapCanvas({
             <div className="w-1/4 text-right">Срок</div>
           </div>
           
-          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[50vh]' : 'max-h-[200px]'}`}>
+          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[200px]'}`}>
             {containerChildren.length === 0 ? (
               <div className="flex-1 flex items-center justify-center py-6 border border-dashed border-slate-200/40 dark:border-slate-850 rounded-lg select-none">
                 <span className="text-[8.5px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Нет данных</span>
@@ -2261,7 +2261,7 @@ export default function MindMapCanvas({
         const progress = totalChildren > 0 ? Math.round((completedChildren / totalChildren) * 100) : 0;
         
         return (
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3 border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl flex flex-col md:flex-row items-center gap-4 transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-[95vw] md:max-w-4xl">
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3 border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl flex flex-col md:flex-row items-center gap-4 transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-[98vw] md:max-w-[96vw]">
             <div className="flex items-center gap-2.5 min-w-0 w-full md:w-auto justify-between md:justify-start">
               <div className="flex items-center gap-2.5 min-w-0">
                 <span className="text-xl shrink-0">📦</span>
@@ -2363,8 +2363,8 @@ export default function MindMapCanvas({
         const containerChildren = nodes.filter(n => n.parentId === focusedContainerId);
         
         return (
-          <div className="absolute inset-0 bg-slate-550/10 dark:bg-slate-950/40 backdrop-blur-xs z-30 flex items-center justify-center p-4 pt-48 pb-6 sm:p-8 sm:pt-40 md:pt-28">
-            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-200 dark:border-amber-900/50 rounded-3xl shadow-2xl w-full max-w-4xl h-full flex flex-col p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-30">
+          <div className="absolute inset-0 bg-slate-550/10 dark:bg-slate-950/40 backdrop-blur-xs z-30 flex items-center justify-center p-2 pt-32 pb-4 sm:p-4 sm:pt-24 md:p-6 md:pt-24 lg:pt-24">
+            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-200 dark:border-amber-900/50 rounded-3xl shadow-2xl w-full max-w-[98vw] md:max-w-[96vw] h-full flex flex-col p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-30 animate-duration-200">
               <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden z-30">
                 {renderContainerBody(focusedContainer, containerChildren, true)}
               </div>
@@ -2571,10 +2571,10 @@ export default function MindMapCanvas({
                   isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                 } ${
                   hoverTargetId === node.id
-                    ? 'bg-amber-50/20 dark:bg-amber-950/20 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
+                    ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
                     : isContainerSelected
-                      ? 'bg-slate-50/40 dark:bg-slate-900/40 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
-                      : 'bg-slate-50/10 dark:bg-slate-900/15 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
+                      ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
+                      : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
                 } flex flex-col`}
                 onMouseDown={(e) => startDragNode(e, node)}
                 onClick={(e) => {
@@ -2584,7 +2584,7 @@ export default function MindMapCanvas({
                 }}
               >
                 {/* Header of Container Canvas */}
-                <div className={`p-3 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white/40 dark:bg-slate-950/40 select-none pb-2.5`}>
+                <div className={`p-3 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white dark:bg-slate-950 select-none pb-2.5`}>
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="text-amber-500 dark:text-amber-400 shrink-0 text-sm">
                       📦
@@ -2669,7 +2669,7 @@ export default function MindMapCanvas({
 
                 {/* Secondary toolbar for View Selection within Container */}
                 {!isContainerCollapsed && (
-                  <div className="px-3 py-1.5 flex items-center gap-1 bg-slate-50/50 dark:bg-slate-950/20 border-b border-slate-100 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none z-10 shrink-0">
+                  <div className="px-3 py-1.5 flex items-center gap-1 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none z-10 shrink-0">
                     <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mr-1 shrink-0">Вид:</span>
                     {[
                       { id: 'canvas', label: 'Карта', icon: '🕸️' },
@@ -2719,7 +2719,7 @@ export default function MindMapCanvas({
                       </div>
 
                       {/* Small dynamic status overview bar at the bottom */}
-                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex items-center justify-between select-none bg-white/20 dark:bg-slate-950/20 px-2 py-1.5 rounded-lg z-10 shrink-0">
+                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex items-center justify-between select-none bg-white dark:bg-slate-950 px-2 py-1.5 rounded-lg z-10 shrink-0">
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={(e) => {

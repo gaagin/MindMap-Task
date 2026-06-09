@@ -533,7 +533,23 @@ export async function syncWithGoogleSheets(
         const localTime = new Date(local.updatedAt || 0).getTime();
         const remoteTime = new Date(sn.updatedAt || 0).getTime();
         if (remoteTime > localTime) {
-          mergedNodesMap.set(sn.id, sn);
+          // REMOTE wins! Restore full local base64 dataUrl if Google Sheets has the omitted/placeholder string
+          const mergedFiles = (sn.files || []).map(remoteFile => {
+            if (remoteFile.dataUrl?.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+              const localFile = (local.files || []).find(lf => lf.id === remoteFile.id);
+              if (localFile && localFile.dataUrl && !localFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+                return {
+                  ...remoteFile,
+                  dataUrl: localFile.dataUrl
+                };
+              }
+            }
+            return remoteFile;
+          });
+          mergedNodesMap.set(sn.id, {
+            ...sn,
+            files: mergedFiles
+          });
         }
       }
     });
@@ -625,28 +641,70 @@ export async function syncWithGoogleSheets(
       p.updatedAt
     ]);
 
-    const nodeRows = Object.values(finalNodesMap).flat().map(n => [
-      n.id,
-      n.projectId,
-      n.text,
-      n.x,
-      n.y,
-      n.parentId || 'NULL',
-      n.priority,
-      n.tags.join(','),
-      n.notes,
-      n.completed ? 'TRUE' : 'FALSE',
-      n.color || '',
-      n.collapsed ? 'TRUE' : 'FALSE',
-      n.dueDate || 'NULL',
-      n.progress !== undefined ? n.progress : '',
-      n.isFloating ? 'TRUE' : 'FALSE',
-      n.isContainer ? 'TRUE' : 'FALSE',
-      n.width !== undefined ? n.width : '',
-      n.height !== undefined ? n.height : '',
-      JSON.stringify(n.files || []),
-      n.updatedAt || new Date().toISOString()
-    ]);
+    // Helper to truncate any cell value to prevent exceeding the 50,000 character limit of Google Sheets
+    // We target 35000 characters to ensure safe UTF-16 and byte limits in Google's internal serialization
+    const safeCellString = (val: any): any => {
+      if (typeof val === 'string' && val.length > 35000) {
+        return val.substring(0, 35000) + '... [Текст обрезан из-за ограничений Google Sheets]';
+      }
+      return val;
+    };
+
+    const nodeRows = Object.values(finalNodesMap).flat().map(n => {
+      // Create a copy of files where we omit massive dataUrl strings to keep it small
+      let safeFiles = (n.files || []).map(file => {
+        if (file.dataUrl && file.dataUrl.length > 15000) {
+          return {
+            ...file,
+            dataUrl: `_OMITTED_DUE_TO_SIZE_:${file.id}`
+          };
+        }
+        return file;
+      });
+
+      // If the total JSON string of safeFiles is still too long, recursively replace dataUrl of files starting with the largest
+      let filesJson = JSON.stringify(safeFiles);
+      if (filesJson.length > 35000) {
+        const sortedWithIndex = safeFiles
+          .map((f, idx) => ({ f, idx, len: f.dataUrl ? f.dataUrl.length : 0 }))
+          .filter(item => item.f.dataUrl && !item.f.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_'))
+          .sort((a, b) => b.len - a.len);
+
+        for (const item of sortedWithIndex) {
+          safeFiles[item.idx] = {
+            ...safeFiles[item.idx],
+            dataUrl: `_OMITTED_DUE_TO_SIZE_:${safeFiles[item.idx].id}`
+          };
+          filesJson = JSON.stringify(safeFiles);
+          if (filesJson.length <= 35000) {
+            break;
+          }
+        }
+      }
+
+      return [
+        n.id,
+        n.projectId,
+        safeCellString(n.text || ''),
+        n.x,
+        n.y,
+        n.parentId || 'NULL',
+        n.priority,
+        n.tags.join(','),
+        safeCellString(n.notes || ''),
+        n.completed ? 'TRUE' : 'FALSE',
+        n.color || '',
+        n.collapsed ? 'TRUE' : 'FALSE',
+        n.dueDate || 'NULL',
+        n.progress !== undefined ? n.progress : '',
+        n.isFloating ? 'TRUE' : 'FALSE',
+        n.isContainer ? 'TRUE' : 'FALSE',
+        n.width !== undefined ? n.width : '',
+        n.height !== undefined ? n.height : '',
+        safeCellString(filesJson),
+        n.updatedAt || new Date().toISOString()
+      ];
+    });
 
     const tagCatRows = finalTagCats.map(tc => [
       tc.id,

@@ -2297,6 +2297,7 @@ export default function App() {
             onCreateTagCategory={handleCreateTagCategory}
             onUpdateTagCategory={handleUpdateTagCategory}
             onDeleteTagCategory={handleDeleteTagCategory}
+            googleToken={googleToken}
           />
         )}
       </main>

@@ -106,10 +106,35 @@ export async function saveStateToGoogleSheets(
   // First, make sure the tabs we require are active in this spreadsheet
   await ensureSheetTabsExist(accessToken, spreadsheetId);
 
+  // Clear existing SyncState cells to prevent lingering old chunks from a previous larger state save
+  const clearSyncStateUrl = `${SHEETS_API_URL}/${spreadsheetId}/values/SyncState!A1:C1000:clear`;
+  await fetch(clearSyncStateUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+    },
+  });
+
   // 1. Prepare JSON of state. Clean state of temporary properties if needed.
   const serializedState = JSON.stringify(state);
 
-  // Write state JSON to SyncState!A1
+  // Chunk the serializedState into pieces smaller than 45k characters (50k is Google Sheets limit)
+  const CHUNK_SIZE = 45000;
+  const chunks: string[] = [];
+  for (let i = 0; i < serializedState.length; i += CHUNK_SIZE) {
+    chunks.push(serializedState.substring(i, i + CHUNK_SIZE));
+  }
+
+  const syncStateRows: any[][] = [];
+  chunks.forEach((chunk, index) => {
+    if (index === 0) {
+      syncStateRows.push([chunk, new Date().toISOString(), 'MindMapWorkspaceState']);
+    } else {
+      syncStateRows.push([chunk]);
+    }
+  });
+
+  // Write state JSON to SyncState!A1 range spanning multiple column A rows
   const updateJsonUrl = `${SHEETS_API_URL}/${spreadsheetId}/values/SyncState!A1?valueInputOption=RAW`;
   const jsonResponse = await fetch(updateJsonUrl, {
     method: 'PUT',
@@ -120,7 +145,7 @@ export async function saveStateToGoogleSheets(
     body: JSON.stringify({
       range: 'SyncState!A1',
       majorDimension: 'ROWS',
-      values: [[serializedState, new Date().toISOString(), 'MindMapWorkspaceState']],
+      values: syncStateRows,
     }),
   });
 
@@ -155,6 +180,13 @@ export async function saveStateToGoogleSheets(
     'Плавающая',
   ];
 
+  const safeCellString = (val: any): any => {
+    if (typeof val === 'string' && val.length > 35000) {
+      return val.substring(0, 35000) + '... [Текст обрезан из-за ограничений Google Sheets]';
+    }
+    return val;
+  };
+
   const rows: any[][] = [headers];
 
   // Collect all task nodes
@@ -168,13 +200,13 @@ export async function saveStateToGoogleSheets(
         node.id || '',
         node.projectId || '',
         projectName,
-        node.text || '',
+        safeCellString(node.text || ''),
         node.completed ? 'Да' : 'Нет',
         node.priority || 'none',
         node.progress !== undefined ? node.progress : '',
         node.dueDate || '',
         node.tags ? node.tags.join(', ') : '',
-        node.notes || '',
+        safeCellString(node.notes || ''),
         node.parentId || '',
         node.isFloating ? 'Да' : 'Нет',
       ]);
@@ -207,7 +239,7 @@ export async function loadStateFromGoogleSheets(
   accessToken: string,
   spreadsheetId: string
 ): Promise<WorkspaceState> {
-  const getJsonUrl = `${SHEETS_API_URL}/${spreadsheetId}/values/SyncState!A1:A1`;
+  const getJsonUrl = `${SHEETS_API_URL}/${spreadsheetId}/values/SyncState!A1:A`;
   const response = await fetch(getJsonUrl, {
     headers: { 'Authorization': `Bearer ${accessToken}` },
   });
@@ -224,7 +256,8 @@ export async function loadStateFromGoogleSheets(
     throw new Error('Таблица синхронизации пуста или не содержит данных в ячейке SyncState!A1.');
   }
 
-  const stateStr = rows[0][0];
+  // Combine chunks from column A
+  const stateStr = rows.map((r: any) => r[0] || '').join('');
   try {
     const parsedState = JSON.parse(stateStr) as WorkspaceState;
     if (!parsedState.projects || !parsedState.nodes) {

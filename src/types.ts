@@ -6,6 +6,9 @@ export interface AttachmentFile {
   type: string;
   size: number;
   dataUrl: string; // Base64 data url
+  googleDriveId?: string; // Google Drive file ID if uploaded there
+  webViewLink?: string; // Optional Google Drive web view URL
+  webContentLink?: string; // Optional Google Drive direct download/content link
 }
 
 export interface TaskNode {
