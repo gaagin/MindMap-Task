@@ -239,6 +239,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [firebaseSyncError, setFirebaseSyncError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{
     local: 'saved' | 'saving' | 'error';
     firebase: 'idle' | 'saved' | 'syncing' | 'error';
@@ -640,7 +641,18 @@ export default function App() {
 
     const docRef = doc(db, 'workspaces', currentUser.uid);
     const unsubscribe = onSnapshot(docRef, (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        // If the document does not exist in Firestore yet (new user or blank cloud),
+        // we should initialize it with our local state on first load.
+        if (isFirstSnapshotRef.current) {
+          isFirstSnapshotRef.current = false;
+          setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+          saveToFirebaseDirectly(currentUser.uid, stateRef.current).then(res => {
+            setSyncStatus(prev => ({ ...prev, firebase: res.success ? 'saved' : 'error' }));
+          });
+        }
+        return;
+      }
       const cloudData = snap.data();
       if (!cloudData) return;
 
@@ -669,6 +681,9 @@ export default function App() {
       const currentHash = getSyncHash(normalizedCurrent);
       const mergedHash = getSyncHash(normalizedMerged);
 
+      const cloudStateNormalized = normalizeWorkspaceState(cloudState);
+      const cloudHash = getSyncHash(cloudStateNormalized);
+
       if (currentHash !== mergedHash || isFirstSnapshotRef.current) {
         // Apply merged changes seamlessly
         isFirstSnapshotRef.current = false;
@@ -677,10 +692,21 @@ export default function App() {
         // Save merged deletions back to localStorage
         localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
         
-        lastSyncedStateHashRef.current = mergedHash; // Update hash to ignore next autosave if clean
+        const hasLocalChangesToUpload = mergedHash !== cloudHash;
+        if (hasLocalChangesToUpload) {
+          // Keep old cloud hash so autosave detects a difference and pushes merged updates
+          lastSyncedStateHashRef.current = cloudHash;
+          setSyncStatus(prev => ({ ...prev, firebase: 'idle' }));
+          // Do NOT clear unsynced edits count to 0, ensure it is positive
+          setUnsyncedEditsCount(prev => Math.max(1, prev));
+        } else {
+          // No local unsynced edits to upload, safe to assume we match the cloud
+          lastSyncedStateHashRef.current = mergedHash; // Update hash to ignore next autosave if clean
+          setUnsyncedEditsCount(0); // Clear any local unsynced edits count since we reconciled
+          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        }
+        
         setRawState(normalizedMerged);
-        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-        setUnsyncedEditsCount(0); // Clear any local unsynced edits count since we reconciled
         setHasCloudUpdates(false);
         setCloudUpdateState(null);
       } else {
@@ -692,6 +718,7 @@ export default function App() {
     }, (error) => {
       console.error('[Firebase snapshot listener error]:', error);
       setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
+      setFirebaseSyncError(error?.message || String(error));
     });
 
     return () => unsubscribe();
@@ -743,6 +770,9 @@ export default function App() {
         if (res.success) {
           lastSyncedStateHashRef.current = getSyncHash(state); // Update hash on successful upload
           setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
+          setFirebaseSyncError(null);
+        } else {
+          setFirebaseSyncError(res.error || 'Неизвестная ошибка сохранения в Firestore.');
         }
       }, 1500); // 1.5s snapshot rate-limiting debounce
       return () => clearTimeout(timer);
@@ -2160,6 +2190,7 @@ export default function App() {
                 type="button"
                 onClick={async () => {
                   setAuthError(null);
+                  setFirebaseSyncError(null);
                   try {
                     const res = await googleSignIn();
                     if (res) {
@@ -2201,10 +2232,33 @@ export default function App() {
                     <span>Сохранение...</span>
                   </div>
                 ) : syncStatus.firebase === 'error' || authError ? (
-                  <div className="flex items-center gap-1.5 py-1.5 px-3 bg-rose-500/10 dark:bg-rose-500/5 text-rose-600 dark:text-rose-400 border border-rose-300/30 dark:border-rose-900/30 rounded-lg text-xs font-bold font-sans">
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                    <span className="hidden md:inline">Ошибка синхронизации</span>
-                    <span className="inline md:hidden">Ошибка</span>
+                  <div className="group relative flex items-center gap-1.5 py-1.5 px-3 bg-rose-500/10 dark:bg-rose-500/5 text-rose-600 dark:text-rose-400 border border-rose-300/30 dark:border-rose-900/30 rounded-lg text-xs font-bold font-sans cursor-pointer">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-500 animate-bounce" />
+                    <span className="hidden md:inline hover:underline">Ошибка синхронизации</span>
+                    <span className="inline md:hidden hover:underline">Ошибка</span>
+
+                    {/* Popover/Tooltip showing precise error detail on hover */}
+                    <div className="absolute top-10 right-0 w-80 scale-0 group-hover:scale-100 transition-all origin-top duration-150 p-3 bg-slate-900 text-white text-xs rounded-xl shadow-xl border border-slate-700/50 pointer-events-auto z-50 leading-relaxed">
+                      <div className="font-extrabold text-rose-400 mb-1.5 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        <span>Детали ошибки:</span>
+                      </div>
+                      <p className="bg-slate-950 font-mono text-[10px] p-2 rounded border border-slate-800 break-words max-h-24 overflow-y-auto mb-2 text-rose-300">
+                        {authError === 'unauthorized-domain' 
+                          ? 'Firebase Auth: Этот домен (localhost или контейнер) не добавлен в белый список Auth в консоли Firebase.' 
+                          : authError || firebaseSyncError || "Не удалось сохранить изменения. Проверьте соединение или авторизуйтесь заново."}
+                      </p>
+                      <div className="border-t border-slate-800 pt-2 text-[10px] text-slate-300 space-y-1">
+                        <p className="font-bold text-slate-200">Возможные причины:</p>
+                        <ul className="list-disc pl-3.5 space-y-0.5 text-slate-400">
+                          <li>Длина данных превышает лимит Firestore (1 МБ)</li>
+                          <li>Действие отклонено правилами безопасности (firestore.rules)</li>
+                          <li>Исчерпан бесплатный суточный лимит чтения/записи (Quota Exceeded)</li>
+                          <li>Временные сбои интернет-соединения или таймаут</li>
+                        </ul>
+                        <p className="pt-1.5 text-[9px] text-yellow-500/90 italic">Совет: попробуйте перезайти или сжать медиафайлы.</p>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   <div className="group relative flex items-center gap-1.5 py-1.5 px-3 bg-emerald-500/10 dark:bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 border border-emerald-300/20 dark:border-emerald-900/20 rounded-lg text-xs font-bold font-sans cursor-default select-none transition-all hover:bg-emerald-500/15 dark:hover:bg-emerald-500/10">
