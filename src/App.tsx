@@ -1121,19 +1121,14 @@ export default function App() {
   };
 
   const handleUpdateTagCategory = (id: string, name: string, color: string, tags: string[]) => {
-    const pid = state.activeProjectId;
-    if (!pid) return;
-
     setState(prev => {
-      const projectIndex = prev.projects.findIndex(p => p.id === pid);
-      if (projectIndex === -1) return prev;
-
-      const updatedProjects = [...prev.projects];
-      const project = { ...updatedProjects[projectIndex] };
-      const cats = project.tagCategories || [];
-      
-      project.tagCategories = cats.map(c => c.id === id ? { ...c, name, color, tags } : c);
-      updatedProjects[projectIndex] = project;
+      const updatedProjects = prev.projects.map(p => {
+        const cats = p.tagCategories || [];
+        return {
+          ...p,
+          tagCategories: cats.map(c => c.id === id ? { ...c, name, color, tags } : c)
+        };
+      });
 
       return {
         ...prev,
@@ -1143,20 +1138,12 @@ export default function App() {
   };
 
   const handleDeleteTagCategory = (id: string) => {
-    const pid = state.activeProjectId;
-    if (!pid) return;
-
     logDeletion('tagCategory', id);
     setState(prev => {
-      const projectIndex = prev.projects.findIndex(p => p.id === pid);
-      if (projectIndex === -1) return prev;
-
-      const updatedProjects = [...prev.projects];
-      const project = { ...updatedProjects[projectIndex] };
-      const cats = project.tagCategories || [];
-      
-      project.tagCategories = cats.filter(c => c.id !== id);
-      updatedProjects[projectIndex] = project;
+      const updatedProjects = prev.projects.map(p => ({
+        ...p,
+        tagCategories: (p.tagCategories || []).filter(c => c.id !== id)
+      }));
 
       return {
         ...prev,
