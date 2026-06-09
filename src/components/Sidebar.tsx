@@ -17,6 +17,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Folder, Project, TagCategory, WorkspaceState } from '../types';
+import GoogleSheetsSync from './GoogleSheetsSync';
 
 interface SidebarProps {
   folders: Folder[];

@@ -79,19 +79,12 @@ export interface TagCategory {
   updatedAt?: string; // ISO string for conflict resolution sync
 }
 
-export interface DeletionRecord {
-  type: 'folder' | 'project' | 'node' | 'tagCategory';
-  id: string;
-  deletedAt: string;
-}
-
 export interface WorkspaceState {
   folders: Folder[];
   projects: Project[];
   nodes: Record<string, TaskNode[]>; // projectId maps to task nodes
   activeProjectId: string | null;
   tagCategories?: TagCategory[];
-  deletions?: DeletionRecord[];
 }
 
 export interface SyncReport {
