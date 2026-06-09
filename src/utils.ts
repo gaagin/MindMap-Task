@@ -359,7 +359,7 @@ export function loadWorkspace(): WorkspaceState {
     if (!state.folders) state.folders = [];
     if (!state.projects) state.projects = [];
     if (!state.nodes) state.nodes = {};
-    if (!state.tagCategories || state.tagCategories.length === 0) {
+    if (state.tagCategories === undefined) {
       state.tagCategories = [
         {
           id: 'cat-phase',

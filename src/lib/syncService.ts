@@ -498,7 +498,7 @@ export async function syncWithGoogleSheets(
     // Add local folders first
     localState.folders.forEach(f => {
       if (!isDeleted('folder', f.id)) {
-        mergedFoldersMap.set(f.id, { ...f, updatedAt: f.updatedAt || new Date().toISOString() });
+        mergedFoldersMap.set(f.id, { ...f, updatedAt: f.updatedAt || new Date(0).toISOString() });
       }
     });
     // Merge remote folders
@@ -542,7 +542,7 @@ export async function syncWithGoogleSheets(
     // Gather all local nodes across projects
     Object.values(localState.nodes).flat().forEach(node => {
       if (!isDeleted('node', node.id)) {
-        mergedNodesMap.set(node.id, { ...node, updatedAt: node.updatedAt || new Date().toISOString() });
+        mergedNodesMap.set(node.id, { ...node, updatedAt: node.updatedAt || new Date(0).toISOString() });
       }
     });
     // Reconcile with Google Sheets
@@ -590,7 +590,7 @@ export async function syncWithGoogleSheets(
     const mergedTagCatsMap = new Map<string, TagCategory>();
     (localState.tagCategories || []).forEach(tc => {
       if (!isDeleted('tagCategory', tc.id)) {
-        mergedTagCatsMap.set(tc.id, { ...tc, updatedAt: tc.updatedAt || new Date().toISOString() });
+        mergedTagCatsMap.set(tc.id, { ...tc, updatedAt: tc.updatedAt || new Date(0).toISOString() });
       }
     });
     sheetTagCats.forEach(stc => {
