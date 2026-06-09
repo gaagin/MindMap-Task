@@ -77,7 +77,7 @@ function sanitizeForFirestore(obj: any): any {
 /**
  * Saves current WorkspaceState snapshot to firestore database dynamically.
  */
-export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState) {
+export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; error?: string }> {
   try {
     const docRef = doc(db, 'workspaces', userId);
     const rawPayload = {
@@ -94,12 +94,28 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
     };
     
     const payload = sanitizeForFirestore(rawPayload);
-    await setDoc(docRef, payload);
+    
+    // Estimate payload size in KB
+    const serialized = JSON.stringify(payload);
+    const sizeInKb = Math.round(serialized.length / 1024);
+    if (sizeInKb > 1000) {
+      throw new Error(`Размер вашей карты (${sizeInKb} KB) превышает лимит базы данных Firestore (1000 KB) из-за прикрепленных тяжелых картинок или файлов. Удалите некоторые вложения, чтобы возобновить синхронизацию!`);
+    }
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Превышено время ожидания сервера (таймаут 8с). Пожалуйста, обновите страницу или проверьте интернет-соединение.')), 8000)
+    );
+
+    await Promise.race([
+      setDoc(docRef, payload),
+      timeoutPromise
+    ]);
+
     console.log('Firebase cloud sync snapshot completed successfully.');
-    return true;
-  } catch (error) {
+    return { success: true };
+  } catch (error: any) {
     console.error('Firebase snapshot save error:', error);
-    return false;
+    return { success: false, error: error?.message || String(error) };
   }
 }
 
@@ -109,12 +125,18 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
 export async function loadFromFirebaseDirectly(userId: string): Promise<WorkspaceState | null> {
   try {
     const docRef = doc(db, 'workspaces', userId);
-    const snap = await getDoc(docRef);
+    const snap = await Promise.race([
+      getDoc(docRef),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Превышено время ожидания загрузки (таймаут 8с). Пожалуйста, проверьте интернет-соединение или обновите вкладку.')), 8000)
+      )
+    ]);
     if (snap.exists()) {
       return snap.data() as WorkspaceState;
     }
   } catch (error) {
     console.error('Firebase snapshot load error:', error);
+    throw error;
   }
   return null;
 }

@@ -27,7 +27,10 @@ import {
   GanttChart,
   Table,
   Bell,
-  BellRing
+  BellRing,
+  Upload,
+  Download,
+  Info
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
@@ -166,6 +169,8 @@ export default function App() {
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
+  const [forceCloudSyncLoading, setForceCloudSyncLoading] = useState<'upload' | 'download' | null>(null);
+  const [forceCloudSyncFeedback, setForceCloudSyncFeedback] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [sheetsError, setSheetsError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{
@@ -508,12 +513,12 @@ export default function App() {
       setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
       const countSaved = unsyncedEditsCount;
       const timer = setTimeout(async () => {
-        const success = await saveToFirebaseDirectly(currentUser.uid, state);
+        const res = await saveToFirebaseDirectly(currentUser.uid, state);
         setSyncStatus(prev => ({
           ...prev,
-          firebase: success ? 'saved' : 'error'
+          firebase: res.success ? 'saved' : 'error'
         }));
-        if (success) {
+        if (res.success) {
           setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
         }
       }, 1500); // 1.5s snapshot rate-limiting debounce
@@ -576,6 +581,56 @@ export default function App() {
       }
     } finally {
       setIsSyncingSheets(false);
+    }
+  };
+
+  // Manual forced cloud sync actions to solve multi-device desynchronizations immediately
+  const forceUploadToCloud = async (currentWorkspace: WorkspaceState) => {
+    if (!currentUser) return;
+    setForceCloudSyncLoading('upload');
+    setForceCloudSyncFeedback(null);
+    try {
+      const res = await saveToFirebaseDirectly(currentUser.uid, currentWorkspace);
+      if (res.success) {
+        setUnsyncedEditsCount(0);
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        setForceCloudSyncFeedback('Успешно выгружено в облако! Теперь откройте это приложение на другом устройстве и нажмите кнопку "Загрузить из облака".');
+      } else {
+        setForceCloudSyncFeedback(`Ошибка выгрузки: ${res.error || 'Проверьте интернет-соединение или права доступа.'}`);
+      }
+    } catch (e: any) {
+      setForceCloudSyncFeedback(`Ошибка: ${e?.message || String(e)}`);
+    } finally {
+      setForceCloudSyncLoading(null);
+    }
+  };
+
+  const forceDownloadFromCloud = async () => {
+    if (!currentUser) return;
+    setForceCloudSyncLoading('download');
+    setForceCloudSyncFeedback(null);
+    try {
+      const cloudData = await loadFromFirebaseDirectly(currentUser.uid);
+      if (cloudData) {
+        const cloudState: WorkspaceState = {
+          folders: cloudData.folders || [],
+          projects: cloudData.projects || [],
+          nodes: cloudData.nodes || {},
+          activeProjectId: cloudData.activeProjectId || null,
+          tagCategories: cloudData.tagCategories || []
+        };
+        ignoreNextStateChangeRef.current = true;
+        setRawState(cloudState);
+        setUnsyncedEditsCount(0);
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        setForceCloudSyncFeedback('Успешно загружено! Данные на этом устройстве полностью заменены версией из вашего облака.');
+      } else {
+        setForceCloudSyncFeedback('В облаке не найдено сохраненных данных. Пожалуйста, сначала сделайте "Выгрузить в облако" на первом устройстве!');
+      }
+    } catch (e: any) {
+      setForceCloudSyncFeedback(`Ошибка загрузки: ${e?.message || String(e)}`);
+    } finally {
+      setForceCloudSyncLoading(null);
     }
   };
 
@@ -2430,6 +2485,9 @@ export default function App() {
                         <div className="min-w-0">
                           <p className="font-bold text-slate-700 dark:text-slate-200 truncate leading-none text-[11px]">{currentUser.displayName || 'Пользователь Google'}</p>
                           <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">{currentUser.email}</p>
+                          <p className="text-[8.5px] text-indigo-650 dark:text-indigo-400 font-mono leading-none mt-1 select-all" title="Ваш уникальный UID в системе Firebase">
+                            UID: {currentUser.uid}
+                          </p>
                         </div>
                       </div>
                     )}
@@ -2506,6 +2564,106 @@ export default function App() {
                     )}
                   </div>
                 </div>
+
+                {/* 
+                  MANUAL FIRESTORE FORCE OVERRIDE BLOCK
+                  Gives users absolute certainty to sync PC and Phone in 1 click
+                */}
+                {currentUser && (
+                  <div className="bg-indigo-50/25 dark:bg-indigo-950/10 border border-indigo-150/80 dark:border-indigo-900/40 p-4.5 rounded-xl space-y-3.5">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1 px-1.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded font-extrabold text-[10px]">
+                        РЕШЕНИЕ СВЯЗИ
+                      </div>
+                      <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-200">
+                        Принудительная синхронизация (ПК ⇄ Телефон)
+                      </h4>
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Если автоматический обмен застрял (или вы вошли под одним аккаунтом Google на ПК и телефоне, но изменения с одного девайса не отображаются на другом), воспользуйтесь кнопками <b>принудительного обхода</b>:
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Left: Force Upload (Export) */}
+                      <div className="border border-indigo-100/60 dark:border-indigo-950 bg-white dark:bg-slate-900 p-3 rounded-lg flex flex-col justify-between">
+                        <div>
+                          <div className="font-extrabold text-[11px] text-indigo-750 dark:text-indigo-400 flex items-center gap-1.5">
+                            <Upload className="w-3.5 h-3.5" />
+                            1. С ПК: ВЫГРУЗИТЬ В ОБЛАКО
+                          </div>
+                          <p className="text-[10px] text-slate-550 dark:text-slate-400 mt-1 leading-normal">
+                            Записать текущее состояние экрана в облако. Всё облако заменится вашей картой.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={forceCloudSyncLoading !== null}
+                          onClick={() => forceUploadToCloud(state)}
+                          className="mt-3 w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-550 text-white rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {forceCloudSyncLoading === 'upload' ? (
+                            <>
+                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span>Выгрузка...</span>
+                            </>
+                          ) : (
+                            <span>Выгрузить в Облако</span>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Right: Force Download (Import) */}
+                      <div className="border border-indigo-100/60 dark:border-indigo-950 bg-white dark:bg-slate-900 p-3 rounded-lg flex flex-col justify-between">
+                        <div>
+                          <div className="font-extrabold text-[11px] text-emerald-705 dark:text-emerald-400 flex items-center gap-1.5">
+                            <Download className="w-3.5 h-3.5" />
+                            2. НА ТЕЛЕФОНЕ: ЗАГРУЗИТЬ СЮДА
+                          </div>
+                          <p className="text-[10px] text-slate-550 dark:text-slate-400 mt-1 leading-normal">
+                            Полностью перезаписать экран последними данными из облака (все локальные изменения исчезнут).
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={forceCloudSyncLoading !== null}
+                          onClick={forceDownloadFromCloud}
+                          className="mt-3 w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-550 text-white rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {forceCloudSyncLoading === 'download' ? (
+                            <>
+                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span>Загрузка...</span>
+                            </>
+                          ) : (
+                            <span>Загрузить из Облака</span>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Feedback Messages */}
+                    {forceCloudSyncFeedback && (
+                      <div className="bg-white dark:bg-slate-950 border border-indigo-100 dark:border-indigo-900 px-3 py-2.5 rounded-lg text-[11px] font-bold text-indigo-700 dark:text-indigo-400 flex items-start gap-2 animate-in fade-in duration-150">
+                        <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                        <span className="leading-snug">{forceCloudSyncFeedback}</span>
+                      </div>
+                    )}
+
+                    {/* Troubleshooting list for separate accounts */}
+                    <div className="bg-slate-100/50 dark:bg-slate-900/40 p-3 rounded-lg space-y-1.5">
+                      <p className="font-extrabold text-[10px] text-slate-600 dark:text-slate-400">⚠️ Диагностический чек-лист:</p>
+                      <ul className="list-disc list-inside space-y-1.5 text-slate-500 dark:text-slate-450 text-[10px] leading-relaxed">
+                        <li>
+                          <span className="font-bold text-slate-700 dark:text-slate-300">Проверьте UID (ID):</span> Сравните строку <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[9px]">UID</code> под вашей почтой на ПК и на Телефоне. Если эти буквы не совпадают — вы авторизованы под разными Google аккаунтами. <b>Они должны быть одинаковыми!</b>
+                        </li>
+                        <li>
+                          <span className="font-bold text-slate-700 dark:text-slate-300">Блокировка Apple/Safari:</span> Мобильные системы очень часто замораживают веб-сокеты и соединение с Firestore при неактивном экране. Просто обновите вкладку на телефоне и нажмите <span className="underline">Загрузить из Облака</span>.
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
 
                 {/* Unauthorized Domain Error Advice */}
                 {authError && (
