@@ -8,9 +8,9 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 
 export const googleProvider = new GoogleAuthProvider();
-// Enable Google Drive file access and Google Sheets access
-googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
-googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+// Use standard profile scopes
+googleProvider.addScope('email');
+googleProvider.addScope('profile');
 
 // Cache the access token in memory/localStorage to persist across refreshes
 let cachedAccessToken: string | null = (() => {

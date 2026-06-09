@@ -3228,6 +3228,82 @@ export default function App() {
           ))}
         </div>
       )}
+
+      {/* Mobile/Desktop Google Sign In Troubleshooting Popup Modal */}
+      {authError && !currentUser && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] z-[9999] flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-rose-50 dark:bg-rose-950/20 text-rose-500 rounded-lg">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+              </div>
+              <div className="space-y-0.5">
+                <h3 className="font-extrabold text-sm text-slate-850 dark:text-slate-100">
+                  Ошибка входа через Google
+                </h3>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-none">
+                  Частая проблема на мобильных устройствах
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-100 dark:border-slate-850 space-y-2 text-[11px] text-slate-650 dark:text-slate-355 leading-relaxed font-sans">
+              
+              {authError === 'unauthorized-domain' ? (
+                <div className="space-y-2.5 text-slate-600 dark:text-slate-350">
+                  <p className="leading-relaxed">
+                    Домен этой страницы не добавлен в список разрешённых в настройках авторизации вашего Firebase-проекта.
+                  </p>
+                  
+                  <div className="bg-white dark:bg-slate-900 border border-red-100 dark:border-red-950/40 p-2.5 rounded-lg space-y-1.5 text-[10.5px]">
+                    <p className="font-bold text-slate-700 dark:text-slate-200">Как исправить за 1 минуту:</p>
+                    <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400">
+                      <li>Перейдите в <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-650 dark:text-indigo-400 underline font-semibold">Консоль Firebase</a>.</li>
+                      <li>В Authentication → вкладка Settings → Authorized domains добавьте этот адрес:</li>
+                    </ol>
+                    <div className="mt-1.5 flex items-center justify-between bg-slate-50 dark:bg-slate-950 px-2 py-1 rounded border border-slate-205 dark:border-slate-800 font-mono text-[9px]">
+                      <span className="select-all truncate">{window.location.hostname}</span>
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(window.location.hostname);
+                          alert('Скопировано!');
+                        }}
+                        className="text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer ml-1 font-bold"
+                      >
+                        Копия
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <p className="font-bold text-slate-800 dark:text-slate-200">🎯 Быстрое решение:</p>
+                  <ul className="list-disc list-inside space-y-2 text-slate-600 dark:text-slate-400">
+                    <li>
+                      <span className="font-bold text-slate-750 dark:text-slate-250">Перейдите в обычный Chrome / Safari:</span> Если вы открыли ссылку из Telegram, WhatsApp или почты, встроенные браузеры мессенджеров полностью блокируют всплывающие окна авторизации. Нажмите на <b className="text-slate-800 dark:text-slate-200">три точки в верхнем углу</b> и выберите <b className="text-indigo-600 dark:text-indigo-400">"Открыть в Safari"</b> или <b className="text-indigo-600 dark:text-indigo-400">"Открыть в браузере"</b>.
+                    </li>
+                    <li>
+                      <span className="font-bold text-slate-755 dark:text-slate-250">Разрешите Pop-up:</span> Если браузер выдал предупреждение о блокировке всплывающего окна, выберите опцию "Разрешить всплывающие окна" на этой странице.
+                    </li>
+                  </ul>
+                  
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-850/60 text-[9.5px] text-slate-405 dark:text-slate-500">
+                    Технический код ошибки: <code className="bg-slate-200/50 dark:bg-slate-800/60 px-1 py-0.5 rounded font-mono break-all">{authError}</code>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setAuthError(null)}
+              className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-xs font-bold rounded-xl cursor-pointer transition-all text-center"
+            >
+              Закрыть и попробовать снова
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
