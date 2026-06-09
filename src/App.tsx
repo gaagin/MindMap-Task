@@ -55,7 +55,9 @@ import {
   saveToFirebaseDirectly, 
   loadFromFirebaseDirectly, 
   syncWithGoogleSheets, 
-  logDeletion 
+  logDeletion,
+  mergeWorkspaceStates,
+  getLocalDeletions
 } from './lib/syncService';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { User } from 'firebase/auth';
@@ -539,49 +541,46 @@ export default function App() {
         tagCategories: cloudData.tagCategories || []
       };
 
+      const remoteDeletions = cloudData.deletions || [];
+      const localDeletions = getLocalDeletions();
       const currentState = stateRef.current;
 
-      const localCompare = {
-        folders: currentState.folders,
-        projects: currentState.projects,
-        nodes: currentState.nodes,
-        activeProjectId: currentState.activeProjectId,
-        tagCategories: currentState.tagCategories || []
-      };
+      const { mergedState, mergedDeletions } = mergeWorkspaceStates(
+        currentState,
+        cloudState,
+        localDeletions,
+        remoteDeletions
+      );
 
-      const cloudCompare = {
-        folders: cloudState.folders,
-        projects: cloudState.projects,
-        nodes: cloudState.nodes,
-        activeProjectId: cloudState.activeProjectId,
-        tagCategories: cloudState.tagCategories || []
-      };
+      const normalizedCurrent = normalizeWorkspaceState(currentState);
+      const normalizedMerged = normalizeWorkspaceState(mergedState);
 
-      if (JSON.stringify(localCompare) !== JSON.stringify(cloudCompare)) {
-        // Only absorb incoming changes if we are not actively typing/syncing locally,
-        // OR if this is the first snapshot load of our session (forces cloud data loading on boot/device switch).
-        if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
-          isFirstSnapshotRef.current = false;
-          ignoreNextStateChangeRef.current = true;
-          const normalized = normalizeWorkspaceState(cloudState);
-          lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent loops
-          setRawState(normalized);
-          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-          setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
-          setHasCloudUpdates(false);
-          setCloudUpdateState(null);
-        } else {
-          // Force notification to user that another device has fresher updates
-          setHasCloudUpdates(true);
-          setCloudUpdateState(cloudState);
-        }
+      const currentHash = getSyncHash(normalizedCurrent);
+      const mergedHash = getSyncHash(normalizedMerged);
+
+      if (currentHash !== mergedHash || isFirstSnapshotRef.current) {
+        // Apply merged changes seamlessly
+        isFirstSnapshotRef.current = false;
+        ignoreNextStateChangeRef.current = true;
+        
+        // Save merged deletions back to localStorage
+        localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
+        
+        lastSyncedStateHashRef.current = mergedHash; // Update hash to ignore next autosave if clean
+        setRawState(normalizedMerged);
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        setUnsyncedEditsCount(0); // Clear any local unsynced edits count since we reconciled
+        setHasCloudUpdates(false);
+        setCloudUpdateState(null);
       } else {
         isFirstSnapshotRef.current = false;
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         setHasCloudUpdates(false);
         setCloudUpdateState(null);
       }
     }, (error) => {
       console.error('[Firebase snapshot listener error]:', error);
+      setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
     });
 
     return () => unsubscribe();

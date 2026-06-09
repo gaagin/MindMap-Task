@@ -1,13 +1,6 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport } from '../types';
-
-// Registry for Deletion tracking to synchronize with Google Sheets Deletions tab
-export interface DeletionRecord {
-  type: 'folder' | 'project' | 'node' | 'tagCategory';
-  id: string;
-  deletedAt: string;
-}
+import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport, DeletionRecord } from '../types';
 
 const DELETIONS_KEY = 'milli_deleted_registry';
 
@@ -80,6 +73,7 @@ function sanitizeForFirestore(obj: any): any {
 export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; error?: string }> {
   try {
     const docRef = doc(db, 'workspaces', userId);
+    const localDeletions = getLocalDeletions();
     const rawPayload = {
       userId,
       folders: state.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
@@ -90,6 +84,7 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
       }, {} as Record<string, TaskNode[]>),
       activeProjectId: state.activeProjectId,
       tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
+      deletions: localDeletions,
       updatedAt: new Date().toISOString()
     };
     
@@ -139,6 +134,130 @@ export async function loadFromFirebaseDirectly(userId: string): Promise<Workspac
     throw error;
   }
   return null;
+}
+
+/**
+ * Perform fine-grained document-level and field-level timestamp reconciliation (Notion-style conflict-free merge)
+ */
+export function mergeWorkspaceStates(
+  local: WorkspaceState,
+  remote: WorkspaceState,
+  localDeletions: DeletionRecord[] = [],
+  remoteDeletions: DeletionRecord[] = []
+): { mergedState: WorkspaceState; mergedDeletions: DeletionRecord[] } {
+  // 1. Build unified deletions lookup
+  const deletionsMap = new Map<string, DeletionRecord>();
+  const trackDeletion = (d: DeletionRecord) => {
+    if (!d || !d.id || !d.type) return;
+    const key = `${d.type}_${d.id}`;
+    const existing = deletionsMap.get(key);
+    if (!existing || new Date(d.deletedAt).getTime() > new Date(existing.deletedAt).getTime()) {
+      deletionsMap.set(key, d);
+    }
+  };
+  
+  (localDeletions || []).forEach(trackDeletion);
+  (remoteDeletions || []).forEach(trackDeletion);
+  const mergedDeletions = Array.from(deletionsMap.values());
+
+  const isItemDeleted = (type: string, id: string, updatedAtStr?: string): boolean => {
+    const key = `${type}_${id}`;
+    const delRecord = deletionsMap.get(key);
+    if (!delRecord) return false;
+    
+    if (updatedAtStr) {
+      const updatedTime = new Date(updatedAtStr).getTime();
+      const deletedTime = new Date(delRecord.deletedAt).getTime();
+      return deletedTime > updatedTime;
+    }
+    return true;
+  };
+
+  // 2. Symmetrical conflict-free timestamp resolver for standard collections
+  function mergeCollections<T extends { id: string; updatedAt?: string; createdAt?: string }>(
+    localArr: T[],
+    remoteArr: T[],
+    type: string
+  ): T[] {
+    const map = new Map<string, T>();
+    const saveOrMerge = (item: T) => {
+      const ts = item.updatedAt || item.createdAt || new Date(0).toISOString();
+      if (isItemDeleted(type, item.id, ts)) {
+        return; // Remove deleted items
+      }
+      const existing = map.get(item.id);
+      if (!existing) {
+        map.set(item.id, item);
+      } else {
+        const existingTs = existing.updatedAt || existing.createdAt || new Date(0).toISOString();
+        if (new Date(ts).getTime() > new Date(existingTs).getTime()) {
+          map.set(item.id, item);
+        }
+      }
+    };
+    
+    (localArr || []).forEach(saveOrMerge);
+    (remoteArr || []).forEach(saveOrMerge);
+    return Array.from(map.values());
+  }
+
+  const mergedFolders = mergeCollections(local.folders || [], remote.folders || [], 'folder');
+  const mergedProjects = mergeCollections(local.projects || [], remote.projects || [], 'project');
+  const mergedTagCategories = mergeCollections(local.tagCategories || [], remote.tagCategories || [], 'tagCategory');
+
+  // 3. Precision Node-level cross-merge
+  const projectList = new Set<string>([
+    ...Object.keys(local.nodes || {}),
+    ...Object.keys(remote.nodes || {})
+  ]);
+  const mergedNodes: Record<string, TaskNode[]> = {};
+
+  projectList.forEach(projId => {
+    const localProjNodes = local.nodes?.[projId] || [];
+    const remoteProjNodes = remote.nodes?.[projId] || [];
+    const nodeMap = new Map<string, TaskNode>();
+
+    const mergeNodeItem = (n: TaskNode) => {
+      const nodeTs = n.updatedAt || new Date(0).toISOString();
+      if (isItemDeleted('node', n.id, nodeTs)) {
+        return; // Filter deleted
+      }
+      const existing = nodeMap.get(n.id);
+      if (!existing) {
+        nodeMap.set(n.id, n);
+      } else {
+        const existingTs = existing.updatedAt || new Date(0).toISOString();
+        if (new Date(nodeTs).getTime() > new Date(existingTs).getTime()) {
+          nodeMap.set(n.id, n);
+        }
+      }
+    };
+
+    localProjNodes.forEach(mergeNodeItem);
+    remoteProjNodes.forEach(mergeNodeItem);
+
+    const mergedList = Array.from(nodeMap.values());
+    if (mergedList.length > 0) {
+      mergedNodes[projId] = mergedList;
+    }
+  });
+
+  // Keep active project correct or pick the first existing project
+  let activeProjectId = local.activeProjectId;
+  if (activeProjectId && !mergedProjects.some(p => p.id === activeProjectId)) {
+    activeProjectId = mergedProjects.length > 0 ? mergedProjects[0].id : null;
+  }
+
+  return {
+    mergedState: {
+      folders: mergedFolders,
+      projects: mergedProjects,
+      nodes: mergedNodes,
+      activeProjectId,
+      tagCategories: mergedTagCategories
+    },
+    mergedDeletions
+  };
 }
 
 // ----------------- GOOGLE SHEETS & DRIVE SYNC -----------------
