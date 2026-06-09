@@ -147,6 +147,7 @@ export default function App() {
   const ignoreNextStateChangeRef = React.useRef(false);
   const hasCheckedUrlParamRef = React.useRef(false);
   const lastStateRef = React.useRef<WorkspaceState | null>(null);
+  const isFirstSnapshotRef = React.useRef(true);
 
   // Intercept all state changes, update modification timestamps automatically, ensuring symmetrical sync compatibility
   const setState = (updater: WorkspaceState | ((prev: WorkspaceState) => WorkspaceState)) => {
@@ -396,11 +397,13 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = initAuth(
       (user, token) => {
+        isFirstSnapshotRef.current = true;
         setCurrentUser(user);
         setGoogleToken(token);
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
       },
       () => {
+        isFirstSnapshotRef.current = true;
         setCurrentUser(null);
         setGoogleToken(null);
         setSyncStatus(prev => ({ ...prev, firebase: 'idle', sheets: 'idle' }));
@@ -430,7 +433,8 @@ export default function App() {
         folders: cloudData.folders || [],
         projects: cloudData.projects || [],
         nodes: cloudData.nodes || {},
-        activeProjectId: cloudData.activeProjectId || ''
+        activeProjectId: cloudData.activeProjectId || null,
+        tagCategories: cloudData.tagCategories || []
       };
 
       const currentState = stateRef.current;
@@ -439,24 +443,30 @@ export default function App() {
         folders: currentState.folders,
         projects: currentState.projects,
         nodes: currentState.nodes,
-        activeProjectId: currentState.activeProjectId
+        activeProjectId: currentState.activeProjectId,
+        tagCategories: currentState.tagCategories || []
       };
 
       const cloudCompare = {
         folders: cloudState.folders,
         projects: cloudState.projects,
         nodes: cloudState.nodes,
-        activeProjectId: cloudState.activeProjectId
+        activeProjectId: cloudState.activeProjectId,
+        tagCategories: cloudState.tagCategories || []
       };
 
       if (JSON.stringify(localCompare) !== JSON.stringify(cloudCompare)) {
-        // Only absorb incoming changes if we are not actively typing/syncing locally.
-        // This avoids typing collisions and key cursor resets when editing.
-        if (unsyncedEditsCountRef.current === 0) {
+        // Only absorb incoming changes if we are not actively typing/syncing locally,
+        // OR if this is the first snapshot load of our session (forces cloud data loading on boot/device switch).
+        if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
+          isFirstSnapshotRef.current = false;
           ignoreNextStateChangeRef.current = true;
           setRawState(cloudState);
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+          setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
         }
+      } else {
+        isFirstSnapshotRef.current = false;
       }
     }, (error) => {
       console.error('[Firebase snapshot listener error]:', error);
