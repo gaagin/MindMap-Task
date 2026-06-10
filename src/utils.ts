@@ -40,6 +40,8 @@ export function createDemoWorkspace(): WorkspaceState {
 // Global key for localStorage persistence
 const STORAGE_KEY = 'task_mindmaps_state';
 
+export const heavyFilesCache = new Map<string, string>();
+
 // Load workspace from local storage or fallback to demo
 export function loadWorkspace(): WorkspaceState {
   try {
@@ -60,6 +62,19 @@ export function loadWorkspace(): WorkspaceState {
     if (!state.folders) state.folders = [];
     if (!state.projects) state.projects = [];
     if (!state.nodes) state.nodes = {};
+
+    // Populate heavyFilesCache with any full image payloads
+    for (const pid of Object.keys(state.nodes || {})) {
+      for (const node of state.nodes[pid] || []) {
+        if (node.files) {
+          for (const file of node.files) {
+            if (file.dataUrl && !file.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+              heavyFilesCache.set(file.id, file.dataUrl);
+            }
+          }
+        }
+      }
+    }
 
     // Remove old demo folders/projects/nodes from previous storage sessions
     state.folders = state.folders.filter(f => f.id !== 'f-work' && f.id !== 'f-sub-goals' && f.id !== 'f-personal');

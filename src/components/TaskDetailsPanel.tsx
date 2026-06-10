@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, 
   Trash2, 
@@ -28,10 +29,15 @@ import {
   Pause,
   RotateCcw,
   Coffee,
-  History
+  History,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  RefreshCw,
+  Move
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
-import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode } from '../utils';
+import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, heavyFilesCache } from '../utils';
 
 interface TaskDetailsPanelProps {
   node: TaskNode | null;
@@ -77,6 +83,14 @@ export default function TaskDetailsPanel({
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Zoomable full-screen image preview lightbox
+  const [previewImage, setPreviewImage] = useState<AttachmentFile | null>(null);
+  const [zoomScale, setZoomScale] = useState<number>(1);
+  const [imgRotation, setImgRotation] = useState<number>(0);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingActive, setIsDraggingActive] = useState(false);
+  const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+
   // Version history states
   const [originalText, setOriginalText] = useState('');
   const [originalNotes, setOriginalNotes] = useState('');
@@ -90,6 +104,36 @@ export default function TaskDetailsPanel({
       setOriginalNotes(node.notes || '');
     }
   }, [node?.id]);
+
+  // Zoomable full-screen image preview keyboard / mouse interactions
+  React.useEffect(() => {
+    if (!previewImage) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPreviewImage(null);
+      } else if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        setZoomScale(prev => Math.min(8, prev + 0.25));
+      } else if (e.key === '-') {
+        e.preventDefault();
+        setZoomScale(prev => Math.max(0.15, prev - 0.25));
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        setImgRotation(prev => (prev + 90) % 360);
+      } else if (e.key === '0') {
+        e.preventDefault();
+        setZoomScale(1);
+        setImgRotation(0);
+        setDragOffset({ x: 0, y: 0 });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [previewImage]);
 
   // Manual Pomodoro time editing states
   const [isEditingPomoTime, setIsEditingPomoTime] = useState(false);
@@ -784,6 +828,9 @@ export default function TaskDetailsPanel({
     if (!node.files) return;
     const fileToRemove = node.files.find(f => f.id === fileId);
 
+    // Evict from local memory cache to prevent leaking
+    heavyFilesCache.delete(fileId);
+
     if (fileToRemove && fileToRemove.googleDriveId && googleToken) {
       try {
         await fetch(`https://www.googleapis.com/drive/v3/files/${fileToRemove.googleDriveId}`, {
@@ -802,7 +849,8 @@ export default function TaskDetailsPanel({
   };
 
   return (
-    <aside className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out">
+    <>
+      <aside className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out">
       {/* Header */}
       <div className="h-16 px-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 uppercase tracking-wider font-sans flex items-center gap-2">
@@ -2210,71 +2258,177 @@ export default function TaskDetailsPanel({
           )}
 
           {node.files && node.files.length > 0 ? (
-            <div className="space-y-1.5 mt-3">
-              {node.files.map((file) => {
-                const isImg = file.type.startsWith('image/');
-                const isCloud = !!file.googleDriveId;
-                return (
-                  <div 
-                    key={file.id}
-                    className="flex items-center justify-between p-2 bg-[#FAFBFD]/60 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs"
-                  >
-                    <div className="flex items-center gap-2 min-w-0 pr-2">
-                      {isImg ? (
-                        <FileImage className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                      ) : (
-                        <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" />
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-slate-700 dark:text-slate-300 font-medium truncate" title={file.name}>
-                          {file.name}
-                        </p>
-                        <p className="text-[10px] text-slate-450 flex items-center gap-1">
-                          <span>{formatFileSize(file.size)}</span>
+            <div className="space-y-3 mt-3">
+              {/* Separate Images area for highly visual grid-based thumbnail previews! */}
+              {node.files.some(f => f.type.startsWith('image/')) && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1.5 pl-1">
+                    Изображения
+                  </p>
+                  <div className="grid grid-cols-3 gap-2 py-1">
+                    {node.files.filter(f => f.type.startsWith('image/')).map((file) => {
+                      const isCloud = !!file.googleDriveId;
+                      const displaySrc = file.dataUrl || file.webViewLink; // fallback if omitted
+                      return (
+                        <div 
+                          key={file.id}
+                          className="group relative h-20 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 shadow-xs cursor-pointer select-none transition-all duration-200 hover:ring-2 hover:ring-amber-500/50"
+                          onClick={() => {
+                            setPreviewImage(file);
+                            setZoomScale(1);
+                            setImgRotation(0);
+                            setDragOffset({ x: 0, y: 0 });
+                          }}
+                        >
+                          {displaySrc && !displaySrc.startsWith('_OMITTED_DUE_TO_SIZE_') ? (
+                            <img 
+                              src={displaySrc} 
+                              alt={file.name} 
+                              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center p-1 bg-slate-100 dark:bg-slate-800 text-[9px] text-slate-400">
+                              <FileImage className="w-5 h-5 text-emerald-500/80 mb-1" />
+                              <span className="truncate w-full text-center px-1" title={file.name}>{file.name}</span>
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Eye className="w-5 h-5 text-white animate-pulse" />
+                          </div>
                           {isCloud && (
-                            <span className="font-extrabold text-[8px] bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded px-1 py-0.2 select-none uppercase tracking-wide">
-                              Google Drive
+                            <span className="absolute top-1 left-1 font-black text-[7px] bg-amber-500 text-white rounded px-1 py-0.2 uppercase tracking-wide">
+                              Drive
                             </span>
                           )}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-1.5 flex-shrink-0">
-                      {isCloud && file.webViewLink && (
-                        <a
-                          href={file.webViewLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
-                          title="Просмотреть на Google Диске"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                      {file.dataUrl && (
-                        <a
-                          href={file.webContentLink || file.dataUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          download={!isCloud ? file.name : undefined}
-                          className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
-                          title={isCloud ? "Скачать с Google Диска" : "Скачать файл"}
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                      <button
-                        onClick={() => handleRemoveFile(file.id)}
-                        className="p-1.5 bg-white dark:bg-slate-700 text-slate-400 hover:text-rose-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
-                        title={isCloud ? "Удалить вложение (также удалится с вашего Google Диска)" : "Удалить файл"}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveFile(file.id);
+                            }}
+                            className="absolute top-1 right-1 p-1 bg-white/95 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg shadow-md hover:bg-white scale-90 opacity-0 group-hover:opacity-100 transition-all duration-150"
+                            title="Удалить файл"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              )}
+
+              {/* All files or list detailing */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1.5 pl-1">
+                  Все вложения
+                </p>
+                <div className="space-y-1.5">
+                  {node.files.map((file) => {
+                    const isImg = file.type.startsWith('image/');
+                    const isCloud = !!file.googleDriveId;
+                    return (
+                      <div 
+                        key={file.id}
+                        className="flex items-center justify-between p-2 bg-[#FAFBFD]/60 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs"
+                      >
+                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                          {isImg ? (
+                            <div 
+                              className="w-6 h-6 rounded overflow-hidden border border-slate-200/80 dark:border-slate-705 bg-slate-50 dark:bg-slate-900 flex-shrink-0 cursor-pointer flex items-center justify-center"
+                              onClick={() => {
+                                setPreviewImage(file);
+                                setZoomScale(1);
+                                setImgRotation(0);
+                                setDragOffset({ x: 0, y: 0 });
+                              }}
+                            >
+                              {file.dataUrl && !file.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_') ? (
+                                <img src={file.dataUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <FileImage className="w-3.5 h-3.5 text-emerald-500" />
+                              )}
+                            </div>
+                          ) : (
+                            <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p 
+                              className={`text-slate-700 dark:text-slate-300 font-medium truncate ${isImg ? 'cursor-zoom-in hover:text-indigo-600 dark:hover:text-indigo-450 hover:underline' : ''}`}
+                              title={file.name}
+                              onClick={() => {
+                                if (isImg) {
+                                  setPreviewImage(file);
+                                  setZoomScale(1);
+                                  setImgRotation(0);
+                                  setDragOffset({ x: 0, y: 0 });
+                                }
+                              }}
+                            >
+                              {file.name}
+                            </p>
+                            <p className="text-[10px] text-slate-450 flex items-center gap-1">
+                              <span>{formatFileSize(file.size)}</span>
+                              {isCloud && (
+                                <span className="font-extrabold text-[8px] bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded px-1 py-0.2 select-none uppercase tracking-wide">
+                                  Google Drive
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-1.5 flex-shrink-0">
+                          {isImg && (
+                            <button
+                              onClick={() => {
+                                setPreviewImage(file);
+                                setZoomScale(1);
+                                setImgRotation(0);
+                                setDragOffset({ x: 0, y: 0 });
+                              }}
+                              className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
+                              title="Открыть во весь экран с масштабированием"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {isCloud && file.webViewLink && !isImg && (
+                            <a
+                              href={file.webViewLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
+                              title="Просмотреть на Google Диске"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          {file.dataUrl && !file.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_') && (
+                            <a
+                              href={file.webContentLink || file.dataUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              download={!isCloud ? file.name : undefined}
+                              className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
+                              title={isCloud ? "Скачать с Google Диска" : "Скачать файл"}
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          <button
+                            onClick={() => handleRemoveFile(file.id)}
+                            className="p-1.5 bg-white dark:bg-slate-700 text-slate-400 hover:text-rose-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
+                            title={isCloud ? "Удалить вложение (также удалится с вашего Google Диска)" : "Удалить файл"}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           ) : (
             <p className="text-xs text-slate-400 italic">Нет вложений.</p>
@@ -2334,5 +2488,260 @@ export default function TaskDetailsPanel({
         </div>
       )}
     </aside>
+
+      {/* Full screen zoomable/pannable media preview portal */}
+      {previewImage && createPortal(
+        <div 
+          className="fixed inset-0 z-[99999] bg-slate-950/95 flex flex-col select-none touch-none backdrop-blur-md"
+          id="image-zoom-overlay"
+          onWheel={(e) => {
+            if (previewImage.googleDriveId) return; // Google's embedded viewer has its own zoom controls
+            e.preventDefault();
+            const delta = e.deltaY;
+            setZoomScale(prev => {
+              if (delta < 0) return Math.min(8, prev + 0.12 * prev);
+              return Math.max(0.12, prev - 0.12 * prev);
+            });
+          }}
+        >
+          {/* Top action header bar */}
+          <div className="flex items-center justify-between p-4 bg-slate-900/45 text-white border-b border-slate-800/40 backdrop-blur-md flex-shrink-0">
+            <div className="flex flex-col min-w-0 pr-4">
+              <span className="text-sm font-semibold truncate text-slate-100" title={previewImage.name}>
+                {previewImage.name}
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono mt-0.5">
+                {formatFileSize(previewImage.size)} {!previewImage.googleDriveId && `• Масштаб: ${Math.round(zoomScale * 100)}%`} {previewImage.googleDriveId && "• Google Drive Cloud Viewer"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Rotate button (only for local files because Google Drive handles its own frame views) */}
+              {!previewImage.googleDriveId && (
+                <button
+                  onClick={() => setImgRotation(prev => (prev + 90) % 360)}
+                  className="p-2 hover:bg-slate-800/80 active:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-all border border-slate-800 bg-slate-950/20 cursor-pointer"
+                  title="Повернуть по часовой стрелке (R)"
+                >
+                  <RotateCw className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* Reset view (only for local zoomable images) */}
+              {!previewImage.googleDriveId && (
+                <button
+                  onClick={() => {
+                    setZoomScale(1);
+                    setImgRotation(0);
+                    setDragOffset({ x: 0, y: 0 });
+                  }}
+                  className="p-2 hover:bg-slate-800/80 active:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-all border border-slate-800 bg-slate-950/20 flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
+                  title="Сбросить масштаб и положение (0)"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>1:1</span>
+                </button>
+              )}
+
+              {/* Download original */}
+              {previewImage.dataUrl && !previewImage.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_') && (
+                <a
+                  href={previewImage.webContentLink || previewImage.dataUrl}
+                  download={previewImage.name}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2 hover:bg-slate-800/80 active:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-all border border-slate-800 bg-slate-950/20 flex items-center justify-center cursor-pointer"
+                  title="Скачать изображение"
+                >
+                  <Download className="w-4 h-4" />
+                </a>
+              )}
+
+              {previewImage.webViewLink && (
+                <a
+                  href={previewImage.webViewLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2 hover:bg-slate-800/80 active:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-all border border-slate-800 bg-slate-950/20 text-xs font-semibold cursor-pointer"
+                  title="Открыть в новой вкладке на Google Диске"
+                >
+                  Открыть в новой вкладке
+                </a>
+              )}
+
+              {/* Close Button */}
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="p-2 bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded-lg transition-all ml-2 cursor-pointer shadow-lg"
+                title="Закрыть (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Draggable image container / Google Drive secure sandboxed frame */}
+          <div 
+            className={`flex-1 overflow-hidden relative flex items-center justify-center ${
+              previewImage.googleDriveId 
+                ? 'p-4 bg-slate-900/50' 
+                : isDraggingActive 
+                  ? 'cursor-grabbing' 
+                  : zoomScale > 1 
+                    ? 'cursor-grab' 
+                    : 'cursor-zoom-in'
+            }`}
+            onMouseDown={(e) => {
+              if (previewImage.googleDriveId) return;
+              if (e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement) return;
+              e.preventDefault();
+              setIsDraggingActive(true);
+              setDragStartPos({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
+            }}
+            onMouseMove={(e) => {
+              if (previewImage.googleDriveId || !isDraggingActive) return;
+              setDragOffset({
+                x: e.clientX - dragStartPos.x,
+                y: e.clientY - dragStartPos.y
+              });
+            }}
+            onMouseUp={() => {
+              if (previewImage.googleDriveId) return;
+              setIsDraggingActive(false);
+            }}
+            onMouseLeave={() => {
+              if (previewImage.googleDriveId) return;
+              setIsDraggingActive(false);
+            }}
+            onTouchStart={(e) => {
+              if (previewImage.googleDriveId) return;
+              if (e.touches.length === 1) {
+                const touch = e.touches[0];
+                setIsDraggingActive(true);
+                setDragStartPos({ x: touch.clientX - dragOffset.x, y: touch.clientY - dragOffset.y });
+              }
+            }}
+            onTouchMove={(e) => {
+              if (previewImage.googleDriveId || !isDraggingActive || e.touches.length !== 1) return;
+              const touch = e.touches[0];
+              setDragOffset({
+                x: touch.clientX - dragStartPos.x,
+                y: touch.clientY - dragStartPos.y
+              });
+            }}
+            onTouchEnd={() => {
+              if (previewImage.googleDriveId) return;
+              setIsDraggingActive(false);
+            }}
+          >
+            {/* Visual ambient dot pattern backdrop for original images */}
+            {!previewImage.googleDriveId && (
+              <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px]"></div>
+            )}
+
+            {previewImage.googleDriveId ? (
+              <div className="w-full h-full max-w-7xl max-h-[80vh] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+                <iframe 
+                  src={`https://drive.google.com/file/d/${previewImage.googleDriveId}/preview`} 
+                  className="w-full h-full border-0"
+                  allow="autoplay; encrypted-media"
+                  title={previewImage.name}
+                ></iframe>
+              </div>
+            ) : (
+              <div 
+                className="transition-transform duration-100 ease-out select-none flex items-center justify-center"
+                style={{
+                  transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`
+                }}
+              >
+                {previewImage.dataUrl && !previewImage.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_') ? (
+                  <img 
+                    src={previewImage.dataUrl} 
+                    alt={previewImage.name}
+                    draggable={false}
+                    className="max-w-[85vw] max-h-[75vh] md:max-h-[80vh] object-contain select-none shadow-2xl rounded-sm border border-slate-850/50"
+                    style={{
+                      transform: `scale(${zoomScale}) rotate(${imgRotation}deg)`,
+                      transition: isDraggingActive ? 'none' : 'transform 0.15s ease-out'
+                    }}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-center p-8 bg-slate-900/60 rounded-2xl border border-slate-800 max-w-md">
+                    <FileImage className="w-12 h-12 text-slate-500 mb-3 animate-bounce" />
+                    <p className="text-sm font-semibold text-slate-200 mb-1">Файл большого размера</p>
+                    <p className="text-xs text-slate-400 mb-4">
+                      Для снижения расхода трафика полное изображение не кэшировалось в истории. Вы можете открыть его напрямую:
+                    </p>
+                    {previewImage.webViewLink ? (
+                      <a 
+                        href={previewImage.webViewLink} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition-all"
+                      >
+                        Открыть на Google Диске
+                      </a>
+                    ) : (
+                      <span className="text-xs text-amber-500 italic font-mono">
+                        Пожалуйста, загрузите файл повторно или проверьте стабильность сети
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Speed dial interactive zoom controller panel at the bottom */}
+          {!previewImage.googleDriveId && previewImage.dataUrl && !previewImage.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_') && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/85 hover:bg-slate-900 border border-slate-800/80 backdrop-blur-md px-4 py-2.5 rounded-full flex items-center gap-4 text-white hover:shadow-2xl transition-all shadow-xl z-50">
+              <button 
+                onClick={() => setZoomScale(prev => Math.max(0.12, prev - 0.2))}
+                className="p-1.5 hover:bg-slate-800 rounded-full text-slate-300 hover:text-white active:scale-95 transition-all cursor-pointer"
+                title="Уменьшить масштаб (-)"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+
+              <span className="text-xs font-mono select-none px-1 text-slate-200 font-semibold w-12 text-center">
+                {Math.round(zoomScale * 100)}%
+              </span>
+
+              <button 
+                onClick={() => setZoomScale(prev => Math.min(8, prev + 0.2))}
+                className="p-1.5 hover:bg-slate-800 rounded-full text-slate-300 hover:text-white active:scale-95 transition-all cursor-pointer"
+                title="Увеличить масштаб (+)"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+
+              <div className="w-[1px] h-4 bg-slate-800"></div>
+
+              <button 
+                onClick={() => {
+                  setZoomScale(1);
+                  setImgRotation(0);
+                  setDragOffset({ x: 0, y: 0 });
+                }}
+                className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition-all text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                title="Сбросить масштаб и сдвиг"
+              >
+                <Move className="w-3.5 h-3.5" />
+                <span>Сброс</span>
+              </button>
+
+              <div className="hidden md:flex w-[1px] h-4 bg-slate-800"></div>
+
+              <span className="hidden md:inline text-[10px] text-slate-400 font-medium select-none">
+                Колесико мыши: Zoom • Тянуть: Панорама • Esc: Закрыть
+              </span>
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
+    </>
   );
 }

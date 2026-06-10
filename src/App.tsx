@@ -34,7 +34,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
-import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
+import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, heavyFilesCache } from './utils';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
@@ -150,12 +150,68 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
  * Keeps global WorkspaceState and all active projects fully in sync regarding tagCategories.
  * This guarantees categories and tags do not disappear when restoring snapshots from Firestore or Google Sheets.
  */
-function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
+function normalizeWorkspaceState(wsState: WorkspaceState, currentState?: WorkspaceState): WorkspaceState {
   if (!wsState) return wsState;
 
   const folders = wsState.folders || [];
   const projects = wsState.projects || [];
-  const nodes = wsState.nodes || {};
+  
+  // Create a deep/shallow copy of nodes map to prevent modifying readonly fields directly
+  const nodes: Record<string, TaskNode[]> = {};
+  for (const pid of Object.keys(wsState.nodes || {})) {
+    nodes[pid] = (wsState.nodes[pid] || []).map(n => ({ ...n }));
+  }
+
+  // Restore any omitted or placeholder base64 dataUrls from global cache or local currentState if available
+  for (const pid of Object.keys(nodes)) {
+    const currentProjectNodes = (currentState && currentState.nodes) ? (currentState.nodes[pid] || []) : [];
+    const currentNodesMap = new Map(currentProjectNodes.map(cn => [cn.id, cn]));
+    
+    nodes[pid] = nodes[pid].map(node => {
+      if (node.files && node.files.length > 0) {
+        const currentNode = currentNodesMap.get(node.id);
+        const currentFilesMap = currentNode && currentNode.files 
+          ? new Map(currentNode.files.map(f => [f.id, f]))
+          : null;
+
+        const restoredFiles = node.files.map(file => {
+          if (file.dataUrl && file.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+            // Priority 1: Global Memory Cache
+            const cachedData = heavyFilesCache.get(file.id);
+            if (cachedData) {
+              return {
+                ...file,
+                dataUrl: cachedData
+              };
+            }
+
+            // Priority 2: Current State Fallback
+            if (currentFilesMap) {
+              const currentFile = currentFilesMap.get(file.id);
+              if (currentFile && currentFile.dataUrl && !currentFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+                heavyFilesCache.set(file.id, currentFile.dataUrl);
+                return {
+                  ...file,
+                  dataUrl: currentFile.dataUrl
+                };
+              }
+            }
+          } else if (file.dataUrl && !file.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+            // Keep memory-cache up to date with full files loaded or updated
+            heavyFilesCache.set(file.id, file.dataUrl);
+          }
+          return file;
+        });
+
+        return {
+          ...node,
+          files: restoredFiles
+        };
+      }
+      return node;
+    });
+  }
+
   let tagCategories = wsState.tagCategories || [];
 
   // If root tagCategories are empty but projects have them, extract them
@@ -244,7 +300,7 @@ export default function App() {
         tagCategories: nextTyped.projects.flatMap(p => p.tagCategories || [])
       };
       const enriched = enrichStateWithTimestamps(prev, next);
-      return normalizeWorkspaceState(enriched);
+      return normalizeWorkspaceState(enriched, prev);
     });
   };
 
@@ -275,7 +331,7 @@ export default function App() {
   const handleApplyCloudState = () => {
     if (!cloudUpdateState) return;
     ignoreNextStateChangeRef.current = true;
-    const normalized = normalizeWorkspaceState(cloudUpdateState);
+    const normalized = normalizeWorkspaceState(cloudUpdateState, state);
     lastSyncedStateHashRef.current = getSyncHash(normalized);
     setRawState(normalized);
     setUnsyncedEditsCount(0);
@@ -567,24 +623,29 @@ export default function App() {
 
       const currentState = stateRef.current;
 
+      // Normalize both local and incoming cloud states to restore omitted base64 file payloads
+      // before comparing to avoid false desync detection or endless save/load trigger loops.
+      const normalizedCloudCompare = normalizeWorkspaceState(cloudState, currentState);
+      const normalizedLocalCompare = normalizeWorkspaceState(currentState, currentState);
+
       const localCompare = {
-        folders: currentState.folders,
-        projects: currentState.projects,
-        nodes: currentState.nodes,
-        activeProjectId: currentState.activeProjectId,
-        tagCategories: currentState.tagCategories || [],
-        googleSheetsFileId: currentState.googleSheetsFileId,
-        taskSheetsSpreadsheetId: currentState.taskSheetsSpreadsheetId
+        folders: normalizedLocalCompare.folders,
+        projects: normalizedLocalCompare.projects,
+        nodes: normalizedLocalCompare.nodes,
+        activeProjectId: normalizedLocalCompare.activeProjectId,
+        tagCategories: normalizedLocalCompare.tagCategories || [],
+        googleSheetsFileId: normalizedLocalCompare.googleSheetsFileId,
+        taskSheetsSpreadsheetId: normalizedLocalCompare.taskSheetsSpreadsheetId
       };
 
       const cloudCompare = {
-        folders: cloudState.folders,
-        projects: cloudState.projects,
-        nodes: cloudState.nodes,
-        activeProjectId: cloudState.activeProjectId,
-        tagCategories: cloudState.tagCategories || [],
-        googleSheetsFileId: cloudState.googleSheetsFileId,
-        taskSheetsSpreadsheetId: cloudState.taskSheetsSpreadsheetId
+        folders: normalizedCloudCompare.folders,
+        projects: normalizedCloudCompare.projects,
+        nodes: normalizedCloudCompare.nodes,
+        activeProjectId: normalizedCloudCompare.activeProjectId,
+        tagCategories: normalizedCloudCompare.tagCategories || [],
+        googleSheetsFileId: normalizedCloudCompare.googleSheetsFileId,
+        taskSheetsSpreadsheetId: normalizedCloudCompare.taskSheetsSpreadsheetId
       };
 
       if (JSON.stringify(localCompare) !== JSON.stringify(cloudCompare)) {
@@ -593,7 +654,7 @@ export default function App() {
         if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
           isFirstSnapshotRef.current = false;
           ignoreNextStateChangeRef.current = true;
-          const normalized = normalizeWorkspaceState(cloudState);
+          const normalized = normalizeWorkspaceState(cloudState, currentState);
           lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent loops
           setRawState(normalized);
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
@@ -681,7 +742,7 @@ export default function App() {
       if (result.success) {
         // Correctly set block flag before state reset to prevent trigger loop
         ignoreNextStateChangeRef.current = true;
-        const normalized = normalizeWorkspaceState(result.state);
+        const normalized = normalizeWorkspaceState(result.state, currentWorkspace);
         lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent loop reflection
         setRawState(normalized);
         setSyncStatus(prev => ({
@@ -791,7 +852,7 @@ export default function App() {
           tagCategories: cloudData.tagCategories || []
         };
         ignoreNextStateChangeRef.current = true;
-        const normalized = normalizeWorkspaceState(cloudState);
+        const normalized = normalizeWorkspaceState(cloudState, state);
         lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent reflection loops
         setRawState(normalized);
         setUnsyncedEditsCount(0);

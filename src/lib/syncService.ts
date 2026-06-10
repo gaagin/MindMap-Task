@@ -1,6 +1,7 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport } from '../types';
+import { heavyFilesCache } from '../utils';
 
 // Registry for Deletion tracking to synchronize with Google Sheets Deletions tab
 export interface DeletionRecord {
@@ -81,12 +82,39 @@ function sanitizeForFirestore(obj: any): any {
 export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; error?: string }> {
   try {
     const docRef = doc(db, 'workspaces', userId);
+
+    // Deep copy and safely truncate heavy file attachment dataUrls in task nodes before uploading to Firestore to prevent document bloat and write timeouts
+    const optimizedNodes: Record<string, TaskNode[]> = {};
+    for (const key of Object.keys(state.nodes || {})) {
+      optimizedNodes[key] = (state.nodes[key] || []).map(n => {
+        if (n.files && n.files.length > 0) {
+          const processedFiles = n.files.map(file => {
+            if (file.dataUrl && file.dataUrl.length > 15000) {
+              if (!file.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+                heavyFilesCache.set(file.id, file.dataUrl);
+              }
+              return {
+                ...file,
+                dataUrl: `_OMITTED_DUE_TO_SIZE_:${file.id}`
+              };
+            }
+            return file;
+          });
+          return {
+            ...n,
+            files: processedFiles
+          };
+        }
+        return n;
+      });
+    }
+
     const rawPayload = {
       userId,
       folders: state.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
       projects: state.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() })),
-      nodes: Object.keys(state.nodes).reduce((acc, key) => {
-        acc[key] = state.nodes[key].map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
+      nodes: Object.keys(optimizedNodes).reduce((acc, key) => {
+        acc[key] = optimizedNodes[key].map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
         return acc;
       }, {} as Record<string, TaskNode[]>),
       activeProjectId: state.activeProjectId,
@@ -729,6 +757,9 @@ export async function syncWithGoogleSheets(
       // Create a copy of files where we omit massive dataUrl strings to keep it small
       let safeFiles = (n.files || []).map(file => {
         if (file.dataUrl && file.dataUrl.length > 15000) {
+          if (!file.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+            heavyFilesCache.set(file.id, file.dataUrl);
+          }
           return {
             ...file,
             dataUrl: `_OMITTED_DUE_TO_SIZE_:${file.id}`
@@ -746,6 +777,9 @@ export async function syncWithGoogleSheets(
           .sort((a, b) => b.len - a.len);
 
         for (const item of sortedWithIndex) {
+          if (safeFiles[item.idx].dataUrl && !safeFiles[item.idx].dataUrl?.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+            heavyFilesCache.set(safeFiles[item.idx].id, safeFiles[item.idx].dataUrl || '');
+          }
           safeFiles[item.idx] = {
             ...safeFiles[item.idx],
             dataUrl: `_OMITTED_DUE_TO_SIZE_:${safeFiles[item.idx].id}`

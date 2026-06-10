@@ -3513,7 +3513,6 @@ export default function MindMapCanvas({
 
           if (node.isContainer) {
             const isSelfFocused = focusedContainerId === node.id;
-            if (isSelfFocused) return null; // Hide the container visual boundaries entirely to let it replace the canvas!
 
             const containerChildren = nodes.filter(n => n.parentId === node.id);
             const totalChildren = containerChildren.length;
@@ -3573,13 +3572,15 @@ export default function MindMapCanvas({
                 className={`absolute rounded-2xl border-2 ${(isDraggingThisNode || resizingNodeId === node.id) ? '' : 'transition-all duration-150'} ${
                   isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                 } ${
-                  draggedOverTagNodeId === node.id
-                    ? 'bg-emerald-50/10 dark:bg-emerald-950/10 border-emerald-500 ring-4 ring-emerald-500/30 scale-[1.015]'
-                    : hoverTargetId === node.id
-                      ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
-                      : isContainerSelected
-                        ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
-                        : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
+                  isSelfFocused
+                    ? 'bg-amber-50/5 dark:bg-amber-950/10 border-amber-500 shadow-2xl ring-4 ring-amber-500/40 ring-offset-2 dark:ring-offset-slate-950 scale-100'
+                    : draggedOverTagNodeId === node.id
+                      ? 'bg-emerald-50/10 dark:bg-emerald-950/10 border-emerald-500 ring-4 ring-emerald-500/30 scale-[1.015]'
+                      : hoverTargetId === node.id
+                        ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
+                        : isContainerSelected
+                          ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
+                          : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
                 } flex flex-col`}
                 onMouseDown={(e) => startDragNode(e, node)}
                 onClick={(e) => {
