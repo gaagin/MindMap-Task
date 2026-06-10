@@ -5,304 +5,8 @@ export function generateId(): string {
   return Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
 }
 
-// Generate the beautiful default onboarding demo workspace
+// Generate the beautiful default empty workspace
 export function createDemoWorkspace(): WorkspaceState {
-  const folders: Folder[] = [
-    {
-      id: 'f-work',
-      name: '📁 Рабочее пространство',
-      parentId: null,
-    },
-    {
-      id: 'f-sub-goals',
-      name: '🎯 Стратегические цели',
-      parentId: 'f-work',
-    },
-    {
-      id: 'f-personal',
-      name: '💡 Личное развитие',
-      parentId: null,
-    }
-  ];
-
-  const projects: Project[] = [
-    {
-      id: 'p-startup',
-      name: '🚀 Запуск IT-стартапа',
-      folderId: 'f-work',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: 'p-habit',
-      name: '🧘 Трекер привычек (Пример)',
-      folderId: 'f-personal',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-  ];
-
-  // Build task nodes for p-startup
-  const pStartupNodes: TaskNode[] = [
-    {
-      id: 'node-root',
-      projectId: 'p-startup',
-      text: '🚀 Наш IT-Стартап',
-      x: 0,
-      y: 0,
-      parentId: null,
-      priority: 'high',
-      tags: ['Генеральный-план', '2026'],
-      notes: 'Главная цель: Выйти на первый раунд финансирования в течение 6 месяцев.\n\nКлючевые вехи:\n- Разработка MVP\n- Маркетинговая кампания\n- Оформление юридических документов',
-      completed: false,
-      files: [],
-      color: '#6366f1', // Indigo
-    },
-    // Left Wing: Product & Tech
-    {
-      id: 'node-tech',
-      projectId: 'p-startup',
-      text: '⚙️ Продуктовая разработка',
-      x: -280,
-      y: -100,
-      parentId: 'node-root',
-      priority: 'urgent',
-      tags: ['Разработка', 'MVP'],
-      notes: 'Создание адаптивного веб-приложения на React + Vite + Tailwind CSS.',
-      completed: false,
-      files: [],
-      color: '#3b82f6', // Blue
-      dueDate: '2026-05-30',
-    },
-    {
-      id: 'node-tech-mvp',
-      projectId: 'p-startup',
-      text: '📐 Проектирование MVP',
-      x: -540,
-      y: -180,
-      parentId: 'node-tech',
-      priority: 'high',
-      tags: ['Тех-задание'],
-      notes: 'Список базовых функций:\n1. Интерактивная интеллект-карта\n2. Управление папками и файлами\n3. Локальное автосохранение и экспорт\n4. Мобильная адаптивность',
-      completed: true,
-      files: [],
-      color: '#3b82f6',
-      dueDate: '2026-06-15',
-    },
-    {
-      id: 'node-tech-design',
-      projectId: 'p-startup',
-      text: '🎨 Figma Клиентский UI',
-      x: -540,
-      y: -40,
-      parentId: 'node-tech',
-      priority: 'medium',
-      tags: ['Дизайн'],
-      notes: 'Спроектировать дизайн-систему: шрифты Inter и Space Grotesk, цветовая палитра Slate / Zinc c яркими контрастными акцентами для приоритетов задач.',
-      completed: false,
-      files: [
-        {
-          id: 'figma-spec',
-          name: 'figma_mock_v1.png',
-          type: 'image/png',
-          size: 154820,
-          dataUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="%236366f1"/><text x="15" y="55" fill="white" font-family="sans-serif" font-size="12">Figma Placeholder</text></svg>'
-        }
-      ],
-      color: '#3b82f6',
-      dueDate: '2026-06-10',
-    },
-    // Right Wing: Marketing & PR
-    {
-      id: 'node-marketing',
-      projectId: 'p-startup',
-      text: '📣 Маркетинг и PR',
-      x: 280,
-      y: -100,
-      parentId: 'node-root',
-      priority: 'medium',
-      tags: ['Трафик', 'Клиенты'],
-      notes: 'Формирование лояльного комьюнити и поиск первых 1000 зарегистрированных пользователей.',
-      completed: false,
-      files: [],
-      color: '#10b981', // Green
-    },
-    {
-      id: 'node-marketing-sm',
-      projectId: 'p-startup',
-      text: '📱 Социальные сети',
-      x: 540,
-      y: -180,
-      parentId: 'node-marketing',
-      priority: 'medium',
-      tags: ['SMM', 'PR'],
-      notes: 'Запуск Telegram-канала, ведение блогов на VC.ru, Habr и Twitter.',
-      completed: false,
-      files: [],
-      color: '#10b981',
-    },
-    {
-      id: 'node-marketing-sites',
-      projectId: 'p-startup',
-      text: '🌐 Спец-проект Landing Page',
-      x: 540,
-      y: -40,
-      parentId: 'node-marketing',
-      priority: 'high',
-      tags: ['Сайт', 'Конверсии'],
-      notes: 'Запустить одностраничный лаконичный сайт со сбором листов ожидания (Waiting List).',
-      completed: false,
-      files: [],
-      color: '#10b981',
-    },
-    // Bottom Left: Legal & Operations
-    {
-      id: 'node-legal',
-      projectId: 'p-startup',
-      text: '⚖️ Юридические вопросы',
-      x: -240,
-      y: 180,
-      parentId: 'node-root',
-      priority: 'low',
-      tags: ['Юридическое', 'Документы'],
-      notes: 'Регистрация компании, подготовка соглашения соучредителей (Founders Agreement).',
-      completed: false,
-      files: [],
-      color: '#f59e0b', // Amber
-    },
-    {
-      id: 'node-legal-terms',
-      projectId: 'p-startup',
-      text: '📄 Документ о NDA',
-      x: -480,
-      y: 240,
-      parentId: 'node-legal',
-      priority: 'low',
-      tags: ['Безопасность'],
-      notes: 'Разработать типовое соглашение о неразглашении конфиденциальной информации.',
-      completed: true,
-      files: [],
-      color: '#f59e0b',
-    },
-    // Bottom Right: Finance & Investment
-    {
-      id: 'node-finance',
-      projectId: 'p-startup',
-      text: '💳 Инвестиции и Финансы',
-      x: 240,
-      y: 180,
-      parentId: 'node-root',
-      priority: 'high',
-      tags: ['Инвесторы', 'Презентация'],
-      notes: 'Сбор финансовой модели на первые 2 года и упаковка презентации.',
-      completed: false,
-      files: [],
-      color: '#ec4899', // Pink
-    },
-    {
-      id: 'node-finance-pitch',
-      projectId: 'p-startup',
-      text: '📊 Составление Pitch Deck',
-      x: 480,
-      y: 240,
-      parentId: 'node-finance',
-      priority: 'high',
-      tags: ['Питч', 'Слайды'],
-      notes: 'Презентация на 10 слайдов в стиле минимализма. Фокус на продуктовой проблеме, решении и метриках роста.',
-      completed: false,
-      files: [],
-      color: '#ec4899',
-    },
-  ];
-
-  // Habit tracker nodes
-  const pHabitNodes: TaskNode[] = [
-    {
-      id: 'node-habit-root',
-      projectId: 'p-habit',
-      text: '🧘 Мой идеальный день',
-      x: 0,
-      y: 0,
-      parentId: null,
-      priority: 'medium',
-      tags: ['Стиль-жизни'],
-      notes: 'Полезные привычки для поддержания баланса работы и личного благополучия разработчика.',
-      completed: false,
-      files: [],
-      color: '#8b5cf6', // Violet
-    },
-    {
-      id: 'node-habit-morning',
-      projectId: 'p-habit',
-      text: '☀️ Утро (Концентрация)',
-      x: -240,
-      y: -60,
-      parentId: 'node-habit-root',
-      priority: 'medium',
-      tags: ['Утро'],
-      notes: 'Задаем правильный ритм на день.',
-      completed: false,
-      files: [],
-      color: '#f59e0b',
-    },
-    {
-      id: 'node-habit-morning-med',
-      projectId: 'p-habit',
-      text: '🧘 Медитация 10 мин',
-      x: -460,
-      y: -120,
-      parentId: 'node-habit-morning',
-      priority: 'low',
-      tags: ['Осознанность'],
-      notes: '',
-      completed: true,
-      files: [],
-      color: '#f59e0b',
-    },
-    {
-      id: 'node-habit-morning-code',
-      projectId: 'p-habit',
-      text: '☕ Чтение / Свои проекты',
-      x: -460,
-      y: 0,
-      parentId: 'node-habit-morning',
-      priority: 'high',
-      tags: ['Фокус'],
-      notes: 'Первые 1.5 часа рабочего дня — без соцсетей. Полный фокус на самых сложных концептуальных задачах.',
-      completed: false,
-      files: [],
-      color: '#f59e0b',
-    },
-    {
-      id: 'node-habit-evening',
-      projectId: 'p-habit',
-      text: '🌙 Вечер (Восстановление)',
-      x: 240,
-      y: 60,
-      parentId: 'node-habit-root',
-      priority: 'medium',
-      tags: ['Сон'],
-      notes: 'Мягкий офлайн-выход из цифровой рутины.',
-      completed: false,
-      files: [],
-      color: '#ec4899',
-    },
-    {
-      id: 'node-habit-evening-digital',
-      projectId: 'p-habit',
-      text: '📵 Digital Detox за 1 час до сна',
-      x: 460,
-      y: 120,
-      parentId: 'node-habit-evening',
-      priority: 'high',
-      tags: ['Здоровье'],
-      notes: 'Все гаджеты убираются в другую комнату. Чтение бумажной книги.',
-      completed: false,
-      files: [],
-      color: '#ec4899',
-    }
-  ];
-
   const tagCategories: TagCategory[] = [
     {
       id: 'cat-phase',
@@ -325,13 +29,10 @@ export function createDemoWorkspace(): WorkspaceState {
   ];
 
   return {
-    folders,
-    projects,
-    nodes: {
-      'p-startup': pStartupNodes,
-      'p-habit': pHabitNodes,
-    },
-    activeProjectId: 'p-startup',
+    folders: [],
+    projects: [],
+    nodes: {},
+    activeProjectId: null,
     tagCategories
   };
 }
@@ -359,6 +60,13 @@ export function loadWorkspace(): WorkspaceState {
     if (!state.folders) state.folders = [];
     if (!state.projects) state.projects = [];
     if (!state.nodes) state.nodes = {};
+
+    // Remove old demo folders/projects/nodes from previous storage sessions
+    state.folders = state.folders.filter(f => f.id !== 'f-work' && f.id !== 'f-sub-goals' && f.id !== 'f-personal');
+    state.projects = state.projects.filter(p => p.id !== 'p-startup' && p.id !== 'p-habit');
+    if (state.nodes['p-startup']) delete state.nodes['p-startup'];
+    if (state.nodes['p-habit']) delete state.nodes['p-habit'];
+
     if (state.tagCategories === undefined) {
       state.tagCategories = [
         {
@@ -381,8 +89,10 @@ export function loadWorkspace(): WorkspaceState {
         }
       ];
     }
-    if (!state.activeProjectId && state.projects.length > 0) {
+    if ((!state.activeProjectId || !state.projects.some(p => p.id === state.activeProjectId)) && state.projects.length > 0) {
       state.activeProjectId = state.projects[0].id;
+    } else if (state.projects.length === 0) {
+      state.activeProjectId = null;
     }
     if (!state.googleSheetsFileId) {
       state.googleSheetsFileId = localStorage.getItem('google_sheets_sync_file_id') || undefined;

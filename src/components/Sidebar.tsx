@@ -14,7 +14,8 @@ import {
   RotateCcw,
   X,
   FolderOpen,
-  AlertCircle
+  AlertCircle,
+  Move
 } from 'lucide-react';
 import { Folder, Project, TagCategory, WorkspaceState } from '../types';
 import GoogleSheetsSync from './GoogleSheetsSync';
@@ -30,6 +31,7 @@ interface SidebarProps {
   onCreateProject: (name: string, folderId: string | null) => void;
   onRenameProject: (id: string, name: string) => void;
   onDeleteProject: (id: string) => void;
+  onMoveProject: (id: string, folderId: string | null) => void;
   onExportData: () => void;
   onImportData: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onResetDemo: () => void;
@@ -55,6 +57,7 @@ export default function Sidebar({
   onCreateProject,
   onRenameProject,
   onDeleteProject,
+  onMoveProject,
   onExportData,
   onImportData,
   onResetDemo,
@@ -130,6 +133,11 @@ export default function Sidebar({
   const [confirmDeleteCategoryId, setConfirmDeleteCategoryId] = useState<string | null>(null);
   const [confirmResetDemo, setConfirmResetDemo] = useState(false);
 
+  // States for folder movement support (both manual dropdown selection and drag-and-drop feedback)
+  const [movingProjectId, setMovingProjectId] = useState<string | null>(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const [dragOverRoot, setDragOverRoot] = useState(false);
+
   const toggleFolder = (folderId: string) => {
     setExpandedFolders(prev => ({
       ...prev,
@@ -178,11 +186,40 @@ export default function Sidebar({
     const subfolders = getSubfolders(folder.id);
     const folderProjects = getProjectsInFolder(folder.id);
     const hasChildren = subfolders.length > 0 || folderProjects.length > 0;
+    const isDragOver = dragOverFolderId === folder.id;
 
     return (
-      <div key={folder.id} className="select-none mb-1">
+      <div 
+        key={folder.id} 
+        className="select-none mb-1"
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setDragOverFolderId(folder.id);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setDragOverFolderId(null);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOverFolderId(null);
+          const projectId = e.dataTransfer.getData('text/plain');
+          if (projectId) {
+            onMoveProject(projectId, folder.id);
+            setExpandedFolders(prev => ({ ...prev, [folder.id]: true }));
+          }
+        }}
+      >
         <div 
-          className="group flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-700 dark:text-slate-300"
+          className={`group flex items-center justify-between py-1.5 px-2 rounded-lg transition-colors text-slate-700 dark:text-slate-300 ${
+            isDragOver 
+              ? 'bg-indigo-100/80 dark:bg-indigo-950/40 ring-2 ring-indigo-505 border-indigo-400' 
+              : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
           style={{ paddingLeft: `${Math.max(depth * 12 + 8, 8)}px` }}
         >
           <div className="flex items-center min-w-0 cursor-pointer flex-1" onClick={() => toggleFolder(folder.id)}>
@@ -339,79 +376,127 @@ export default function Sidebar({
 
   const renderProjectNode = (project: Project, depth = 0) => {
     const isActive = activeProjectId === project.id;
+    const isMoving = movingProjectId === project.id;
+
     return (
       <div 
         key={project.id}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', project.id);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
         className={`group flex items-center justify-between py-1.5 px-3 mx-1 mb-0.5 rounded-lg transition-all ${
           isActive 
             ? 'bg-indigo-50 text-indigo-700 border-l-4 border-indigo-600 font-medium shadow-sm dark:bg-indigo-950/40 dark:text-indigo-300' 
-            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
-        }`}
+            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-905 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
+        } cursor-grab active:cursor-grabbing`}
         style={{ paddingLeft: `${Math.max(depth * 12 + 12, 12)}px` }}
       >
-        <div 
-          onClick={() => onSelectProject(project.id)}
-          className="flex items-center min-w-0 cursor-pointer flex-1 gap-2"
-        >
-          <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
-          
-          {editingProjectId === project.id ? (
-            <input
-              type="text"
-              value={editingProjectName}
-              onChange={(e) => setEditingProjectName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleRenameProjectSubmit(project.id);
-                if (e.key === 'Escape') setEditingProjectId(null);
+        {isMoving ? (
+          <div className="flex items-center gap-1.5 w-full" onClick={(e) => e.stopPropagation()}>
+            <select
+              value={project.folderId || ''}
+              onChange={(e) => {
+                const targetFolderId = e.target.value === '' ? null : e.target.value;
+                onMoveProject(project.id, targetFolderId);
+                setMovingProjectId(null);
               }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-1 py-0.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
+              className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-1.5 py-0.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans text-slate-800 dark:text-slate-250 cursor-pointer"
               autoFocus
-            />
-          ) : (
-            <span className="text-sm truncate">{project.name}</span>
-          )}
-        </div>
+            >
+              <option value="">[ Без папки (Корень) ]</option>
+              {folders.map(f => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setMovingProjectId(null)}
+              className="p-1 rounded text-slate-450 hover:bg-slate-100 dark:hover:bg-slate-850"
+              title="Отмена"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <div 
+              onClick={() => onSelectProject(project.id)}
+              className="flex items-center min-w-0 cursor-pointer flex-1 gap-2"
+            >
+              <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+              
+              {editingProjectId === project.id ? (
+                <input
+                  type="text"
+                  value={editingProjectName}
+                  onChange={(e) => setEditingProjectName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleRenameProjectSubmit(project.id);
+                    if (e.key === 'Escape') setEditingProjectId(null);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-1 py-0.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
+                  autoFocus
+                />
+              ) : (
+                <span className="text-sm truncate">{project.name}</span>
+              )}
+            </div>
 
-        <div className="relative z-50 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 flex items-center gap-1.5 ml-2 transition-opacity">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditingProjectId(project.id);
-              setEditingProjectName(project.name);
-            }}
-            title="Переименовать интеллект-карту"
-            className="p-0.5 hover:text-blue-600 rounded"
-          >
-            <Edit className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirmDeleteProjectId === project.id) {
-                onDeleteProject(project.id);
-                setConfirmDeleteProjectId(null);
-              } else {
-                setConfirmDeleteProjectId(project.id);
-                setTimeout(() => setConfirmDeleteProjectId(curr => curr === project.id ? null : curr), 4000);
-              }
-            }}
-            title={confirmDeleteProjectId === project.id ? "Подтвердите удаление (нажмите еще раз)" : "Удалить интеллект-карту"}
-            className={`p-0.5 rounded transition-all duration-200 ${
-              confirmDeleteProjectId === project.id
-                ? "text-white bg-rose-600 hover:bg-rose-700 font-bold px-1.5 animate-pulse"
-                : "hover:text-rose-600"
-            }`}
-          >
-            {confirmDeleteProjectId === project.id ? (
-              <span className="text-[9px] flex items-center gap-0.5 font-sans">
-                Удалить?
-              </span>
-            ) : (
-              <Trash2 className="w-3.5 h-3.5" />
-            )}
-          </button>
-        </div>
+            <div className="relative z-50 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 flex items-center gap-1.5 ml-2 transition-opacity">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMovingProjectId(project.id);
+                }}
+                title="Переместить в другую папку"
+                className="p-0.5 hover:text-emerald-600 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850"
+              >
+                <Move className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingProjectId(project.id);
+                  setEditingProjectName(project.name);
+                }}
+                title="Переименовать интеллект-карту"
+                className="p-0.5 hover:text-blue-600 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850"
+              >
+                <Edit className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirmDeleteProjectId === project.id) {
+                    onDeleteProject(project.id);
+                    setConfirmDeleteProjectId(null);
+                  } else {
+                    setConfirmDeleteProjectId(project.id);
+                    setTimeout(() => setConfirmDeleteProjectId(curr => curr === project.id ? null : curr), 4000);
+                  }
+                }}
+                title={confirmDeleteProjectId === project.id ? "Подтвердите удаление (нажмите еще раз)" : "Удалить интеллект-карту"}
+                className={`p-0.5 rounded transition-all duration-200 ${
+                  confirmDeleteProjectId === project.id
+                    ? "text-white bg-rose-600 hover:bg-rose-700 font-bold px-1.5 animate-pulse"
+                    : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/45"
+                }`}
+              >
+                {confirmDeleteProjectId === project.id ? (
+                  <span className="text-[9px] flex items-center gap-0.5 font-sans">
+                    Удалить?
+                  </span>
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     );
   };
@@ -526,9 +611,29 @@ export default function Sidebar({
           )}
 
           {/* Hierarchy folders & projects */}
-          <div className="space-y-1">
+          <div 
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+            }}
+            onDragEnter={() => setDragOverRoot(true)}
+            onDragLeave={() => setDragOverRoot(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOverRoot(false);
+              const projectId = e.dataTransfer.getData('text/plain');
+              if (projectId) {
+                onMoveProject(projectId, null);
+              }
+            }}
+            className={`space-y-1 p-1.5 rounded-xl transition-all ${
+              dragOverRoot 
+                ? 'bg-indigo-50/75 dark:bg-indigo-950/20 ring-2 ring-indigo-500 border-indigo-400' 
+                : ''
+            }`}
+          >
             <h2 className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1 mb-2">
-              Проекты
+              {dragOverRoot ? '👉 Отпустите для переноса в Корень' : 'Проекты'}
             </h2>
             
             {/* List folders first */}
@@ -950,36 +1055,9 @@ export default function Sidebar({
             </label>
           </div>
 
-          <button
-            onClick={() => {
-              if (confirmResetDemo) {
-                onResetDemo();
-                setConfirmResetDemo(false);
-              } else {
-                setConfirmResetDemo(true);
-                setTimeout(() => setConfirmResetDemo(false), 5000);
-              }
-            }}
-            className={`w-full flex items-center justify-center gap-1.5 py-1.5 border hover:text-slate-900 text-[11px] font-medium rounded-md transition-all duration-300 ${
-              confirmResetDemo 
-                ? "bg-rose-600 border-rose-600 hover:bg-rose-700 text-white font-bold animate-pulse scale-102" 
-                : "bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
-            }`}
-          >
-            {confirmResetDemo ? (
-              <>
-                <AlertCircle className="w-3.5 h-3.5" /> Точно стереть всё и сбросить?
-              </>
-            ) : (
-              <>
-                <RotateCcw className="w-3.5 h-3.5" /> Восстановить демо
-              </>
-            )}
-          </button>
-
           <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-mono pt-1 select-none">
             <span>Класс версии ПО</span>
-            <span className="text-indigo-600 dark:text-indigo-400 font-extrabold bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-100/50 dark:border-indigo-900/50 font-sans">
+            <span className="text-indigo-600 dark:text-indigo-405 font-extrabold bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-100/50 dark:border-indigo-900/50 font-sans">
               v{version}
             </span>
           </div>

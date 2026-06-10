@@ -30,7 +30,8 @@ import {
   BellRing,
   Upload,
   Download,
-  Info
+  Info,
+  FileSpreadsheet
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
@@ -167,23 +168,42 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
     });
   }
 
-  // Hydrate empty projects, and merge tags globally to avoid losing any categories
+  // Find if there is any project specifically named "ADIB" (case-insensitive)
+  const hasAdibProject = projects.some(p => p.name.toLowerCase().includes('adib'));
+
+  // Hydrate empty projects, and keep tag categories separate
   const updatedProjects = projects.map(p => {
-    const pCats = p.tagCategories || [];
-    
-    // Merge project-specific and global categories
-    const mergedCatsMap = new Map<string, TagCategory>();
-    tagCategories.forEach(c => mergedCatsMap.set(c.id, c));
-    pCats.forEach(c => {
-      const existing = mergedCatsMap.get(c.id);
-      if (!existing || new Date(c.updatedAt || 0).getTime() > new Date(existing.updatedAt || 0).getTime()) {
-        mergedCatsMap.set(c.id, c);
+    // If project-specific categories are completely empty/missing but global exists,
+    // initialize them from global categories so that we don't lose anything (deep copied)
+    let pCats = p.tagCategories;
+    if (!pCats || pCats.length === 0) {
+      if (tagCategories && tagCategories.length > 0) {
+        pCats = JSON.parse(JSON.stringify(tagCategories));
+      } else {
+        pCats = [];
       }
-    });
+    }
+
+    // Smart heuristic: if we have an ADIB project, and the current project is NOT ADIB,
+    // we filter out categories whose tags are not used in this project.
+    // This cleans up foreign categories from non-ADIB projects.
+    const isAdib = p.name.toLowerCase().includes('adib');
+    if (hasAdibProject && !isAdib) {
+      const pNodes = nodes[p.id] || [];
+      const usedTags = new Set<string>();
+      pNodes.forEach(n => {
+        if (n.tags) {
+          n.tags.forEach(t => usedTags.add(t));
+        }
+      });
+      pCats = pCats.filter(cat => {
+        return (cat.tags || []).some(t => usedTags.has(t));
+      });
+    }
 
     return {
       ...p,
-      tagCategories: Array.from(mergedCatsMap.values())
+      tagCategories: pCats
     };
   });
 
@@ -707,6 +727,31 @@ export default function App() {
     }
   };
 
+  // Quick single-button Google Sheets sync handler
+  const handleQuickSheetsSync = async () => {
+    if (isSyncingSheets) return;
+    let token = googleToken;
+    try {
+      if (!token) {
+        const res = await googleSignIn();
+        if (res) {
+          setCurrentUser(res.user);
+          setGoogleToken(res.accessToken);
+          token = res.accessToken;
+        } else {
+          return;
+        }
+      }
+      if (token) {
+        await runSheetsSymmetricalSync(token, state);
+      }
+    } catch (e: any) {
+      console.error('Error in quick sheets sync:', e);
+      setSheetsError(e?.message || String(e));
+      setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+    }
+  };
+
   // Manual forced cloud sync actions to solve multi-device desynchronizations immediately
   const forceUploadToCloud = async (currentWorkspace: WorkspaceState) => {
     if (!currentUser) return;
@@ -1039,12 +1084,36 @@ export default function App() {
   // ----- PROJECT OPERATIONS -----
   const handleCreateProject = (name: string, folderId: string | null) => {
     const projectId = 'p-' + generateId();
+    
+    // Individual default categories with unique IDs for this project
+    const defaultCategories: TagCategory[] = [
+      {
+        id: 'cat-phase-' + projectId,
+        name: 'Этап разработки',
+        color: '#f59e0b', // Amber
+        tags: ['MVP', 'Разработка', 'Трафик', 'Дизайн', 'Тех-задание']
+      },
+      {
+        id: 'cat-department-' + projectId,
+        name: 'Отдел/Тематика',
+        color: '#3b82f6', // Indigo
+        tags: ['Генеральный-план', 'SMM', 'PR', 'Сайт', 'Юридическое', 'Безопасность', 'Инвесторы', 'Презентация', 'Питч', 'Слайды']
+      },
+      {
+        id: 'cat-personal-' + projectId,
+        name: 'Личное',
+        color: '#10b981', // Emerald
+        tags: ['Стиль-жизни', 'Утро', 'Осознанность', 'Фокус', 'Сон', 'Здоровье']
+      }
+    ];
+
     const newProject: Project = {
       id: projectId,
       name,
       folderId,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      tagCategories: defaultCategories
     };
 
     // A mindmap must always start with a visual Root Node!
@@ -1110,6 +1179,13 @@ export default function App() {
     setSelectedNodeId(null);
   };
 
+  const handleMoveProject = (id: string, folderId: string | null) => {
+    setState(prev => ({
+      ...prev,
+      projects: prev.projects.map(p => p.id === id ? { ...p, folderId, updatedAt: new Date().toISOString() } : p)
+    }));
+  };
+
   // ----- TAG CATEGORY OPERATIONS -----
   const handleCreateTagCategory = (name: string, color: string) => {
     const pid = state.activeProjectId;
@@ -1141,6 +1217,7 @@ export default function App() {
   const handleUpdateTagCategory = (id: string, name: string, color: string, tags: string[]) => {
     setState(prev => {
       const updatedProjects = prev.projects.map(p => {
+        if (p.id !== prev.activeProjectId) return p;
         const cats = p.tagCategories || [];
         return {
           ...p,
@@ -1158,10 +1235,13 @@ export default function App() {
   const handleDeleteTagCategory = (id: string) => {
     logDeletion('tagCategory', id);
     setState(prev => {
-      const updatedProjects = prev.projects.map(p => ({
-        ...p,
-        tagCategories: (p.tagCategories || []).filter(c => c.id !== id)
-      }));
+      const updatedProjects = prev.projects.map(p => {
+        if (p.id !== prev.activeProjectId) return p;
+        return {
+          ...p,
+          tagCategories: (p.tagCategories || []).filter(c => c.id !== id)
+        };
+      });
 
       return {
         ...prev,
@@ -1910,6 +1990,7 @@ export default function App() {
         onCreateProject={handleCreateProject}
         onRenameProject={handleRenameProject}
         onDeleteProject={handleDeleteProject}
+        onMoveProject={handleMoveProject}
         onExportData={handleExportData}
         onImportData={handleImportData}
         onResetDemo={handleResetDemo}
@@ -2191,6 +2272,25 @@ export default function App() {
               )}
             </button>
 
+            {/* Quick Symmetrical Sheets Sync Button (Icon Only, No Words) */}
+            <button
+              id="milli-quick-sheets-sync-btn"
+              type="button"
+              onClick={handleQuickSheetsSync}
+              className={`p-1.5 border rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.05] shrink-0 ${
+                isSyncingSheets
+                  ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse animate-duration-1000'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-emerald-600 dark:text-emerald-400'
+              }`}
+              title={
+                googleToken 
+                  ? "Быстрая синхронизация с Google Sheets" 
+                  : "Войти и синхронизировать с Google Sheets"
+              }
+            >
+              <FileSpreadsheet className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
+            </button>
+
             {/* Dark light theme toggler */}
             <button
               onClick={() => setDarkMode(!darkMode)}
@@ -2277,20 +2377,26 @@ export default function App() {
               >
                 <option value="all">Все теги</option>
                 {/* Categorized tags */}
-                {state.tagCategories?.map(cat => {
-                  const catTagsInUse = (cat.tags || []).filter(t => allAvailableTags.includes(t));
-                  if (catTagsInUse.length === 0) return null;
-                  return (
-                    <optgroup key={cat.id} label={cat.name}>
-                      {catTagsInUse.map(tag => (
-                        <option key={tag} value={tag}>#{tag}</option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
+                {(() => {
+                  const activeProject = state.projects.find(p => p.id === state.activeProjectId);
+                  const activeCategories = activeProject?.tagCategories || [];
+                  return activeCategories.map(cat => {
+                    const catTagsInUse = (cat.tags || []).filter(t => allAvailableTags.includes(t));
+                    if (catTagsInUse.length === 0) return null;
+                    return (
+                      <optgroup key={cat.id} label={cat.name}>
+                        {catTagsInUse.map(tag => (
+                          <option key={tag} value={tag}>#{tag}</option>
+                        ))}
+                      </optgroup>
+                    );
+                  });
+                })()}
                 {/* Uncategorized tags */}
                 {(() => {
-                  const categorizedSet = new Set(state.tagCategories?.flatMap(cat => cat.tags || []) || []);
+                  const activeProject = state.projects.find(p => p.id === state.activeProjectId);
+                  const activeCategories = activeProject?.tagCategories || [];
+                  const categorizedSet = new Set(activeCategories.flatMap(cat => cat.tags || []) || []);
                   const uncategorizedTags = allAvailableTags.filter(t => !categorizedSet.has(t));
                   if (uncategorizedTags.length === 0) return null;
                   return (
@@ -2476,9 +2582,7 @@ export default function App() {
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
-                  if (id) {
-                    setIsDrawerOpen(true);
-                  } else {
+                  if (id === null) {
                     setIsDrawerOpen(false);
                   }
                 }}
