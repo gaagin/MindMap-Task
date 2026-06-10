@@ -17,7 +17,20 @@ googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
 // Cache the access token in memory/localStorage to persist across refreshes
 let cachedAccessToken: string | null = (() => {
   try {
-    return localStorage.getItem('milli_google_oauth_token');
+    const token = localStorage.getItem('milli_google_oauth_token');
+    const timeStr = localStorage.getItem('milli_google_oauth_token_time');
+    if (token && timeStr) {
+      const timeBought = parseInt(timeStr, 10);
+      // Google access tokens expire after 1 hour (3600 seconds).
+      // We use 50 minutes (3000000 ms) as a safe buffer.
+      if (Date.now() - timeBought > 3000000) {
+        localStorage.removeItem('milli_google_oauth_token');
+        localStorage.removeItem('milli_google_oauth_token_time');
+        return null;
+      }
+      return token;
+    }
+    return token;
   } catch {
     return null;
   }
@@ -29,8 +42,10 @@ export const setAccessToken = (token: string | null) => {
   try {
     if (token) {
       localStorage.setItem('milli_google_oauth_token', token);
+      localStorage.setItem('milli_google_oauth_token_time', Date.now().toString());
     } else {
       localStorage.removeItem('milli_google_oauth_token');
+      localStorage.removeItem('milli_google_oauth_token_time');
     }
   } catch (error) {
     console.error('Error writing token to localStorage:', error);

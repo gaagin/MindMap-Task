@@ -3149,7 +3149,12 @@ export default function App() {
                         {sheetsError || 'Bilateral Symmetrical Sync Error: Failed to fetch'}
                       </div>
 
-                      {sheetsError && (sheetsError.includes('401') || sheetsError.toUpperCase().includes('UNAUTHENTICATED')) && (
+                      {sheetsError && (
+                        sheetsError.includes('401') ||
+                        sheetsError.toUpperCase().includes('UNAUTHENTICATED') ||
+                        sheetsError.toLowerCase().includes('истекла') ||
+                        sheetsError.toLowerCase().includes('авториз')
+                      ) && (
                         <div className="pt-1.5 pb-1">
                           <button
                             type="button"
