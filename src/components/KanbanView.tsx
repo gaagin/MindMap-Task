@@ -64,6 +64,8 @@ export default function KanbanView({
   // Drag states for column highlighting
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null);
+  // Track which task card has a tag hovered over it during drag and drop
+  const [draggedOverTagCardId, setDraggedOverTagCardId] = useState<string | null>(null);
 
   // Collapsible state for category select on mobile/tablet screens
   const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(() => {
@@ -152,6 +154,9 @@ export default function KanbanView({
 
   const handleDragOver = (e: React.DragEvent, columnId: string) => {
     e.preventDefault();
+    if (e.dataTransfer.types.includes('application/task-tag')) {
+      return;
+    }
     if (draggedOverColumn !== columnId) {
       setDraggedOverColumn(columnId);
     }
@@ -163,6 +168,13 @@ export default function KanbanView({
 
   const handleDrop = (e: React.DragEvent, targetColumnId: string) => {
     e.preventDefault();
+    
+    // Ignore tag dropped on column background
+    if (e.dataTransfer.types.includes('application/task-tag')) {
+      setDraggedOverColumn(null);
+      return;
+    }
+
     const cardId = e.dataTransfer.getData('text/plain') || draggedCardId;
     setDraggedOverColumn(null);
     setDraggedCardId(null);
@@ -275,23 +287,31 @@ export default function KanbanView({
       {/* Category selector panel */}
       <div 
         id="kanban-categories-bar" 
-        className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800/80 px-4 sm:px-6 py-2.5 select-none space-y-2"
+        className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800/80 px-4 sm:px-6 py-4.5 select-none space-y-4"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-slate-800/40">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Группировка Kanban:</span>
-            <div className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200/50 dark:border-slate-700/50">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800/40">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">ГРУППИРОВКА KANBAN:</span>
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setGroupBy('category')}
-                className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${groupBy === 'category' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs' : 'text-slate-500 hover:text-slate-750 dark:hover:text-slate-300'}`}
+                className={`px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                  groupBy === 'category' 
+                    ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-505 text-indigo-600 dark:text-indigo-400 ring-2 ring-indigo-500/5' 
+                    : 'bg-white dark:bg-slate-905 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                }`}
               >
                 По категориям
               </button>
               <button
                 type="button"
                 onClick={() => setGroupBy('priority')}
-                className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${groupBy === 'priority' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs' : 'text-slate-500 hover:text-slate-750 dark:hover:text-slate-300'}`}
+                className={`px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                  groupBy === 'priority' 
+                    ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-505 text-indigo-600 dark:text-indigo-400 ring-2 ring-indigo-500/5' 
+                    : 'bg-white dark:bg-slate-909 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                }`}
               >
                 По приоритетам
               </button>
@@ -308,7 +328,7 @@ export default function KanbanView({
               }}
               className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-semibold shadow-xs transition-all cursor-pointer flex items-center gap-1 shrink-0"
             >
-              <Plus className="w-3 h-3" /> Добавить категорию
+              <Plus className="w-3.5 h-3.5" /> Добавить категорию
             </button>
           )}
         </div>
@@ -322,11 +342,11 @@ export default function KanbanView({
                 onClick={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
                 className="flex items-center gap-2 cursor-pointer py-1 text-left focus:outline-none"
               >
-                <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Категория тегов:
+                <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                  КАТЕГОРИЯ:
                 </span>
                 {activeCategory && (
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700/60 text-[11px] font-bold text-slate-705 dark:text-slate-200">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700/60 text-[11px] font-bold text-slate-705 dark:text-slate-200">
                     <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-subtle" style={{ backgroundColor: activeCategory.color }} />
                     <span>{activeCategory.name}</span>
                   </span>
@@ -341,11 +361,11 @@ export default function KanbanView({
 
             {/* Categories container: always visible on desktop, conditionally collapsed/expanded with animation on mobile */}
             <div className={`${isCategoriesExpanded ? 'flex' : 'hidden md:flex'} mt-1 flex-col md:flex-row md:items-center gap-3 overflow-x-auto scrollbar-none`}>
-              <span className="hidden md:inline text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0">
-                Категория:
+              <span className="hidden md:inline text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest shrink-0">
+                КАТЕГОРИЯ:
               </span>
               
-              <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5 overflow-[x-auto] py-0.5 scrollbar-none">
+              <div className="flex flex-wrap md:flex-nowrap items-center gap-2 overflow-[x-auto] py-0.5 scrollbar-none">
                 {tagCategories.map(cat => {
                   const isSelected = cat.id === selectedCategoryId;
                   
@@ -366,15 +386,15 @@ export default function KanbanView({
                           setIsCategoriesExpanded(false);
                         }
                       }}
-                      className={`px-2.5 py-1 rounded-md border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all shrink-0 ${
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-2 cursor-pointer transition-all shrink-0 ${
                         isSelected 
-                          ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 font-bold ring-2 ring-indigo-500/5'
-                          : 'bg-slate-50/50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800/60 text-slate-450 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50'
+                          ? 'bg-indigo-50/20 dark:bg-indigo-950/20 border-indigo-600 dark:border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/5'
+                          : 'bg-white dark:bg-slate-900 border-slate-205 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                      <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-subtle" style={{ backgroundColor: cat.color }} />
                       <span>{cat.name}</span>
-                      <span className="text-[9.5px] font-mono px-1.5 py-0.2 rounded-full bg-slate-200/60 dark:bg-slate-800/60 text-slate-500 dark:text-slate-450">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
                         {count}
                       </span>
                     </button>
@@ -447,15 +467,50 @@ export default function KanbanView({
                           draggable="true"
                           onDragStart={(e) => handleDragStart(e, node.id)}
                           onClick={() => onSelectNode(node.id)}
+                          onDragOver={(e) => {
+                            if (e.dataTransfer.types.includes('application/task-tag')) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }
+                          }}
+                          onDragEnter={(e) => {
+                            if (e.dataTransfer.types.includes('application/task-tag')) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDraggedOverTagCardId(node.id);
+                            }
+                          }}
+                          onDragLeave={() => {
+                            if (draggedOverTagCardId === node.id) {
+                              setDraggedOverTagCardId(null);
+                            }
+                          }}
+                          onDrop={(e) => {
+                            const tag = e.dataTransfer.getData('application/task-tag');
+                            if (tag) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDraggedOverTagCardId(null);
+                              const existingTags = node.tags || [];
+                              if (!existingTags.includes(tag)) {
+                                onUpdateNode({
+                                  ...node,
+                                  tags: [...existingTags, tag]
+                                });
+                              }
+                            }
+                          }}
                           layoutId={`kanban-card-motion-${node.id}`}
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.95 }}
                           transition={{ duration: 0.15 }}
                           className={`group select-none bg-white dark:bg-slate-900 border hover:border-slate-350 dark:hover:border-slate-700/80 rounded-xl p-3 hover:shadow-xs transition-all cursor-grab active:cursor-grabbing relative flex flex-col gap-2.5 ${
-                            node.id === selectedNodeId 
-                              ? 'border-indigo-500 dark:border-indigo-400 ring-2 ring-indigo-500/10 shadow-xs' 
-                              : 'border-slate-200 dark:border-slate-850'
+                            draggedOverTagCardId === node.id
+                              ? 'border-emerald-500 dark:border-emerald-400 ring-4 ring-emerald-500/20 shadow-md bg-emerald-50/10 dark:bg-emerald-950/10 scale-[1.01]'
+                              : node.id === selectedNodeId 
+                                ? 'border-indigo-500 dark:border-indigo-400 ring-2 ring-indigo-500/10 shadow-xs' 
+                                : 'border-slate-200 dark:border-slate-850'
                           }`}
                         >
                           {/* Completed toggle checkbox and text */}

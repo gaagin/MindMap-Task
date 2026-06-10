@@ -926,11 +926,20 @@ export default function Sidebar({
                               {cat.tags.map(tag => (
                                 <span
                                   key={tag}
-                                  className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-md font-semibold select-none bg-white dark:bg-slate-800"
+                                  draggable="true"
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.setData('application/json', JSON.stringify({ type: 'tag', tag }));
+                                    e.dataTransfer.setData('application/task-tag', tag);
+                                    e.dataTransfer.setData('text/plain', tag);
+                                    e.dataTransfer.effectAllowed = 'copy';
+                                  }}
+                                  className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-md font-semibold select-none bg-white dark:bg-slate-800 cursor-grab active:cursor-grabbing hover:bg-slate-50 dark:hover:bg-slate-700 hover:shadow-2xs active:shadow-none transition-all duration-150 hover:scale-[1.03]"
                                   style={{
                                     color: cat.color,
                                     border: `1px solid ${cat.color}25`
                                   }}
+                                  title="Перетащите тег на задачу, чтобы назначить его"
                                 >
                                   #{tag}
                                   <button

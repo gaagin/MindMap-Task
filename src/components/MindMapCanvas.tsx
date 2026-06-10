@@ -120,6 +120,8 @@ export default function MindMapCanvas({
   // States for Notes and file upload handling
   const [notesModalNodeId, setNotesModalNodeId] = useState<string | null>(null);
   const [nestedDragNodeId, setNestedDragNodeId] = useState<string | null>(null);
+  // States for trailing tags drag and drop onto nodes on canvas
+  const [draggedOverTagNodeId, setDraggedOverTagNodeId] = useState<string | null>(null);
 
   const handleContainerChildDrop = (draggedId: string, targetId: string) => {
     const draggedNode = nodes.find(n => n.id === draggedId);
@@ -2858,14 +2860,49 @@ export default function MindMapCanvas({
                   width: isContainerCollapsed ? '220px' : `${node.width || 520}px`,
                   height: isContainerCollapsed ? '100px' : `${node.height || 400}px`,
                 }}
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes('application/task-tag')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
+                onDragEnter={(e) => {
+                  if (e.dataTransfer.types.includes('application/task-tag')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDraggedOverTagNodeId(node.id);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (draggedOverTagNodeId === node.id) {
+                    setDraggedOverTagNodeId(null);
+                  }
+                }}
+                onDrop={(e) => {
+                  const tag = e.dataTransfer.getData('application/task-tag');
+                  if (tag) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDraggedOverTagNodeId(null);
+                    const existingTags = node.tags || [];
+                    if (!existingTags.includes(tag)) {
+                      onUpdateNode({
+                        ...node,
+                        tags: [...existingTags, tag]
+                      });
+                    }
+                  }
+                }}
                 className={`absolute rounded-2xl border-2 ${(isDraggingThisNode || resizingNodeId === node.id) ? '' : 'transition-all duration-150'} ${
                   isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                 } ${
-                  hoverTargetId === node.id
-                    ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
-                    : isContainerSelected
-                      ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
-                      : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
+                  draggedOverTagNodeId === node.id
+                    ? 'bg-emerald-50/10 dark:bg-emerald-950/10 border-emerald-500 ring-4 ring-emerald-500/30 scale-[1.015]'
+                    : hoverTargetId === node.id
+                      ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
+                      : isContainerSelected
+                        ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
+                        : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
                 } flex flex-col`}
                 onMouseDown={(e) => startDragNode(e, node)}
                 onClick={(e) => {
@@ -3184,22 +3221,57 @@ const pInfo = getPriorityInfo(node.priority);
                 transform: 'translate(-50%, -50%)',
                 zIndex: isSelected ? 30 : 10,
               }}
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes('application/task-tag')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+              onDragEnter={(e) => {
+                if (e.dataTransfer.types.includes('application/task-tag')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDraggedOverTagNodeId(node.id);
+                }
+              }}
+              onDragLeave={() => {
+                if (draggedOverTagNodeId === node.id) {
+                  setDraggedOverTagNodeId(null);
+                }
+              }}
+              onDrop={(e) => {
+                const tag = e.dataTransfer.getData('application/task-tag');
+                if (tag) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDraggedOverTagNodeId(null);
+                  const existingTags = node.tags || [];
+                  if (!existingTags.includes(tag)) {
+                    onUpdateNode({
+                      ...node,
+                      tags: [...existingTags, tag]
+                    });
+                  }
+                }
+              }}
               className={`absolute group cursor-grab active:cursor-grabbing w-[210px] rounded-xl border ${isDraggingThisNode ? '' : 'transition-all duration-150'} ${
                 isDimmed 
                   ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 hover:opacity-90 hover:grayscale-0 hover:scale-100 duration-300' 
                   : ''
               } ${
-                hoverTargetId === node.id
-                  ? 'bg-indigo-50/10 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500 scale-[1.03] shadow-[0_0_15px_rgba(99,102,241,0.4)] animate-pulse'
-                  : isRoot
-                    ? isSelected
-                      ? 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent ring-4 ring-indigo-250 dark:ring-indigo-900 shadow-xl'
-                      : 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent shadow-md hover:shadow-lg hover:scale-[1.02]'
-                    : priorityViewActive
-                      ? `bg-white dark:bg-slate-900 ${getPriorityCardStyles(node.priority, isSelected)}`
-                      : isSelected 
-                        ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-500 ring-4 ring-indigo-50 dark:ring-indigo-950/40 shadow-lg' 
-                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-650 shadow-sm'
+                draggedOverTagNodeId === node.id
+                  ? 'bg-emerald-50/10 dark:bg-emerald-950/15 border-emerald-500 ring-4 ring-emerald-500 scale-[1.03] shadow-[0_0_15px_rgba(16,185,129,0.4)] animate-pulse'
+                  : hoverTargetId === node.id
+                    ? 'bg-indigo-50/10 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500 scale-[1.03] shadow-[0_0_15px_rgba(99,102,241,0.4)] animate-pulse'
+                    : isRoot
+                      ? isSelected
+                        ? 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent ring-4 ring-indigo-250 dark:ring-indigo-900 shadow-xl'
+                        : 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent shadow-md hover:shadow-lg hover:scale-[1.02]'
+                      : priorityViewActive
+                        ? `bg-white dark:bg-slate-900 ${getPriorityCardStyles(node.priority, isSelected)}`
+                        : isSelected 
+                          ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-500 ring-4 ring-indigo-50 dark:ring-indigo-950/40 shadow-lg' 
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-650 shadow-sm'
               } ${node.completed ? 'opacity-85' : isOverdue(node.dueDate) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5' : ''}`}
               onMouseDown={(e) => startDragNode(e, node)}
               onClick={(e) => {
