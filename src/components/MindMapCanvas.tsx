@@ -41,7 +41,7 @@ interface MindMapCanvasProps {
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNodeCoordinates: (id: string, x: number, y: number) => void;
-  onUpdateNodeParent: (id: string, newParentId: string | null, customX?: number, customY?: number) => void;
+  onUpdateNodeParent: (id: string, newParentId: string | null) => void;
   onAddChildNode: (parentId: string) => void;
   onAddFloatingNode: (x: number, y: number, parentId?: string | null, customText?: string, extraFields?: Partial<TaskNode>) => void;
   onAddContainerNode: (x: number, y: number) => void;
@@ -451,13 +451,6 @@ export default function MindMapCanvas({
   const renderContainerBody = (node: TaskNode, containerChildren: TaskNode[], isFullScreen = false) => {
     const viewMode = containerViewModes[node.id] || 'canvas';
 
-    const handleSelectChild = (childId: string) => {
-      onSelectNode(childId);
-      if (viewMode !== 'canvas') {
-        onOpenDrawer();
-      }
-    };
-
     if (viewMode === 'canvas') {
       if (containerChildren.length === 0) {
         return (
@@ -510,7 +503,7 @@ export default function MindMapCanvas({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleSelectChild(child.id);
+                    onSelectNode(child.id);
                   }}
                   className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-xs hover:border-slate-250 dark:hover:border-slate-705 group/item cursor-pointer text-slate-800 dark:text-slate-250 select-none transition-all hover:bg-slate-50/60 dark:hover:bg-slate-850/65"
                 >
@@ -528,7 +521,7 @@ export default function MindMapCanvas({
                       )}
                     </button>
                     <span 
-                      onClick={(e) => { e.stopPropagation(); handleSelectChild(child.id); }}
+                      onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
                       className={`font-semibold leading-relaxed truncate cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-555' : 'text-slate-700 dark:text-slate-205'}`}
                     >
                       {child.text}
@@ -779,12 +772,12 @@ export default function MindMapCanvas({
                       onDragEnd={() => setNestedDragNodeId(null)}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleSelectChild(child.id);
+                        onSelectNode(child.id);
                       }}
                       className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-900 select-none transition-all hover:bg-slate-50/50 dark:hover:bg-slate-900/50"
                     >
                       <span 
-                        onClick={(e) => { e.stopPropagation(); handleSelectChild(child.id); }}
+                        onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
                         className={`font-semibold leading-normal cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
                       >
                         {child.text}
@@ -1175,7 +1168,7 @@ export default function MindMapCanvas({
                                 onDragEnd={() => setNestedDragNodeId(null)}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleSelectChild(child.id);
+                                  onSelectNode(child.id);
                                 }}
                                 className="px-1 py-0.2 rounded border border-slate-205 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-[7.5px] font-bold tracking-tight truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-755 select-none cursor-grab active:cursor-grabbing flex items-center justify-between"
                                 title={child.text}
@@ -1246,7 +1239,7 @@ export default function MindMapCanvas({
                               onDragEnd={() => setNestedDragNodeId(null)}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleSelectChild(child.id);
+                                onSelectNode(child.id);
                               }}
                               className="p-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-800 text-[8.5px] font-bold leading-normal truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 select-none cursor-grab active:cursor-grabbing flex items-center justify-between"
                               title={child.text}
@@ -1377,7 +1370,7 @@ export default function MindMapCanvas({
                               onDragEnd={() => setNestedDragNodeId(null)}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleSelectChild(child.id);
+                                onSelectNode(child.id);
                               }}
                               className="p-0.5 px-1.5 rounded border border-slate-150 dark:border-slate-800 bg-white dark:bg-slate-900 text-[8.5px] font-bold leading-normal truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 select-none cursor-grab active:cursor-grabbing flex items-center shadow-2xs"
                               title={child.text}
@@ -1445,13 +1438,13 @@ export default function MindMapCanvas({
                       onDragEnd={() => setNestedDragNodeId(null)}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleSelectChild(child.id);
+                        onSelectNode(child.id);
                       }}
                       className="flex items-center gap-1 text-[9.5px] cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/40 p-0.5 rounded transition-all select-none"
                     >
                       <div className="w-1/3 min-w-0 pr-1 shrink-0">
                         <span 
-                          onClick={(e) => { e.stopPropagation(); handleSelectChild(child.id); }}
+                          onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
                           className={`font-semibold truncate block cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-205'}`}
                         >
                           {child.text}
@@ -1543,7 +1536,7 @@ export default function MindMapCanvas({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleSelectChild(child.id);
+                      onSelectNode(child.id);
                     }}
                     className="w-full flex items-center py-1.5 border-b border-slate-100/50 dark:border-slate-850/60 hover:bg-slate-50/45 dark:hover:bg-slate-900/20 group/row cursor-pointer text-slate-850 dark:text-slate-200 select-none transition-all"
                   >
@@ -1557,7 +1550,7 @@ export default function MindMapCanvas({
                          {child.completed ? '✅' : '⬜'}
                        </button>
                        <span 
-                         onClick={(e) => { e.stopPropagation(); handleSelectChild(child.id); }}
+                         onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
                          className={`truncate font-semibold cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-205'}`}
                        >
                          {child.text}
@@ -2387,7 +2380,7 @@ export default function MindMapCanvas({
         
         if (overlap) {
           // Snap directly on release
-          onUpdateNodeParent(node.id, overlap.id, node.x, node.y);
+          onUpdateNodeParent(node.id, overlap.id);
         } else if (currentParent) {
           if (currentParent.isContainer) {
             const dx = Math.abs(node.x - currentParent.x);
@@ -2407,10 +2400,10 @@ export default function MindMapCanvas({
             if (shouldDetach) {
               if (focusedContainerId) {
                 if (node.parentId !== focusedContainerId) {
-                  onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
+                  onUpdateNodeParent(node.id, focusedContainerId);
                 }
               } else {
-                onUpdateNodeParent(node.id, null, node.x, node.y);
+                onUpdateNodeParent(node.id, null);
               }
             }
           } else {
@@ -2420,7 +2413,7 @@ export default function MindMapCanvas({
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 330) {
               if (focusedContainerId) {
-                onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
+                onUpdateNodeParent(node.id, focusedContainerId);
               } else {
                 // Check if release position is inside any container
                 const container = visibleNodes.find(otherNode => {
@@ -2433,9 +2426,9 @@ export default function MindMapCanvas({
                   return cdx < halfW && cdy < halfH;
                 });
                 if (container) {
-                  onUpdateNodeParent(node.id, container.id, node.x, node.y);
+                  onUpdateNodeParent(node.id, container.id);
                 } else {
-                  onUpdateNodeParent(node.id, null, node.x, node.y);
+                  onUpdateNodeParent(node.id, null);
                 }
               }
             }
@@ -2838,7 +2831,7 @@ export default function MindMapCanvas({
           
           if (overlap) {
             // Snap inside container or parent directly on drop
-            onUpdateNodeParent(node.id, overlap.id, node.x, node.y);
+            onUpdateNodeParent(node.id, overlap.id);
           } else if (currentParent) {
             if (currentParent.isContainer) {
               const dx = Math.abs(node.x - currentParent.x);
@@ -2858,10 +2851,10 @@ export default function MindMapCanvas({
               if (shouldDetach) {
                 if (focusedContainerId) {
                   if (node.parentId !== focusedContainerId) {
-                    onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
+                    onUpdateNodeParent(node.id, focusedContainerId);
                   }
                 } else {
-                  onUpdateNodeParent(node.id, null, node.x, node.y);
+                  onUpdateNodeParent(node.id, null);
                 }
               }
             } else {
@@ -2871,7 +2864,7 @@ export default function MindMapCanvas({
               const dist = Math.sqrt(dx * dx + dy * dy);
               if (dist > 330) {
                 if (focusedContainerId) {
-                  onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
+                  onUpdateNodeParent(node.id, focusedContainerId);
                 } else {
                   // Check if release position is inside any container
                   const container = visibleNodes.find(otherNode => {
@@ -2884,9 +2877,9 @@ export default function MindMapCanvas({
                     return cdx < halfW && cdy < halfH;
                   });
                   if (container) {
-                    onUpdateNodeParent(node.id, container.id, node.x, node.y);
+                    onUpdateNodeParent(node.id, container.id);
                   } else {
-                    onUpdateNodeParent(node.id, null, node.x, node.y);
+                    onUpdateNodeParent(node.id, null);
                   }
                 }
               }
