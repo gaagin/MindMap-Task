@@ -1,7 +1,6 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport } from '../types';
-import { heavyFilesCache } from '../utils';
 
 // Registry for Deletion tracking to synchronize with Google Sheets Deletions tab
 export interface DeletionRecord {
@@ -75,110 +74,80 @@ function sanitizeForFirestore(obj: any): any {
   return obj;
 }
 
-// Trailing-edge serialization queue for Firebase saves to prevent concurrent updates from flooding the connection channel
-let currentSavePromise: Promise<{ success: boolean; error?: string }> | null = null;
-let nextSaveState: { userId: string; state: WorkspaceState } | null = null;
-
 /**
  * Saves current WorkspaceState snapshot to firestore database dynamically.
- * Implements a trailing-edge serialization queue: only one write runs at a time,
- * and intermediate edits are skipped, saving user bandwidth and preventing timeouts.
+ * Features automatic Exponential Backoff and progressive retries to handle unstable connections.
  */
 export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; error?: string }> {
-  // If a save is already currently executing, register the latest state to be processed next
-  if (currentSavePromise) {
-    nextSaveState = { userId, state };
-    return currentSavePromise.then(async () => {
-      // Check if this particular state or a newer one is waiting
-      if (nextSaveState && nextSaveState.state === state) {
-        nextSaveState = null;
-        return saveToFirebaseDirectly(userId, state);
-      }
-      return { success: true }; // Already superseded by a newer edit
-    });
-  }
-
-  const doWrite = async (): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const docRef = doc(db, 'workspaces', userId);
-
-      // Deep copy and safely truncate heavy file attachment dataUrls in task nodes before uploading to Firestore to prevent document bloat and write timeouts
-      const optimizedNodes: Record<string, TaskNode[]> = {};
-      for (const key of Object.keys(state.nodes || {})) {
-        optimizedNodes[key] = (state.nodes[key] || []).map(n => {
-          if (n.files && n.files.length > 0) {
-            const processedFiles = n.files.map(file => {
-              if (file.dataUrl && file.dataUrl.length > 15000) {
-                if (!file.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
-                  heavyFilesCache.set(file.id, file.dataUrl);
-                }
-                return {
-                  ...file,
-                  dataUrl: `_OMITTED_DUE_TO_SIZE_:${file.id}`
-                };
-              }
-              return file;
-            });
-            return {
-              ...n,
-              files: processedFiles
-            };
-          }
-          return n;
-        });
-      }
-
-      const rawPayload = {
-        userId,
-        folders: state.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
-        projects: state.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() })),
-        nodes: Object.keys(optimizedNodes).reduce((acc, key) => {
-          acc[key] = optimizedNodes[key].map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
-          return acc;
-        }, {} as Record<string, TaskNode[]>),
-        activeProjectId: state.activeProjectId,
-        tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
-        googleSheetsFileId: state.googleSheetsFileId || localStorage.getItem('google_sheets_sync_file_id') || null,
-        taskSheetsSpreadsheetId: state.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || null,
-        updatedAt: new Date().toISOString()
-      };
-      
-      const payload = sanitizeForFirestore(rawPayload);
-      
-      // Estimate payload size in KB
-      const serialized = JSON.stringify(payload);
-      const sizeInKb = Math.round(serialized.length / 1024);
-      if (sizeInKb > 1000) {
-        throw new Error(`Размер вашей карты (${sizeInKb} KB) превышает лимит базы данных Firestore (1000 KB) из-за прикрепленных тяжелых картинок или файлов. Удалите некоторые вложения, чтобы возобновить синхронизацию!`);
-      }
-
-      // We do not run multiple retries. Instead, we allow a safe 25s timeout to let the user know if their connection has stalled.
-      // Firebase's internal offline cache will automatically update and save whenever the connection is restored.
-      const currentTimeoutMs = 25000;
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Время ожидания ответа сервера истекло. Синхронизация продолжится автоматически в фоновом режиме.')), currentTimeoutMs)
-      );
-
-      await Promise.race([
-        setDoc(docRef, payload),
-        timeoutPromise
-      ]);
-
-      console.log('Firebase cloud sync completed successfully.');
-      return { success: true };
-    } catch (error: any) {
-      console.warn('Firebase save attempt failed:', error);
-      return { 
-        success: false, 
-        error: error?.message || 'Ошибка соединения с сервером.' 
-      };
-    } finally {
-      currentSavePromise = null;
+  try {
+    const docRef = doc(db, 'workspaces', userId);
+    const rawPayload = {
+      userId,
+      folders: state.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
+      projects: state.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() })),
+      nodes: Object.keys(state.nodes).reduce((acc, key) => {
+        acc[key] = state.nodes[key].map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
+        return acc;
+      }, {} as Record<string, TaskNode[]>),
+      activeProjectId: state.activeProjectId,
+      tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
+      googleSheetsFileId: state.googleSheetsFileId || localStorage.getItem('google_sheets_sync_file_id') || null,
+      taskSheetsSpreadsheetId: state.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || null,
+      updatedAt: new Date().toISOString()
+    };
+    
+    const payload = sanitizeForFirestore(rawPayload);
+    
+    // Estimate payload size in KB
+    const serialized = JSON.stringify(payload);
+    const sizeInKb = Math.round(serialized.length / 1024);
+    if (sizeInKb > 1000) {
+      throw new Error(`Размер вашей карты (${sizeInKb} KB) превышает лимит базы данных Firestore (1000 KB) из-за прикрепленных тяжелых картинок или файлов. Удалите некоторые вложения, чтобы возобновить синхронизацию!`);
     }
-  };
 
-  currentSavePromise = doWrite();
-  return currentSavePromise;
+    // Try up to 3 times with progressive timeout and exponential backoff
+    let attempt = 0;
+    const maxAttempts = 3;
+    let lastError: any = null;
+
+    while (attempt < maxAttempts) {
+      attempt++;
+      try {
+        // Progressive timeouts: Attempt 1 = 12s, Attempt 2 = 18s, Attempt 3 = 25s
+        const currentTimeoutMs = attempt === 1 ? 12000 : attempt === 2 ? 18000 : 25000;
+        
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Превышено время ожидания сервера при попытке ${attempt} (${currentTimeoutMs / 1000}с)`)), currentTimeoutMs)
+        );
+
+        await Promise.race([
+          setDoc(docRef, payload),
+          timeoutPromise
+        ]);
+
+        console.log(`Firebase cloud sync completed successfully on attempt ${attempt}.`);
+        return { success: true };
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`Firebase save attempt ${attempt} failed: ${error?.message || error}`);
+        
+        if (attempt < maxAttempts) {
+          // Exponential backoff delay: 1.5s for attempt 1, 3s for attempt 2
+          const delayMs = attempt === 1 ? 1500 : 3000;
+          console.warn(`Ожидание ${delayMs / 1000}с перед новой попыткой...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+
+    throw lastError || new Error('Не удалось завершить сохранение снимка в Firebase.');
+  } catch (error: any) {
+    console.error('Firebase snapshot save error after all retries:', error);
+    return { 
+      success: false, 
+      error: error?.message || 'Превышено время ожидания сервера (таймаут 25с). Пожалуйста, обновите страницу или проверьте интернет-соединение.' 
+    };
+  }
 }
 
 /**
@@ -194,7 +163,7 @@ export async function loadFromFirebaseDirectly(userId: string): Promise<Workspac
   while (attempt < maxAttempts) {
     attempt++;
     try {
-      const currentTimeoutMs = attempt === 1 ? 45000 : attempt === 2 ? 60000 : 95000; // significantly longer to ensure reads complete on slower proxy networks safely
+      const currentTimeoutMs = attempt === 1 ? 12000 : attempt === 2 ? 18000 : 25050; // slightly longer than save to complete reads safely
       
       const snap = await Promise.race([
         getDoc(docRef),
@@ -760,9 +729,6 @@ export async function syncWithGoogleSheets(
       // Create a copy of files where we omit massive dataUrl strings to keep it small
       let safeFiles = (n.files || []).map(file => {
         if (file.dataUrl && file.dataUrl.length > 15000) {
-          if (!file.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
-            heavyFilesCache.set(file.id, file.dataUrl);
-          }
           return {
             ...file,
             dataUrl: `_OMITTED_DUE_TO_SIZE_:${file.id}`
@@ -780,9 +746,6 @@ export async function syncWithGoogleSheets(
           .sort((a, b) => b.len - a.len);
 
         for (const item of sortedWithIndex) {
-          if (safeFiles[item.idx].dataUrl && !safeFiles[item.idx].dataUrl?.startsWith('_OMITTED_DUE_TO_SIZE_')) {
-            heavyFilesCache.set(safeFiles[item.idx].id, safeFiles[item.idx].dataUrl || '');
-          }
           safeFiles[item.idx] = {
             ...safeFiles[item.idx],
             dataUrl: `_OMITTED_DUE_TO_SIZE_:${safeFiles[item.idx].id}`
