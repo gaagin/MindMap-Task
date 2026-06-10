@@ -1,6 +1,6 @@
 {
   "name": "Mind Map Tasks",
-  "description": "An interactive mind map and task manager designed to organize projects with task priorities, tags, rich notes, file attachments, and hierarchical folders.",
+  "description": "An interactive mind map and task manager with an integrated Gemini AI Co-pilot, real-time rate limits monitor, hierarchical branching, SMM plan generator, and backup systems.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

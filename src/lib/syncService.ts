@@ -76,6 +76,7 @@ function sanitizeForFirestore(obj: any): any {
 
 /**
  * Saves current WorkspaceState snapshot to firestore database dynamically.
+ * Features automatic Exponential Backoff and progressive retries to handle unstable connections.
  */
 export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; error?: string }> {
   try {
@@ -104,43 +105,91 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
       throw new Error(`Размер вашей карты (${sizeInKb} KB) превышает лимит базы данных Firestore (1000 KB) из-за прикрепленных тяжелых картинок или файлов. Удалите некоторые вложения, чтобы возобновить синхронизацию!`);
     }
 
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Превышено время ожидания сервера (таймаут 25с). Пожалуйста, обновите страницу или проверьте интернет-соединение.')), 25000)
-    );
+    // Try up to 3 times with progressive timeout and exponential backoff
+    let attempt = 0;
+    const maxAttempts = 3;
+    let lastError: any = null;
 
-    await Promise.race([
-      setDoc(docRef, payload),
-      timeoutPromise
-    ]);
+    while (attempt < maxAttempts) {
+      attempt++;
+      try {
+        // Progressive timeouts: Attempt 1 = 12s, Attempt 2 = 18s, Attempt 3 = 25s
+        const currentTimeoutMs = attempt === 1 ? 12000 : attempt === 2 ? 18000 : 25000;
+        
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Превышено время ожидания сервера при попытке ${attempt} (${currentTimeoutMs / 1000}с)`)), currentTimeoutMs)
+        );
 
-    console.log('Firebase cloud sync snapshot completed successfully.');
-    return { success: true };
+        await Promise.race([
+          setDoc(docRef, payload),
+          timeoutPromise
+        ]);
+
+        console.log(`Firebase cloud sync completed successfully on attempt ${attempt}.`);
+        return { success: true };
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`Firebase save attempt ${attempt} failed: ${error?.message || error}`);
+        
+        if (attempt < maxAttempts) {
+          // Exponential backoff delay: 1.5s for attempt 1, 3s for attempt 2
+          const delayMs = attempt === 1 ? 1500 : 3000;
+          console.warn(`Ожидание ${delayMs / 1000}с перед новой попыткой...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+
+    throw lastError || new Error('Не удалось завершить сохранение снимка в Firebase.');
   } catch (error: any) {
-    console.error('Firebase snapshot save error:', error);
-    return { success: false, error: error?.message || String(error) };
+    console.error('Firebase snapshot save error after all retries:', error);
+    return { 
+      success: false, 
+      error: error?.message || 'Превышено время ожидания сервера (таймаут 25с). Пожалуйста, обновите страницу или проверьте интернет-соединение.' 
+    };
   }
 }
 
 /**
  * Fetch latest WorkspaceState snapshot from firestore database.
+ * Features automatic Exponential Backoff and progressive retries.
  */
 export async function loadFromFirebaseDirectly(userId: string): Promise<WorkspaceState | null> {
-  try {
-    const docRef = doc(db, 'workspaces', userId);
-    const snap = await Promise.race([
-      getDoc(docRef),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Превышено время ожидания загрузки (таймаут 25с). Пожалуйста, проверьте интернет-соединение или обновите вкладку.')), 25000)
-      )
-    ]);
-    if (snap.exists()) {
-      return snap.data() as WorkspaceState;
+  const docRef = doc(db, 'workspaces', userId);
+  let attempt = 0;
+  const maxAttempts = 3;
+  let lastError: any = null;
+
+  while (attempt < maxAttempts) {
+    attempt++;
+    try {
+      const currentTimeoutMs = attempt === 1 ? 12000 : attempt === 2 ? 18000 : 25050; // slightly longer than save to complete reads safely
+      
+      const snap = await Promise.race([
+        getDoc(docRef),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Превышено время ожидания загрузки при попытке ${attempt} (${currentTimeoutMs / 1000}с)`)), currentTimeoutMs)
+        )
+      ]);
+
+      if (snap.exists()) {
+        return snap.data() as WorkspaceState;
+      }
+      return null;
+    } catch (error: any) {
+      lastError = error;
+      console.warn(`Firebase load attempt ${attempt} failed: ${error?.message || error}`);
+      
+      if (attempt < maxAttempts) {
+        const delayMs = attempt === 1 ? 1500 : 3000;
+        console.warn(`Ожидание ${delayMs / 1000}с перед новой попыткой загрузки...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
     }
-  } catch (error) {
-    console.error('Firebase snapshot load error:', error);
-    throw error;
   }
-  return null;
+
+  console.error('Firebase snapshot load error after all retries:', lastError);
+  throw lastError || new Error('Превышено время ожидания загрузки. Пожалуйста, проверьте интернет-соединение или обновите вкладку.');
 }
 
 // ----------------- GOOGLE SHEETS & DRIVE SYNC -----------------

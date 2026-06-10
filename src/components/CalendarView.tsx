@@ -514,7 +514,7 @@ export default function CalendarView({
 
         {/* Scrollable container for mobile */}
         <div id="calendar-horizontal-scroll-container" className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
-          <div className={`${calendarSubMode === 'day' ? 'w-full' : 'min-w-[1300px] lg:min-w-[1600px] xl:min-w-[1900px] 2xl:min-w-full'} h-full flex flex-col`}>
+          <div className={`${calendarSubMode === 'day' ? 'w-full' : 'min-w-[1500px] sm:min-w-[1700px] lg:min-w-full'} h-full flex flex-col`}>
             
             {/* 1. Monthly Grid Mode */}
             {calendarSubMode === 'month' && (
@@ -527,16 +527,16 @@ export default function CalendarView({
                 </div>
 
                 {/* Modern open week-by-week calendar list */}
-                <div id="calendar-month-scroll-container" className="flex-1 overflow-y-auto max-h-full pr-1 custom-scrollbar space-y-1 pb-6">
+                <div id="calendar-month-scroll-container" className="flex-1 overflow-y-auto max-h-full pr-1 custom-scrollbar space-y-1 pb-2 flex flex-col md:h-full md:min-h-0">
                   {(() => {
                     const weeks: typeof calendarSlots[] = [];
                     for (let i = 0; i < 6; i++) {
                       weeks.push(calendarSlots.slice(i * 7, (i + 1) * 7));
                     }
                     return weeks.map((week, weekIdx) => (
-                      <div key={weekIdx} className="space-y-1">
+                      <div key={weekIdx} className="flex-1 flex flex-col min-h-[90px] md:min-h-[145px] space-y-1">
                         {/* Combined Grid representing the 7 days of this week */}
-                        <div className="grid grid-cols-7 gap-1.5 md:gap-2.5 px-0.5 min-h-[105px] md:min-h-[145px]">
+                        <div className="flex-1 grid grid-cols-7 gap-1.5 md:gap-2.5 px-0.5">
                           {week.map((slot, sIdx) => {
                             const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
                             const isInactiveMonth = slot.monthOffset !== 0;

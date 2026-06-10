@@ -496,7 +496,11 @@ export default function MindMapCanvas({
                       handleContainerChildDrop(draggedId, child.id);
                     }
                   }}
-                  className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-xs hover:border-slate-200 group/item cursor-grab active:cursor-grabbing text-slate-800 dark:text-slate-250 select-none"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectNode(child.id);
+                  }}
+                  className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-xs hover:border-slate-250 dark:hover:border-slate-705 group/item cursor-pointer text-slate-800 dark:text-slate-250 select-none transition-all hover:bg-slate-50/60 dark:hover:bg-slate-850/65"
                 >
                   <div className="flex items-center gap-1.5 min-w-0">
                     <button 
@@ -744,7 +748,11 @@ export default function MindMapCanvas({
                         setNestedDragNodeId(child.id);
                       }}
                       onDragEnd={() => setNestedDragNodeId(null)}
-                      className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item cursor-grab active:cursor-grabbing select-none"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectNode(child.id);
+                      }}
+                      className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-900 select-none transition-all hover:bg-slate-50/50 dark:hover:bg-slate-900/50"
                     >
                       <span 
                         onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
@@ -1392,7 +1400,11 @@ export default function MindMapCanvas({
                         setNestedDragNodeId(child.id);
                       }}
                       onDragEnd={() => setNestedDragNodeId(null)}
-                      className="flex items-center gap-1 text-[9.5px] cursor-grab active:cursor-grabbing select-none"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectNode(child.id);
+                      }}
+                      className="flex items-center gap-1 text-[9.5px] cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/40 p-0.5 rounded transition-all select-none"
                     >
                       <div className="w-1/3 min-w-0 pr-1 shrink-0">
                         <span 
@@ -1481,7 +1493,11 @@ export default function MindMapCanvas({
                         handleContainerChildDrop(draggedId, child.id);
                       }
                     }}
-                    className="w-full flex items-center py-1.5 border-b border-slate-100/50 dark:border-slate-850/60 hover:bg-slate-50/40 dark:hover:bg-slate-900/20 group/row cursor-grab active:cursor-grabbing text-slate-850 dark:text-slate-200 select-none"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectNode(child.id);
+                    }}
+                    className="w-full flex items-center py-1.5 border-b border-slate-100/50 dark:border-slate-850/60 hover:bg-slate-50/45 dark:hover:bg-slate-900/20 group/row cursor-pointer text-slate-850 dark:text-slate-200 select-none transition-all"
                   >
                     <div className="w-1/2 min-w-0 pr-2 flex items-center gap-1.5">
                        <button 

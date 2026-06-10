@@ -43,6 +43,7 @@ import MobileListView from './components/MobileListView';
 import CalendarView from './components/CalendarView';
 import GanttView from './components/GanttView';
 import TableView from './components/TableView';
+import GeminiAiConsole from './components/GeminiAiConsole';
 
 // Import Google Sheets & Firebase Auth systems
 import { 
@@ -504,6 +505,7 @@ export default function App() {
   const APP_VERSION = "2.5.0";
   const [showVersionUpdateAlert, setShowVersionUpdateAlert] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [aiConsoleOpen, setAiConsoleOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -1375,6 +1377,23 @@ export default function App() {
         }
       };
     });
+  };
+
+  // Add multiple generated nodes from Gemini AI
+  const handleAddMultipleNodes = (newNodes: TaskNode[]) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    setState(prev => ({
+      ...prev,
+      nodes: {
+        ...prev.nodes,
+        [pid]: [...currentNodes, ...newNodes]
+      }
+    }));
   };
 
   // Add child branching node beautifully
@@ -2289,6 +2308,19 @@ export default function App() {
               <FileSpreadsheet className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
             </button>
 
+            {/* Gemini AI Console Toggle Button */}
+            <button
+              onClick={() => setAiConsoleOpen(!aiConsoleOpen)}
+              className={`p-1.5 border rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.05] shrink-0 ${
+                aiConsoleOpen
+                  ? 'border-indigo-650 bg-indigo-50/80 dark:bg-indigo-950/45 text-indigo-700 dark:text-indigo-305 ring-2 ring-indigo-550/20 font-semibold'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 font-semibold'
+              }`}
+              title="Открыть панель ИИ-Копилота и Монитора API"
+            >
+              <Sparkles className={`w-4 h-4 ${aiConsoleOpen ? 'animate-pulse' : ''}`} />
+            </button>
+
             {/* Dark light theme toggler */}
             <button
               onClick={() => setDarkMode(!darkMode)}
@@ -2639,6 +2671,22 @@ export default function App() {
             onDeleteTagCategory={handleDeleteTagCategory}
             googleToken={googleToken}
           />
+        )}
+
+        {aiConsoleOpen && (
+          <div className={`fixed inset-y-0 z-45 flex flex-col transform transition-transform duration-300 ease-out border-l border-slate-200 dark:border-slate-800 ${
+            isDrawerOpen && selectedNode ? 'right-0 md:right-[420px] w-full md:w-[350px]' : 'right-0 w-full md:w-[350px]'
+          }`}>
+            <GeminiAiConsole
+              activeProjectId={state.activeProjectId}
+              allNodes={activeNodes}
+              onAddMultipleNodes={handleAddMultipleNodes}
+              onUpdateNode={handleUpdateNode}
+              onSelectNode={setSelectedNodeId}
+              selectedNode={selectedNode}
+              onClose={() => setAiConsoleOpen(false)}
+            />
+          </div>
         )}
       </main>
 
