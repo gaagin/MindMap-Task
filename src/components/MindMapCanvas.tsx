@@ -363,6 +363,8 @@ export default function MindMapCanvas({
   // States for nested kanban grouping and categories within container nodes
   const [containerKanbanGroupBy, setContainerKanbanGroupBy] = useState<Record<string, 'status' | 'category' | 'priority'>>({});
   const [containerKanbanActiveCategory, setContainerKanbanActiveCategory] = useState<Record<string, string>>({});
+  const [containerCalendarSubModes, setContainerCalendarSubModes] = useState<Record<string, 'month' | 'week' | 'day'>>({});
+  const [containerCalendarDates, setContainerCalendarDates] = useState<Record<string, string>>({});
 
   const setContainerViewMode = (containerId: string, mode: 'list' | 'kanban' | 'calendar' | 'gantt' | 'table' | 'canvas') => {
     setContainerViewModes(prev => {
@@ -850,18 +852,383 @@ export default function MindMapCanvas({
     }
 
     if (viewMode === 'calendar') {
-      const groups = getCalendarGroups(containerChildren);
+      const currentSubMode = containerCalendarSubModes[node.id] || 'month';
+      const currentDateStr = containerCalendarDates[node.id] || new Date().toISOString().split('T')[0];
+
+      // Safe Gregorian parser avoiding timezone distortion
+      const parseLocalDate = (dateStr: string) => {
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        }
+        return new Date();
+      };
+
+      const formatLocalDate = (dateObj: Date) => {
+        const year = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        return `${year}-${m}-${d}`;
+      };
+
+      const activeDateObj = parseLocalDate(currentDateStr);
+
+      const handlePrev = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const d = new Date(activeDateObj);
+        if (currentSubMode === 'month') {
+          d.setMonth(d.getMonth() - 1);
+        } else if (currentSubMode === 'week') {
+          d.setDate(d.getDate() - 7);
+        } else {
+          d.setDate(d.getDate() - 1);
+        }
+        setContainerCalendarDates(prev => ({ ...prev, [node.id]: formatLocalDate(d) }));
+      };
+
+      const handleNext = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const d = new Date(activeDateObj);
+        if (currentSubMode === 'month') {
+          d.setMonth(d.getMonth() + 1);
+        } else if (currentSubMode === 'week') {
+          d.setDate(d.getDate() + 7);
+        } else {
+          d.setDate(d.getDate() + 1);
+        }
+        setContainerCalendarDates(prev => ({ ...prev, [node.id]: formatLocalDate(d) }));
+      };
+
+      const handleToday = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setContainerCalendarDates(prev => ({ ...prev, [node.id]: formatLocalDate(new Date()) }));
+      };
+
+      const RussianMonths = [
+        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+      ];
+      const RussianMonthsGenitive = [
+        'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+        'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+      ];
+
+      const getHeaderTitle = () => {
+        if (currentSubMode === 'month') {
+          return `${RussianMonths[activeDateObj.getMonth()]} ${activeDateObj.getFullYear()}`;
+        } else if (currentSubMode === 'week') {
+          const dayIndex = activeDateObj.getDay();
+          const daysToSubtract = dayIndex === 0 ? 6 : dayIndex - 1;
+          const mon = new Date(activeDateObj.getFullYear(), activeDateObj.getMonth(), activeDateObj.getDate() - daysToSubtract);
+          const sun = new Date(mon);
+          sun.setDate(mon.getDate() + 6);
+          return `${mon.getDate()} - ${sun.getDate()} ${RussianMonthsGenitive[sun.getMonth()]} ${sun.getFullYear()}`;
+        } else {
+          return `${activeDateObj.getDate()} ${RussianMonthsGenitive[activeDateObj.getMonth()]} ${activeDateObj.getFullYear()}`;
+        }
+      };
+
+      // 1. Generate Month View Matrix details (Monday to Sunday)
+      const getMonthGridCells = () => {
+        const firstDayOfMonth = new Date(activeDateObj.getFullYear(), activeDateObj.getMonth(), 1);
+        const startDayOfWeek = firstDayOfMonth.getDay();
+        const startDayOfWeekRu = startDayOfWeek === 0 ? 7 : startDayOfWeek;
+        const paddingDaysCount = startDayOfWeekRu - 1;
+        
+        const cells: { dateStr: string; dayNum: number; isCurrentMonth: boolean; isToday: boolean }[] = [];
+        
+        const prevMonthEnd = new Date(activeDateObj.getFullYear(), activeDateObj.getMonth(), 0);
+        const prevMonthEndDayNum = prevMonthEnd.getDate();
+        for (let i = paddingDaysCount - 1; i >= 0; i--) {
+          const d = new Date(activeDateObj.getFullYear(), activeDateObj.getMonth() - 1, prevMonthEndDayNum - i);
+          cells.push({
+            dateStr: formatLocalDate(d),
+            dayNum: d.getDate(),
+            isCurrentMonth: false,
+            isToday: formatLocalDate(d) === formatLocalDate(new Date())
+          });
+        }
+        
+        const totalDaysInMonth = new Date(activeDateObj.getFullYear(), activeDateObj.getMonth() + 1, 0).getDate();
+        for (let i = 1; i <= totalDaysInMonth; i++) {
+          const d = new Date(activeDateObj.getFullYear(), activeDateObj.getMonth(), i);
+          cells.push({
+            dateStr: formatLocalDate(d),
+            dayNum: i,
+            isCurrentMonth: true,
+            isToday: formatLocalDate(d) === formatLocalDate(new Date())
+          });
+        }
+        
+        const totalCells = cells.length;
+        const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+        for (let i = 1; i <= remainingCells; i++) {
+          const d = new Date(activeDateObj.getFullYear(), activeDateObj.getMonth() + 1, i);
+          cells.push({
+            dateStr: formatLocalDate(d),
+            dayNum: i,
+            isCurrentMonth: false,
+            isToday: formatLocalDate(d) === formatLocalDate(new Date())
+          });
+        }
+        return cells;
+      };
+
+      // 2. Generate Week View Matrix details (Monday to Sunday)
+      const getWeekDays = () => {
+        const dayIndex = activeDateObj.getDay();
+        const daysToSubtract = dayIndex === 0 ? 6 : dayIndex - 1;
+        const monday = new Date(activeDateObj.getFullYear(), activeDateObj.getMonth(), activeDateObj.getDate() - daysToSubtract);
+        
+        const days: { dateStr: string; label: string; dayNum: number; isToday: boolean }[] = [];
+        const weekdayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+          days.push({
+            dateStr: formatLocalDate(d),
+            label: weekdayLabels[i],
+            dayNum: d.getDate(),
+            isToday: formatLocalDate(d) === formatLocalDate(new Date())
+          });
+        }
+        return days;
+      };
+
+      // 3. Helper to format hour integer info into standard task match filters
+      const getTaskHour = (dueTimeStr?: string): number | null => {
+        if (!dueTimeStr) return null;
+        const parts = dueTimeStr.split(':');
+        if (parts.length >= 1) {
+          const h = parseInt(parts[0], 10);
+          if (!isNaN(h) && h >= 0 && h < 24) return h;
+        }
+        return null;
+      };
+
+      const hours = Array.from({ length: 24 }, (_, i) => i);
+
       return (
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className={`flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[220px]'}`}>
-            {groups.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto">
-                <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач с датами нет</span>
+        <div className="flex-1 flex flex-col min-h-0 text-slate-800 dark:text-slate-100 font-sans">
+          {/* Calendar Control Panel Header */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-150 dark:border-slate-800/80 pb-2 mb-2 select-none shrink-0">
+            <div className="flex items-center gap-1 bg-slate-100/60 dark:bg-slate-900/60 p-1 rounded-lg">
+              {[
+                { id: 'month', label: 'Месяц' },
+                { id: 'week', label: 'Неделя' },
+                { id: 'day', label: 'День' }
+              ].map(sub => {
+                const active = currentSubMode === sub.id;
+                return (
+                  <button
+                    key={sub.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setContainerCalendarSubModes(prev => ({ ...prev, [node.id]: sub.id as 'month' | 'week' | 'day' }));
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className={`text-[8.5px] font-bold px-2.5 py-0.5 rounded-md transition-all cursor-pointer ${
+                      active 
+                        ? 'bg-amber-500 text-white shadow-2xs font-extrabold' 
+                        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                    }`}
+                  >
+                    {sub.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button 
+                onClick={handlePrev}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="p-1 px-1.5 text-[9px] font-bold bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition"
+                title="Назад"
+              >
+                ◀
+              </button>
+              <button 
+                onClick={handleToday}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="p-1 px-2 text-[8.5px] font-bold bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition whitespace-nowrap"
+                title="Перейти на сегодня"
+              >
+                Сегодня
+              </button>
+              <button 
+                onClick={handleNext}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="p-1 px-1.5 text-[9px] font-bold bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition"
+                title="Вперед"
+              >
+                ▶
+              </button>
+            </div>
+
+            <span className="text-[10px] font-black tracking-wide text-slate-700 dark:text-slate-200 uppercase bg-slate-100/50 dark:bg-slate-900/40 px-2 py-0.5 rounded-md self-center font-semibold">
+              {getHeaderTitle()}
+            </span>
+          </div>
+
+          {/* Core Scrollable Container Body */}
+          <div className={`flex-1 overflow-y-auto pr-1 min-h-0 custom-scrollbar ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[220px]'}`}>
+            
+            {/* MONTH VIEW CALENDAR GRID */}
+            {currentSubMode === 'month' && (
+              <div className="space-y-1 select-none">
+                <div className="grid grid-cols-7 gap-1 text-[8px] font-black text-slate-400 uppercase tracking-widest text-center border-b border-slate-100 dark:border-slate-850 pb-1">
+                  <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {getMonthGridCells().map(cell => {
+                    const cellTasks = containerChildren.filter(child => child.dueDate === cell.dateStr);
+
+                    return (
+                      <div
+                        key={cell.dateStr}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                          if (draggedId) {
+                            const t = nodes.find(n => n.id === draggedId);
+                            if (t) {
+                              onUpdateNode({ ...t, dueDate: cell.dateStr });
+                            }
+                          }
+                        }}
+                        className={`p-1 min-h-[50px] flex flex-col items-stretch text-left rounded-lg transition-colors border select-none ${
+                          cell.isToday
+                            ? 'bg-amber-500/10 border-amber-500/50 text-amber-900 dark:text-amber-200'
+                            : cell.isCurrentMonth
+                              ? 'bg-white/80 dark:bg-slate-900/80 border-slate-150/40 dark:border-slate-800/80'
+                              : 'bg-slate-50/15 dark:bg-slate-900/5 border-slate-100/20 dark:border-slate-850/25 opacity-30 pointer-events-none'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1 select-none">
+                          <span className={`text-[8px] font-extrabold ${cell.isToday ? 'text-amber-500 font-black' : 'text-slate-500 dark:text-slate-400'}`}>
+                            {cell.dayNum}
+                          </span>
+                          {cellTasks.length > 0 && (
+                            <span className="text-[7.5px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100/50 dark:bg-slate-800/50 rounded-full w-3.5 h-3.5 flex items-center justify-center font-mono">
+                              {cellTasks.length}
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-0.5 overflow-hidden flex-1 flex flex-col justify-start">
+                          {cellTasks.map(child => (
+                            <div
+                              key={child.id}
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.setData('text/plain', child.id);
+                                setNestedDragNodeId(child.id);
+                              }}
+                              onDragEnd={() => setNestedDragNodeId(null)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectNode(child.id);
+                              }}
+                              className="px-1 py-0.2 rounded border border-slate-205 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-[7.5px] font-bold tracking-tight truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-755 select-none cursor-grab active:cursor-grabbing flex items-center justify-between"
+                              title={child.text}
+                            >
+                              <span className={`truncate ${child.completed ? 'line-through text-slate-400' : ''}`}>{child.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            ) : (
-              groups.map(g => (
-                <div 
-                  key={g.id} 
+            )}
+
+            {/* WEEK VIEW CALENDAR COLUMNS */}
+            {currentSubMode === 'week' && (
+              <div className="grid grid-cols-7 gap-1.5 h-full">
+                {getWeekDays().map(day => {
+                  const dayTasks = containerChildren.filter(child => child.dueDate === day.dateStr);
+
+                  return (
+                    <div
+                      key={day.dateStr}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                        if (draggedId) {
+                          const t = nodes.find(n => n.id === draggedId);
+                          if (t) {
+                            onUpdateNode({ ...t, dueDate: day.dateStr });
+                          }
+                        }
+                      }}
+                      className={`p-1.5 rounded-lg flex flex-col text-left border select-none min-h-[140px] flex-1 ${
+                        day.isToday
+                          ? 'bg-amber-500/5 border-amber-500/40 text-amber-900 dark:text-amber-200'
+                          : 'bg-white dark:bg-slate-900 border-slate-150/40 dark:border-slate-800/80'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between border-b border-slate-100/50 dark:border-slate-800/50 pb-1 mb-1.5 select-none shrink-0 font-sans">
+                        <span className="text-[8px] font-black text-slate-405 dark:text-slate-500 uppercase">{day.label}</span>
+                        <span className={`text-[9px] font-extrabold rounded-md w-4 h-4 flex items-center justify-center font-mono ${day.isToday ? 'bg-amber-500 text-white font-black' : 'text-slate-650 dark:text-slate-300'}`}>
+                          {day.dayNum}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-1 flex-1 overflow-y-auto scrollbar-none">
+                        {dayTasks.map(child => (
+                          <div
+                            key={child.id}
+                            draggable={true}
+                            onDragStart={(e) => {
+                              e.stopPropagation();
+                              e.dataTransfer.setData('text/plain', child.id);
+                              setNestedDragNodeId(child.id);
+                            }}
+                            onDragEnd={() => setNestedDragNodeId(null)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectNode(child.id);
+                            }}
+                            className="p-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-800 text-[8.5px] font-bold leading-normal truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 select-none cursor-grab active:cursor-grabbing flex items-center justify-between"
+                            title={child.text}
+                          >
+                            <span className={`truncate ${child.completed ? 'line-through text-slate-400' : ''}`}>{child.text}</span>
+                            {child.dueTime && (
+                              <span className="text-[7px] text-slate-400 dark:text-slate-500 font-mono shrink-0 ml-1 font-bold">
+                                {child.dueTime}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {dayTasks.length === 0 && (
+                          <div className="text-center py-4 text-[7px] text-slate-300 dark:text-slate-700 uppercase tracking-widest border border-dashed border-slate-200/50 dark:border-slate-800/40 rounded-md">
+                            пусто
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* DAY VIEW CALENDAR WITH SCHEDULE */}
+            {currentSubMode === 'day' && (
+              <div className="flex flex-col min-h-[140px]">
+                {/* All Day / Untimed tasks row */}
+                <div
                   onDragOver={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -871,65 +1238,118 @@ export default function MindMapCanvas({
                     e.stopPropagation();
                     const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
                     if (draggedId) {
-                      handleNestedCalendarDrop(draggedId, g.id);
+                      const t = nodes.find(n => n.id === draggedId);
+                      if (t) {
+                        const updated = { ...t, dueDate: currentDateStr };
+                        delete updated.dueTime;
+                        onUpdateNode(updated);
+                      }
                     }
                   }}
-                  className="space-y-1 p-1 rounded-xl border border-slate-100/30 bg-slate-50/10 dark:bg-slate-900/10"
+                  className="flex items-center gap-2 p-1.5 rounded-lg bg-indigo-50/20 dark:bg-indigo-950/20 border border-dashed border-indigo-200/45 dark:border-indigo-900/45 mb-2 shrink-0"
                 >
-                  <div className="flex items-center gap-1.5 mb-1 shrink-0 select-none">
-                    <span className={`text-[8.5px] font-black px-1.5 py-0.2 rounded-md ${g.color} shadow-2xs`}>
-                      {g.title}
-                    </span>
-                    <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 font-mono">({g.tasks.length})</span>
-                  </div>
-                  
-                  <div className="space-y-1 pl-1">
-                    {g.tasks.map(child => (
-                      <div 
-                        key={child.id} 
-                        draggable={true}
-                        onDragStart={(e) => {
-                          e.stopPropagation();
-                          e.dataTransfer.setData('text/plain', child.id);
-                          setNestedDragNodeId(child.id);
-                        }}
-                        onDragEnd={() => setNestedDragNodeId(null)}
-                        onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
-                        className="p-1 px-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-2xs flex items-center justify-between gap-2 hover:border-slate-200 group/item cursor-grab active:cursor-grabbing select-none"
-                      >
-                        <span className={`font-semibold truncate flex-1 ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-205'}`}>
-                          {child.text}
-                        </span>
-                        
-                        <div className="flex items-center gap-1 shrink-0">
-                          {child.dueDate && (
-                            <span className="text-[8px] font-extrabold text-slate-400 font-mono">
-                              {formatDisplayDate(child.dueDate)}
-                            </span>
-                          )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggleNodeCompleted(child.id);
-                            }}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            data-drag-ignore
-                            className="p-0.5 rounded text-slate-400 hover:text-indigo-600 hover:bg-slate-100 select-none cursor-pointer"
-                          >
-                            {child.completed ? '✅' : '⬜'}
-                          </button>
+                  <span className="text-[7.5px] font-black text-indigo-500/80 dark:text-indigo-400 uppercase tracking-wider shrink-0 ml-1">
+                    Весь день:
+                  </span>
+                  <div className="flex flex-wrap gap-1 items-center flex-1">
+                    {containerChildren
+                      .filter(child => child.dueDate === currentDateStr && !child.dueTime)
+                      .map(child => (
+                        <div
+                          key={child.id}
+                          draggable={true}
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            e.dataTransfer.setData('text/plain', child.id);
+                            setNestedDragNodeId(child.id);
+                          }}
+                          onDragEnd={() => setNestedDragNodeId(null)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectNode(child.id);
+                          }}
+                          className="p-1 px-1.5 rounded bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 text-[8.5px] font-bold leading-normal truncate text-slate-700 dark:text-slate-350 hover:border-slate-300 dark:hover:border-slate-700 select-none cursor-grab active:cursor-grabbing flex items-center shrink-0 shadow-2xs"
+                        >
+                          <span className={child.completed ? 'line-through text-slate-400' : ''}>{child.text}</span>
                         </div>
-                      </div>
-                    ))}
-                    {g.tasks.length === 0 && (
-                      <div className="text-center py-2 text-[8px] text-slate-400 uppercase tracking-widest border border-dashed border-slate-100 dark:border-dashed dark:border-slate-800 rounded-lg select-none">
-                        Перетяните задачу сюда
-                      </div>
+                      ))}
+                    {containerChildren.filter(child => child.dueDate === currentDateStr && !child.dueTime).length === 0 && (
+                      <span className="text-[8px] text-slate-400 dark:text-slate-500 select-none italic font-medium ml-1">Нет задач без времени</span>
                     )}
                   </div>
                 </div>
-              ))
+
+                {/* 24-Hourly Rows List */}
+                <div className="space-y-0.5 border border-slate-100/40 dark:border-slate-850 p-2 rounded-xl bg-slate-50/10 dark:bg-slate-900/5">
+                  {hours.map(h => {
+                    const slotTimeStr = `${String(h).padStart(2, '0')}:00`;
+                    const tasksInSlot = containerChildren.filter(child => child.dueDate === currentDateStr && getTaskHour(child.dueTime) === h);
+                    
+                    return (
+                      <div
+                        key={h}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                          if (draggedId) {
+                            const t = nodes.find(n => n.id === draggedId);
+                            if (t) {
+                              onUpdateNode({
+                                ...t,
+                                dueDate: currentDateStr,
+                                dueTime: slotTimeStr
+                              });
+                            }
+                          }
+                        }}
+                        className="flex items-center gap-2 border-b border-slate-100/15 dark:border-slate-900/30 py-1 group/hour hover:bg-slate-100/25 dark:hover:bg-slate-850/20 min-h-[30px]"
+                      >
+                        <span className="w-10 text-[8px] font-black text-slate-400 dark:text-slate-500 font-mono select-none text-right pr-1">
+                          {slotTimeStr}
+                        </span>
+                        
+                        <div className="flex-1 flex flex-wrap gap-1 items-center min-h-[22px]">
+                          {tasksInSlot.map(child => (
+                            <div
+                              key={child.id}
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.setData('text/plain', child.id);
+                                setNestedDragNodeId(child.id);
+                              }}
+                              onDragEnd={() => setNestedDragNodeId(null)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectNode(child.id);
+                              }}
+                              className="p-0.5 px-1.5 rounded border border-slate-150 dark:border-slate-800 bg-white dark:bg-slate-900 text-[8.5px] font-bold leading-normal truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 select-none cursor-grab active:cursor-grabbing flex items-center shadow-2xs"
+                              title={child.text}
+                            >
+                              <span className={child.completed ? 'line-through text-slate-400' : ''}>{child.text}</span>
+                              {child.dueTime && child.dueTime !== slotTimeStr && (
+                                <span className="text-[7.5px] text-slate-400 font-mono font-bold shrink-0 ml-1">({child.dueTime})</span>
+                              )}
+                            </div>
+                          ))}
+                          {tasksInSlot.length === 0 && (
+                            <span className="text-[8px] text-slate-300 dark:text-slate-705 opacity-0 group-hover/hour:opacity-100 select-none italic pointer-events-none transition-all duration-100">
+                              + Перетащить сюда
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
+
           </div>
         </div>
       );
