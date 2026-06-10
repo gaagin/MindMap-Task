@@ -113,8 +113,8 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
     while (attempt < maxAttempts) {
       attempt++;
       try {
-        // Progressive timeouts: Attempt 1 = 12s, Attempt 2 = 18s, Attempt 3 = 25s
-        const currentTimeoutMs = attempt === 1 ? 12000 : attempt === 2 ? 18000 : 25000;
+        // Progressive timeouts: Attempt 1 = 45s, Attempt 2 = 60s, Attempt 3 = 95s
+        const currentTimeoutMs = attempt === 1 ? 45000 : attempt === 2 ? 60000 : 95000;
         
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`Превышено время ожидания сервера при попытке ${attempt} (${currentTimeoutMs / 1000}с)`)), currentTimeoutMs)
@@ -145,7 +145,7 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
     console.error('Firebase snapshot save error after all retries:', error);
     return { 
       success: false, 
-      error: error?.message || 'Превышено время ожидания сервера (таймаут 25с). Пожалуйста, обновите страницу или проверьте интернет-соединение.' 
+      error: error?.message || 'Превышено время ожидания сервера (таймаут 95с). Пожалуйста, обновите страницу или проверьте интернет-соединение.' 
     };
   }
 }
@@ -163,7 +163,7 @@ export async function loadFromFirebaseDirectly(userId: string): Promise<Workspac
   while (attempt < maxAttempts) {
     attempt++;
     try {
-      const currentTimeoutMs = attempt === 1 ? 12000 : attempt === 2 ? 18000 : 25050; // slightly longer than save to complete reads safely
+      const currentTimeoutMs = attempt === 1 ? 45000 : attempt === 2 ? 60000 : 95000; // significantly longer to ensure reads complete on slower proxy networks safely
       
       const snap = await Promise.race([
         getDoc(docRef),
