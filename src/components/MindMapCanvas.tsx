@@ -143,15 +143,36 @@ export default function MindMapCanvas({
     });
   };
 
-  const handleNestedKanbanDrop = (draggedId: string, colId: string) => {
+  const handleNestedKanbanDrop = (draggedId: string, colId: string, containerId: string) => {
     const node = nodes.find(n => n.id === draggedId);
     if (!node) return;
-    if (colId === 'todo') {
-      onUpdateNode({ ...node, completed: false, progress: 0 });
-    } else if (colId === 'progress') {
-      onUpdateNode({ ...node, completed: false, progress: 50 });
-    } else if (colId === 'done') {
-      onUpdateNode({ ...node, completed: true });
+
+    const currentGroupBy = containerKanbanGroupBy[containerId] || 'status';
+
+    if (currentGroupBy === 'status') {
+      if (colId === 'todo') {
+        onUpdateNode({ ...node, completed: false, progress: 0 });
+      } else if (colId === 'progress') {
+        onUpdateNode({ ...node, completed: false, progress: 50 });
+      } else if (colId === 'done') {
+        onUpdateNode({ ...node, completed: true });
+      }
+    } else if (currentGroupBy === 'priority') {
+      const priority = colId === 'none' ? 'none' : colId as Priority;
+      onUpdateNode({ ...node, priority });
+    } else if (currentGroupBy === 'category') {
+      const currentActiveCategoryId = containerKanbanActiveCategory[containerId] || (tagCategories.length > 0 ? tagCategories[0].id : null);
+      const activeCategory = tagCategories.find(c => c.id === currentActiveCategoryId) || tagCategories[0];
+      const activeTags = activeCategory?.tags || [];
+
+      let updatedTags = node.tags ? [...node.tags] : [];
+      updatedTags = updatedTags.filter(t => !activeTags.includes(t));
+
+      if (colId !== 'uncategorized') {
+        updatedTags.push(colId);
+      }
+
+      onUpdateNode({ ...node, tags: updatedTags });
     }
   };
 
@@ -326,6 +347,7 @@ export default function MindMapCanvas({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [nodeOffsetStart, setNodeOffsetStart] = useState({ x: 0, y: 0 });
   const [hasDraggedNode, setHasDraggedNode] = useState(false);
+  const didDragRef = useRef(false);
   const [priorityViewActive, setPriorityViewActive] = useState<boolean>(false);
 
   // States of container view modes (e.g., list, kanban, calendar, gantt, table, canvas)
@@ -337,6 +359,10 @@ export default function MindMapCanvas({
       return {};
     }
   });
+
+  // States for nested kanban grouping and categories within container nodes
+  const [containerKanbanGroupBy, setContainerKanbanGroupBy] = useState<Record<string, 'status' | 'category' | 'priority'>>({});
+  const [containerKanbanActiveCategory, setContainerKanbanActiveCategory] = useState<Record<string, string>>({});
 
   const setContainerViewMode = (containerId: string, mode: 'list' | 'kanban' | 'calendar' | 'gantt' | 'table' | 'canvas') => {
     setContainerViewModes(prev => {
@@ -558,114 +584,267 @@ export default function MindMapCanvas({
     }
 
     if (viewMode === 'kanban') {
-      const todoTasks = containerChildren.filter(c => !c.completed && (!c.progress || c.progress === 0));
-      const progressTasks = containerChildren.filter(c => !c.completed && (c.progress && c.progress > 0));
-      const doneTasks = containerChildren.filter(c => c.completed);
+      const currentGroupBy = containerKanbanGroupBy[node.id] || 'status';
+      const currentActiveCategoryId = containerKanbanActiveCategory[node.id] || (tagCategories.length > 0 ? tagCategories[0].id : '');
+      const activeCategory = tagCategories.find(c => c.id === currentActiveCategoryId) || tagCategories[0];
+      const activeTags = activeCategory?.tags || [];
+
+      let columnsList: { id: string; title: string; tasks: TaskNode[]; bg?: string; border?: string; style?: React.CSSProperties; titleColor?: string }[] = [];
+
+      if (currentGroupBy === 'status') {
+        const todoTasks = containerChildren.filter(c => !c.completed && (!c.progress || c.progress === 0));
+        const progressTasks = containerChildren.filter(c => !c.completed && (c.progress && c.progress > 0));
+        const doneTasks = containerChildren.filter(c => c.completed);
+
+        columnsList = [
+          { id: 'todo', title: 'План', tasks: todoTasks, bg: 'bg-slate-500/5 dark:bg-slate-900/40', border: 'border-slate-150 dark:border-slate-800/60', titleColor: 'text-slate-500 dark:text-slate-400' },
+          { id: 'progress', title: 'В работе', tasks: progressTasks, bg: 'bg-amber-500/5 dark:bg-amber-950/10', border: 'border-amber-200/20 dark:border-amber-900/30', titleColor: 'text-amber-600 dark:text-amber-400' },
+          { id: 'done', title: 'Готово', tasks: doneTasks, bg: 'bg-emerald-500/5 dark:bg-emerald-950/10', border: 'border-emerald-200/20 dark:border-emerald-900/30', titleColor: 'text-emerald-500 dark:text-emerald-400' }
+        ];
+      } else if (currentGroupBy === 'priority') {
+        columnsList = [
+          { id: 'urgent', title: 'Критический', tasks: containerChildren.filter(c => c.priority === 'urgent'), bg: 'bg-rose-500/5 dark:bg-rose-950/10', border: 'border-rose-200/20 dark:border-rose-900/30', titleColor: 'text-rose-500 dark:text-rose-400' },
+          { id: 'high', title: 'Высокий', tasks: containerChildren.filter(c => c.priority === 'high'), bg: 'bg-amber-500/5 dark:bg-amber-950/10', border: 'border-amber-200/20 dark:border-amber-900/30', titleColor: 'text-amber-500 dark:text-amber-450' },
+          { id: 'medium', title: 'Средний', tasks: containerChildren.filter(c => c.priority === 'medium'), bg: 'bg-blue-500/5 dark:bg-blue-950/10', border: 'border-blue-200/20 dark:border-blue-900/30', titleColor: 'text-blue-500 dark:text-blue-400' },
+          { id: 'low', title: 'Низкий', tasks: containerChildren.filter(c => c.priority === 'low'), bg: 'bg-emerald-500/5 dark:bg-emerald-950/10', border: 'border-emerald-205/20 dark:border-emerald-900/30', titleColor: 'text-emerald-500' },
+          { id: 'none', title: 'Без приоритета', tasks: containerChildren.filter(c => !c.priority || c.priority === 'none'), bg: 'bg-slate-500/5 dark:bg-slate-900/40', border: 'border-slate-150', titleColor: 'text-slate-400 dark:text-slate-500' }
+        ];
+      } else { // category
+        const getNodeCategoryTag = (task: TaskNode): string | null => {
+          if (!task.tags) return null;
+          const found = task.tags.find(t => activeTags.includes(t));
+          return found || null;
+        };
+
+        const uncategorizedTasks = containerChildren.filter(c => getNodeCategoryTag(c) === null);
+        columnsList.push({
+          id: 'uncategorized',
+          title: 'Без тега',
+          tasks: uncategorizedTasks,
+          bg: 'bg-slate-500/5 dark:bg-slate-900/40',
+          border: 'border-slate-150',
+          titleColor: 'text-slate-400 dark:text-slate-500'
+        });
+
+        activeTags.forEach(tag => {
+          const tasks = containerChildren.filter(c => getNodeCategoryTag(c) === tag);
+          const bgOpacityColor = activeCategory?.color ? `${activeCategory.color}0a` : undefined;
+          const borderOpacityColor = activeCategory?.color ? `${activeCategory.color}25` : undefined;
+          columnsList.push({
+            id: tag,
+            title: '#' + tag,
+            tasks,
+            border: 'border-slate-150',
+            style: {
+              backgroundColor: bgOpacityColor,
+              borderColor: borderOpacityColor
+            },
+            titleColor: activeCategory?.color || 'text-indigo-600 dark:text-indigo-400'
+          });
+        });
+      }
 
       return (
-        <div className="flex-1 flex gap-1.5 overflow-x-auto min-h-0 pb-1 scrollbar-none">
-          {[
-            { id: 'todo', title: 'План', tasks: todoTasks, bg: 'bg-slate-500/5 dark:bg-slate-900/40', border: 'border-slate-150 dark:border-slate-800/60' },
-            { id: 'progress', title: 'В работе', tasks: progressTasks, bg: 'bg-amber-500/5 dark:bg-amber-950/10', border: 'border-amber-200/20 dark:border-amber-900/30' },
-            { id: 'done', title: 'Готово', tasks: doneTasks, bg: 'bg-emerald-500/5 dark:bg-emerald-950/10', border: 'border-emerald-200/20 dark:border-emerald-900/30' }
-          ].map(col => (
-            <div 
-              key={col.id} 
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
-                if (draggedId) {
-                  handleNestedKanbanDrop(draggedId, col.id);
-                }
-              }}
-              className={`flex-1 rounded-xl border ${col.border} ${col.bg} p-1.5 flex flex-col min-h-0 ${isFullScreen ? 'min-w-[200px]' : 'min-w-[130px] max-w-[170px]'}`}
-            >
-              <div className="flex items-center justify-between mb-1.5 px-0.5 select-none shrink-0">
-                <span className="text-[9px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{col.title}</span>
-                <span className="text-[8px] font-extrabold bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1 py-0.2 rounded font-mono">{col.tasks.length}</span>
-              </div>
-              
-              <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[175px]'}`}>
-                {col.tasks.map(child => (
-                  <div 
-                    key={child.id} 
-                    draggable={true}
-                    onDragStart={(e) => {
-                      e.stopPropagation();
-                      e.dataTransfer.setData('text/plain', child.id);
-                      setNestedDragNodeId(child.id);
-                    }}
-                    onDragEnd={() => setNestedDragNodeId(null)}
-                    className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item cursor-grab active:cursor-grabbing select-none"
-                  >
-                    <span 
-                      onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
-                      className={`font-semibold leading-normal cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Compact Grouping selector row */}
+          <div className="flex flex-col gap-1.5 p-1.5 mb-1.5 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100/60 dark:border-slate-800/30 shrink-0">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 shrink-0 select-none">
+                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">ГРУППИРОВКА:</span>
+                <div className="flex items-center gap-1">
+                  {[
+                    { id: 'status', label: 'По статусам' },
+                    { id: 'category', label: 'По категориям' },
+                    { id: 'priority', label: 'По приоритетам' }
+                  ].map(b => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setContainerKanbanGroupBy(prev => ({ ...prev, [node.id]: b.id as any }))}
+                      className={`px-1.5 py-0.5 rounded text-[8px] font-bold border transition-all cursor-pointer ${
+                        currentGroupBy === b.id
+                          ? 'bg-indigo-600/10 dark:bg-indigo-500/10 border-indigo-600/30 text-indigo-600 dark:text-indigo-400 font-extrabold'
+                          : 'bg-white dark:bg-slate-950 border-slate-205 dark:border-slate-800 text-slate-450 hover:bg-slate-50 dark:hover:bg-slate-900'
+                      }`}
                     >
-                      {child.text}
-                    </span>
-                    <div className="flex items-center justify-between mt-1 pt-1 border-t border-slate-100/40 dark:border-slate-900/40 shrink-0">
-                      <div className="flex gap-0.5">
-                        {col.id === 'todo' && (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUpdateNode({ ...child, progress: 50 });
-                            }}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            data-drag-ignore
-                            className="p-0.5 px-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[7.5px] font-black cursor-pointer transition-colors"
-                            title="Начать работу (In Progress)"
-                          >
-                            ▶ Раб.
-                          </button>
-                        )}
-                        {col.id === 'progress' && (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUpdateNode({ ...child, progress: 0 });
-                            }}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            data-drag-ignore
-                            className="p-0.5 px-1 rounded bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[7.5px] font-black cursor-pointer transition-colors"
-                            title="Вернуть в бэклог"
-                          >
-                            ◀ План
-                          </button>
-                        )}
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleNodeCompleted(child.id);
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        data-drag-ignore
-                        className={`p-0.5 px-1 rounded text-[7.5px] font-extrabold cursor-pointer transition-all ${
-                          child.completed 
-                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-455' 
-                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                        }`}
-                      >
-                        {child.completed ? '↩ Отмена' : '✓ Вып.'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {col.tasks.length === 0 && (
-                  <div className="flex-1 flex items-center justify-center py-4 border border-dashed border-slate-200/50 dark:border-slate-800/45 rounded-lg select-none">
-                    <span className="text-[8px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Пусто</span>
-                  </div>
-                )}
+                      {b.label}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* Tag Categories selector if 'category' grouped */}
+              {currentGroupBy === 'category' && tagCategories.length > 0 && (
+                <div className="flex items-center gap-1 shrink-0 overflow-x-auto scrollbar-none max-w-[50%]">
+                  <span className="text-[8px] font-bold text-slate-450 uppercase tracking-widest shrink-0">КАТЕГОРИЯ:</span>
+                  <div className="flex items-center gap-1.5">
+                    {tagCategories.map(cat => {
+                      const isSelected = cat.id === currentActiveCategoryId;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setContainerKanbanActiveCategory(prev => ({ ...prev, [node.id]: cat.id }))}
+                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-50/20 dark:bg-indigo-950/20 border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                              : 'bg-white/80 dark:bg-slate-900/80 border-slate-150 dark:border-slate-850 text-slate-505 hover:bg-slate-100/50'
+                          }`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                          <span>{cat.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-          ))}
+          </div>
+
+          <div className="flex-1 flex gap-1.5 overflow-x-auto min-h-0 pb-1 scrollbar-none">
+            {columnsList.map(col => (
+              <div 
+                key={col.id} 
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                  if (draggedId) {
+                    handleNestedKanbanDrop(draggedId, col.id, node.id);
+                  }
+                }}
+                className={`flex-1 rounded-xl border ${col.border || ''} ${col.bg || ''} p-1.5 flex flex-col min-h-0 ${isFullScreen ? 'min-w-[200px]' : 'min-w-[130px] max-w-[170px]'}`}
+                style={col.style}
+              >
+                <div className="flex items-center justify-between mb-1.5 px-0.5 select-none shrink-0 border-b border-slate-100/50 dark:border-slate-800/10 pb-1">
+                  <span 
+                    className={`text-[9px] font-extrabold uppercase tracking-widest leading-none truncate ${col.titleColor || 'text-slate-500'}`}
+                    style={col.id !== 'uncategorized' && currentGroupBy === 'category' ? { color: activeCategory?.color } : undefined}
+                  >
+                    {col.title}
+                  </span>
+                  <span className="text-[8px] font-extrabold bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1 py-0.2 rounded font-mono leading-none">{col.tasks.length}</span>
+                </div>
+                
+                <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[175px]'}`}>
+                  {col.tasks.map(child => (
+                    <div 
+                      key={child.id} 
+                      draggable={true}
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        e.dataTransfer.setData('text/plain', child.id);
+                        setNestedDragNodeId(child.id);
+                      }}
+                      onDragEnd={() => setNestedDragNodeId(null)}
+                      className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item cursor-grab active:cursor-grabbing select-none"
+                    >
+                      <span 
+                        onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                        className={`font-semibold leading-normal cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
+                      >
+                        {child.text}
+                      </span>
+
+                      {/* Render tags or priority badges on the cards if present */}
+                      {((child.priority && child.priority !== 'none') || (child.tags && child.tags.length > 0)) && (
+                        <div className="flex flex-wrap gap-0.5 mt-1 leading-none">
+                          {child.priority && child.priority !== 'none' && (
+                            <span className={`text-[7px] font-extrabold uppercase px-1 rounded h-3.5 flex items-center shrink-0 ${
+                              child.priority === 'urgent' ? 'bg-rose-500/15 text-rose-600 dark:text-rose-450' :
+                              child.priority === 'high' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' :
+                              child.priority === 'medium' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' :
+                              'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            }`}>
+                              {child.priority === 'urgent' ? 'Крит.' :
+                               child.priority === 'high' ? 'Выс.' :
+                               child.priority === 'medium' ? 'Ср.' : 'Низ.'}
+                            </span>
+                          )}
+                          {child.tags?.map(tag => {
+                            const matchedCategory = tagCategories.find(cat => cat.tags && cat.tags.includes(tag));
+                            const color = matchedCategory?.color || '#a1a1aa';
+                            return (
+                              <span 
+                                key={tag}
+                                className="text-[7px] px-1 rounded font-bold whitespace-nowrap h-3.5 flex items-center shrink-0"
+                                style={{ backgroundColor: color + '15', color: color, border: `1px solid ${color}20` }}
+                              >
+                                #{tag}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between mt-1 pt-1 border-t border-slate-100/40 dark:border-slate-900/40 shrink-0">
+                        <div className="flex gap-0.5">
+                          {currentGroupBy === 'status' && col.id === 'todo' && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateNode({ ...child, progress: 50 });
+                              }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              data-drag-ignore
+                              className="p-0.5 px-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[7.5px] font-black cursor-pointer transition-colors"
+                              title="Начать работу (In Progress)"
+                            >
+                              ▶ Раб.
+                            </button>
+                          )}
+                          {currentGroupBy === 'status' && col.id === 'progress' && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateNode({ ...child, progress: 0 });
+                              }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              data-drag-ignore
+                              className="p-0.5 px-1 rounded bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[7.5px] font-black cursor-pointer transition-colors"
+                              title="Вернуть в бэклог"
+                            >
+                              ◀ План
+                            </button>
+                          )}
+                          {currentGroupBy !== 'status' && (
+                            <div className="text-[7px] font-bold text-slate-400 h-3.5 flex items-center">
+                              {child.completed ? 'Выполнена' : (child.progress && child.progress > 0 ? 'В работе' : 'План')}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleNodeCompleted(child.id);
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          data-drag-ignore
+                          className={`p-0.5 px-1 rounded text-[7.5px] font-extrabold cursor-pointer transition-all ${
+                            child.completed 
+                              ? 'bg-rose-500/10 text-rose-600 dark:text-rose-455' 
+                              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                          }`}
+                        >
+                          {child.completed ? '↩ Отмена' : '✓ Вып.'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {col.tasks.length === 0 && (
+                    <div className="flex-1 flex items-center justify-center py-4 border border-dashed border-slate-200/50 dark:border-slate-800/45 rounded-lg select-none">
+                      <span className="text-[8px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Пусто</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
@@ -1605,6 +1784,7 @@ export default function MindMapCanvas({
 
       if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
         setHasDraggedNode(true);
+        didDragRef.current = true;
       }
 
       handleLocalUpdateCoordinates(draggingNodeId, newX, newY);
@@ -1786,6 +1966,11 @@ export default function MindMapCanvas({
     }
     setHasDraggedNode(false);
     
+    // Defer resetting didDragRef to let onClick handlers process the value first
+    setTimeout(() => {
+      didDragRef.current = false;
+    }, 50);
+    
     // Clear hover timing
     if (hoverTimerRef.current) {
       clearTimeout(hoverTimerRef.current);
@@ -1855,6 +2040,7 @@ export default function MindMapCanvas({
             setDragStart(potentialDragStartRef.current);
             setNodeOffsetStart(potentialNodeOffsetRef.current);
             setHasDraggedNode(true);
+            didDragRef.current = true;
             onSelectNode(nodeId);
 
             if (navigator.vibrate) {
@@ -2024,6 +2210,7 @@ export default function MindMapCanvas({
 
       if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
         setHasDraggedNode(true);
+        didDragRef.current = true;
       }
 
       handleLocalUpdateCoordinates(draggingNodeId, newX, newY);
@@ -2234,6 +2421,11 @@ export default function MindMapCanvas({
       setHasDraggedNode(false);
       setIsLongPressDragging(false);
       potentialDragNodeIdRef.current = null;
+      
+      // Defer resetting didDragRef to let onClick handlers process the value first
+      setTimeout(() => {
+        didDragRef.current = false;
+      }, 50);
     }
   };
 
@@ -2248,6 +2440,7 @@ export default function MindMapCanvas({
     setDragStart({ x: e.clientX, y: e.clientY });
     setNodeOffsetStart({ x: node.x, y: node.y });
     setHasDraggedNode(false);
+    didDragRef.current = false;
   };
 
   // Start container resizing from Mouse Down
@@ -2906,7 +3099,7 @@ export default function MindMapCanvas({
                 } flex flex-col`}
                 onMouseDown={(e) => startDragNode(e, node)}
                 onClick={(e) => {
-                  if (hasDraggedNode) return;
+                  if (hasDraggedNode || didDragRef.current) return;
                   e.stopPropagation();
                   onSelectNode(node.id);
                   if (node.collapsed) {
@@ -2914,6 +3107,38 @@ export default function MindMapCanvas({
                   }
                 }}
               >
+                {/* Floating Figma-like Container Title: Always visible, zoom-independent scale */}
+                <div
+                  className="absolute select-none pointer-events-auto"
+                  style={{
+                    top: '-4px',
+                    left: '4px',
+                    transform: `translateY(-100%) scale(${1 / zoom})`,
+                    transformOrigin: 'bottom left',
+                    zIndex: 40,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectNode(node.id);
+                  }}
+                  onMouseDown={(e) => {
+                    startDragNode(e, node);
+                  }}
+                >
+                  <div className={`flex items-center gap-1.5 px-3 py-1 font-sans font-extrabold text-[11px] uppercase tracking-wider whitespace-nowrap rounded-[5px] border cursor-grab active:cursor-grabbing select-none shadow-sm transition-all duration-150 ${
+                    isContainerSelected
+                      ? 'bg-amber-500 text-white border-amber-600 shadow-md'
+                      : 'bg-slate-100 dark:bg-slate-805 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-750'
+                  }`}>
+                    <span>{node.text || 'КОНТЕЙНЕР'}</span>
+                    {node.collapsed && (
+                      <span className={`text-[9px] font-mono rounded px-1 ${isContainerSelected ? 'bg-amber-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                        {totalChildren}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
                 {/* Header of Container Canvas */}
                 <div className={`p-3 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white dark:bg-slate-950 select-none pb-2.5`}>
                   <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -2945,8 +3170,9 @@ export default function MindMapCanvas({
                         {containerProgress}%
                       </span>
                     </div>
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate font-sans tracking-wide">
-                      {node.text || 'Новый холст-контейнер'}
+                    {/* Compact layout placeholder instead of duplicated text */}
+                    <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 truncate font-sans tracking-wide">
+                      Контейнер
                     </span>
                   </div>
                   
@@ -3275,7 +3501,7 @@ const pInfo = getPriorityInfo(node.priority);
               } ${node.completed ? 'opacity-85' : isOverdue(node.dueDate) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5' : ''}`}
               onMouseDown={(e) => startDragNode(e, node)}
               onClick={(e) => {
-                if (hasDraggedNode) return; // ignore click if dragged
+                if (hasDraggedNode || didDragRef.current) return; // ignore click if dragged
                 e.stopPropagation();
                 onSelectNode(node.id);
               }}

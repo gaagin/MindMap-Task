@@ -1494,9 +1494,7 @@ export default function App() {
       tags: [],
       notes: customText?.trim()
         ? `Задача была продиктована голосом: "${customText.trim()}"`
-        : (isInsideContainer 
-          ? 'Вы создали эту задачу непосредственно в сфокусированном контейнере.'
-          : 'Это полностью независимая задача, свободная от основной ветви. Вы можете свободно перемещать её по холсту, а также добавлять к ней дочерние подзадачи через кнопку "+".'),
+        : '',
       completed: false,
       files: [],
       color: isInsideContainer ? '#3b82f6' : '#10b981' // Blue inside container, green otherwise
@@ -1534,7 +1532,7 @@ export default function App() {
       isContainer: true,
       priority: 'low',
       tags: [],
-      notes: 'Это визуальный контейнер. Поместите в него другие задачи (перетащите их внутрь контейнера и удерживайте полсекунды для авто-привязки). Перемещая контейнер, вы будете двигать и все находящиеся в нём задачи, а при сворачивании контейнера они скроются.',
+      notes: '',
       completed: false,
       files: [],
       color: '#f59e0b' // Amber/orange default for container
@@ -1650,7 +1648,7 @@ export default function App() {
       isFloating: true,
       priority: initialPriority,
       tags: initialTags,
-      notes: 'Создано на Канбан-доске.',
+      notes: '',
       completed: false,
       files: [],
       color: '#6366f1'
@@ -2262,7 +2260,7 @@ export default function App() {
               title="Открыть панель резервного копирования и синхронизации"
             >
               <Database className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-              <span className="hidden sm:inline">Резервная копия и синхронизация</span>
+              <span className="hidden sm:inline">Синхронизация</span>
               {hasSyncOrAuthError ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
               ) : currentUser ? (

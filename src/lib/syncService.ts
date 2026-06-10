@@ -105,7 +105,7 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
     }
 
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Превышено время ожидания сервера (таймаут 8с). Пожалуйста, обновите страницу или проверьте интернет-соединение.')), 8000)
+      setTimeout(() => reject(new Error('Превышено время ожидания сервера (таймаут 25с). Пожалуйста, обновите страницу или проверьте интернет-соединение.')), 25000)
     );
 
     await Promise.race([
@@ -130,7 +130,7 @@ export async function loadFromFirebaseDirectly(userId: string): Promise<Workspac
     const snap = await Promise.race([
       getDoc(docRef),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Превышено время ожидания загрузки (таймаут 8с). Пожалуйста, проверьте интернет-соединение или обновите вкладку.')), 8000)
+        setTimeout(() => reject(new Error('Превышено время ожидания загрузки (таймаут 25с). Пожалуйста, проверьте интернет-соединение или обновите вкладку.')), 25000)
       )
     ]);
     if (snap.exists()) {
