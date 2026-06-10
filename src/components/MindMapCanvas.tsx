@@ -41,9 +41,9 @@ interface MindMapCanvasProps {
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNodeCoordinates: (id: string, x: number, y: number) => void;
-  onUpdateNodeParent: (id: string, newParentId: string | null) => void;
+  onUpdateNodeParent: (id: string, newParentId: string | null, customX?: number, customY?: number) => void;
   onAddChildNode: (parentId: string) => void;
-  onAddFloatingNode: (x: number, y: number, parentId?: string | null, customText?: string) => void;
+  onAddFloatingNode: (x: number, y: number, parentId?: string | null, customText?: string, extraFields?: Partial<TaskNode>) => void;
   onAddContainerNode: (x: number, y: number) => void;
   onAddInboxTask?: (text: string) => void;
   onDeleteNode: (id: string) => void;
@@ -451,6 +451,13 @@ export default function MindMapCanvas({
   const renderContainerBody = (node: TaskNode, containerChildren: TaskNode[], isFullScreen = false) => {
     const viewMode = containerViewModes[node.id] || 'canvas';
 
+    const handleSelectChild = (childId: string) => {
+      onSelectNode(childId);
+      if (viewMode !== 'canvas') {
+        onOpenDrawer();
+      }
+    };
+
     if (viewMode === 'canvas') {
       if (containerChildren.length === 0) {
         return (
@@ -467,7 +474,12 @@ export default function MindMapCanvas({
 
     if (viewMode === 'list') {
       return (
-        <div className="flex-1 flex flex-col min-h-0">
+        <div 
+          onClick={(e) => {
+            onAddFloatingNode(node.x, node.y, node.id, 'Новая подзадача');
+          }}
+          className="flex-1 flex flex-col min-h-0 cursor-pointer"
+        >
           <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin ${isFullScreen ? 'max-h-[66vh] text-xs' : 'max-h-[220px]'}`}>
             {containerChildren.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[120px] text-center my-auto">
@@ -498,7 +510,7 @@ export default function MindMapCanvas({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSelectNode(child.id);
+                    handleSelectChild(child.id);
                   }}
                   className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-xs hover:border-slate-250 dark:hover:border-slate-705 group/item cursor-pointer text-slate-800 dark:text-slate-250 select-none transition-all hover:bg-slate-50/60 dark:hover:bg-slate-850/65"
                 >
@@ -516,8 +528,8 @@ export default function MindMapCanvas({
                       )}
                     </button>
                     <span 
-                      onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
-                      className={`font-semibold leading-relaxed truncate cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
+                      onClick={(e) => { e.stopPropagation(); handleSelectChild(child.id); }}
+                      className={`font-semibold leading-relaxed truncate cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-555' : 'text-slate-700 dark:text-slate-205'}`}
                     >
                       {child.text}
                     </span>
@@ -562,6 +574,8 @@ export default function MindMapCanvas({
                 setInlineAddTexts(prev => ({ ...prev, [node.id]: '' }));
               }
             }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             className="mt-2 flex items-center gap-1 shrink-0 z-20"
           >
             <input 
@@ -724,7 +738,22 @@ export default function MindMapCanvas({
                     handleNestedKanbanDrop(draggedId, col.id, node.id);
                   }
                 }}
-                className={`flex-1 rounded-xl border ${col.border || ''} ${col.bg || ''} p-1.5 flex flex-col min-h-0 ${isFullScreen ? 'min-w-[200px]' : 'min-w-[130px] max-w-[170px]'}`}
+                onClick={(e) => {
+                  let extraFields: Partial<TaskNode> = {};
+                  if (currentGroupBy === 'status') {
+                    if (col.id === 'todo') extraFields = { completed: false, progress: 0 };
+                    if (col.id === 'progress') extraFields = { completed: false, progress: 50 };
+                    if (col.id === 'done') extraFields = { completed: true, progress: 100 };
+                  } else if (currentGroupBy === 'priority') {
+                    extraFields = { priority: col.id as any };
+                  } else if (currentGroupBy === 'category') {
+                    if (col.id !== 'uncategorized') {
+                      extraFields = { tags: [col.id] };
+                    }
+                  }
+                  onAddFloatingNode(node.x, node.y, node.id, 'Новая подзадача', extraFields);
+                }}
+                className={`flex-1 rounded-xl border ${col.border || ''} ${col.bg || ''} p-1.5 flex flex-col min-h-0 cursor-pointer hover:border-slate-250 dark:hover:border-slate-800 transition-colors ${isFullScreen ? 'min-w-[200px]' : 'min-w-[130px] max-w-[170px]'}`}
                 style={col.style}
               >
                 <div className="flex items-center justify-between mb-1.5 px-0.5 select-none shrink-0 border-b border-slate-100/50 dark:border-slate-800/10 pb-1">
@@ -750,12 +779,12 @@ export default function MindMapCanvas({
                       onDragEnd={() => setNestedDragNodeId(null)}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSelectNode(child.id);
+                        handleSelectChild(child.id);
                       }}
                       className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-900 select-none transition-all hover:bg-slate-50/50 dark:hover:bg-slate-900/50"
                     >
                       <span 
-                        onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                        onClick={(e) => { e.stopPropagation(); handleSelectChild(child.id); }}
                         className={`font-semibold leading-normal cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
                       >
                         {child.text}
@@ -1079,21 +1108,100 @@ export default function MindMapCanvas({
           </div>
 
           {/* Core Scrollable Container Body */}
-          <div className={`flex-1 overflow-y-auto pr-1 min-h-0 custom-scrollbar ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[220px]'}`}>
+          <div className={`flex-1 overflow-y-auto pr-1 min-h-0 custom-scrollbar ${isFullScreen ? 'h-full flex-1 flex flex-col' : 'max-h-[220px]'}`}>
             
             {/* MONTH VIEW CALENDAR GRID */}
             {currentSubMode === 'month' && (
-              <div className="space-y-1 select-none">
-                <div className="grid grid-cols-7 gap-1 text-[8px] font-black text-slate-400 uppercase tracking-widest text-center border-b border-slate-100 dark:border-slate-850 pb-1">
-                  <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
+              <div className="overflow-x-auto custom-scrollbar pb-1.5 w-full">
+                <div className={`space-y-1 select-none min-w-[850px] md:min-w-0 ${isFullScreen ? 'flex-grow h-full flex flex-col min-h-0' : ''}`}>
+                  <div className="grid grid-cols-7 gap-1 text-[8px] font-black text-slate-400 uppercase tracking-widest text-center border-b border-slate-100 dark:border-slate-850 pb-1 shrink-0">
+                    <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
+                  </div>
+                  <div className={`grid grid-cols-7 gap-1 ${isFullScreen ? 'flex-grow h-full flex-1 min-h-[350px] md:grid-rows-5 lg:grid-rows-6' : ''}`}>
+                    {getMonthGridCells().map(cell => {
+                      const cellTasks = containerChildren.filter(child => child.dueDate === cell.dateStr);
+
+                      return (
+                        <div
+                          key={cell.dateStr}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                            if (draggedId) {
+                              const t = nodes.find(n => n.id === draggedId);
+                              if (t) {
+                                onUpdateNode({ ...t, dueDate: cell.dateStr });
+                              }
+                            }
+                          }}
+                          onClick={(e) => {
+                            // Ensure click was purely on empty cell background
+                            onAddFloatingNode(node.x, node.y, node.id, 'Новая подзадача', { dueDate: cell.dateStr });
+                          }}
+                          className={`p-1 min-h-[50px] ${isFullScreen ? 'h-full min-h-[100px] lg:min-h-[12.5vh]' : ''} flex flex-col items-stretch text-left rounded-lg transition-colors border select-none cursor-pointer ${
+                            cell.isToday
+                              ? 'bg-amber-500/10 border-amber-500/50 text-amber-900 dark:text-amber-200'
+                              : cell.isCurrentMonth
+                                ? 'bg-white/80 dark:bg-slate-900/80 border-slate-150/40 dark:border-slate-800/80 hover:bg-slate-50/50 dark:hover:bg-slate-850/50'
+                                : 'bg-slate-50/15 dark:bg-slate-900/5 border-slate-100/20 dark:border-slate-850/25 opacity-30 pointer-events-none'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center mb-1 select-none">
+                            <span className={`text-[8px] font-extrabold ${cell.isToday ? 'text-amber-500 font-black' : 'text-slate-500 dark:text-slate-400'}`}>
+                              {cell.dayNum}
+                            </span>
+                            {cellTasks.length > 0 && (
+                              <span className="text-[7.5px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100/50 dark:bg-slate-800/50 rounded-full w-3.5 h-3.5 flex items-center justify-center font-mono">
+                                {cellTasks.length}
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="space-y-0.5 overflow-hidden flex-1 flex flex-col justify-start">
+                            {cellTasks.map(child => (
+                              <div
+                                key={child.id}
+                                draggable={true}
+                                onDragStart={(e) => {
+                                  e.stopPropagation();
+                                  e.dataTransfer.setData('text/plain', child.id);
+                                  setNestedDragNodeId(child.id);
+                                }}
+                                onDragEnd={() => setNestedDragNodeId(null)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectChild(child.id);
+                                }}
+                                className="px-1 py-0.2 rounded border border-slate-205 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-[7.5px] font-bold tracking-tight truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-755 select-none cursor-grab active:cursor-grabbing flex items-center justify-between"
+                                title={child.text}
+                              >
+                                <span className={`truncate ${child.completed ? 'line-through text-slate-400' : ''}`}>{child.text}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {getMonthGridCells().map(cell => {
-                    const cellTasks = containerChildren.filter(child => child.dueDate === cell.dateStr);
+              </div>
+            )}
+
+            {/* WEEK VIEW CALENDAR COLUMNS */}
+            {currentSubMode === 'week' && (
+              <div className="overflow-x-auto custom-scrollbar pb-1.5 w-full">
+                <div className="grid grid-cols-7 gap-1.5 h-full min-w-[850px] md:min-w-0">
+                  {getWeekDays().map(day => {
+                    const dayTasks = containerChildren.filter(child => child.dueDate === day.dateStr);
 
                     return (
                       <div
-                        key={cell.dateStr}
+                        key={day.dateStr}
                         onDragOver={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -1105,31 +1213,28 @@ export default function MindMapCanvas({
                           if (draggedId) {
                             const t = nodes.find(n => n.id === draggedId);
                             if (t) {
-                              onUpdateNode({ ...t, dueDate: cell.dateStr });
+                              onUpdateNode({ ...t, dueDate: day.dateStr });
                             }
                           }
                         }}
-                        className={`p-1 min-h-[50px] flex flex-col items-stretch text-left rounded-lg transition-colors border select-none ${
-                          cell.isToday
-                            ? 'bg-amber-500/10 border-amber-500/50 text-amber-900 dark:text-amber-200'
-                            : cell.isCurrentMonth
-                              ? 'bg-white/80 dark:bg-slate-900/80 border-slate-150/40 dark:border-slate-800/80'
-                              : 'bg-slate-50/15 dark:bg-slate-900/5 border-slate-100/20 dark:border-slate-850/25 opacity-30 pointer-events-none'
+                        onClick={(e) => {
+                          onAddFloatingNode(node.x, node.y, node.id, 'Новая подзадача', { dueDate: day.dateStr });
+                        }}
+                        className={`p-1.5 rounded-lg flex flex-col text-left border select-none min-h-[140px] flex-1 cursor-pointer transition-colors ${
+                          day.isToday
+                            ? 'bg-amber-500/5 border-amber-500/40 text-amber-900 dark:text-amber-200'
+                            : 'bg-white dark:bg-slate-900 border-slate-150/40 dark:border-slate-800/80 hover:bg-slate-50/50 dark:hover:bg-slate-850/50'
                         }`}
                       >
-                        <div className="flex justify-between items-center mb-1 select-none">
-                          <span className={`text-[8px] font-extrabold ${cell.isToday ? 'text-amber-500 font-black' : 'text-slate-500 dark:text-slate-400'}`}>
-                            {cell.dayNum}
+                        <div className="flex items-center justify-between border-b border-slate-100/50 dark:border-slate-800/50 pb-1 mb-1.5 select-none shrink-0 font-sans">
+                          <span className="text-[8px] font-black text-slate-405 dark:text-slate-500 uppercase">{day.label}</span>
+                          <span className={`text-[9px] font-extrabold rounded-md w-4 h-4 flex items-center justify-center font-mono ${day.isToday ? 'bg-amber-500 text-white font-black' : 'text-slate-650 dark:text-slate-300'}`}>
+                            {day.dayNum}
                           </span>
-                          {cellTasks.length > 0 && (
-                            <span className="text-[7.5px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100/50 dark:bg-slate-800/50 rounded-full w-3.5 h-3.5 flex items-center justify-center font-mono">
-                              {cellTasks.length}
-                            </span>
-                          )}
                         </div>
                         
-                        <div className="space-y-0.5 overflow-hidden flex-1 flex flex-col justify-start">
-                          {cellTasks.map(child => (
+                        <div className="space-y-1 flex-1 overflow-y-auto scrollbar-none">
+                          {dayTasks.map(child => (
                             <div
                               key={child.id}
                               draggable={true}
@@ -1141,94 +1246,29 @@ export default function MindMapCanvas({
                               onDragEnd={() => setNestedDragNodeId(null)}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onSelectNode(child.id);
+                                handleSelectChild(child.id);
                               }}
-                              className="px-1 py-0.2 rounded border border-slate-205 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-[7.5px] font-bold tracking-tight truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-755 select-none cursor-grab active:cursor-grabbing flex items-center justify-between"
+                              className="p-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-800 text-[8.5px] font-bold leading-normal truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 select-none cursor-grab active:cursor-grabbing flex items-center justify-between"
                               title={child.text}
                             >
                               <span className={`truncate ${child.completed ? 'line-through text-slate-400' : ''}`}>{child.text}</span>
+                              {child.dueTime && (
+                                <span className="text-[7px] text-slate-400 dark:text-slate-500 font-mono shrink-0 ml-1 font-bold">
+                                  {child.dueTime}
+                                </span>
+                              )}
                             </div>
                           ))}
+                          {dayTasks.length === 0 && (
+                            <div className="text-center py-4 text-[7px] text-slate-300 dark:text-slate-700 uppercase tracking-widest border border-dashed border-slate-200/50 dark:border-slate-800/40 rounded-md">
+                              пусто
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-            )}
-
-            {/* WEEK VIEW CALENDAR COLUMNS */}
-            {currentSubMode === 'week' && (
-              <div className="grid grid-cols-7 gap-1.5 h-full">
-                {getWeekDays().map(day => {
-                  const dayTasks = containerChildren.filter(child => child.dueDate === day.dateStr);
-
-                  return (
-                    <div
-                      key={day.dateStr}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
-                        if (draggedId) {
-                          const t = nodes.find(n => n.id === draggedId);
-                          if (t) {
-                            onUpdateNode({ ...t, dueDate: day.dateStr });
-                          }
-                        }
-                      }}
-                      className={`p-1.5 rounded-lg flex flex-col text-left border select-none min-h-[140px] flex-1 ${
-                        day.isToday
-                          ? 'bg-amber-500/5 border-amber-500/40 text-amber-900 dark:text-amber-200'
-                          : 'bg-white dark:bg-slate-900 border-slate-150/40 dark:border-slate-800/80'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between border-b border-slate-100/50 dark:border-slate-800/50 pb-1 mb-1.5 select-none shrink-0 font-sans">
-                        <span className="text-[8px] font-black text-slate-405 dark:text-slate-500 uppercase">{day.label}</span>
-                        <span className={`text-[9px] font-extrabold rounded-md w-4 h-4 flex items-center justify-center font-mono ${day.isToday ? 'bg-amber-500 text-white font-black' : 'text-slate-650 dark:text-slate-300'}`}>
-                          {day.dayNum}
-                        </span>
-                      </div>
-                      
-                      <div className="space-y-1 flex-1 overflow-y-auto scrollbar-none">
-                        {dayTasks.map(child => (
-                          <div
-                            key={child.id}
-                            draggable={true}
-                            onDragStart={(e) => {
-                              e.stopPropagation();
-                              e.dataTransfer.setData('text/plain', child.id);
-                              setNestedDragNodeId(child.id);
-                            }}
-                            onDragEnd={() => setNestedDragNodeId(null)}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectNode(child.id);
-                            }}
-                            className="p-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-800 text-[8.5px] font-bold leading-normal truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 select-none cursor-grab active:cursor-grabbing flex items-center justify-between"
-                            title={child.text}
-                          >
-                            <span className={`truncate ${child.completed ? 'line-through text-slate-400' : ''}`}>{child.text}</span>
-                            {child.dueTime && (
-                              <span className="text-[7px] text-slate-400 dark:text-slate-500 font-mono shrink-0 ml-1 font-bold">
-                                {child.dueTime}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                        {dayTasks.length === 0 && (
-                          <div className="text-center py-4 text-[7px] text-slate-300 dark:text-slate-700 uppercase tracking-widest border border-dashed border-slate-200/50 dark:border-slate-800/40 rounded-md">
-                            пусто
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             )}
 
@@ -1315,7 +1355,10 @@ export default function MindMapCanvas({
                             }
                           }
                         }}
-                        className="flex items-center gap-2 border-b border-slate-100/15 dark:border-slate-900/30 py-1 group/hour hover:bg-slate-100/25 dark:hover:bg-slate-850/20 min-h-[30px]"
+                        onClick={(e) => {
+                          onAddFloatingNode(node.x, node.y, node.id, 'Новая подзадача', { dueDate: currentDateStr, dueTime: slotTimeStr });
+                        }}
+                        className="flex items-center gap-2 border-b border-slate-100/15 dark:border-slate-900/30 py-1 group/hour hover:bg-slate-100/25 dark:hover:bg-slate-850/20 min-h-[30px] cursor-pointer transition-colors"
                       >
                         <span className="w-10 text-[8px] font-black text-slate-400 dark:text-slate-500 font-mono select-none text-right pr-1">
                           {slotTimeStr}
@@ -1334,7 +1377,7 @@ export default function MindMapCanvas({
                               onDragEnd={() => setNestedDragNodeId(null)}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onSelectNode(child.id);
+                                handleSelectChild(child.id);
                               }}
                               className="p-0.5 px-1.5 rounded border border-slate-150 dark:border-slate-800 bg-white dark:bg-slate-900 text-[8.5px] font-bold leading-normal truncate text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 select-none cursor-grab active:cursor-grabbing flex items-center shadow-2xs"
                               title={child.text}
@@ -1402,13 +1445,13 @@ export default function MindMapCanvas({
                       onDragEnd={() => setNestedDragNodeId(null)}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSelectNode(child.id);
+                        handleSelectChild(child.id);
                       }}
                       className="flex items-center gap-1 text-[9.5px] cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/40 p-0.5 rounded transition-all select-none"
                     >
                       <div className="w-1/3 min-w-0 pr-1 shrink-0">
                         <span 
-                          onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                          onClick={(e) => { e.stopPropagation(); handleSelectChild(child.id); }}
                           className={`font-semibold truncate block cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-205'}`}
                         >
                           {child.text}
@@ -1456,7 +1499,12 @@ export default function MindMapCanvas({
 
     if (viewMode === 'table') {
       return (
-        <div className="flex-1 flex flex-col min-h-0">
+        <div 
+          onClick={(e) => {
+            onAddFloatingNode(node.x, node.y, node.id, 'Новая подзадача');
+          }}
+          className="flex-1 flex flex-col min-h-0 cursor-pointer"
+        >
           <div className="w-full flex items-center border-b border-slate-150 dark:border-slate-800 pb-1 text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest select-none shrink-0 mb-1">
             <div className="w-1/2">Задача</div>
             <div className="w-1/4 text-center">Приоритет</div>
@@ -1495,7 +1543,7 @@ export default function MindMapCanvas({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelectNode(child.id);
+                      handleSelectChild(child.id);
                     }}
                     className="w-full flex items-center py-1.5 border-b border-slate-100/50 dark:border-slate-850/60 hover:bg-slate-50/45 dark:hover:bg-slate-900/20 group/row cursor-pointer text-slate-850 dark:text-slate-200 select-none transition-all"
                   >
@@ -1509,7 +1557,7 @@ export default function MindMapCanvas({
                          {child.completed ? '✅' : '⬜'}
                        </button>
                        <span 
-                         onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                         onClick={(e) => { e.stopPropagation(); handleSelectChild(child.id); }}
                          className={`truncate font-semibold cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-205'}`}
                        >
                          {child.text}
@@ -2339,7 +2387,7 @@ export default function MindMapCanvas({
         
         if (overlap) {
           // Snap directly on release
-          onUpdateNodeParent(node.id, overlap.id);
+          onUpdateNodeParent(node.id, overlap.id, node.x, node.y);
         } else if (currentParent) {
           if (currentParent.isContainer) {
             const dx = Math.abs(node.x - currentParent.x);
@@ -2359,10 +2407,10 @@ export default function MindMapCanvas({
             if (shouldDetach) {
               if (focusedContainerId) {
                 if (node.parentId !== focusedContainerId) {
-                  onUpdateNodeParent(node.id, focusedContainerId);
+                  onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
                 }
               } else {
-                onUpdateNodeParent(node.id, null);
+                onUpdateNodeParent(node.id, null, node.x, node.y);
               }
             }
           } else {
@@ -2372,7 +2420,7 @@ export default function MindMapCanvas({
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 330) {
               if (focusedContainerId) {
-                onUpdateNodeParent(node.id, focusedContainerId);
+                onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
               } else {
                 // Check if release position is inside any container
                 const container = visibleNodes.find(otherNode => {
@@ -2385,9 +2433,9 @@ export default function MindMapCanvas({
                   return cdx < halfW && cdy < halfH;
                 });
                 if (container) {
-                  onUpdateNodeParent(node.id, container.id);
+                  onUpdateNodeParent(node.id, container.id, node.x, node.y);
                 } else {
-                  onUpdateNodeParent(node.id, null);
+                  onUpdateNodeParent(node.id, null, node.x, node.y);
                 }
               }
             }
@@ -2790,7 +2838,7 @@ export default function MindMapCanvas({
           
           if (overlap) {
             // Snap inside container or parent directly on drop
-            onUpdateNodeParent(node.id, overlap.id);
+            onUpdateNodeParent(node.id, overlap.id, node.x, node.y);
           } else if (currentParent) {
             if (currentParent.isContainer) {
               const dx = Math.abs(node.x - currentParent.x);
@@ -2810,10 +2858,10 @@ export default function MindMapCanvas({
               if (shouldDetach) {
                 if (focusedContainerId) {
                   if (node.parentId !== focusedContainerId) {
-                    onUpdateNodeParent(node.id, focusedContainerId);
+                    onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
                   }
                 } else {
-                  onUpdateNodeParent(node.id, null);
+                  onUpdateNodeParent(node.id, null, node.x, node.y);
                 }
               }
             } else {
@@ -2823,7 +2871,7 @@ export default function MindMapCanvas({
               const dist = Math.sqrt(dx * dx + dy * dy);
               if (dist > 330) {
                 if (focusedContainerId) {
-                  onUpdateNodeParent(node.id, focusedContainerId);
+                  onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
                 } else {
                   // Check if release position is inside any container
                   const container = visibleNodes.find(otherNode => {
@@ -2836,9 +2884,9 @@ export default function MindMapCanvas({
                     return cdx < halfW && cdy < halfH;
                   });
                   if (container) {
-                    onUpdateNodeParent(node.id, container.id);
+                    onUpdateNodeParent(node.id, container.id, node.x, node.y);
                   } else {
-                    onUpdateNodeParent(node.id, null);
+                    onUpdateNodeParent(node.id, null, node.x, node.y);
                   }
                 }
               }

@@ -1318,7 +1318,7 @@ export default function App() {
   };
 
   // Update node parent for nesting structure (dynamic hierarchy re-assignment)
-  const handleUpdateNodeParent = (id: string, newParentId: string | null) => {
+  const handleUpdateNodeParent = (id: string, newParentId: string | null, customX?: number, customY?: number) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
@@ -1335,7 +1335,10 @@ export default function App() {
           let targetX = n.x;
           let targetY = n.y;
           
-          if (parent && !parent.isContainer) {
+          if (customX !== undefined && customY !== undefined) {
+            targetX = customX;
+            targetY = customY;
+          } else if (parent && !parent.isContainer) {
             const isLeft = parent.x < 0 || (parent.x === 0 && (currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id).length % 2 !== 0));
             targetX = parent.x + (isLeft ? -250 : 250);
             
@@ -1492,7 +1495,7 @@ export default function App() {
   };
 
   // Add a fully independent floating node anywhere on the canvas
-  const handleAddFloatingNode = (x: number, y: number, parentId: string | null = null, customText?: string) => {
+  const handleAddFloatingNode = (x: number, y: number, parentId: string | null = null, customText?: string, extraFields?: Partial<TaskNode>) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
@@ -1516,7 +1519,8 @@ export default function App() {
         : '',
       completed: false,
       files: [],
-      color: isInsideContainer ? '#3b82f6' : '#10b981' // Blue inside container, green otherwise
+      color: isInsideContainer ? '#3b82f6' : '#10b981', // Blue inside container, green otherwise
+      ...extraFields
     };
 
     setState(prev => ({
@@ -2332,38 +2336,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* Real-time Cloud conflict warning banner */}
-        {hasCloudUpdates && currentUser && (
-          <div className="bg-amber-500/10 dark:bg-amber-500/5 border-b border-amber-500/25 px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs z-10 animate-in slide-in-from-top-1">
-            <div className="flex items-center gap-2.5 text-amber-800 dark:text-amber-300 min-w-0">
-              <span className="relative flex h-2 w-2 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-              </span>
-              <span className="font-semibold leading-tight text-left">
-                Обнаружены новые изменения на другом устройстве! {unsyncedEditsCount > 0 ? `(Автоматическая загрузка приостановлена, чтобы не перезаписать ваши ${unsyncedEditsCount} несинхронизированных изменений).` : `Рекомендуется обновиться.`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
-              <button
-                type="button"
-                onClick={handleApplyCloudState}
-                className="py-1 px-3 bg-amber-650 hover:bg-amber-700 text-white dark:bg-amber-600 dark:hover:bg-amber-550 rounded-md text-[11px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Принять изменения из облака
-              </button>
-              <button
-                type="button"
-                onClick={() => setHasCloudUpdates(false)}
-                className="p-1 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 rounded-md transition-colors cursor-pointer shrink-0"
-                title="Скрыть предупреждение"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
+
 
         {/* Collapsible advanced filters subheader panel */}
         {isFilterPanelOpen && (
