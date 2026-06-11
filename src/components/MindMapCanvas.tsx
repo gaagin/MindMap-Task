@@ -2168,6 +2168,41 @@ export default function MindMapCanvas({
     }
   }, [nodes, focusedContainerId]);
 
+  // Keep track of the last active container ID to layer it higher than other containers even after focus is removed
+  const [lastActiveContainerId, setLastActiveContainerId] = useState<string | null>(null);
+
+  // Helper to find the top container parent of a node
+  const findContainerParentId = (nodeId: string | null): string | null => {
+    if (!nodeId) return null;
+    let current = nodes.find(n => n.id === nodeId);
+    while (current) {
+      if (current.isContainer) {
+        return current.id;
+      }
+      const parentId = current.parentId;
+      current = parentId ? nodes.find(n => n.id === parentId) : undefined;
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    if (focusedContainerId) {
+      setLastActiveContainerId(focusedContainerId);
+    } else if (selectedNodeId) {
+      const containerId = findContainerParentId(selectedNodeId);
+      if (containerId) {
+        setLastActiveContainerId(containerId);
+      }
+    }
+  }, [focusedContainerId, selectedNodeId, nodes]);
+
+  // Reset lastActiveContainerId if that container is deleted or project is switched
+  useEffect(() => {
+    if (lastActiveContainerId && !nodes.some(n => n.id === lastActiveContainerId)) {
+      setLastActiveContainerId(null);
+    }
+  }, [nodes, lastActiveContainerId]);
+
   // Resize states for containers
   const [resizingNodeId, setResizingNodeId] = useState<string | null>(null);
   const [resizeDirection, setResizeDirection] = useState<string | null>(null);
@@ -3454,7 +3489,7 @@ export default function MindMapCanvas({
         const containerChildren = nodes.filter(n => n.parentId === focusedContainerId);
         const totalChildren = containerChildren.length;
         const completedChildren = containerChildren.filter(n => n.completed).length;
-        const progress = totalChildren > 0 ? Math.round((completedChildren / totalChildren) * 100) : 0;
+        const progress = calculateProgress(focusedContainerId, nodes) || 0;
         
         return (
           <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3 border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl flex flex-col md:flex-row items-center gap-4 transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-[98vw] md:max-w-[96vw]">
@@ -3772,7 +3807,7 @@ export default function MindMapCanvas({
             const containerChildren = nodes.filter(n => n.parentId === node.id);
             const totalChildren = containerChildren.length;
             const completedChildren = containerChildren.filter(n => n.completed).length;
-            const containerProgress = totalChildren > 0 ? Math.round((completedChildren / totalChildren) * 100) : 0;
+            const containerProgress = calculateProgress(node.id, nodes) || 0;
             const isContainerSelected = isSelected;
             const isContainerCollapsed = !!node.collapsed;
             const isDraggingThisNode = draggingNodeId === node.id || (isLongPressDragging && potentialDragNodeIdRef.current === node.id);
@@ -3787,7 +3822,7 @@ export default function MindMapCanvas({
                   left: node.x,
                   top: node.y,
                   transform: 'translate(-50%, -50%)',
-                  zIndex: isContainerSelected ? 20 : 10, 
+                  zIndex: isContainerSelected ? 50 : (lastActiveContainerId === node.id ? 30 : 10), 
                   width: isContainerCollapsed ? '220px' : `${node.width || 520}px`,
                   height: isContainerCollapsed ? '100px' : `${node.height || 400}px`,
                 }}
@@ -4220,9 +4255,15 @@ const pInfo = getPriorityInfo(node.priority);
           })();
 
           const ancestorContainer = getAncestorContainer(node.parentId);
+          let containerZ = 10;
+          if (ancestorContainer) {
+            const isAncestorSelected = selectedNodeId === ancestorContainer.id;
+            const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
+            containerZ = isAncestorSelected ? 50 : (isAncestorLastActive ? 30 : 10);
+          }
           const cardZIndex = ancestorContainer
-            ? ((selectedNodeId === ancestorContainer.id) ? 20 : 10) + (isSelected ? 5 : 2)
-            : (isSelected ? 30 : 5);
+            ? containerZ + (isSelected ? 5 : 2)
+            : (isSelected ? 60 : 5);
 
           return (
             <div

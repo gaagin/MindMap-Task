@@ -155,10 +155,37 @@ export function getDescendants(nodeId: string, allNodes: TaskNode[]): TaskNode[]
 
 // Helper to calculate progress of a node based on its descendants/subtasks
 export function calculateProgress(nodeId: string, allNodes: TaskNode[]): number | null {
-  const descendants = getDescendants(nodeId, allNodes);
-  if (descendants.length === 0) return null;
-  const completedCount = descendants.filter(d => d.completed).length;
-  return Math.round((completedCount / descendants.length) * 100);
+  const node = allNodes.find(n => n.id === nodeId);
+  if (!node) return null;
+
+  const children = allNodes.filter(n => n.parentId === nodeId);
+  if (children.length === 0) {
+    if (node.completed) return 100;
+    return node.progress !== undefined ? node.progress : 0;
+  }
+
+  // Cache visited sets to prevent potential cycles or stack overflows
+  const visited = new Set<string>([nodeId]);
+
+  const getProgress = (id: string): number => {
+    if (visited.has(id)) return 0;
+    visited.add(id);
+
+    const currNode = allNodes.find(n => n.id === id);
+    if (!currNode) return 0;
+    if (currNode.completed) return 100;
+
+    const subChildren = allNodes.filter(n => n.parentId === id);
+    if (subChildren.length === 0) {
+      return currNode.progress !== undefined ? currNode.progress : 0;
+    }
+
+    const sum = subChildren.reduce((acc, child) => acc + getProgress(child.id), 0);
+    return Math.round(sum / subChildren.length);
+  };
+
+  const totalSum = children.reduce((acc, child) => acc + getProgress(child.id), 0);
+  return Math.round(totalSum / children.length);
 }
 
 // Function to recursively synchronize completion state of all nodes (bottom-up propagation)
