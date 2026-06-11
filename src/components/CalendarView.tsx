@@ -1212,10 +1212,12 @@ export default function CalendarView({
           </div>
         </div>
 
-        {/* Unscheduled Right deck drawer sidebar */}
-        <div className={`w-full lg:w-80 bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 flex flex-col p-3 md:p-5 shrink-0 lg:h-full overflow-hidden transition-all duration-300 ${
-          isUnscheduledExpandedMobile ? 'h-[280px] lg:h-full' : 'h-[56px] lg:h-full'
-        }`}>
+      </div>
+
+      {/* Unscheduled Right deck drawer sidebar */}
+      <div className={`w-full lg:w-80 bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 flex flex-col p-3 md:p-5 shrink-0 lg:h-full overflow-hidden transition-all duration-300 ${
+        isUnscheduledExpandedMobile ? 'h-[280px] lg:h-full' : 'h-[56px] lg:h-full'
+      }`}>
           <div 
             onClick={() => setIsUnscheduledExpandedMobile(!isUnscheduledExpandedMobile)}
             className="flex items-center gap-2 mb-3 shrink-0 cursor-pointer lg:pointer-events-none select-none hover:bg-slate-50 dark:hover:bg-slate-800/40 lg:hover:bg-transparent p-1 px-2 lg:p-0 rounded-xl transition-colors"
@@ -1356,7 +1358,6 @@ export default function CalendarView({
           </div>
         </div>
 
-      </div>
     </div>
   );
 }
