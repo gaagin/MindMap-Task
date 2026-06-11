@@ -11,7 +11,8 @@ import {
   AlertCircle,
   Clock,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Search
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
@@ -57,15 +58,14 @@ export default function CalendarView({
   const getPillStyles = (task: TaskNode) => {
     switch (task.priority) {
       case 'urgent':
-        return 'bg-rose-50/90 hover:bg-rose-100/90 dark:bg-rose-950/20 text-rose-700 dark:text-rose-350 border-l-[3px] border-l-rose-500 dark:border-l-rose-450';
+        return 'bg-[#FEF2F2] hover:bg-[#FEE2E2] dark:bg-rose-950/30 text-[#991B1B] dark:text-rose-300 border-l-[3.5px] border-[#EF4444]';
       case 'high':
-        return 'bg-amber-50/90 hover:bg-amber-100/90 dark:bg-amber-950/20 text-amber-700 dark:text-amber-350 border-l-[3px] border-l-amber-500 dark:border-l-amber-450';
       case 'medium':
-        return 'bg-indigo-50/90 hover:bg-indigo-100/90 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-355 border-l-[3px] border-l-indigo-500 dark:border-l-indigo-400';
+        return 'bg-[#FFF7ED] hover:bg-[#FFEDD5] dark:bg-amber-950/30 text-[#C2410C] dark:text-amber-350 border-l-[3.5px] border-[#F97316]';
       case 'low':
-        return 'bg-emerald-50/90 hover:bg-emerald-100/90 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-355 border-l-[3px] border-l-emerald-500';
+      case 'none':
       default:
-        return 'bg-slate-50/90 hover:bg-slate-100/90 dark:bg-slate-800 text-slate-700 dark:text-slate-205 border-l-[3px] border-l-slate-400 dark:border-l-slate-500';
+        return 'bg-[#E6FDF5] hover:bg-[#D1FAE5] dark:bg-emerald-950/25 text-[#047857] dark:text-emerald-300 border-l-[3.5px] border-[#10B981]';
     }
   };
 
@@ -91,6 +91,7 @@ export default function CalendarView({
   const [activeHourAddInput, setActiveHourAddInput] = useState<string | null>(null); // e.g. '09:00'
   const [newHourTaskText, setNewHourTaskText] = useState('');
   const [isUnscheduledExpandedMobile, setIsUnscheduledExpandedMobile] = useState(false);
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
 
   // Drag and drop states for moving tasks between calendar days
   const [draggedOverDate, setDraggedOverDate] = useState<string | null>(null);
@@ -221,7 +222,10 @@ export default function CalendarView({
 
   // Divide into scheduled and unscheduled
   const scheduledTasks = projectTasks.filter(n => n.dueDate);
-  const unscheduledTasks = projectTasks.filter(n => !n.dueDate);
+  const rawUnscheduledTasks = projectTasks.filter(n => !n.dueDate);
+  const unscheduledTasks = sidebarSearchQuery
+    ? rawUnscheduledTasks.filter(t => t.text.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))
+    : rawUnscheduledTasks;
 
   // Time slots for Day View
   const HOURS = [
@@ -369,9 +373,9 @@ export default function CalendarView({
 
   const getPriorityColor = (p: Priority) => {
     switch (p) {
-      case 'urgent': return 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/30 dark:border-rose-900/40 dark:text-rose-450';
-      case 'high': return 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/30 dark:border-amber-900/40 dark:text-amber-450';
-      case 'medium': return 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900/40 dark:text-indigo-400';
+      case 'urgent': return 'bg-[#FEF2F2] border-[#FEE2E2] text-[#991B1B] dark:bg-rose-950/30 dark:border-rose-900/45 dark:text-rose-450';
+      case 'high': return 'bg-[#FFF7ED] border-[#FFEDD5] text-[#C2410C] dark:bg-amber-950/30 dark:border-amber-900/40 dark:text-amber-450';
+      case 'medium': return 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900/45 dark:text-indigo-400';
       case 'low': return 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800/60 dark:border-slate-800 dark:text-slate-300';
       default: return 'bg-slate-50 border-slate-205 text-slate-600 dark:bg-slate-800/60 dark:border-slate-800 dark:text-slate-300';
     }
@@ -422,191 +426,663 @@ export default function CalendarView({
     } else {
       const dayOfWeekName = [
         'Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'
-      ][currentDate.getDay()];
-      return `${currentDate.getDate()} ${MONTH_NAMES_RU[currentDate.getMonth()]} ${currentDate.getFullYear()} (${dayOfWeekName})`;
+      ];
+      return `${currentDate.getDate()} ${MONTH_NAMES_RU[currentDate.getMonth()]} ${year}, ${dayOfWeekName[currentDate.getDay()]}`;
     }
   };
 
   return (
-    <div id="calendar-workspace-view" className="relative w-full h-full bg-slate-50/30 dark:bg-slate-950/10 overflow-hidden font-sans flex flex-col lg:flex-row">
+    <div id="calendar-workspace-view" className="relative w-full h-full bg-[#F8FAFC] dark:bg-slate-950 overflow-hidden font-sans flex flex-col lg:flex-row">
       {/* Calendar Grid Section */}
-      <div className="flex-1 flex flex-col p-2 sm:p-4 md:p-5 overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col p-3 sm:p-4 md:p-5 overflow-hidden min-w-0">
         
-        {/* Calendar Navigation and Title Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-2.5 shrink-0 bg-white dark:bg-slate-900 p-2 sm:p-3 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between sm:justify-start gap-2.5">
-            <div className="flex items-center gap-2">
-              <span className="p-1.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-lg text-indigo-600 dark:text-indigo-400">
-                <Calendar className="w-4 h-4" />
-              </span>
+        {/* The beautiful thick bordered custom container card */}
+        <div className="flex-1 bg-white dark:bg-slate-900 border-[2.5px] border-[#1E293B] dark:border-slate-800 rounded-[24px] p-5 sm:p-6 shadow-xs flex flex-col h-full overflow-hidden">
+          
+          {/* Calendar Navigation and Title Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 mb-4 shrink-0 bg-transparent">
+            <div className="flex items-center gap-3">
+              {/* Calendar Icon wrapper */}
+              <div className="w-12 h-12 rounded-xl border-[2.2px] border-[#1E293B] bg-indigo-50/35 text-[#1E293B] dark:border-slate-750 dark:bg-indigo-950/20 dark:text-slate-350 flex items-center justify-center shrink-0">
+                <Calendar className="w-6 h-6" />
+              </div>
               <div>
-                <h2 className="text-xs sm:text-sm md:text-base font-extrabold text-slate-800 dark:text-slate-100 uppercase tracking-tight leading-tight">
+                <h2 className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#1E293B] dark:text-slate-100 uppercase tracking-tight leading-none font-sans">
                   {getHeaderTitle()}
                 </h2>
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold">
-                  Задачи: <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{scheduledTasks.length}</span>
+                <p className="text-xs text-slate-400 dark:text-slate-505 font-bold mt-1.5">
+                  Задачи: <span className="text-[#4F46E5] dark:text-indigo-400 font-extrabold">{scheduledTasks.length}</span>
                 </p>
               </div>
             </div>
-          </div>
 
-          <div className="flex items-center justify-between sm:justify-end gap-2 text-xs">
-            {/* View sub-mode switcher */}
-            <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-200/50 dark:border-slate-705 shrink-0 animate-fade-in">
-              <button
-                onClick={() => setCalendarSubMode('month')}
-                className={`px-2 py-0.5 text-[10px] sm:text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                  calendarSubMode === 'month'
-                    ? 'bg-white dark:bg-slate-705 text-indigo-605 dark:text-indigo-300 shadow-xs'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-205'
-                }`}
-              >
-                Месяц
-              </button>
-              <button
-                onClick={() => setCalendarSubMode('week')}
-                className={`px-2 py-0.5 text-[10px] sm:text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                  calendarSubMode === 'week'
-                    ? 'bg-white dark:bg-slate-705 text-indigo-605 dark:text-indigo-300 shadow-xs'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-205'
-                }`}
-              >
-                Неделя
-              </button>
-              <button
-                onClick={() => setCalendarSubMode('day')}
-                className={`px-2 py-0.5 text-[10px] sm:text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                  calendarSubMode === 'day'
-                    ? 'bg-white dark:bg-slate-705 text-indigo-605 dark:text-indigo-300 shadow-xs'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-205'
-                }`}
-              >
-                День
-              </button>
-            </div>
+            <div className="flex flex-wrap items-center gap-3.5 justify-end">
+              {/* Switch tabs */}
+              <div className="flex bg-slate-100/95 dark:bg-slate-800/80 rounded-xl p-1 border border-slate-200/60 dark:border-slate-700 shrink-0 select-none">
+                <button
+                  type="button"
+                  onClick={() => setCalendarSubMode('month')}
+                  className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                    calendarSubMode === 'month'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs border border-slate-205/30'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-405 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Месяц
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarSubMode('week')}
+                  className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                    calendarSubMode === 'week'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs border border-[0.5px] border-slate-205/30'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-405 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Неделя
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarSubMode('day')}
+                  className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                    calendarSubMode === 'day'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs border border-[0.5px] border-slate-205/30'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-405 dark:hover:text-slate-200'
+                  }`}
+                >
+                  День
+                </button>
+              </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Сегодня Button */}
               <button
+                type="button"
                 onClick={setToday}
-                className="px-2 py-1 bg-slate-100 hover:bg-slate-175 dark:bg-slate-800 dark:hover:bg-slate-755 text-slate-700 dark:text-slate-300 text-[10px] font-bold rounded-lg transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+                className="px-4 py-1.5 bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-202/90 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-100 border border-slate-200 dark:border-slate-700 text-xs font-black rounded-xl transition-all cursor-pointer shadow-xs active:scale-[0.98]"
               >
                 Сегодня
               </button>
-              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-200/50 dark:border-slate-700/50">
+
+              {/* Prev / Next handles */}
+              <div className="flex items-center bg-slate-100/90 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 rounded-xl p-0.5">
                 <button
+                  type="button"
                   onClick={handlePrev}
-                  className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded transition-all cursor-pointer"
+                  className="p-1.5 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 rounded-lg transition-all cursor-pointer"
                   title="Назад"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
                 <button
+                  type="button"
                   onClick={handleNext}
-                  className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded transition-all cursor-pointer"
+                  className="p-1.5 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 rounded-lg transition-all cursor-pointer"
                   title="Вперед"
                 >
-                  <ChevronRight className="w-3.5 h-3.5" />
+                  <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Scrollable container for mobile */}
-        <div id="calendar-horizontal-scroll-container" className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
-          <div className={`${calendarSubMode === 'day' ? 'w-full' : 'min-w-[1500px] sm:min-w-[1700px] lg:min-w-full'} h-full flex flex-col`}>
-            
-            {/* 1. Monthly Grid Mode */}
-            {calendarSubMode === 'month' && (
-              <div className="flex-1 flex flex-col min-h-0 relative">
-                {/* Weekly Header row */}
-                <div className="grid grid-cols-7 gap-1.5 md:gap-2.5 mb-1.5 px-0.5 text-center font-bold text-xs text-slate-400 dark:text-slate-505 shrink-0 select-none">
-                  {WEEKDAYS_RU.map(day => (
-                    <div key={day} className="py-0.5 lowercase tracking-wider text-slate-400 dark:text-slate-550 font-bold">{day.toLowerCase()}</div>
-                  ))}
+          {/* Separator */}
+          <div className="border-b-[2px] border-slate-200 dark:border-slate-800 mb-4 shrink-0" />
+
+          {/* Scrollable container for mobile */}
+          <div id="calendar-horizontal-scroll-container" className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
+            <div className={`${calendarSubMode === 'day' ? 'w-full' : 'min-w-[1500px] sm:min-w-[1700px] lg:min-w-full'} h-full flex flex-col`}>
+              
+              {/* 1. Monthly Grid Mode */}
+              {calendarSubMode === 'month' && (
+                <div className="flex-1 flex flex-col min-h-0 relative">
+                  {/* Weekly Header row */}
+                  <div className="grid grid-cols-7 gap-1.5 md:gap-2.5 mb-1.5 px-0.5 text-center font-bold text-xs text-slate-400 dark:text-slate-505 shrink-0 select-none">
+                    {WEEKDAYS_RU.map(day => (
+                      <div key={day} className="py-0.5 lowercase tracking-wider text-slate-400 dark:text-slate-550 font-bold">{day.toLowerCase()}</div>
+                    ))}
+                  </div>
+
+                  {/* Modern open week-by-week calendar list */}
+                  <div id="calendar-month-scroll-container" className="flex-1 overflow-y-auto max-h-full pr-1 custom-scrollbar space-y-1 pb-2 flex flex-col md:h-full md:min-h-0">
+                    {(() => {
+                      const weeks: typeof calendarSlots[] = [];
+                      for (let i = 0; i < 6; i++) {
+                        weeks.push(calendarSlots.slice(i * 7, (i + 1) * 7));
+                      }
+                      return weeks.map((week, weekIdx) => (
+                        <div key={weekIdx} className="flex-1 flex flex-col min-h-[90px] md:min-h-[145px] space-y-1">
+                          {/* Combined Grid representing the 7 days of this week */}
+                          <div className="flex-1 grid grid-cols-7 gap-1.5 md:gap-2.5 px-0.5">
+                            {week.map((slot, sIdx) => {
+                              const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
+                              const isInactiveMonth = slot.monthOffset !== 0;
+                              const isDragOver = draggedOverDate === slot.dateString;
+                              const maxVisible = 4;
+                              const visibleTasks = dayTasks.slice(0, maxVisible);
+                              const hiddenCount = dayTasks.length - maxVisible;
+
+                              return (
+                                <div
+                                  key={`${slot.dateString}-${sIdx}`}
+                                  onDragOver={(e) => e.preventDefault()}
+                                  onDragEnter={() => setDraggedOverDate(slot.dateString)}
+                                  onDragLeave={() => {
+                                    if (draggedOverDate === slot.dateString) {
+                                      setDraggedOverDate(null);
+                                    }
+                                  }}
+                                  onDrop={(e) => {
+                                    const taskId = e.dataTransfer.getData('text/plain');
+                                    handleTaskDrop(taskId, slot.dateString);
+                                  }}
+                                  onClick={() => {
+                                    setActiveDayAddInput(slot.dateString);
+                                    setNewDayTaskText('');
+                                  }}
+                                  className={`flex flex-col p-1.5 rounded-xl border transition-all duration-150 relative group cursor-pointer ${
+                                    isInactiveMonth ? 'opacity-45' : ''
+                                  } ${
+                                    isDragOver 
+                                      ? 'bg-indigo-50/40 dark:bg-indigo-950/30 ring-2 ring-indigo-500/30 border-indigo-400' 
+                                      : 'bg-white dark:bg-slate-900 hover:bg-slate-50/50 dark:hover:bg-slate-850/30 text-slate-850 dark:text-slate-100 border-slate-100 dark:border-slate-800'
+                                  }`}
+                                >
+                                  {/* Day Number Header inside Cell */}
+                                  <div className="flex justify-between items-center mb-1.5 shrink-0 select-none">
+                                    {slot.isToday ? (
+                                      <div className="w-5.5 h-5.5 md:w-6.5 md:h-6.5 rounded-full bg-indigo-600 dark:bg-indigo-505 text-white flex items-center justify-center font-extrabold text-[10px] md:text-[11px] shadow-xs">
+                                        {slot.dayNumber}
+                                      </div>
+                                    ) : (
+                                      <span className={`text-[10px] md:text-[11px] font-extrabold font-mono ${
+                                        isInactiveMonth 
+                                          ? 'text-slate-300 dark:text-slate-600' 
+                                          : 'text-slate-700 dark:text-slate-350'
+                                      }`}>
+                                        {slot.dayNumber}
+                                      </span>
+                                    )}
+                                    
+                                    {/* Plus Button inside Cell Header (shows on hover) */}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveDayAddInput(activeDayAddInput === slot.dateString ? null : slot.dateString);
+                                        setNewDayTaskText('');
+                                      }}
+                                      className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-slate-100 dark:hover:bg-slate-805/50 text-slate-400 hover:text-indigo-650 dark:text-slate-500 dark:hover:text-indigo-400 rounded transition-all cursor-pointer animate-fade-in"
+                                      title="Создать задачу"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                  </div>
+
+                                  {/* Column stack of task pills */}
+                                  <div className="flex-1 flex flex-col gap-0.5 overflow-y-auto max-h-[140px] custom-scrollbar">
+                                    {visibleTasks.map(task => {
+                                      const pillClass = getPillStyles(task);
+                                      const iconPrefix = getTaskIcon(task);
+                                      return (
+                                        <div
+                                          key={task.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onSelectNode(task.id);
+                                          }}
+                                          draggable={true}
+                                          onDragStart={(e) => {
+                                            e.stopPropagation();
+                                            e.dataTransfer.setData('text/plain', task.id);
+                                            setDraggingTaskId(task.id);
+                                          }}
+                                          onDragEnd={(e) => {
+                                            e.stopPropagation();
+                                            setDraggingTaskId(null);
+                                          }}
+                                          className={`text-[9px] md:text-[10px] py-0.5 md:py-1 px-1 md:px-1.5 rounded-md flex flex-col justify-center border-l-2 md:border-l-4 transition-all hover:scale-[1.015] active:scale-98 cursor-grab active:cursor-grabbing select-none relative pointer-events-auto ${pillClass} ${
+                                            draggingTaskId === task.id ? 'opacity-35 border-dashed border-indigo-400' : ''
+                                          }`}
+                                          title={task.text}
+                                        >
+                                          <div className="flex items-center gap-0.5 min-w-0">
+                                            {iconPrefix && (
+                                              <span className="shrink-0 text-[10px]">{iconPrefix}</span>
+                                            )}
+                                            <span className={`truncate font-bold tracking-tight flex items-center gap-0.5 ${task.completed ? 'line-through opacity-55 text-slate-455 dark:text-slate-550' : ''}`}>
+                                              {task.text}
+                                              {activePomodoroNodeId === task.id && (
+                                                <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
+                                              )}
+                                            </span>
+                                          </div>
+                                          {(task.startTime || task.dueTime) && (
+                                            <span className="text-[8px] opacity-75 font-mono font-bold mt-0.5">
+                                              {task.startTime || task.dueTime}
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+
+                                    {/* Hidden count badge */}
+                                    {hiddenCount > 0 && (
+                                      <div 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onSelectNode(dayTasks[maxVisible].id);
+                                        }}
+                                        className="text-[8px] md:text-[9px] font-extrabold text-slate-500 dark:text-slate-450 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800/85 py-0.5 rounded-lg text-center cursor-pointer select-none pointer-events-auto"
+                                      >
+                                        +{hiddenCount}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Inline add task input overlay */}
+                                  {activeDayAddInput === slot.dateString && (
+                                    <div 
+                                      className="absolute inset-0 z-[30] p-1.5 bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-indigo-200 dark:border-indigo-900/50 flex flex-col justify-between"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <input
+                                        type="text"
+                                        autoFocus
+                                        placeholder="Название..."
+                                        value={newDayTaskText}
+                                        onChange={(e) => setNewDayTaskText(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          e.stopPropagation();
+                                          if (e.key === 'Enter') handleAddDayTaskSubmit(slot.dateString);
+                                          if (e.key === 'Escape') setActiveDayAddInput(null);
+                                        }}
+                                        className="w-full text-[10px] p-1 bg-slate-50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 rounded border border-slate-205 focus:outline-none focus:border-indigo-500 font-bold"
+                                      />
+                                      <div className="flex gap-1 mt-1 justify-end animate-fade-in">
+                                        <button
+                                          onClick={() => setActiveDayAddInput(null)}
+                                          className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[8px] font-bold text-slate-655 dark:text-slate-300 cursor-pointer"
+                                        >
+                                          Отмена
+                                        </button>
+                                        <button
+                                          onClick={() => handleAddDayTaskSubmit(slot.dateString)}
+                                          className="bg-indigo-650 hover:bg-indigo-700 text-white px-2 py-0.5 rounded text-[8px] font-bold cursor-pointer"
+                                        >
+                                          Да
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          
+                          {/* Elegant week divider */}
+                          {weekIdx < 5 && (
+                            <div className="border-b border-slate-150/55 dark:border-slate-800/20 my-1 mx-1 shrink-0" />
+                          )}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+
+                  {/* Floating Action Button (FAB) at the bottom right */}
+                  <button
+                    onClick={() => {
+                      const todayStr = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}-${String(realToday.getDate()).padStart(2, '0')}`;
+                      setActiveDayAddInput(todayStr);
+                      setNewDayTaskText('');
+                    }}
+                    className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 hover:scale-105 active:scale-95 text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-indigo-500/20 transition-all cursor-pointer z-[40]"
+                    title="Добавить задачу на сегодня"
+                  >
+                    <Plus className="w-7 h-7" />
+                  </button>
                 </div>
+              )}
 
-                {/* Modern open week-by-week calendar list */}
-                <div id="calendar-month-scroll-container" className="flex-1 overflow-y-auto max-h-full pr-1 custom-scrollbar space-y-1 pb-2 flex flex-col md:h-full md:min-h-0">
-                  {(() => {
-                    const weeks: typeof calendarSlots[] = [];
-                    for (let i = 0; i < 6; i++) {
-                      weeks.push(calendarSlots.slice(i * 7, (i + 1) * 7));
-                    }
-                    return weeks.map((week, weekIdx) => (
-                      <div key={weekIdx} className="flex-1 flex flex-col min-h-[90px] md:min-h-[145px] space-y-1">
-                        {/* Combined Grid representing the 7 days of this week */}
-                        <div className="flex-1 grid grid-cols-7 gap-1.5 md:gap-2.5 px-0.5">
-                          {week.map((slot, sIdx) => {
-                            const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
-                            const isInactiveMonth = slot.monthOffset !== 0;
-                            const isDragOver = draggedOverDate === slot.dateString;
-                            const maxVisible = 4;
-                            const visibleTasks = dayTasks.slice(0, maxVisible);
-                            const hiddenCount = dayTasks.length - maxVisible;
+              {/* 2. Weekly Layout Mode */}
+              {calendarSubMode === 'week' && (
+                <div id="calendar-week-scroll-container" className="flex-1 grid grid-cols-7 gap-3 h-full overflow-y-auto pr-1 custom-scrollbar">
+                  {weeklySlots.map((slot) => {
+                    const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
+                    const isDragOver = draggedOverDate === slot.dateString;
 
-                            return (
-                              <div
-                                key={`${slot.dateString}-${sIdx}`}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDragEnter={() => setDraggedOverDate(slot.dateString)}
-                                onDragLeave={() => {
-                                  if (draggedOverDate === slot.dateString) {
-                                    setDraggedOverDate(null);
-                                  }
+                    return (
+                      <div
+                        key={slot.dateString}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDragEnter={() => setDraggedOverDate(slot.dateString)}
+                        onDragLeave={() => {
+                          if (draggedOverDate === slot.dateString) {
+                            setDraggedOverDate(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          const taskId = e.dataTransfer.getData('text/plain');
+                          handleTaskDrop(taskId, slot.dateString);
+                        }}
+                        onClick={() => {
+                          setActiveDayAddInput(slot.dateString);
+                          setNewDayTaskText('');
+                        }}
+                        className={`min-h-[440px] border rounded-2xl p-3 flex flex-col justify-start transition-all duration-200 group relative bg-white dark:bg-slate-900 cursor-pointer ${
+                          slot.isToday 
+                            ? 'border-indigo-400 ring-2 ring-indigo-500/10' 
+                            : 'border-slate-150 dark:border-slate-800'
+                        } ${
+                          isDragOver ? 'ring-2 ring-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/20 border-indigo-505 scale-[1.01]' : ''
+                        }`}
+                      >
+                        {/* Day Header */}
+                        <div className="flex items-center justify-between mb-3 shrink-0 select-none pb-2 border-b border-slate-100 dark:border-slate-800">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-505 tracking-wider">
+                              {slot.dayName}
+                            </span>
+                            <span className={`text-base font-extrabold ${
+                              slot.isToday ? 'text-indigo-650 dark:text-indigo-400' : 'text-slate-705 dark:text-slate-205'
+                            }`}>
+                              {slot.dayNumber}
+                            </span>
+                          </div>
+
+                          {/* Inline plus button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveDayAddInput(activeDayAddInput === slot.dateString ? null : slot.dateString);
+                              setNewDayTaskText('');
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded-md transition-all cursor-pointer"
+                            title="Создать задачу"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Day Tasks List */}
+                        <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
+                          {dayTasks.map(task => (
+                            <div
+                              key={task.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectNode(task.id);
+                              }}
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.setData('text/plain', task.id);
+                                setDraggingTaskId(task.id);
+                              }}
+                              onDragEnd={(e) => {
+                                e.stopPropagation();
+                                setDraggingTaskId(null);
+                              }}
+                              className={`group/task border text-[11px] leading-snug p-2 rounded-xl flex items-start gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative ${getPriorityColor(task.priority)} ${
+                                draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-350' : ''
+                              }`}
+                            >
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onUpdateNode({
+                                    ...task,
+                                    completed: !task.completed
+                                  });
                                 }}
-                                onDrop={(e) => {
-                                  const taskId = e.dataTransfer.getData('text/plain');
-                                  handleTaskDrop(taskId, slot.dateString);
-                                }}
-                                onClick={() => {
-                                  setActiveDayAddInput(slot.dateString);
-                                  setNewDayTaskText('');
-                                }}
-                                className={`flex flex-col p-1.5 rounded-xl border transition-all duration-150 relative group cursor-pointer ${
-                                  isInactiveMonth ? 'opacity-45' : ''
-                                } ${
-                                  isDragOver 
-                                    ? 'bg-indigo-50/40 dark:bg-indigo-950/30 ring-2 ring-indigo-500/30 border-indigo-400' 
-                                    : 'bg-white dark:bg-slate-900 hover:bg-slate-50/50 dark:hover:bg-slate-850/30 text-slate-850 dark:text-slate-100 border-slate-100 dark:border-slate-800'
+                                className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform duration-100 shrink-0 ${
+                                  task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
                                 }`}
                               >
-                                {/* Day Number Header inside Cell */}
-                                <div className="flex justify-between items-center mb-1.5 shrink-0 select-none">
-                                  {slot.isToday ? (
-                                    <div className="w-5.5 h-5.5 md:w-6.5 md:h-6.5 rounded-full bg-indigo-600 dark:bg-indigo-505 text-white flex items-center justify-center font-extrabold text-[10px] md:text-[11px] shadow-xs">
-                                      {slot.dayNumber}
-                                    </div>
-                                  ) : (
-                                    <span className={`text-[10px] md:text-[11px] font-extrabold font-mono ${
-                                      isInactiveMonth 
-                                        ? 'text-slate-300 dark:text-slate-600' 
-                                        : 'text-slate-700 dark:text-slate-350'
-                                    }`}>
-                                      {slot.dayNumber}
-                                    </span>
-                                  )}
-                                  
-                                  {/* Plus Button inside Cell Header (shows on hover) */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setActiveDayAddInput(activeDayAddInput === slot.dateString ? null : slot.dateString);
-                                      setNewDayTaskText('');
-                                    }}
-                                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-slate-100 dark:hover:bg-slate-805/50 text-slate-400 hover:text-indigo-600 dark:text-slate-500 dark:hover:text-indigo-400 rounded transition-all cursor-pointer animate-fade-in"
-                                    title="Создать задачу"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                  </button>
-                                </div>
+                                {task.completed ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                ) : activePomodoroNodeId === task.id ? (
+                                  <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                                    <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                  </span>
+                                ) : (
+                                  <Circle className="w-3.5 h-3.5 shrink-0" />
+                                )}
+                              </button>
+                              <div className="flex-1 flex flex-col min-w-0">
+                                <span className={`truncate font-semibold ${task.completed ? 'line-through opacity-55' : 'text-slate-850 dark:text-slate-100'}`}>
+                                  {task.text}
+                                </span>
+                                {(task.startTime || task.dueTime) && (
+                                  <div className="flex items-center gap-1 text-[9px] text-indigo-650 dark:text-indigo-400 mt-0.5 font-bold font-mono">
+                                    <span>🕒 {formatTaskTime(task)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
 
-                                {/* Column stack of task pills */}
-                                <div className="flex-1 flex flex-col gap-0.5 overflow-y-auto max-h-[140px] custom-scrollbar">
-                                  {visibleTasks.map(task => {
-                                    const pillClass = getPillStyles(task);
-                                    const iconPrefix = getTaskIcon(task);
-                                    return (
+                          {/* Inline custom task input */}
+                          {activeDayAddInput === slot.dateString && (
+                            <div 
+                              className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/50"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="text"
+                                autoFocus
+                                placeholder="Новая задача..."
+                                value={newDayTaskText}
+                                onChange={(e) => setNewDayTaskText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation();
+                                  if (e.key === 'Enter') handleAddDayTaskSubmit(slot.dateString);
+                                  if (e.key === 'Escape') setActiveDayAddInput(null);
+                                }}
+                                className="w-full text-xs p-1.5 bg-white dark:bg-slate-900 text-slate-850 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500"
+                              />
+                              <div className="flex gap-1 mt-1.5 justify-end">
+                                <button
+                                  onClick={() => setActiveDayAddInput(null)}
+                                  className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 px-2 py-0.5 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+                                >
+                                  Отмена
+                                </button>
+                                <button
+                                  onClick={() => handleAddDayTaskSubmit(slot.dateString)}
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer"
+                                >
+                                  Да
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 3. Daily Hourly Layout Mode */}
+              {calendarSubMode === 'day' && (
+                <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-805 p-4 shadow-xs font-sans">
+                  {/* All day tasks card - Click to add */}
+                  <div 
+                    onClick={() => {
+                      setActiveDayAddInput(currentDateStr);
+                      setNewDayTaskText('');
+                    }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
+                    onDragLeave={() => {
+                      if (draggedOverDate === `allday-${currentDateStr}`) {
+                        setDraggedOverDate(null);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.stopPropagation();
+                      const taskId = e.dataTransfer.getData('text/plain');
+                      if (taskId) {
+                        handleTaskDropToHour(taskId, currentDateStr, null);
+                      }
+                    }}
+                    className={`mb-4 p-4 rounded-2xl border transition-all group/allday cursor-pointer ${
+                      draggedOverDate === `allday-${currentDateStr}`
+                        ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20'
+                        : 'border-slate-100 dark:border-slate-800 bg-slate-50/45 dark:bg-slate-950/20 hover:border-indigo-300 dark:hover:border-indigo-900 hover:bg-indigo-50/5 dark:hover:bg-indigo-950/5'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-slate-550 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                        <span>📌</span> Задача на весь день
+                      </span>
+                      <span className="text-[11px] text-slate-400 group-hover/allday:text-indigo-650 dark:group-hover/allday:text-indigo-400 font-bold transition-all">
+                        Кликните, чтобы добавить
+                      </span>
+                    </div>
+
+                    {/* Inline list of all-day tasks */}
+                    {(() => {
+                      const allDayTasks = scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.dueTime);
+                      if (allDayTasks.length > 0) {
+                        return (
+                          <div className="flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
+                            {allDayTasks.map(task => (
+                              <div
+                                key={task.id}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectNode(task.id);
+                                }}
+                                draggable={true}
+                                onDragStart={(e) => {
+                                  e.stopPropagation();
+                                  e.dataTransfer.setData('text/plain', task.id);
+                                  setDraggingTaskId(task.id);
+                                }}
+                                onDragEnd={(e) => {
+                                  e.stopPropagation();
+                                  setDraggingTaskId(null);
+                                }}
+                                className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative cursor-grab active:cursor-grabbing ${getPriorityColor(task.priority)} ${
+                                  draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
+                                }`}
+                              >
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onUpdateNode({
+                                      ...task,
+                                      completed: !task.completed
+                                    });
+                                  }}
+                                  className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0 ${
+                                    task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
+                                  }`}
+                                >
+                                  {task.completed ? (
+                                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                  ) : activePomodoroNodeId === task.id ? (
+                                    <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                                      <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                                      <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                    </span>
+                                  ) : (
+                                    <Circle className="w-3.5 h-3.5 shrink-0" />
+                                  )}
+                                </button>
+                                <span className={`font-semibold truncate max-w-[150px] ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-205'}`}>
+                                  {task.text}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Inline add for All Day tasks */}
+                    {activeDayAddInput === currentDateStr && (
+                      <div 
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-2.5 max-w-sm p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md"
+                      >
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="Какую задачу запланировать на этот день?"
+                          value={newDayTaskText}
+                          onChange={(e) => setNewDayTaskText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr);
+                            if (e.key === 'Escape') setActiveDayAddInput(null);
+                          }}
+                          className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500 font-medium"
+                        />
+                        <div className="flex gap-1.5 mt-2 justify-end">
+                          <button
+                            onClick={() => setActiveDayAddInput(null)}
+                            className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-705 px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
+                          >
+                            Отмена
+                          </button>
+                          <button
+                            onClick={() => handleAddDayTaskSubmit(currentDateStr)}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
+                          >
+                            Добавить
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Scrollable Hourly Timeline list */}
+                  <div id="calendar-day-scroll-container" className="flex-1 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar animate-fade-in">
+                    {HOURS.map((hour) => {
+                      const isDragOver = draggedOverDate === `hour-${hour}`;
+
+                      return (
+                        <div 
+                          key={hour}
+                          onClick={() => {
+                            setActiveHourAddInput(hour);
+                            setNewHourTaskText('');
+                          }}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDragEnter={() => setDraggedOverDate(`hour-${hour}`)}
+                          onDragLeave={() => {
+                            if (draggedOverDate === `hour-${hour}`) {
+                              setDraggedOverDate(null);
+                            }
+                          }}
+                          onDrop={(e) => {
+                            const taskId = e.dataTransfer.getData('text/plain');
+                            if (taskId) {
+                              handleTaskDropToHour(taskId, currentDateStr, hour);
+                            }
+                          }}
+                          className={`flex items-stretch border-b border-dashed border-slate-100 dark:border-slate-800 min-h-[58px] transition-all duration-150 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-850/20 group/row ${
+                            isDragOver ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''
+                          }`}
+                        >
+                          {/* Hour column */}
+                          <div className="w-16 flex items-center justify-center shrink-0 border-r border-slate-100 dark:border-slate-800 pr-3 text-right">
+                            <span className="font-mono text-xs font-bold text-slate-400 dark:text-slate-505">
+                              {hour}
+                            </span>
+                          </div>
+
+                          {/* Content area */}
+                          <div className="flex-1 flex flex-wrap gap-2 items-center px-4 py-1.5 relative">
+                            {/* Render hour tasks or inline box */}
+                            {(() => {
+                              const hourTasks = scheduledTasks.filter(task => task.dueDate === currentDateStr && (task.dueTime === hour || task.startTime === hour));
+                              if (hourTasks.length > 0) {
+                                return (
+                                  <div className="flex flex-wrap gap-2 items-center flex-1" onClick={(e) => e.stopPropagation()}>
+                                    {hourTasks.map(task => (
                                       <div
                                         key={task.id}
                                         onClick={(e) => {
@@ -623,709 +1099,263 @@ export default function CalendarView({
                                           e.stopPropagation();
                                           setDraggingTaskId(null);
                                         }}
-                                        className={`text-[9px] md:text-[10px] py-0.5 md:py-1 px-1 md:px-1.5 rounded-md flex flex-col justify-center border-l-2 md:border-l-4 transition-all hover:scale-[1.015] active:scale-98 cursor-grab active:cursor-grabbing select-none relative pointer-events-auto ${pillClass} ${
-                                          draggingTaskId === task.id ? 'opacity-35 border-dashed border-indigo-400' : ''
+                                        className={`group/task border text-[11px] leading-snug py-1 px-2.5 rounded-xl flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative shadow-xs shrink-0 max-w-[240px] ${getPriorityColor(task.priority)} ${
+                                          draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
                                         }`}
-                                        title={task.text}
                                       >
-                                        <div className="flex items-center gap-0.5 min-w-0">
-                                          {iconPrefix && (
-                                            <span className="shrink-0 text-[10px]">{iconPrefix}</span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onUpdateNode({
+                                              ...task,
+                                              completed: !task.completed
+                                            });
+                                          }}
+                                          className="text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0"
+                                        >
+                                          {task.completed ? (
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                          ) : activePomodoroNodeId === task.id ? (
+                                            <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                                              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                                              <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                            </span>
+                                          ) : (
+                                            <Circle className="w-3.5 h-3.5 shrink-0" />
                                           )}
-                                          <span className={`truncate font-bold tracking-tight flex items-center gap-0.5 ${task.completed ? 'line-through opacity-55 text-slate-455 dark:text-slate-550' : ''}`}>
-                                            {task.text}
-                                            {activePomodoroNodeId === task.id && (
-                                              <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
-                                            )}
-                                          </span>
-                                        </div>
-                                        {(task.startTime || task.dueTime) && (
-                                          <span className="text-[8px] opacity-75 font-mono font-bold mt-0.5">
-                                            {task.startTime || task.dueTime}
-                                          </span>
-                                        )}
+                                        </button>
+                                        <span className={`font-semibold truncate flex-1 ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-100'}`}>
+                                          {task.text}
+                                        </span>
+                                        {/* Quick cross to remove hour */}
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onUpdateNode({
+                                              ...task,
+                                              dueTime: undefined,
+                                              startTime: undefined
+                                            });
+                                          }}
+                                          className="opacity-0 group-hover/task:opacity-100 ml-1 hover:text-rose-500 text-[10px] font-bold bg-slate-100/40 dark:bg-slate-800/20 px-1 rounded cursor-pointer"
+                                          title="Убрать время"
+                                        >
+                                          ✕
+                                        </button>
                                       </div>
-                                    );
-                                  })}
-
-                                  {/* Hidden count badge */}
-                                  {hiddenCount > 0 && (
-                                    <div 
+                                    ))}
+                                    {/* Plus icon to add another task */}
+                                    <button
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        onSelectNode(dayTasks[maxVisible].id);
+                                        setActiveHourAddInput(hour);
+                                        setNewHourTaskText('');
                                       }}
-                                      className="text-[8px] md:text-[9px] font-extrabold text-slate-500 dark:text-slate-450 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800/85 py-0.5 rounded-lg text-center cursor-pointer select-none pointer-events-auto"
+                                      className="p-1 hover:bg-slate-100 dark:hover:bg-slate-850 text-slate-450 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer"
+                                      title="Добавить еще задачу"
                                     >
-                                      +{hiddenCount}
-                                    </div>
-                                  )}
-                                </div>
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                );
+                              }
 
-                                {/* Inline add task input overlay */}
-                                {activeDayAddInput === slot.dateString && (
+                              if (activeHourAddInput === hour) {
+                                return (
                                   <div 
-                                    className="absolute inset-0 z-[30] p-1.5 bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-indigo-200 dark:border-indigo-900/50 flex flex-col justify-between"
                                     onClick={(e) => e.stopPropagation()}
+                                    className="p-1 px-2.5 bg-slate-50 dark:bg-slate-805 rounded-xl border border-indigo-200 dark:border-indigo-900/45 flex items-center gap-2 max-w-sm flex-1"
                                   >
                                     <input
                                       type="text"
                                       autoFocus
-                                      placeholder="Название..."
-                                      value={newDayTaskText}
-                                      onChange={(e) => setNewDayTaskText(e.target.value)}
+                                      placeholder={`Задача на ${hour}...`}
+                                      value={newHourTaskText}
+                                      onChange={(e) => setNewHourTaskText(e.target.value)}
                                       onKeyDown={(e) => {
-                                        e.stopPropagation();
-                                        if (e.key === 'Enter') handleAddDayTaskSubmit(slot.dateString);
-                                        if (e.key === 'Escape') setActiveDayAddInput(null);
+                                        if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr, hour);
+                                        if (e.key === 'Escape') setActiveHourAddInput(null);
                                       }}
-                                      className="w-full text-[10px] p-1 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded border border-slate-205 focus:outline-none focus:border-indigo-500 font-bold"
+                                      className="flex-1 text-xs px-2 py-0.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-505 font-medium"
                                     />
-                                    <div className="flex gap-1 mt-1 justify-end animate-fade-in">
-                                      <button
-                                        onClick={() => setActiveDayAddInput(null)}
-                                        className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[8px] font-bold text-slate-655 dark:text-slate-300 cursor-pointer"
-                                      >
-                                        Отмена
-                                      </button>
-                                      <button
-                                        onClick={() => handleAddDayTaskSubmit(slot.dateString)}
-                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded text-[8px] font-bold cursor-pointer"
-                                      >
-                                        Да
-                                      </button>
-                                    </div>
+                                    <button
+                                      onClick={() => handleAddDayTaskSubmit(currentDateStr, hour)}
+                                      className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-2 py-0.5 text-[10px] font-bold cursor-pointer"
+                                    >
+                                      Ок
+                                    </button>
+                                    <button
+                                      onClick={() => setActiveHourAddInput(null)}
+                                      className="text-slate-455 hover:text-slate-600 text-[10px]"
+                                    >
+                                      Отмена
+                                    </button>
                                   </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                        
-                        {/* Elegant week divider */}
-                        {weekIdx < 5 && (
-                          <div className="border-b border-slate-150/55 dark:border-slate-800/20 my-1 mx-1 shrink-0" />
-                        )}
-                      </div>
-                    ));
-                  })()}
-                </div>
+                                );
+                              }
 
-                {/* Floating Action Button (FAB) at the bottom right */}
-                <button
-                  onClick={() => {
-                    const todayStr = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}-${String(realToday.getDate()).padStart(2, '0')}`;
-                    setActiveDayAddInput(todayStr);
-                    setNewDayTaskText('');
-                  }}
-                  className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 hover:scale-105 active:scale-95 text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-indigo-500/20 transition-all cursor-pointer z-[40]"
-                  title="Добавить задачу на сегодня"
-                >
-                  <Plus className="w-7 h-7" />
-                </button>
-              </div>
-            )}
-
-            {/* 2. Weekly Layout Mode */}
-            {calendarSubMode === 'week' && (
-              <div id="calendar-week-scroll-container" className="flex-1 grid grid-cols-7 gap-3 h-full overflow-y-auto pr-1 custom-scrollbar">
-                {weeklySlots.map((slot) => {
-                  const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
-                  const isDragOver = draggedOverDate === slot.dateString;
-
-                  return (
-                    <div
-                      key={slot.dateString}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDragEnter={() => setDraggedOverDate(slot.dateString)}
-                      onDragLeave={() => {
-                        if (draggedOverDate === slot.dateString) {
-                          setDraggedOverDate(null);
-                        }
-                      }}
-                      onDrop={(e) => {
-                        const taskId = e.dataTransfer.getData('text/plain');
-                        handleTaskDrop(taskId, slot.dateString);
-                      }}
-                      onClick={() => {
-                        setActiveDayAddInput(slot.dateString);
-                        setNewDayTaskText('');
-                      }}
-                      className={`min-h-[440px] border rounded-2xl p-3 flex flex-col justify-start transition-all duration-200 group relative bg-white dark:bg-slate-900 cursor-pointer ${
-                        slot.isToday 
-                          ? 'border-indigo-400 ring-2 ring-indigo-500/10' 
-                          : 'border-slate-150 dark:border-slate-800'
-                      } ${
-                        isDragOver ? 'ring-2 ring-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/20 border-indigo-500 scale-[1.01]' : ''
-                      }`}
-                    >
-                      {/* Day Header */}
-                      <div className="flex items-center justify-between mb-3 shrink-0 select-none pb-2 border-b border-slate-100 dark:border-slate-800">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-505 tracking-wider">
-                            {slot.dayName}
-                          </span>
-                          <span className={`text-base font-extrabold ${
-                            slot.isToday ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-205'
-                          }`}>
-                            {slot.dayNumber}
-                          </span>
-                        </div>
-
-                        {/* Inline plus button */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveDayAddInput(activeDayAddInput === slot.dateString ? null : slot.dateString);
-                            setNewDayTaskText('');
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded-md transition-all cursor-pointer"
-                          title="Создать задачу"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      {/* Day Tasks List */}
-                      <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
-                        {dayTasks.map(task => (
-                          <div
-                            key={task.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectNode(task.id);
-                            }}
-                            draggable={true}
-                            onDragStart={(e) => {
-                              e.stopPropagation();
-                              e.dataTransfer.setData('text/plain', task.id);
-                              setDraggingTaskId(task.id);
-                            }}
-                            onDragEnd={(e) => {
-                              e.stopPropagation();
-                              setDraggingTaskId(null);
-                            }}
-                            className={`group/task border text-[11px] leading-snug p-2 rounded-xl flex items-start gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative ${getPriorityColor(task.priority)} ${
-                              draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                            }`}
-                          >
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateNode({
-                                  ...task,
-                                  completed: !task.completed
-                                });
-                              }}
-                              className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform duration-100 shrink-0 ${
-                                task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
-                              }`}
-                            >
-                              {task.completed ? (
-                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                              ) : activePomodoroNodeId === task.id ? (
-                                <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                                  <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                                  <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                                </span>
-                              ) : (
-                                <Circle className="w-3.5 h-3.5 shrink-0" />
-                              )}
-                            </button>
-                            <div className="flex-1 flex flex-col min-w-0">
-                              <span className={`truncate font-semibold ${task.completed ? 'line-through opacity-55' : 'text-slate-850 dark:text-slate-100'}`}>
-                                {task.text}
-                              </span>
-                              {(task.startTime || task.dueTime) && (
-                                <div className="flex items-center gap-1 text-[9px] text-indigo-600 dark:text-indigo-400 mt-0.5 font-bold font-mono">
-                                  <span>🕒 {formatTaskTime(task)}</span>
+                              return (
+                                <div className="text-[11px] text-slate-300 dark:text-slate-700 italic group-hover/row:text-indigo-450 transition-colors">
+                                  Кликните, чтобы добавить задачу на {hour}
                                 </div>
-                              )}
-                            </div>
+                              );
+                            })()}
                           </div>
-                        ))}
-
-                        {/* Inline custom task input */}
-                        {activeDayAddInput === slot.dateString && (
-                          <div 
-                            className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/50"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <input
-                              type="text"
-                              autoFocus
-                              placeholder="Новая задача..."
-                              value={newDayTaskText}
-                              onChange={(e) => setNewDayTaskText(e.target.value)}
-                              onKeyDown={(e) => {
-                                e.stopPropagation();
-                                if (e.key === 'Enter') handleAddDayTaskSubmit(slot.dateString);
-                                if (e.key === 'Escape') setActiveDayAddInput(null);
-                              }}
-                              className="w-full text-xs p-1.5 bg-white dark:bg-slate-900 text-slate-850 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500"
-                            />
-                            <div className="flex gap-1 mt-1.5 justify-end">
-                              <button
-                                onClick={() => setActiveDayAddInput(null)}
-                                className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 px-2 py-0.5 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
-                              >
-                                Отмена
-                              </button>
-                              <button
-                                onClick={() => handleAddDayTaskSubmit(slot.dateString)}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer"
-                              >
-                                Ок
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* 3. Daily Hourly Layout Mode */}
-            {calendarSubMode === 'day' && (
-              <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-800 p-4 shadow-xs font-sans">
-                {/* All day tasks card - Click to add */}
-                <div 
-                  onClick={() => {
-                    setActiveDayAddInput(currentDateStr);
-                    setNewDayTaskText('');
-                  }}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
-                  onDragLeave={() => {
-                    if (draggedOverDate === `allday-${currentDateStr}`) {
-                      setDraggedOverDate(null);
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.stopPropagation();
-                    const taskId = e.dataTransfer.getData('text/plain');
-                    if (taskId) {
-                      handleTaskDropToHour(taskId, currentDateStr, null);
-                    }
-                  }}
-                  className={`mb-4 p-4 rounded-2xl border transition-all group/allday cursor-pointer ${
-                    draggedOverDate === `allday-${currentDateStr}`
-                      ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20'
-                      : 'border-slate-100 dark:border-slate-800 bg-slate-50/45 dark:bg-slate-950/20 hover:border-indigo-300 dark:hover:border-indigo-900 hover:bg-indigo-50/5 dark:hover:bg-indigo-950/5'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-slate-550 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                      <span>📌</span> Задача на весь день
-                    </span>
-                    <span className="text-[11px] text-slate-400 group-hover/allday:text-indigo-600 dark:group-hover/allday:text-indigo-400 font-bold transition-all">
-                      Кликните, чтобы добавить
-                    </span>
-                  </div>
-
-                  {/* Inline list of all-day tasks */}
-                  {(() => {
-                    const allDayTasks = scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.dueTime);
-                    if (allDayTasks.length > 0) {
-                      return (
-                        <div className="flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
-                          {allDayTasks.map(task => (
-                            <div
-                              key={task.id}
-                              onClick={(e) => {
-                                  e.stopPropagation();
-                                  onSelectNode(task.id);
-                              }}
-                              draggable={true}
-                              onDragStart={(e) => {
-                                e.stopPropagation();
-                                e.dataTransfer.setData('text/plain', task.id);
-                                setDraggingTaskId(task.id);
-                              }}
-                              onDragEnd={(e) => {
-                                e.stopPropagation();
-                                setDraggingTaskId(null);
-                              }}
-                              className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative cursor-grab active:cursor-grabbing ${getPriorityColor(task.priority)} ${
-                                draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                              }`}
-                            >
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onUpdateNode({
-                                    ...task,
-                                    completed: !task.completed
-                                  });
-                                }}
-                                className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0 ${
-                                  task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
-                                }`}
-                              >
-                                {task.completed ? (
-                                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                ) : activePomodoroNodeId === task.id ? (
-                                  <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                                    <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                                    <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                                  </span>
-                                ) : (
-                                  <Circle className="w-3.5 h-3.5 shrink-0" />
-                                )}
-                              </button>
-                              <span className={`font-semibold truncate max-w-[150px] ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-205'}`}>
-                                {task.text}
-                              </span>
-                            </div>
-                          ))}
                         </div>
                       );
-                    }
-                    return null;
-                  })()}
-
-                  {/* Inline add for All Day tasks */}
-                  {activeDayAddInput === currentDateStr && (
-                    <div 
-                      onClick={(e) => e.stopPropagation()}
-                      className="mt-2.5 max-w-sm p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md"
-                    >
-                      <input
-                        type="text"
-                        autoFocus
-                        placeholder="Какую задачу запланировать на этот день?"
-                        value={newDayTaskText}
-                        onChange={(e) => setNewDayTaskText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr);
-                          if (e.key === 'Escape') setActiveDayAddInput(null);
-                        }}
-                        className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500 font-medium"
-                      />
-                      <div className="flex gap-1.5 mt-2 justify-end">
-                        <button
-                          onClick={() => setActiveDayAddInput(null)}
-                          className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-705 px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
-                        >
-                          Отмена
-                        </button>
-                        <button
-                          onClick={() => handleAddDayTaskSubmit(currentDateStr)}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
-                        >
-                          Добавить
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                    })}
+                  </div>
                 </div>
+              )}
 
-                {/* Scrollable Hourly Timeline list */}
-                <div id="calendar-day-scroll-container" className="flex-1 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar animate-fade-in">
-                  {HOURS.map((hour) => {
-                    const isDragOver = draggedOverDate === `hour-${hour}`;
-
-                    return (
-                      <div 
-                        key={hour}
-                        onClick={() => {
-                          setActiveHourAddInput(hour);
-                          setNewHourTaskText('');
-                        }}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDragEnter={() => setDraggedOverDate(`hour-${hour}`)}
-                        onDragLeave={() => {
-                          if (draggedOverDate === `hour-${hour}`) {
-                            setDraggedOverDate(null);
-                          }
-                        }}
-                        onDrop={(e) => {
-                          const taskId = e.dataTransfer.getData('text/plain');
-                          if (taskId) {
-                            handleTaskDropToHour(taskId, currentDateStr, hour);
-                          }
-                        }}
-                        className={`flex items-stretch border-b border-dashed border-slate-100 dark:border-slate-800 min-h-[58px] transition-all duration-150 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-850/20 group/row ${
-                          isDragOver ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''
-                        }`}
-                      >
-                        {/* Hour column */}
-                        <div className="w-16 flex items-center justify-center shrink-0 border-r border-slate-100 dark:border-slate-800 pr-3 text-right">
-                          <span className="font-mono text-xs font-bold text-slate-400 dark:text-slate-505">
-                            {hour}
-                          </span>
-                        </div>
-
-                        {/* Content area */}
-                        <div className="flex-1 flex flex-wrap gap-2 items-center px-4 py-1.5 relative">
-                          {/* Render hour tasks or inline box */}
-                          {(() => {
-                            const hourTasks = scheduledTasks.filter(task => task.dueDate === currentDateStr && (task.dueTime === hour || task.startTime === hour));
-                            if (hourTasks.length > 0) {
-                              return (
-                                <div className="flex flex-wrap gap-2 items-center flex-1" onClick={(e) => e.stopPropagation()}>
-                                  {hourTasks.map(task => (
-                                    <div
-                                      key={task.id}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onSelectNode(task.id);
-                                      }}
-                                      draggable={true}
-                                      onDragStart={(e) => {
-                                        e.stopPropagation();
-                                        e.dataTransfer.setData('text/plain', task.id);
-                                        setDraggingTaskId(task.id);
-                                      }}
-                                      onDragEnd={(e) => {
-                                        e.stopPropagation();
-                                        setDraggingTaskId(null);
-                                      }}
-                                      className={`group/task border text-[11px] leading-snug py-1 px-2.5 rounded-xl flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative shadow-xs shrink-0 max-w-[240px] ${getPriorityColor(task.priority)} ${
-                                        draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                                      }`}
-                                    >
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          onUpdateNode({
-                                            ...task,
-                                            completed: !task.completed
-                                          });
-                                        }}
-                                        className="text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0"
-                                      >
-                                        {task.completed ? (
-                                          <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                        ) : activePomodoroNodeId === task.id ? (
-                                          <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                                            <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                                          </span>
-                                        ) : (
-                                          <Circle className="w-3.5 h-3.5 shrink-0" />
-                                        )}
-                                      </button>
-                                      <span className={`font-semibold truncate flex-1 ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-100'}`}>
-                                        {task.text}
-                                      </span>
-                                      {/* Quick cross to remove hour */}
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          onUpdateNode({
-                                            ...task,
-                                            dueTime: undefined,
-                                            startTime: undefined
-                                          });
-                                        }}
-                                        className="opacity-0 group-hover/task:opacity-100 ml-1 hover:text-rose-500 text-[10px] font-bold bg-slate-100/40 dark:bg-slate-800/20 px-1 rounded cursor-pointer"
-                                        title="Убрать время"
-                                      >
-                                        ✕
-                                      </button>
-                                    </div>
-                                  ))}
-                                  {/* Plus icon to add another task */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setActiveHourAddInput(hour);
-                                      setNewHourTaskText('');
-                                    }}
-                                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-450 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer"
-                                    title="Добавить еще задачу"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              );
-                            }
-
-                            if (activeHourAddInput === hour) {
-                              return (
-                                <div 
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="p-1 px-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/45 flex items-center gap-2 max-w-sm flex-1"
-                                >
-                                  <input
-                                    type="text"
-                                    autoFocus
-                                    placeholder={`Задача на ${hour}...`}
-                                    value={newHourTaskText}
-                                    onChange={(e) => setNewHourTaskText(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr, hour);
-                                      if (e.key === 'Escape') setActiveHourAddInput(null);
-                                    }}
-                                    className="flex-1 text-xs px-2 py-0.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500 font-medium"
-                                  />
-                                  <button
-                                    onClick={() => handleAddDayTaskSubmit(currentDateStr, hour)}
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-2 py-0.5 text-[10px] font-bold cursor-pointer"
-                                  >
-                                    Ок
-                                  </button>
-                                  <button
-                                    onClick={() => setActiveHourAddInput(null)}
-                                    className="text-slate-455 hover:text-slate-600 text-[10px]"
-                                  >
-                                    Отмена
-                                  </button>
-                                </div>
-                              );
-                            }
-
-                            return (
-                              <div className="text-[11px] text-slate-300 dark:text-slate-705 italic group-hover/row:text-indigo-400/80 transition-colors">
-                                Кликните, чтобы добавить задачу на {hour}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Unscheduled Right deck drawer sidebar */}
-      <div className={`w-full lg:w-80 bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 flex flex-col p-3 md:p-5 shrink-0 lg:h-full overflow-hidden transition-all duration-300 ${
-        isUnscheduledExpandedMobile ? 'h-[280px] lg:h-full' : 'h-[56px] lg:h-full'
-      }`}>
-        <div 
-          onClick={() => setIsUnscheduledExpandedMobile(!isUnscheduledExpandedMobile)}
-          className="flex items-center gap-2 mb-3 shrink-0 cursor-pointer lg:pointer-events-none select-none hover:bg-slate-50 dark:hover:bg-slate-800/40 lg:hover:bg-transparent p-1 px-2 lg:p-0 rounded-xl transition-colors"
-        >
-          <span className="text-sm shrink-0">📥</span>
-          <div className="min-w-0 flex-1">
-            <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 uppercase tracking-wider truncate">
-              Планирование (Без даты)
-            </h3>
-            <p className="text-[9px] text-slate-400 dark:text-slate-400 truncate">
-              {isUnscheduledExpandedMobile ? 'Нажмите, чтобы убрать список' : 'Нажмите, чтобы распределить по датам'}
-            </p>
-          </div>
-          <span className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-mono text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0">
-            {unscheduledTasks.length}
-          </span>
-          {/* Collapse/Expand indicator for mobile */}
-          <span className="text-slate-400 text-[10px] lg:hidden font-bold select-none px-1">
-            {isUnscheduledExpandedMobile ? '▼' : '▲'}
-          </span>
-        </div>
-
-        {/* Unscheduled List container */}
-        <div 
-          onDragOver={(e) => e.preventDefault()}
-          onDragEnter={() => setDraggedOverUnscheduled(true)}
-          onDragLeave={() => setDraggedOverUnscheduled(false)}
-          onDrop={(e) => {
-            const taskId = e.dataTransfer.getData('text/plain');
-            handleTaskDrop(taskId, null);
-          }}
-          className={`overflow-y-auto space-y-2 pr-1 custom-scrollbar transition-all duration-200 p-1 rounded-xl ${
-            isUnscheduledExpandedMobile ? 'flex-1 flex flex-col' : 'hidden lg:flex lg:flex-col lg:flex-1'
-          } ${
-            draggedOverUnscheduled 
-              ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20' 
-              : 'border border-transparent'
-          }`}
-        >
-          {unscheduledTasks.length === 0 ? (
-            <div className="py-12 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-center flex flex-col items-center justify-center p-4">
-              <span className="text-xl mb-1.5 text-slate-400">✨</span>
-              <p className="font-bold text-xs text-slate-600 dark:text-slate-350">Все даты назначены!</p>
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 max-w-[180px] mt-1 leading-snug">
-                Новые задачи без даты появятся здесь для быстрого контроля.
+        {/* Unscheduled Right deck drawer sidebar */}
+        <div className={`w-full lg:w-80 bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 flex flex-col p-3 md:p-5 shrink-0 lg:h-full overflow-hidden transition-all duration-300 ${
+          isUnscheduledExpandedMobile ? 'h-[280px] lg:h-full' : 'h-[56px] lg:h-full'
+        }`}>
+          <div 
+            onClick={() => setIsUnscheduledExpandedMobile(!isUnscheduledExpandedMobile)}
+            className="flex items-center gap-2 mb-3 shrink-0 cursor-pointer lg:pointer-events-none select-none hover:bg-slate-50 dark:hover:bg-slate-800/40 lg:hover:bg-transparent p-1 px-2 lg:p-0 rounded-xl transition-colors"
+          >
+            <span className="text-sm shrink-0"><span>📥</span></span>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 uppercase tracking-wider truncate">
+                Планирование (Без даты)
+              </h3>
+              <p className="text-[9px] text-slate-400 dark:text-slate-400 truncate">
+                {isUnscheduledExpandedMobile ? 'Нажмите, чтобы убрать список' : 'Нажмите, чтобы распределить по датам'}
               </p>
             </div>
-          ) : (
-            unscheduledTasks.map(task => (
-              <div
-                key={task.id}
-                onClick={() => onSelectNode(task.id)}
-                draggable={true}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/plain', task.id);
-                  setDraggingTaskId(task.id);
-                }}
-                onDragEnd={() => setDraggingTaskId(null)}
-                className={`group border border-slate-150 dark:border-slate-800/80 p-2.5 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-850 rounded-xl shadow-xs transition-all flex flex-col gap-2 cursor-grab active:cursor-grabbing hover:border-slate-300 dark:hover:border-slate-700 ${
-                  draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-400' : ''
-                }`}
-              >
-                <div className="flex items-start gap-1.5 justify-between">
-                  {/* Title */}
-                  <span className={`text-xs font-semibold text-slate-800 dark:text-slate-200 leading-tight flex-1 flex items-center flex-wrap gap-1 ${
-                    task.completed ? 'line-through opacity-55' : ''
-                  }`}>
-                    <span>{task.text}</span>
-                    {activePomodoroNodeId === task.id && (
-                      <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[9px] font-sans font-extrabold animate-pulse ml-0.5 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
-                        </span>
-                        <span>🍅</span>
-                      </span>
-                    )}
-                  </span>
-                  
-                  {/* Delete button wrapper */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteNode(task.id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 p-0.5 rounded transition-colors cursor-pointer"
-                    title="Удалить"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+            <span className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-mono text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0">
+              {unscheduledTasks.length}
+            </span>
+            {/* Collapse/Expand indicator for mobile */}
+            <span className="text-slate-400 text-[10px] lg:hidden font-bold select-none px-1">
+              {isUnscheduledExpandedMobile ? '▼' : '▲'}
+            </span>
+          </div>
 
-                {/* Quick Date setup picker */}
-                <div className="flex items-center gap-1.5 mt-0.5" onClick={(e) => e.stopPropagation()}>
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  <input
-                    type="date"
-                    value={task.dueDate || ''}
-                    title="Назначить срок"
-                    onChange={(e) => {
-                      onUpdateNode({
-                        ...task,
-                        dueDate: e.target.value
-                      });
-                    }}
-                    className="flex-1 text-[10px] bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded-lg focus:outline-none"
-                  />
-                  
-                  <button
-                    onClick={() => {
-                      const todayStr = new Date().toISOString().split('T')[0];
-                      onUpdateNode({
-                        ...task,
-                        dueDate: todayStr
-                      });
-                    }}
-                    title="Назначить на сегодня"
-                    className="p-1 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-600 hover:text-white rounded-lg text-indigo-600 dark:text-indigo-400 transition-colors text-[9px] font-extrabold flex items-center gap-0.5 cursor-pointer shrink-0"
-                  >
-                    Сегодня <ArrowRight className="w-2.5 h-2.5" />
-                  </button>
-                </div>
+          {/* Quick search input inside unscheduled sidebar of calendar */}
+          <div className="relative mb-3.5 shrink-0 animate-fade-in">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Поиск по архивам"
+              value={sidebarSearchQuery}
+              onChange={(e) => setSidebarSearchQuery(e.target.value)}
+              className="w-full text-[11px] font-semibold bg-slate-50 hover:bg-slate-100/70 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-205 pl-9 pr-3 py-2 rounded-xl border border-slate-200/65 dark:border-slate-800/80 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+            />
+          </div>
+
+          {/* Unscheduled List container */}
+          <div 
+            onDragOver={(e) => e.preventDefault()}
+            onDragEnter={() => setDraggedOverUnscheduled(true)}
+            onDragLeave={() => setDraggedOverUnscheduled(false)}
+            onDrop={(e) => {
+              const taskId = e.dataTransfer.getData('text/plain');
+              handleTaskDrop(taskId, null);
+            }}
+            className={`overflow-y-auto space-y-2 pr-1 custom-scrollbar transition-all duration-200 p-1 rounded-xl ${
+              isUnscheduledExpandedMobile ? 'flex-1 flex flex-col animate-fade-in' : 'hidden lg:flex lg:flex-col lg:flex-1 lg:animate-none'
+            } ${
+              draggedOverUnscheduled 
+                ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20' 
+                : 'border border-transparent'
+            }`}
+          >
+            {unscheduledTasks.length === 0 ? (
+              <div className="py-12 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-center flex flex-col items-center justify-center p-4">
+                <span className="text-xl mb-1.5 text-slate-400">✨</span>
+                <p className="font-bold text-xs text-slate-600 dark:text-slate-350">Все даты назначены!</p>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 max-w-[180px] mt-1 leading-snug">
+                  Новые задачи без даты появятся здесь для быстрого контроля.
+                </p>
               </div>
-            ))
-          )}
+            ) : (
+              unscheduledTasks.map(task => (
+                <div
+                  key={task.id}
+                  onClick={() => onSelectNode(task.id)}
+                  draggable={true}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', task.id);
+                    setDraggingTaskId(task.id);
+                  }}
+                  onDragEnd={() => setDraggingTaskId(null)}
+                  className={`group border border-slate-150 dark:border-slate-800/80 p-2.5 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-850 rounded-xl shadow-xs transition-all flex flex-col gap-2 cursor-grab active:cursor-grabbing hover:border-slate-300 dark:hover:border-slate-705 ${
+                    draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-400' : ''
+                  }`}
+                >
+                  <div className="flex items-start gap-1.5 justify-between">
+                    {/* Title */}
+                    <span className={`text-xs font-semibold text-slate-855 dark:text-slate-200 leading-tight flex-1 flex items-center flex-wrap gap-1 ${
+                      task.completed ? 'line-through opacity-55' : ''
+                    }`}>
+                      <span>{task.text}</span>
+                      {activePomodoroNodeId === task.id && (
+                        <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[9px] font-sans font-extrabold animate-pulse ml-0.5 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+                          </span>
+                          <span>🍅</span>
+                        </span>
+                      )}
+                    </span>
+                    
+                    {/* Delete button wrapper */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteNode(task.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-slate-450 hover:text-rose-500 p-0.5 rounded transition-colors cursor-pointer"
+                      title="Удалить"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Quick Date setup picker */}
+                  <div className="flex items-center gap-1.5 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                    <Clock className="w-3 h-3 text-slate-400" />
+                    <input
+                      type="date"
+                      value={task.dueDate || ''}
+                      title="Назначить срок"
+                      onChange={(e) => {
+                        onUpdateNode({
+                          ...task,
+                          dueDate: e.target.value
+                        });
+                      }}
+                      className="flex-1 text-[10px] bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded-lg focus:outline-none"
+                    />
+                    
+                    <button
+                      onClick={() => {
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        onUpdateNode({
+                          ...task,
+                          dueDate: todayStr
+                        });
+                      }}
+                      title="Назначить на сегодня"
+                      className="p-1 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-600 hover:text-white rounded-lg text-indigo-600 dark:text-indigo-400 transition-colors text-[9px] font-extrabold flex items-center gap-0.5 cursor-pointer shrink-0"
+                    >
+                      Сегодня <ArrowRight className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
+
       </div>
     </div>
   );

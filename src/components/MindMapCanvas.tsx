@@ -22,6 +22,11 @@ import {
   Menu,
   Zap,
   Calendar,
+  Network,
+  Kanban,
+  Smartphone,
+  GanttChart,
+  Table,
   AlertTriangle,
   X,
   Download,
@@ -478,6 +483,26 @@ export default function MindMapCanvas({
     }
 
     if (viewMode === 'list') {
+      const getPriorityClass = (currPriority: Priority) => {
+        switch (currPriority) {
+          case 'urgent': return 'bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200/50 dark:border-rose-900/40';
+          case 'high': return 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border-amber-200/50 dark:border-amber-900/40';
+          case 'medium': return 'bg-blue-50 dark:bg-blue-950/25 text-blue-600 dark:text-blue-400 border-indigo-200/50 dark:border-indigo-900/40';
+          case 'low': return 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-900/40';
+          default: return 'bg-slate-50 dark:bg-slate-900 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800';
+        }
+      };
+
+      const getPriorityText = (currPriority: Priority) => {
+        switch (currPriority) {
+          case 'urgent': return 'Крит.';
+          case 'high': return 'Выс.';
+          case 'medium': return 'Ср.';
+          case 'low': return 'Низ.';
+          default: return '⚪';
+        }
+      };
+
       return (
         <div 
           onClick={(e) => {
@@ -485,10 +510,11 @@ export default function MindMapCanvas({
           }}
           className="flex-1 flex flex-col min-h-0 cursor-pointer"
         >
-          <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin ${isFullScreen ? 'max-h-[66vh] text-xs' : 'max-h-[220px]'}`}>
+          <div className={`flex-grow overflow-y-auto space-y-1.5 pr-1 scrollbar-thin ${isFullScreen ? 'max-h-[66vh] text-xs' : 'max-h-[220px]'}`}>
             {containerChildren.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[120px] text-center my-auto">
-                <span className="text-[9px] text-slate-455 dark:text-slate-500">Задач в списке нет</span>
+              <div className="flex-1 flex flex-col items-center justify-center p-6 border border-dashed border-slate-200/40 dark:border-slate-800/40 rounded-xl select-none min-h-[120px] text-center my-auto bg-slate-50/20 dark:bg-slate-950/10">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">Задач в списке нет</span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-600 mt-0.5">Кликните «+» внизу или дважды на фон, чтобы добавить подзадачу</span>
               </div>
             ) : (
               [...containerChildren].sort((a, b) => a.y - b.y).map(child => (
@@ -517,9 +543,9 @@ export default function MindMapCanvas({
                     e.stopPropagation();
                     onSelectNode(child.id);
                   }}
-                  className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-xs hover:border-slate-250 dark:hover:border-slate-705 group/item cursor-pointer text-slate-800 dark:text-slate-250 select-none transition-all hover:bg-slate-50/60 dark:hover:bg-slate-850/65"
+                  className="flex items-center justify-between gap-2 p-1.5 sm:p-2 rounded-xl border border-slate-105 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/60 shadow-xs hover:border-indigo-400/50 dark:hover:border-indigo-900/50 group/item cursor-pointer text-slate-800 dark:text-slate-250 select-none transition-all hover:bg-white dark:hover:bg-slate-900 duration-150"
                 >
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <button 
                       onClick={(e) => { 
                         e.stopPropagation(); 
@@ -528,21 +554,24 @@ export default function MindMapCanvas({
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
                       data-drag-ignore
-                      className="text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer shrink-0"
+                      className="text-slate-400 hover:text-indigo-650 dark:hover:text-amber-500 transition-colors cursor-pointer shrink-0"
                     >
                       {child.completed ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                       ) : activePomodoroNodeId === child.id ? (
-                        <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0 inline-block">
-                          <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                          <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                        <span className="relative flex items-center justify-center w-4 h-4 shrink-0 inline-block">
+                          <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-450 opacity-75"></span>
+                          <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
                         </span>
                       ) : (
-                        <Circle className="w-3.5 h-3.5 text-slate-400" />
+                        <Circle className="w-4 h-4 text-slate-300 dark:text-slate-650 hover:text-indigo-500" />
                       )}
                     </button>
                     <input 
                       type="text"
+                      className={`flex-1 bg-transparent border-0 focus:ring-0 p-1 py-0 rounded hover:bg-slate-100/30 dark:hover:bg-slate-800/35 text-slate-800 dark:text-slate-100 font-extrabold focus:outline-none focus:bg-slate-100 dark:focus:bg-slate-850 truncate min-w-[60px] shrink ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${
+                        child.completed ? 'line-through text-slate-420 dark:text-slate-500 font-normal' : ''
+                      }`}
                       value={child.text}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -553,16 +582,13 @@ export default function MindMapCanvas({
                       }}
                       onKeyDown={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className={`flex-1 bg-transparent border-0 focus:ring-0 p-1 py-0 rounded hover:bg-slate-100/50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold focus:outline-none focus:bg-slate-100 dark:focus:bg-slate-850 truncate min-w-[60px] shrink ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${
-                        child.completed ? 'line-through text-slate-405 dark:text-slate-500 font-normal' : ''
-                      }`}
                     />
                   </div>
                   
-                  <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1.5 shrink-0 opacity-75 group-hover/item:opacity-100 transition-opacity">
                     {/* Pomodoro Timer Badge */}
                     {child.pomodoroTotalTime ? (
-                      <span className="text-[8px] font-bold text-rose-600 dark:text-rose-400 font-mono shrink-0 flex items-center gap-0.5 bg-rose-500/5 px-1 py-0.5 rounded border border-rose-500/10" title="Фокусировка Pomodoro">
+                      <span className="text-[8.5px] font-bold text-rose-600 dark:text-rose-400 font-mono shrink-0 flex items-center gap-0.5 bg-rose-500/5 px-1.5 py-0.5 rounded border border-rose-500/10" title="Фокусировка Pomodoro">
                         🍅 {Math.round(child.pomodoroTotalTime / 60)}м
                       </span>
                     ) : null}
@@ -573,11 +599,12 @@ export default function MindMapCanvas({
                         e.stopPropagation();
                         onSelectNode(child.id);
                         const curr = child.progress || 0;
-                        onUpdateNode({ ...child, progress: curr >= 100 ? 0 : curr + 25 });
+                        const nextProg = curr >= 100 ? 0 : curr + 25;
+                        onUpdateNode({ ...child, progress: nextProg, completed: nextProg === 100 ? true : child.completed });
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="text-[8px] font-mono font-black border border-slate-200 dark:border-slate-800 px-1 py-0.5 rounded bg-slate-55 dark:bg-slate-950 text-slate-500 cursor-pointer min-w-[32px] text-center"
-                      title="Нажмите для циклической смены прогресса (0-25-50-75-100%)"
+                      className="text-[8.5px] font-mono font-black border border-slate-250 dark:border-slate-800 px-1.5 py-0.5 rounded-lg bg-white dark:bg-slate-950 text-slate-500 hover:text-indigo-650 dark:hover:text-indigo-400 cursor-pointer min-w-[34px] text-center transition-colors"
+                      title="Прогресс (клик для циклической смены)"
                     >
                       {child.progress || 0}%
                     </button>
@@ -589,26 +616,17 @@ export default function MindMapCanvas({
                         onSelectNode(child.id);
                         const cycle: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
                         const nextP = cycle[(cycle.indexOf(child.priority) + 1) % cycle.length];
-                        onUpdateNode({ ...child, priority: nextP });
+                        onUpdateNode({ ...child, priority: nextP as Priority });
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className={`px-1 py-0.5 rounded text-[8px] font-bold h-4 cursor-pointer scale-95 transition-all text-slate-500 border border-slate-200 dark:border-slate-800 ${
-                        child.priority === 'urgent' ? 'bg-rose-50/80 dark:bg-rose-950/45 text-rose-600 border-rose-205' :
-                        child.priority === 'high' ? 'bg-amber-50/80 dark:bg-amber-950/45 text-amber-600 border-amber-205' :
-                        child.priority === 'medium' ? 'bg-blue-50/80 dark:bg-blue-950/45 text-blue-600 border-blue-205' :
-                        child.priority === 'low' ? 'bg-emerald-50/80 dark:bg-emerald-950/45 text-emerald-600 border-emerald-205' :
-                        'opacity-50 hover:opacity-100 bg-white dark:bg-slate-900 border-slate-200'
-                      }`}
-                      title="Нажмите для циклической смены приоритета"
+                      className={`px-1.5 py-0.5 rounded-lg text-[8.5px] font-extrabold h-5.5 cursor-pointer flex items-center transition-all border ${getPriorityClass(child.priority)}`}
+                      title="Приоритет (клик для циклической смены)"
                     >
-                      {child.priority === 'urgent' ? 'Крит' :
-                       child.priority === 'high' ? 'Выс' :
-                       child.priority === 'medium' ? 'Ср' :
-                       child.priority === 'low' ? 'Низ' : '—'}
+                      {getPriorityText(child.priority)}
                     </button>
 
                     {/* Interactive Due Date Calendar Picker */}
-                    <div className="flex items-center gap-0.5 bg-slate-50 dark:bg-slate-950 px-1 py-0.2 rounded border border-slate-200 dark:border-slate-800 text-slate-605" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-0.5 bg-white dark:bg-slate-950 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-650" onClick={(e) => e.stopPropagation()}>
                       <Calendar className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                       <input 
                         type="date"
@@ -618,20 +636,28 @@ export default function MindMapCanvas({
                         onChange={(e) => {
                           onUpdateNode({ ...child, dueDate: e.target.value });
                         }}
-                        className="text-[8px] p-0.5 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-600 dark:text-slate-350 max-w-[76px] font-mono leading-none cursor-pointer"
+                        className="text-[8.5px] p-0 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-600 dark:text-slate-300 max-w-[76px] font-mono leading-none cursor-pointer"
                       />
                     </div>
 
                     {/* Tag badge items list */}
                     {child.tags && child.tags.length > 0 && (
                       <div className="flex gap-0.5 shrink-0 max-w-[80px] overflow-hidden truncate">
-                        {child.tags.slice(0, 1).map(t => (
-                          <span key={t} className="text-[7px] px-1 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold rounded border border-indigo-100/50">
-                            #{t}
-                          </span>
-                        ))}
+                        {child.tags.slice(0, 1).map(t => {
+                          const matchedCategory = tagCategories.find(cat => cat.tags && cat.tags.includes(t));
+                          const color = matchedCategory?.color || '#a1a1aa';
+                          return (
+                            <span 
+                              key={t} 
+                              className="text-[7.5px] px-1 py-0.2 font-bold rounded"
+                              style={{ backgroundColor: color + '15', color: color, border: `1px solid ${color}20` }}
+                            >
+                              #{t}
+                            </span>
+                          );
+                        })}
                         {child.tags.length > 1 && (
-                          <span className="text-[7px] text-slate-400 font-bold" title={child.tags.join(', ')}>+{child.tags.length - 1}</span>
+                          <span className="text-[7.5px] text-slate-400 font-bold" title={child.tags.join(', ')}>+{child.tags.length - 1}</span>
                         )}
                       </div>
                     )}
@@ -640,19 +666,19 @@ export default function MindMapCanvas({
                       onClick={(e) => { e.stopPropagation(); setNotesModalNodeId(child.id); }}
                       onMouseDown={(e) => e.stopPropagation()}
                       data-drag-ignore
-                      className="p-0.5 rounded text-slate-400 hover:text-indigo-600 hover:bg-slate-55 dark:hover:bg-slate-805 transition-colors cursor-pointer"
+                      className="p-1 rounded text-slate-400 hover:text-indigo-650 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                       title="Описание / Заметки"
                     >
-                      <FileText className="w-3 h-3" />
+                      <FileText className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); onDeleteNode(child.id); }}
                       onMouseDown={(e) => e.stopPropagation()}
                       data-drag-ignore
-                      className="p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-855 transition-colors cursor-pointer"
+                      className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                       title="Удалить"
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -671,7 +697,7 @@ export default function MindMapCanvas({
             }}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
-            className="mt-2 flex items-center gap-1 shrink-0 z-20"
+            className="mt-2.5 flex items-center gap-1.5 shrink-0 z-20"
           >
             <input 
               type="text"
@@ -682,16 +708,16 @@ export default function MindMapCanvas({
               value={inlineAddTexts[node.id] || ''}
               onChange={(e) => setInlineAddTexts(prev => ({ ...prev, [node.id]: e.target.value }))}
               data-drag-ignore
-              className="flex-1 text-[10px] py-1 px-2.5 bg-white/70 dark:bg-slate-950/70 rounded-lg border border-slate-200 dark:border-slate-800/80 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500 placeholder-slate-400"
+              className="flex-1 text-[10px] py-1.5 px-3 bg-white/70 dark:bg-slate-950/70 rounded-xl border border-slate-200 dark:border-slate-800/80 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 placeholder-slate-400 transition-all font-semibold"
             />
             <button 
               type="submit" 
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
               data-drag-ignore
-              className="p-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer text-[10px] font-bold"
+              className="p-1.5 px-3 rounded-xl bg-indigo-650 hover:bg-indigo-700 text-white transition-all cursor-pointer text-[10px] font-black flex items-center justify-center"
             >
-              +
+              <Plus className="w-3.5 h-3.5" />
             </button>
           </form>
         </div>
@@ -853,126 +879,160 @@ export default function MindMapCanvas({
               >
                 <div className="flex items-center justify-between mb-1.5 px-0.5 select-none shrink-0 border-b border-slate-100/50 dark:border-slate-800/10 pb-1">
                   <span 
-                    className={`text-[9px] font-extrabold uppercase tracking-widest leading-none truncate ${col.titleColor || 'text-slate-500'}`}
+                    className={`text-[9.5px] font-extrabold uppercase tracking-widest leading-none truncate ${col.titleColor || 'text-slate-500'}`}
                     style={col.id !== 'uncategorized' && currentGroupBy === 'category' ? { color: activeCategory?.color } : undefined}
                   >
                     {col.title}
                   </span>
-                  <span className="text-[8px] font-extrabold bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1 py-0.2 rounded font-mono leading-none">{col.tasks.length}</span>
+                  <span className="text-[8.5px] font-black bg-slate-200/55 dark:bg-slate-800 text-slate-650 dark:text-slate-350 px-1.5 py-0.5 rounded-lg font-mono leading-none">{col.tasks.length}</span>
                 </div>
                 
                 <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[175px]'}`}>
-                  {col.tasks.map(child => (
-                    <div 
-                      key={child.id} 
-                      draggable={true}
-                      onDragStart={(e) => {
-                        e.stopPropagation();
-                        e.dataTransfer.setData('text/plain', child.id);
-                        setNestedDragNodeId(child.id);
-                      }}
-                      onDragEnd={() => setNestedDragNodeId(null)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectNode(child.id);
-                      }}
-                      className="p-1 px-1.5 rounded-lg border border-slate-150/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/85 shadow-2xs flex flex-col group/item cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-900 select-none transition-all hover:bg-slate-50/50 dark:hover:bg-slate-900/50"
-                    >
-                      <span 
-                        onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
-                        className={`font-semibold leading-normal cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-550' : 'text-slate-700 dark:text-slate-205'}`}
+                  {col.tasks.map(child => {
+                    const getPriorityColorStyle = (p: Priority) => {
+                      switch (p) {
+                        case 'urgent': return 'bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200/50 dark:border-rose-900/40';
+                        case 'high': return 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border-amber-200/50 dark:border-amber-900/40';
+                        case 'medium': return 'bg-blue-50 dark:bg-blue-950/25 text-blue-600 dark:text-blue-400 border-indigo-200/50 dark:border-indigo-900/40';
+                        case 'low': return 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-900/40';
+                        default: return 'bg-slate-50 dark:bg-slate-900 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800';
+                      }
+                    };
+
+                    const getPriorityLabelRu = (p: Priority) => {
+                      switch (p) {
+                        case 'urgent': return 'Крит.';
+                        case 'high': return 'Выс.';
+                        case 'medium': return 'Ср.';
+                        case 'low': return 'Низ.';
+                        default: return '';
+                      }
+                    };
+
+                    return (
+                      <div 
+                        key={child.id} 
+                        draggable={true}
+                        onDragStart={(e) => {
+                          e.stopPropagation();
+                          e.dataTransfer.setData('text/plain', child.id);
+                          setNestedDragNodeId(child.id);
+                        }}
+                        onDragEnd={() => setNestedDragNodeId(null)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNode(child.id);
+                        }}
+                        className="p-2 rounded-xl border border-slate-105 dark:border-slate-800/80 bg-white dark:bg-slate-900 shadow-xs flex flex-col gap-1.5 group/item cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-900 select-none transition-all hover:bg-slate-50/40 dark:hover:bg-slate-850/40"
                       >
-                        {child.text}
-                      </span>
-
-                      {/* Render tags or priority badges on the cards if present */}
-                      {((child.priority && child.priority !== 'none') || (child.tags && child.tags.length > 0)) && (
-                        <div className="flex flex-wrap gap-0.5 mt-1 leading-none">
-                          {child.priority && child.priority !== 'none' && (
-                            <span className={`text-[7px] font-extrabold uppercase px-1 rounded h-3.5 flex items-center shrink-0 ${
-                              child.priority === 'urgent' ? 'bg-rose-500/15 text-rose-600 dark:text-rose-450' :
-                              child.priority === 'high' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' :
-                              child.priority === 'medium' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' :
-                              'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                            }`}>
-                              {child.priority === 'urgent' ? 'Крит.' :
-                               child.priority === 'high' ? 'Выс.' :
-                               child.priority === 'medium' ? 'Ср.' : 'Низ.'}
-                            </span>
-                          )}
-                          {child.tags?.map(tag => {
-                            const matchedCategory = tagCategories.find(cat => cat.tags && cat.tags.includes(tag));
-                            const color = matchedCategory?.color || '#a1a1aa';
-                            return (
-                              <span 
-                                key={tag}
-                                className="text-[7px] px-1 rounded font-bold whitespace-nowrap h-3.5 flex items-center shrink-0"
-                                style={{ backgroundColor: color + '15', color: color, border: `1px solid ${color}20` }}
-                              >
-                                #{tag}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      <div className="flex items-center justify-between mt-1 pt-1 border-t border-slate-100/40 dark:border-slate-900/40 shrink-0">
-                        <div className="flex gap-0.5">
-                          {currentGroupBy === 'status' && col.id === 'todo' && (
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateNode({ ...child, progress: 50 });
-                              }}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              data-drag-ignore
-                              className="p-0.5 px-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[7.5px] font-black cursor-pointer transition-colors"
-                              title="Начать работу (In Progress)"
-                            >
-                              ▶ Раб.
-                            </button>
-                          )}
-                          {currentGroupBy === 'status' && col.id === 'progress' && (
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateNode({ ...child, progress: 0 });
-                              }}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              data-drag-ignore
-                              className="p-0.5 px-1 rounded bg-slate-200/50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[7.5px] font-black cursor-pointer transition-colors"
-                              title="Вернуть в бэклог"
-                            >
-                              ◀ План
-                            </button>
-                          )}
-                          {currentGroupBy !== 'status' && (
-                            <div className="text-[7px] font-bold text-slate-400 h-3.5 flex items-center">
-                              {child.completed ? 'Выполнена' : (child.progress && child.progress > 0 ? 'В работе' : 'План')}
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleNodeCompleted(child.id);
-                          }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          data-drag-ignore
-                          className={`p-0.5 px-1 rounded text-[7.5px] font-extrabold cursor-pointer transition-all ${
-                            child.completed 
-                              ? 'bg-rose-500/10 text-rose-600 dark:text-rose-455' 
-                              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                          }`}
+                        <span 
+                          onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                          className={`font-semibold leading-relaxed cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-420 dark:text-slate-500 font-normal' : 'text-slate-755 dark:text-slate-200 font-extrabold'}`}
                         >
-                          {child.completed ? '↩ Отмена' : '✓ Вып.'}
-                        </button>
+                          {child.text}
+                        </span>
+
+                        {/* Render tags, progress, pomodoros, or priority badges on the cards if present */}
+                        {((child.priority && child.priority !== 'none') || (child.tags && child.tags.length > 0) || child.dueDate || child.pomodoroTotalTime || (child.progress && child.progress > 0)) && (
+                          <div className="flex flex-wrap gap-1 items-center leading-none">
+                            {child.priority && child.priority !== 'none' && (
+                              <span className={`text-[7.5px] font-extrabold uppercase px-1 py-0.5 border rounded flex items-center shrink-0 ${getPriorityColorStyle(child.priority)}`}>
+                                {getPriorityLabelRu(child.priority)}
+                              </span>
+                            )}
+
+                            {child.progress && child.progress > 0 && (
+                              <span className="text-[7.5px] font-mono font-black px-1.5 py-0.5 rounded border border-slate-205 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-500">
+                                {child.progress}%
+                              </span>
+                            )}
+
+                            {child.pomodoroTotalTime ? (
+                              <span className="text-[7.5px] font-bold text-rose-500 dark:text-rose-455 shrink-0 flex items-center gap-0.5 bg-rose-500/5 px-1.5 py-0.5 rounded border border-rose-500/10" title="Фокусировка Pomodoro">
+                                🍅 {Math.round(child.pomodoroTotalTime / 60)}м
+                              </span>
+                            ) : null}
+
+                            {child.dueDate && (
+                              <span className="text-[7.5px] shrink-0 font-mono flex items-center gap-0.5 bg-indigo-50/30 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 px-1 py-0.5 border border-indigo-100/50 rounded animate-in fade-in" title="Срок">
+                                📅 {child.dueDate}
+                              </span>
+                            )}
+
+                            {child.tags?.slice(0, 2).map(tag => {
+                              const matchedCategory = tagCategories.find(cat => cat.tags && cat.tags.includes(tag));
+                              const color = matchedCategory?.color || '#a1a1aa';
+                              return (
+                                <span 
+                                  key={tag}
+                                  className="text-[7px] px-1 rounded font-bold whitespace-nowrap h-3.5 flex items-center shrink-0"
+                                  style={{ backgroundColor: color + '12', color: color, border: `1px solid ${color}18` }}
+                                >
+                                  #{tag}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-slate-100/70 dark:border-slate-800/40 shrink-0 font-sans">
+                          <div className="flex gap-0.5">
+                            {currentGroupBy === 'status' && col.id === 'todo' && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onUpdateNode({ ...child, progress: 50 });
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                data-drag-ignore
+                                className="p-1 px-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[8px] font-bold cursor-pointer transition-colors"
+                                title="Начать работу (In Progress)"
+                              >
+                                ▶ В раб.
+                              </button>
+                            )}
+                            {currentGroupBy === 'status' && col.id === 'progress' && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onUpdateNode({ ...child, progress: 0 });
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                data-drag-ignore
+                                className="p-1 px-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[8px] font-bold cursor-pointer transition-colors"
+                                title="Вернуть в бэклог"
+                              >
+                                ◀ План
+                              </button>
+                            )}
+                            {currentGroupBy !== 'status' && (
+                              <div className="text-[7.5px] font-extrabold text-slate-455 h-3.5 flex items-center">
+                                {child.completed ? 'Выполнена' : (child.progress && child.progress > 0 ? 'В работе' : 'Бэклог')}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleNodeCompleted(child.id);
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            data-drag-ignore
+                            className={`p-1 px-1.5 rounded-lg text-[8px] font-black cursor-pointer transition-all ${
+                              child.completed 
+                                ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-455' 
+                                : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                            }`}
+                          >
+                            {child.completed ? '↩ Отмена' : '✓ Вып.'}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {col.tasks.length === 0 && (
-                    <div className="flex-1 flex items-center justify-center py-4 border border-dashed border-slate-200/50 dark:border-slate-800/45 rounded-lg select-none">
-                      <span className="text-[8px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest">Пусто</span>
+                    <div className="flex-1 flex flex-col items-center justify-center p-3 border border-dashed border-slate-200/50 dark:border-slate-800/40 rounded-xl select-none min-h-[60px]">
+                      <span className="text-[8px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest text-center mt-1">Перетащите сюда</span>
                     </div>
                   )}
                 </div>
@@ -2555,34 +2615,16 @@ export default function MindMapCanvas({
       if (overlapNode) {
         const node = nodes.find(n => n.id === draggingNodeId);
         if (node && node.parentId !== overlapNode.id) {
-          if (overlapNode.isContainer) {
-            // Instant parenting for containers! No loop, no delay, no "bounce" back.
-            if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-            onUpdateNodeParent(draggingNodeId, overlapNode.id);
-            setHoverTargetId(null);
-          } else {
-            // For regular branches, keep the 450ms delay to prevent accidental parenting while passing by
-            if (hoverTargetId !== overlapNode.id) {
-              if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-              setHoverTargetId(overlapNode.id);
-              hoverTimerRef.current = setTimeout(() => {
-                onUpdateNodeParent(draggingNodeId, overlapNode.id);
-                if (navigator.vibrate) {
-                  try { navigator.vibrate([60, 40, 60]); } catch (err) {}
-                }
-                setHoverTargetId(null);
-              }, 450);
-            }
+          if (hoverTargetId !== overlapNode.id) {
+            setHoverTargetId(overlapNode.id);
           }
         } else {
           if (hoverTargetId !== null) {
-            if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
             setHoverTargetId(null);
           }
         }
       } else {
         if (hoverTargetId !== null) {
-          if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
           setHoverTargetId(null);
         }
       }
@@ -2983,34 +3025,16 @@ export default function MindMapCanvas({
       if (overlapNode) {
         const node = nodes.find(n => n.id === draggingNodeId);
         if (node && node.parentId !== overlapNode.id) {
-          if (overlapNode.isContainer) {
-            // Instant parenting for containers! No loop, no delay, no "bounce" back.
-            if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-            onUpdateNodeParent(draggingNodeId, overlapNode.id);
-            setHoverTargetId(null);
-          } else {
-            // For regular branches, keep the 450ms delay to prevent accidental parenting while passing by
-            if (hoverTargetId !== overlapNode.id) {
-              if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-              setHoverTargetId(overlapNode.id);
-              hoverTimerRef.current = setTimeout(() => {
-                onUpdateNodeParent(draggingNodeId, overlapNode.id);
-                if (navigator.vibrate) {
-                  try { navigator.vibrate([60, 40, 60]); } catch (err) {}
-                }
-                setHoverTargetId(null);
-              }, 450);
-            }
+          if (hoverTargetId !== overlapNode.id) {
+            setHoverTargetId(overlapNode.id);
           }
         } else {
           if (hoverTargetId !== null) {
-            if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
             setHoverTargetId(null);
           }
         }
       } else {
         if (hoverTargetId !== null) {
-          if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
           setHoverTargetId(null);
         }
       }
@@ -3485,16 +3509,17 @@ export default function MindMapCanvas({
             <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
 
             {/* View Selector for Focused Mode */}
-            <div className="flex items-center gap-1 bg-slate-100/60 dark:bg-slate-950/40 p-1 rounded-xl border border-slate-200/40 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none shrink-0 max-w-full">
+            <div className="flex items-center gap-1 bg-[#f1f5f9] dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200/50 dark:border-slate-850 overflow-x-auto scrollbar-none select-none shrink-0 max-w-full shadow-inner">
               {[
-                { id: 'canvas', label: 'Карта', icon: '🕸️' },
-                { id: 'list', label: 'Список', icon: '📋' },
-                { id: 'kanban', label: 'Канбан', icon: '📊' },
-                { id: 'calendar', label: 'Календарь', icon: '📅' },
-                { id: 'gantt', label: 'Гант', icon: '📈' },
-                { id: 'table', label: 'Таблица', icon: '🗂️' }
+                { id: 'canvas', label: 'Холст', icon: Network },
+                { id: 'kanban', label: 'Канбан', icon: Kanban },
+                { id: 'list', label: 'Мобильный', icon: Smartphone },
+                { id: 'calendar', label: 'Календарь', icon: Calendar },
+                { id: 'gantt', label: 'Гант', icon: GanttChart },
+                { id: 'table', label: 'Таблица', icon: Table }
               ].map(v => {
                 const active = (containerViewModes[focusedContainer.id] || 'canvas') === v.id;
+                const IconComponent = v.icon;
                 return (
                   <button
                     key={v.id}
@@ -3504,13 +3529,13 @@ export default function MindMapCanvas({
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     data-drag-ignore
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[11px] font-bold tracking-tight transition-all duration-200 cursor-pointer whitespace-nowrap ${
                       active 
-                        ? 'bg-amber-100 dark:bg-amber-950/75 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 shadow-2xs' 
-                        : 'text-slate-650 dark:text-slate-400 hover:bg-slate-150/40 dark:hover:bg-slate-800/60 border border-transparent'
+                        ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-450 border border-slate-100 dark:border-slate-755 shadow-[0_2px_8px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)]' 
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-850 border border-transparent'
                     }`}
                   >
-                    <span className="text-xs">{v.icon}</span>
+                    <IconComponent className={`w-3.5 h-3.5 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`} />
                     <span>{v.label}</span>
                   </button>
                 );
@@ -4006,37 +4031,39 @@ export default function MindMapCanvas({
 
                 {/* Secondary toolbar for View Selection within Container */}
                 {!isContainerCollapsed && (
-                  <div className="px-3 py-1.5 flex items-center gap-1 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/60 overflow-x-auto scrollbar-none select-none z-10 shrink-0">
-                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mr-1 shrink-0">Вид:</span>
-                    {[
-                      { id: 'canvas', label: 'Карта', icon: '🕸️' },
-                      { id: 'list', label: 'Список', icon: '📋' },
-                      { id: 'kanban', label: 'Канбан', icon: '📊' },
-                      { id: 'calendar', label: 'Календарь', icon: '📅' },
-                      { id: 'gantt', label: 'Гант', icon: '📈' },
-                      { id: 'table', label: 'Таблица', icon: '🗂️' }
-                    ].map(v => {
-                      const active = (containerViewModes[node.id] || 'canvas') === v.id;
-                      return (
-                        <button
-                          key={v.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setContainerViewMode(node.id, v.id as any);
-                          }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          data-drag-ignore
-                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                            active 
-                              ? 'bg-amber-100 dark:bg-amber-950/75 text-amber-800 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/50 shadow-2xs' 
-                              : 'text-slate-550 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
-                          }`}
-                        >
-                          <span className="text-[10px]">{v.icon}</span>
-                          <span>{v.label}</span>
-                        </button>
-                      );
-                    })}
+                  <div className="px-3 py-2 flex items-center justify-center bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-800/60 select-none z-10 shrink-0">
+                    <div className="flex items-center gap-0.5 bg-[#f1f5f9] dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200/50 dark:border-slate-850 overflow-x-auto scrollbar-none max-w-full shadow-inner">
+                      {[
+                        { id: 'canvas', label: 'Холст', icon: Network },
+                        { id: 'kanban', label: 'Канбан', icon: Kanban },
+                        { id: 'list', label: 'Мобильный', icon: Smartphone },
+                        { id: 'calendar', label: 'Календарь', icon: Calendar },
+                        { id: 'gantt', label: 'Гант', icon: GanttChart },
+                        { id: 'table', label: 'Таблица', icon: Table }
+                      ].map(v => {
+                        const active = (containerViewModes[node.id] || 'canvas') === v.id;
+                        const IconComponent = v.icon;
+                        return (
+                          <button
+                            key={v.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setContainerViewMode(node.id, v.id as any);
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            data-drag-ignore
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-tight transition-all duration-200 cursor-pointer whitespace-nowrap ${
+                              active 
+                                ? 'bg-white dark:bg-slate-800 text-indigo-650 dark:text-indigo-400 border border-slate-100/80 dark:border-slate-750 shadow-[0_1.5px_4px_rgba(0,0,0,0.04)]' 
+                                : 'text-slate-650 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-200 hover:bg-slate-200/40 dark:hover:bg-slate-800/40 border border-transparent'
+                            }`}
+                          >
+                            <IconComponent className={`w-3 h-3 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-550 dark:text-slate-400'}`} />
+                            <span>{v.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 

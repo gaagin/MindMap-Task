@@ -152,98 +152,59 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
       throw new Error(`Размер вашей карты (${sizeInKb} KB) превышает лимит базы данных Firestore (1000 KB) из-за прикрепленных тяжелых картинок или файлов. Удалите некоторые вложения, чтобы возобновить синхронизацию!`);
     }
 
-    // Try up to 3 times with progressive timeout and exponential backoff
-    let attempt = 0;
-    const maxAttempts = 3;
-    let lastError: any = null;
+    // We run standard setDoc directly. We add a single generous timeout (e.g. 60s) to notify the user if offline,
+    // but we do NOT run a retry loop that triggers duplicate parallel queued writes, preventing retry storms.
+    const currentTimeoutMs = 60000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Превышено время ожидания сервера (${currentTimeoutMs / 1000}с). Снимок сохранён локально, синхронизация ожидает стабильного подключения.`)), currentTimeoutMs)
+    );
 
-    while (attempt < maxAttempts) {
-      attempt++;
-      try {
-        // Progressive timeouts: Attempt 1 = 30s, Attempt 2 = 45s, Attempt 3 = 60s
-        const currentTimeoutMs = attempt === 1 ? 30000 : attempt === 2 ? 45000 : 60000;
-        
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Превышено время ожидания сервера при попытке ${attempt} (${currentTimeoutMs / 1000}с)`)), currentTimeoutMs)
-        );
+    await Promise.race([
+      setDoc(docRef, payload),
+      timeoutPromise
+    ]);
 
-        await Promise.race([
-          setDoc(docRef, payload),
-          timeoutPromise
-        ]);
-
-        console.log(`Firebase cloud sync completed successfully on attempt ${attempt}.`);
-        return { success: true };
-      } catch (error: any) {
-        if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
-          handleFirestoreError(error, OperationType.WRITE, `workspaces/${userId}`);
-        }
-        lastError = error;
-        console.warn(`Firebase save attempt ${attempt} failed: ${error?.message || error}`);
-        
-        if (attempt < maxAttempts) {
-          // Exponential backoff delay: 1.5s for attempt 1, 3s for attempt 2
-          const delayMs = attempt === 1 ? 1500 : 3000;
-          console.warn(`Ожидание ${delayMs / 1000}с перед новой попыткой...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        }
-      }
-    }
-
-    throw lastError || new Error('Не удалось завершить сохранение снимка в Firebase.');
+    console.log(`Firebase cloud sync completed successfully.`);
+    return { success: true };
   } catch (error: any) {
-    console.error('Firebase snapshot save error after all retries:', error);
+    if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
+      handleFirestoreError(error, OperationType.WRITE, `workspaces/${userId}`);
+    }
+    console.error('Firebase snapshot save error:', error);
     return { 
       success: false, 
-      error: error?.message || 'Превышено время ожидания сервера (таймаут 25с). Пожалуйста, обновите страницу или проверьте интернет-соединение.' 
+      error: error?.message || 'Превышено время ожидания сервера (таймаут 60с). Пожалуйста, обновите страницу или проверьте интернет-соединение.' 
     };
   }
 }
 
 /**
  * Fetch latest WorkspaceState snapshot from firestore database.
- * Features automatic Exponential Backoff and progressive retries.
+ * Features a clean, single-attempt timeout fallback.
  */
 export async function loadFromFirebaseDirectly(userId: string): Promise<WorkspaceState | null> {
-  const docRef = doc(db, 'workspaces', userId);
-  let attempt = 0;
-  const maxAttempts = 3;
-  let lastError: any = null;
+  try {
+    const docRef = doc(db, 'workspaces', userId);
+    const currentTimeoutMs = 60000;
+    
+    const snap = await Promise.race([
+      getDoc(docRef),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Превышено время ожидания загрузки (${currentTimeoutMs / 1000}с).`)), currentTimeoutMs)
+      )
+    ]);
 
-  while (attempt < maxAttempts) {
-    attempt++;
-    try {
-      // Progressive timeouts: Attempt 1 = 30s, Attempt 2 = 45s, Attempt 3 = 60s
-      const currentTimeoutMs = attempt === 1 ? 30000 : attempt === 2 ? 45000 : 60000;
-      
-      const snap = await Promise.race([
-        getDoc(docRef),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Превышено время ожидания загрузки при попытке ${attempt} (${currentTimeoutMs / 1000}с)`)), currentTimeoutMs)
-        )
-      ]);
-
-      if (snap.exists()) {
-        return snap.data() as WorkspaceState;
-      }
-      return null;
-    } catch (error: any) {
-      if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
-        handleFirestoreError(error, OperationType.GET, `workspaces/${userId}`);
-      }
-      lastError = error;
-      console.warn(`Firebase load attempt ${attempt} failed: ${error?.message || error}`);
-      
-      if (attempt < maxAttempts) {
-        const delayMs = attempt === 1 ? 1500 : 3000;
-        console.warn(`Ожидание ${delayMs / 1000}с перед новой попыткой загрузки...`);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
+    if (snap.exists()) {
+      return snap.data() as WorkspaceState;
     }
+    return null;
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
+      handleFirestoreError(error, OperationType.GET, `workspaces/${userId}`);
+    }
+    console.error('Firebase snapshot load error:', error);
+    throw error || new Error('Превышено время ожидания загрузки. Пожалуйста, проверьте интернет-соединение.');
   }
-
-  console.error('Firebase snapshot load error after all retries:', lastError);
-  throw lastError || new Error('Превышено время ожидания загрузки. Пожалуйста, проверьте интернет-соединение или обновите вкладку.');
 }
 
 // ----------------- GOOGLE SHEETS & DRIVE SYNC -----------------

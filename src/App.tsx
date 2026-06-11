@@ -226,6 +226,91 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
   };
 }
 
+function getSyncHash(wsState: WorkspaceState | null | undefined): string {
+  if (!wsState) return '';
+  
+  // 1. Serialize folders deterministically
+  const folders = (wsState.folders || [])
+    .map(f => ({ 
+      id: f.id, 
+      name: f.name || '', 
+      parentId: f.parentId || null 
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  // 2. Serialize projects deterministically
+  const projects = (wsState.projects || [])
+    .map(p => ({ 
+      id: p.id, 
+      name: p.name || '', 
+      folderId: p.folderId || null 
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  // 3. Serialize nodes deterministically
+  const sortedProjectIds = Object.keys(wsState.nodes || {}).sort();
+  const nodes: any[] = [];
+  for (const pid of sortedProjectIds) {
+    const projectNodes = (wsState.nodes[pid] || [])
+      .map(n => ({
+        id: n.id,
+        projectId: n.projectId,
+        text: n.text || '',
+        x: Math.round(Number(n.x) || 0),
+        y: Math.round(Number(n.y) || 0),
+        parentId: n.parentId || null,
+        priority: n.priority || 'none',
+        tags: [...(n.tags || [])].sort(),
+        notes: n.notes || '',
+        completed: !!n.completed,
+        color: n.color || '',
+        collapsed: !!n.collapsed,
+        dueDate: n.dueDate || null,
+        progress: n.progress !== undefined ? Math.round(Number(n.progress) || 0) : null,
+        isFloating: !!n.isFloating,
+        isContainer: !!n.isContainer,
+        width: n.width !== undefined ? Math.round(Number(n.width) || 0) : null,
+        height: n.height !== undefined ? Math.round(Number(n.height) || 0) : null
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    nodes.push({ projectId: pid, list: projectNodes });
+  }
+
+  // 4. Serialize tag categories deterministically
+  const tagCategories = (wsState.tagCategories || [])
+    .map(t => ({
+      id: t.id,
+      name: t.name || '',
+      color: t.color || '',
+      tags: [...(t.tags || [])].sort()
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  return JSON.stringify({
+    folders,
+    projects,
+    nodes,
+    activeProjectId: wsState.activeProjectId || null,
+    tagCategories,
+    googleSheetsFileId: wsState.googleSheetsFileId || null,
+    taskSheetsSpreadsheetId: wsState.taskSheetsSpreadsheetId || null
+  });
+}
+
+/**
+ * Recursively performs a robust deep semantic comparison between two WorkspaceState objects
+ * to prevent unnecessary triggers and infinite synchronization loops caused by Firestore sanitization key deletion,
+ * field omissions, or dynamic key ordering variations.
+ */
+function isStateSemanticallyEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  try {
+    return getSyncHash(a) === getSyncHash(b);
+  } catch {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+}
+
 export default function App() {
   // Load initial state
   const [state, setRawState] = useState<WorkspaceState>(() => normalizeWorkspaceState(loadWorkspace()));
@@ -296,18 +381,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('unsynced_edits_count', String(unsyncedEditsCount));
   }, [unsyncedEditsCount]);
-
-  const getSyncHash = (wsState: WorkspaceState) => {
-    return JSON.stringify({
-      folders: wsState.folders,
-      projects: wsState.projects,
-      nodes: wsState.nodes,
-      activeProjectId: wsState.activeProjectId,
-      tagCategories: wsState.tagCategories || [],
-      googleSheetsFileId: wsState.googleSheetsFileId,
-      taskSheetsSpreadsheetId: wsState.taskSheetsSpreadsheetId
-    });
-  };
 
   const lastSyncedStateHashRef = React.useRef<string>('');
 
@@ -566,36 +639,17 @@ export default function App() {
       };
 
       const currentState = stateRef.current;
+      const normalizedCloud = normalizeWorkspaceState(cloudState);
+      const isEquivalent = isStateSemanticallyEqual(currentState, normalizedCloud);
 
-      const localCompare = {
-        folders: currentState.folders,
-        projects: currentState.projects,
-        nodes: currentState.nodes,
-        activeProjectId: currentState.activeProjectId,
-        tagCategories: currentState.tagCategories || [],
-        googleSheetsFileId: currentState.googleSheetsFileId,
-        taskSheetsSpreadsheetId: currentState.taskSheetsSpreadsheetId
-      };
-
-      const cloudCompare = {
-        folders: cloudState.folders,
-        projects: cloudState.projects,
-        nodes: cloudState.nodes,
-        activeProjectId: cloudState.activeProjectId,
-        tagCategories: cloudState.tagCategories || [],
-        googleSheetsFileId: cloudState.googleSheetsFileId,
-        taskSheetsSpreadsheetId: cloudState.taskSheetsSpreadsheetId
-      };
-
-      if (JSON.stringify(localCompare) !== JSON.stringify(cloudCompare)) {
+      if (!isEquivalent) {
         // Only absorb incoming changes if we are not actively typing/syncing locally,
         // OR if this is the first snapshot load of our session (forces cloud data loading on boot/device switch).
         if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
           isFirstSnapshotRef.current = false;
           ignoreNextStateChangeRef.current = true;
-          const normalized = normalizeWorkspaceState(cloudState);
-          lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent loops
-          setRawState(normalized);
+          lastSyncedStateHashRef.current = getSyncHash(normalizedCloud); // Update hash to prevent loops
+          setRawState(normalizedCloud);
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
           setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
           setHasCloudUpdates(false);
@@ -1300,8 +1354,8 @@ export default function App() {
         if (isDescendant(n.id)) {
           return {
             ...n,
-            x: n.id === id ? x : n.x + dx,
-            y: n.id === id ? y : n.y + dy
+            x: Math.round(n.id === id ? x : n.x + dx),
+            y: Math.round(n.id === id ? y : n.y + dy)
           };
         }
         return n;
@@ -1322,13 +1376,14 @@ export default function App() {
     const pid = state.activeProjectId;
     if (!pid) return;
 
-    const currentNodes = state.nodes[pid] || [];
-    pushToUndo(pid, currentNodes);
-
-    const parent = currentNodes.find(p => p.id === newParentId);
-    const parentColor = parent ? parent.color : '';
+    const outerNodesSnapshot = state.nodes[pid] || [];
+    pushToUndo(pid, outerNodesSnapshot);
 
     setState(prev => {
+      const currentNodes = prev.nodes[pid] || [];
+      const parent = currentNodes.find(p => p.id === newParentId);
+      const parentColor = parent ? parent.color : '';
+
       const updatedList = currentNodes.map(n => {
         if (n.id === id) {
           // Calculate non-overlapping coordinates if re-parented to a non-container task node

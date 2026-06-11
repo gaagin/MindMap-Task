@@ -237,21 +237,21 @@ export default function KanbanView({
     let text = "Без приоритета";
 
     if (priority === 'low') {
-      style = "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-950/45";
+      style = "bg-[#effaf3] dark:bg-emerald-950/20 text-[#10b981] dark:text-emerald-400 border-emerald-100 dark:border-emerald-950/45";
       text = "Низкий";
     } else if (priority === 'medium') {
-      style = "bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-950/45";
+      style = "bg-[#eff6ff] dark:bg-blue-950/20 text-[#3b82f6] dark:text-blue-400 border-blue-100 dark:border-blue-950/45";
       text = "Средний";
     } else if (priority === 'high') {
-      style = "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-950/45";
+      style = "bg-[#fffbeb] dark:bg-amber-950/20 text-[#f59e0b] dark:text-amber-400 border-amber-100 dark:border-amber-950/45";
       text = "Высокий";
     } else if (priority === 'urgent') {
-      style = "bg-rose-50 dark:bg-rose-950/25 text-rose-600 dark:text-rose-400 border-rose-150 dark:border-rose-950/50";
+      style = "bg-[#fff5f5] dark:bg-rose-950/25 text-[#f43f5e] dark:text-rose-400 border-rose-150 dark:border-rose-950/50";
       text = "Критический";
     }
 
     return (
-      <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded-sm border ${style} select-none`}>
+      <span className={`px-2 py-0.5 text-[9.5px] font-extrabold rounded-md border ${style} select-none`}>
         {text}
       </span>
     );
@@ -287,19 +287,19 @@ export default function KanbanView({
       {/* Category selector panel */}
       <div 
         id="kanban-categories-bar" 
-        className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800/80 px-4 sm:px-6 py-4.5 select-none space-y-4"
+        className="bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-900 px-4 sm:px-6 py-4 select-none space-y-4"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800/40">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/40 dark:border-slate-800/20">
           <div className="flex items-center gap-3">
-            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">ГРУППИРОВКА KANBAN:</span>
-            <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">ГРУППИРОВКА KANBAN:</span>
+            <div className="flex items-center gap-1 bg-slate-200/60 dark:bg-slate-900/60 p-1 rounded-xl border border-slate-200/50 dark:border-slate-850">
               <button
                 type="button"
                 onClick={() => setGroupBy('category')}
-                className={`px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                className={`px-3.5 py-1 border text-[11px] font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   groupBy === 'category' 
-                    ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-505 text-indigo-600 dark:text-indigo-400 ring-2 ring-indigo-500/5' 
-                    : 'bg-white dark:bg-slate-905 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                    ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
+                    : 'bg-transparent border-transparent text-slate-505 hover:text-slate-800 dark:hover:text-slate-350'
                 }`}
               >
                 По категориям
@@ -307,10 +307,10 @@ export default function KanbanView({
               <button
                 type="button"
                 onClick={() => setGroupBy('priority')}
-                className={`px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                className={`px-3.5 py-1 border text-[11px] font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   groupBy === 'priority' 
-                    ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-505 text-indigo-600 dark:text-indigo-400 ring-2 ring-indigo-500/5' 
-                    : 'bg-white dark:bg-slate-909 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                    ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
+                    : 'bg-transparent border-transparent text-slate-550 hover:text-slate-800 dark:hover:text-slate-350'
                 }`}
               >
                 По приоритетам
@@ -326,7 +326,7 @@ export default function KanbanView({
                   onCreateTagCategory(name.trim(), '#6366f1');
                 }
               }}
-              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-semibold shadow-xs transition-all cursor-pointer flex items-center gap-1 shrink-0"
+              className="px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] hover:scale-[1.01] active:scale-[0.99] text-white rounded-xl text-[10.5px] font-black shadow-[0_3px_12px_rgba(79,70,229,0.25)] transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
             >
               <Plus className="w-3.5 h-3.5" /> Добавить категорию
             </button>
@@ -361,11 +361,11 @@ export default function KanbanView({
 
             {/* Categories container: always visible on desktop, conditionally collapsed/expanded with animation on mobile */}
             <div className={`${isCategoriesExpanded ? 'flex' : 'hidden md:flex'} mt-1 flex-col md:flex-row md:items-center gap-3 overflow-x-auto scrollbar-none`}>
-              <span className="hidden md:inline text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest shrink-0">
+              <span className="hidden md:inline text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest shrink-0">
                 КАТЕГОРИЯ:
               </span>
               
-              <div className="flex flex-wrap md:flex-nowrap items-center gap-2 overflow-[x-auto] py-0.5 scrollbar-none">
+              <div className="flex flex-wrap md:flex-nowrap items-center gap-2.5 overflow-[x-auto] py-0.5 scrollbar-none">
                 {tagCategories.map(cat => {
                   const isSelected = cat.id === selectedCategoryId;
                   
@@ -386,15 +386,15 @@ export default function KanbanView({
                           setIsCategoriesExpanded(false);
                         }
                       }}
-                      className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-2 cursor-pointer transition-all shrink-0 ${
+                      className={`px-4 py-2 rounded-2xl border text-xs font-black flex items-center gap-2.5 cursor-pointer transition-all duration-200 shrink-0 ${
                         isSelected 
-                          ? 'bg-indigo-50/20 dark:bg-indigo-950/20 border-indigo-600 dark:border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/5'
-                          : 'bg-white dark:bg-slate-900 border-slate-205 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850 hover:border-slate-300 dark:hover:border-slate-700'
+                          ? 'bg-white dark:bg-slate-900 border-[#4f46e5]/85 dark:border-indigo-500 text-[#4f46e5] dark:text-indigo-300 ring-2 ring-indigo-500/10 shadow-[0_4px_15px_rgba(79,70,229,0.06)] scale-[1.01]'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-705 hover:bg-slate-50/60 dark:hover:bg-slate-850'
                       }`}
                     >
-                      <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-subtle" style={{ backgroundColor: cat.color }} />
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
                       <span>{cat.name}</span>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                      <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-450">
                         {count}
                       </span>
                     </button>
@@ -415,7 +415,7 @@ export default function KanbanView({
       {/* Pillars Columns Area */}
       <div 
         id="kanban-columns-container" 
-        className="flex-1 overflow-x-auto min-h-0 bg-slate-50/30 dark:bg-slate-950/10 p-5 sm:p-6"
+        className="flex-1 overflow-x-auto min-h-0 bg-slate-50/10 dark:bg-slate-950/5 p-5 sm:p-6"
       >
         <div className="flex gap-5 h-full items-start pb-2">
           {columns.map(col => {
@@ -429,21 +429,21 @@ export default function KanbanView({
                 onDragOver={(e) => handleDragOver(e, col.id)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, col.id)}
-                className={`w-72 sm:w-80 shrink-0 rounded-xl bg-slate-100/40 dark:bg-slate-900/10 border p-3 flex flex-col max-h-full transition-all duration-200 scrollbar-thin ${
+                className={`w-72 sm:w-80 shrink-0 rounded-2xl bg-[#f8fafc] dark:bg-slate-905/80 border p-4 flex flex-col max-h-full transition-all duration-250 scrollbar-thin ${
                   isDraggedOver 
-                    ? 'border-indigo-400 dark:border-indigo-500/80 bg-indigo-50/20 dark:bg-indigo-950/20 ring-2 ring-indigo-500/10 shadow-xs' 
-                    : 'border-slate-200 dark:border-slate-900/60'
+                    ? 'border-indigo-400 dark:border-indigo-505 bg-indigo-50/10 dark:bg-indigo-950/10 scale-[1.01] ring-2 ring-indigo-500/10 shadow-[0_10px_30px_rgba(99,102,241,0.08)]' 
+                    : 'border-slate-200 dark:border-slate-850 shadow-[0_2px_8px_rgba(15,23,42,0.015),0_1px_3px_rgba(15,23,42,0.01)]'
                 }`}
-                style={{ borderTop: `4px solid ${col.color}` }}
+                style={{ borderTop: `3px solid ${col.color}` }}
               >
                 {/* Column top header */}
-                <div className="flex items-center justify-between pb-2 mb-2 px-1 border-b border-slate-200/50 dark:border-slate-800/30">
-                  <div className="flex items-center gap-1.5 min-w-0">
+                <div className="flex items-center justify-between pb-3 mb-3 px-1 border-b border-slate-200/50 dark:border-slate-800/30">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
-                    <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 truncate" title={col.title}>
+                    <h4 className="text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate" title={col.title}>
                       {col.title}
                     </h4>
-                    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black font-mono bg-slate-200/50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 shrink-0">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black font-mono bg-slate-200/60 dark:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0">
                       {col.items.length}
                     </span>
                   </div>
@@ -505,16 +505,16 @@ export default function KanbanView({
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.95 }}
                           transition={{ duration: 0.15 }}
-                          className={`group select-none bg-white dark:bg-slate-900 border hover:border-slate-350 dark:hover:border-slate-700/80 rounded-xl p-3 hover:shadow-xs transition-all cursor-grab active:cursor-grabbing relative flex flex-col gap-2.5 ${
+                          className={`group select-none bg-white dark:bg-slate-910 border hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] hover:translate-y-[-1.5px] transition-all duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
                             draggedOverTagCardId === node.id
                               ? 'border-emerald-500 dark:border-emerald-400 ring-4 ring-emerald-500/20 shadow-md bg-emerald-50/10 dark:bg-emerald-950/10 scale-[1.01]'
                               : node.id === selectedNodeId 
-                                ? 'border-indigo-500 dark:border-indigo-400 ring-2 ring-indigo-500/10 shadow-xs' 
-                                : 'border-slate-200 dark:border-slate-850'
+                                ? 'border-[#4f46e5] dark:border-indigo-400 ring-4 ring-indigo-500/10 shadow-sm' 
+                                : 'border-slate-200/80 dark:border-slate-850'
                           }`}
                         >
                           {/* Completed toggle checkbox and text */}
-                          <div className="flex items-start gap-2">
+                          <div className="flex items-start gap-3">
                             <button
                               id={`kanban-card-check-${node.id}`}
                               type="button"
@@ -525,25 +525,25 @@ export default function KanbanView({
                                   completed: !node.completed
                                 });
                               }}
-                              className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors shrink-0 mt-0.5 cursor-pointer"
+                              className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 mt-0.5 cursor-pointer"
                               title={node.completed ? "Отметить активной" : "Отметить выполненной"}
                             >
                               {node.completed ? (
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-500 fill-emerald-100 dark:fill-emerald-900/10" />
+                                <CheckCircle2 className="w-[18px] h-[18px] text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
                               ) : activePomodoroNodeId === node.id ? (
-                                <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
+                                <span className="relative flex items-center justify-center w-[18px] h-[18px] shrink-0">
                                   <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
-                                  <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
+                                  <Loader2 className="w-[18px] h-[18px] text-rose-500 animate-spin" />
                                 </span>
                               ) : (
-                                <Circle className="w-4 h-4" />
+                                <Circle className="w-[18px] h-[18px]" />
                               )}
                             </button>
                             
                             <div className="min-w-0 flex-1">
-                              <p className={`text-xs font-semibold leading-relaxed text-slate-800 dark:text-slate-200 ${
+                              <p className={`text-[12px] font-bold leading-relaxed text-slate-800 dark:text-slate-100 ${
                                 node.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
-                              } flex items-center flex-wrap gap-1`}>
+                              } flex items-center flex-wrap gap-1.5`}>
                                 <span>{node.text}</span>
                                 {activePomodoroNodeId === node.id && (
                                   <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
@@ -606,14 +606,14 @@ export default function KanbanView({
 
                           {/* Progress slider visually if active */}
                           {node.progress !== undefined && node.progress > 0 && (
-                            <div className="space-y-1">
-                              <div className="flex items-center justify-between text-[9px] font-mono text-slate-400">
+                            <div className="space-y-1.5 pt-1">
+                              <div className="flex items-center justify-between text-[10px] font-extrabold text-slate-450 dark:text-slate-500 uppercase tracking-widest">
                                 <span>Прогресс</span>
                                 <span>{node.progress}%</span>
                               </div>
-                              <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                              <div className="w-full bg-[#f1f5f9] dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
                                 <div 
-                                  className="h-full bg-indigo-500 transition-all rounded-full"
+                                  className="h-full bg-[#4f46e5] dark:bg-indigo-500 transition-all rounded-full shadow-[0_0_8px_rgba(79,70,229,0.2)]"
                                   style={{ width: `${node.progress}%` }}
                                 />
                               </div>
@@ -621,30 +621,30 @@ export default function KanbanView({
                           )}
 
                           {/* Card metadata row (Priority, Due Date, attachments/notes) */}
-                          <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
                             {renderPriorityBadge(node.priority)}
 
                             {hasDueDate && (
-                              <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md border font-bold ${
+                              <span className={`inline-flex items-center gap-1.5 text-[9.5px] px-2 py-0.5 rounded-lg border font-extrabold shadow-sm ${
                                 isOverdue(node.dueDate)
-                                  ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-950/45'
-                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-205 dark:border-slate-705'
+                                  ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-950/45'
+                                  : 'bg-white dark:bg-slate-800 text-slate-550 border-slate-200 dark:border-slate-705'
                               }`} title={isOverdue(node.dueDate) ? "Просрочен дедлайн" : "Дедлайн"}>
-                                <Clock className="w-2.5 h-2.5" />
-                                {formatRussianDate(node.dueDate)}
+                                <Clock className="w-3 h-3 text-slate-400" />
+                                <span>{formatRussianDate(node.dueDate)}</span>
                               </span>
                             )}
 
                             {hasNotes && (
-                              <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-400" title="Есть описание">
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-lg bg-slate-50/50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 text-slate-400 hover:text-slate-600" title="Есть описание">
                                 <FileText className="w-3 h-3" />
                               </span>
                             )}
 
                             {hasAttachments && (
-                              <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-450 font-bold" title="Прикреплены файлы">
+                              <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 text-slate-500 font-bold" title="Прикреплены файлы">
                                 <Paperclip className="w-3 h-3" />
-                                {node.files.length}
+                                <span>{node.files.length}</span>
                               </span>
                             )}
                           </div>
@@ -654,11 +654,11 @@ export default function KanbanView({
                             const otherTags = (node.tags || []).filter(t => !activeTags.includes(t));
                             if (otherTags.length === 0) return null;
                             return (
-                              <div className="flex flex-wrap gap-1 border-t border-slate-100 dark:border-slate-800/40 pt-2">
+                              <div className="flex flex-wrap gap-1.5 border-t border-slate-100 dark:border-slate-800/40 pt-2.5">
                                 {otherTags.map(t => (
                                   <span 
                                     key={t} 
-                                    className="text-[9px] font-semibold px-1 rounded-sm bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200/55 dark:border-slate-700/50"
+                                    className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-505 border border-slate-200/50 dark:border-slate-700/50 shadow-2xs"
                                   >
                                     #{t}
                                   </span>
@@ -672,7 +672,7 @@ export default function KanbanView({
                   </AnimatePresence>
 
                   {col.items.length === 0 && (
-                    <div className="text-center py-6 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl text-[10px] text-slate-400 dark:text-slate-500 select-none">
+                    <div className="text-center py-6 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-[10.5px] font-bold text-slate-400 dark:text-slate-555 select-none">
                       Перетащите карточки сюда
                     </div>
                   )}
@@ -731,7 +731,7 @@ export default function KanbanView({
                         setActiveAddInColumn(col.id);
                         setNewTaskNameInColumn('');
                       }}
-                      className="w-full py-1.5 hover:bg-white dark:hover:bg-slate-900/60 border border-transparent hover:border-slate-200 dark:hover:border-slate-800/80 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                      className="w-full py-2 bg-slate-100/40 hover:bg-white dark:bg-slate-900/20 dark:hover:bg-slate-900 border border-dashed border-slate-200 hover:border-slate-350 dark:border-slate-800 dark:hover:border-slate-700 hover:shadow-[0_2px_8px_rgba(0,0,0,0.03)] rounded-xl text-[11px] font-extrabold text-slate-550 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Добавить задачу</span>

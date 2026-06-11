@@ -15,27 +15,12 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
 googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
 
-// Cache the access token in memory/localStorage to persist across refreshes
-let cachedAccessToken: string | null = (() => {
-  try {
-    return localStorage.getItem('milli_google_oauth_token');
-  } catch {
-    return null;
-  }
-})();
+// Cache the access token in memory purely, as per workspace-integration guidelines
+let cachedAccessToken: string | null = null;
 let isSigningIn = false;
 
 export const setAccessToken = (token: string | null) => {
   cachedAccessToken = token;
-  try {
-    if (token) {
-      localStorage.setItem('milli_google_oauth_token', token);
-    } else {
-      localStorage.removeItem('milli_google_oauth_token');
-    }
-  } catch (error) {
-    console.error('Error writing token to localStorage:', error);
-  }
 };
 
 export const initAuth = (
