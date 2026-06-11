@@ -113,8 +113,8 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
     while (attempt < maxAttempts) {
       attempt++;
       try {
-        // Progressive timeouts: Attempt 1 = 12s, Attempt 2 = 18s, Attempt 3 = 25s
-        const currentTimeoutMs = attempt === 1 ? 12000 : attempt === 2 ? 18000 : 25000;
+        // Progressive timeouts: Attempt 1 = 30s, Attempt 2 = 45s, Attempt 3 = 60s
+        const currentTimeoutMs = attempt === 1 ? 30000 : attempt === 2 ? 45000 : 60000;
         
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`Превышено время ожидания сервера при попытке ${attempt} (${currentTimeoutMs / 1000}с)`)), currentTimeoutMs)
@@ -163,7 +163,8 @@ export async function loadFromFirebaseDirectly(userId: string): Promise<Workspac
   while (attempt < maxAttempts) {
     attempt++;
     try {
-      const currentTimeoutMs = attempt === 1 ? 12000 : attempt === 2 ? 18000 : 25050; // slightly longer than save to complete reads safely
+      // Progressive timeouts: Attempt 1 = 30s, Attempt 2 = 45s, Attempt 3 = 60s
+      const currentTimeoutMs = attempt === 1 ? 30000 : attempt === 2 ? 45000 : 60000;
       
       const snap = await Promise.race([
         getDoc(docRef),

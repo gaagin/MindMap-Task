@@ -41,7 +41,7 @@ interface MindMapCanvasProps {
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null) => void;
   onUpdateNodeCoordinates: (id: string, x: number, y: number) => void;
-  onUpdateNodeParent: (id: string, newParentId: string | null) => void;
+  onUpdateNodeParent: (id: string, newParentId: string | null, newX?: number, newY?: number) => void;
   onAddChildNode: (parentId: string) => void;
   onAddFloatingNode: (x: number, y: number, parentId?: string | null, customText?: string, extraFields?: Partial<TaskNode>) => void;
   onAddContainerNode: (x: number, y: number) => void;
@@ -66,6 +66,8 @@ interface MindMapCanvasProps {
   filterNotes?: string;
   searchQuery?: string;
   tagCategories?: TagCategory[];
+  lastCreatedNodeId?: string | null;
+  onClearLastCreatedNodeId?: () => void;
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -113,9 +115,19 @@ export default function MindMapCanvas({
   filterAttachments = 'all',
   filterNotes = 'all',
   searchQuery = '',
-  tagCategories = []
+  tagCategories = [],
+  lastCreatedNodeId,
+  onClearLastCreatedNodeId
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (lastCreatedNodeId) {
+      setEditingNodeId(lastCreatedNodeId);
+    }
+  }, [lastCreatedNodeId]);
   
   // States for Notes and file upload handling
   const [notesModalNodeId, setNotesModalNodeId] = useState<string | null>(null);
@@ -2111,6 +2123,7 @@ export default function MindMapCanvas({
   const getOverlapParent = (draggingId: string, newX: number, newY: number): TaskNode | undefined => {
     const draggingNode = nodes.find(n => n.id === draggingId);
     if (!draggingNode) return undefined;
+    if (draggingNode.isContainer) return undefined; // Containers can NEVER be parented or nested under other nodes
 
     // First attempt: Check for hover/overlap with regular non-container task nodes (containers can also overlap and snap here)
     const normalNodeOverlap = visibleNodes.find(otherNode => {
@@ -2379,8 +2392,10 @@ export default function MindMapCanvas({
         const currentParent = nodes.find(p => p.id === node.parentId);
         
         if (overlap) {
-          // Snap directly on release
-          onUpdateNodeParent(node.id, overlap.id);
+          if (overlap.id !== node.parentId) {
+            // Snap inside container or parent directly on drop and pass coordinates
+            onUpdateNodeParent(node.id, overlap.id, node.x, node.y);
+          }
         } else if (currentParent) {
           if (currentParent.isContainer) {
             const dx = Math.abs(node.x - currentParent.x);
@@ -2400,10 +2415,10 @@ export default function MindMapCanvas({
             if (shouldDetach) {
               if (focusedContainerId) {
                 if (node.parentId !== focusedContainerId) {
-                  onUpdateNodeParent(node.id, focusedContainerId);
+                  onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
                 }
               } else {
-                onUpdateNodeParent(node.id, null);
+                onUpdateNodeParent(node.id, null, node.x, node.y);
               }
             }
           } else {
@@ -2413,7 +2428,7 @@ export default function MindMapCanvas({
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 330) {
               if (focusedContainerId) {
-                onUpdateNodeParent(node.id, focusedContainerId);
+                onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
               } else {
                 // Check if release position is inside any container
                 const container = visibleNodes.find(otherNode => {
@@ -2426,9 +2441,9 @@ export default function MindMapCanvas({
                   return cdx < halfW && cdy < halfH;
                 });
                 if (container) {
-                  onUpdateNodeParent(node.id, container.id);
+                  onUpdateNodeParent(node.id, container.id, node.x, node.y);
                 } else {
-                  onUpdateNodeParent(node.id, null);
+                  onUpdateNodeParent(node.id, null, node.x, node.y);
                 }
               }
             }
@@ -2830,8 +2845,10 @@ export default function MindMapCanvas({
           const currentParent = nodes.find(p => p.id === node.parentId);
           
           if (overlap) {
-            // Snap inside container or parent directly on drop
-            onUpdateNodeParent(node.id, overlap.id);
+            if (overlap.id !== node.parentId) {
+              // Snap inside container or parent directly on drop and pass coordinates
+              onUpdateNodeParent(node.id, overlap.id, node.x, node.y);
+            }
           } else if (currentParent) {
             if (currentParent.isContainer) {
               const dx = Math.abs(node.x - currentParent.x);
@@ -2851,10 +2868,10 @@ export default function MindMapCanvas({
               if (shouldDetach) {
                 if (focusedContainerId) {
                   if (node.parentId !== focusedContainerId) {
-                    onUpdateNodeParent(node.id, focusedContainerId);
+                    onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
                   }
                 } else {
-                  onUpdateNodeParent(node.id, null);
+                  onUpdateNodeParent(node.id, null, node.x, node.y);
                 }
               }
             } else {
@@ -2864,7 +2881,7 @@ export default function MindMapCanvas({
               const dist = Math.sqrt(dx * dx + dy * dy);
               if (dist > 330) {
                 if (focusedContainerId) {
-                  onUpdateNodeParent(node.id, focusedContainerId);
+                  onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
                 } else {
                   // Check if release position is inside any container
                   const container = visibleNodes.find(otherNode => {
@@ -2877,9 +2894,9 @@ export default function MindMapCanvas({
                     return cdx < halfW && cdy < halfH;
                   });
                   if (container) {
-                    onUpdateNodeParent(node.id, container.id);
+                    onUpdateNodeParent(node.id, container.id, node.x, node.y);
                   } else {
-                    onUpdateNodeParent(node.id, null);
+                    onUpdateNodeParent(node.id, null, node.x, node.y);
                   }
                 }
               }
@@ -3086,6 +3103,15 @@ export default function MindMapCanvas({
     } catch {
       return dateStr;
     }
+  };
+
+  // Find the closest ancestor container for a given node (if any)
+  const getAncestorContainer = (nodeId: string | null): TaskNode | null => {
+    if (!nodeId) return null;
+    const parent = nodes.find(n => n.id === nodeId);
+    if (!parent) return null;
+    if (parent.isContainer) return parent;
+    return getAncestorContainer(parent.parentId);
   };
 
   // Trace parent nodes back to root to determine if any ancestor is collapsed, or filtered by focus mode
@@ -3526,7 +3552,7 @@ export default function MindMapCanvas({
                   left: node.x,
                   top: node.y,
                   transform: 'translate(-50%, -50%)',
-                  zIndex: isContainerSelected ? 30 : 2, 
+                  zIndex: isContainerSelected ? 20 : 10, 
                   width: isContainerCollapsed ? '220px' : `${node.width || 520}px`,
                   height: isContainerCollapsed ? '100px' : `${node.height || 400}px`,
                 }}
@@ -3579,9 +3605,6 @@ export default function MindMapCanvas({
                   if (hasDraggedNode || didDragRef.current) return;
                   e.stopPropagation();
                   onSelectNode(node.id);
-                  if (node.collapsed) {
-                    onToggleNodeCollapse(node.id);
-                  }
                 }}
               >
                 {/* Floating Figma-like Container Title: Always visible, zoom-independent scale */}
@@ -3598,6 +3621,10 @@ export default function MindMapCanvas({
                     e.stopPropagation();
                     onSelectNode(node.id);
                   }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setEditingNodeId(node.id);
+                  }}
                   onMouseDown={(e) => {
                     startDragNode(e, node);
                   }}
@@ -3607,7 +3634,41 @@ export default function MindMapCanvas({
                       ? 'bg-amber-500 text-white border-amber-600 shadow-md'
                       : 'bg-slate-100 dark:bg-slate-805 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-750'
                   }`}>
-                    <span>{node.text || 'КОНТЕЙНЕР'}</span>
+                    {editingNodeId === node.id ? (
+                      <input
+                        type="text"
+                        value={node.text}
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                        onBlur={() => {
+                          setEditingNodeId(null);
+                          if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                        }}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter') {
+                            setEditingNodeId(null);
+                            if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                          }
+                          if (e.key === 'Escape' || e.key === 'Esc') {
+                            e.target.blur();
+                          }
+                        }}
+                        onChange={(e) => {
+                          onUpdateNode({
+                            ...node,
+                            text: e.target.value
+                          });
+                        }}
+                        className={`text-[11px] font-sans font-extrabold uppercase tracking-wider bg-transparent focus:outline-none focus:ring-0 border-b p-0 max-w-[150px] ${
+                          isContainerSelected ? 'text-white border-white' : 'text-slate-700 dark:text-slate-200 border-slate-400'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span>{node.text || 'КОНТЕЙНЕР'}</span>
+                    )}
                     {node.collapsed && (
                       <span className={`text-[9px] font-mono rounded px-1 ${isContainerSelected ? 'bg-amber-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
                         {totalChildren}
@@ -3914,6 +3975,11 @@ const pInfo = getPriorityInfo(node.priority);
             }
           })();
 
+          const ancestorContainer = getAncestorContainer(node.parentId);
+          const cardZIndex = ancestorContainer
+            ? ((selectedNodeId === ancestorContainer.id) ? 20 : 10) + (isSelected ? 5 : 2)
+            : (isSelected ? 30 : 5);
+
           return (
             <div
               key={node.id}
@@ -3922,7 +3988,7 @@ const pInfo = getPriorityInfo(node.priority);
                 left: node.x,
                 top: node.y,
                 transform: 'translate(-50%, -50%)',
-                zIndex: isSelected ? 30 : 10,
+                zIndex: cardZIndex,
               }}
               onDragOver={(e) => {
                 if (e.dataTransfer.types.includes('application/task-tag')) {
@@ -3977,6 +4043,10 @@ const pInfo = getPriorityInfo(node.priority);
                           : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-650 shadow-sm'
               } ${node.completed ? 'opacity-85' : isOverdue(node.dueDate) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5' : ''}`}
               onMouseDown={(e) => startDragNode(e, node)}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setEditingNodeId(node.id);
+              }}
               onClick={(e) => {
                 if (hasDraggedNode || didDragRef.current) return; // ignore click if dragged
                 e.stopPropagation();
@@ -4044,22 +4114,56 @@ const pInfo = getPriorityInfo(node.priority);
                   </button>
 
                   <div className="min-w-0 flex-1">
-                    <p className={`text-xs font-semibold leading-snug font-sans break-words ${
-                      isRoot 
-                        ? 'text-white' 
-                        : 'text-slate-800 dark:text-slate-100 font-medium'
-                    } ${node.completed ? 'line-through opacity-60 italic' : ''} flex items-center flex-wrap gap-1`}>
-                      <span>{node.text || 'Без названия'}</span>
-                      {activePomodoroNodeId === node.id && (
-                        <span className="inline-flex items-center gap-1 bg-red-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
-                          <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                    {editingNodeId === node.id ? (
+                      <input
+                        type="text"
+                        value={node.text}
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                        onBlur={() => {
+                          setEditingNodeId(null);
+                          if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                        }}
+                        onKeyDown={(e) => {
+                          e.stopPropagation(); // Avoid triggering global keyboard shortcuts like Delete!
+                          if (e.key === 'Enter') {
+                            setEditingNodeId(null);
+                            if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                          }
+                          if (e.key === 'Escape' || e.key === 'Esc') {
+                            e.target.blur();
+                          }
+                        }}
+                        onChange={(e) => {
+                          onUpdateNode({
+                            ...node,
+                            text: e.target.value
+                          });
+                        }}
+                        className={`w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-1 py-0.5 rounded border border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+                          isRoot ? 'text-slate-900 bg-white' : ''
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <p className={`text-xs font-semibold leading-snug font-sans break-words ${
+                        isRoot 
+                          ? 'text-white' 
+                          : 'text-slate-800 dark:text-slate-100 font-medium'
+                      } ${node.completed ? 'line-through opacity-60 italic' : ''} flex items-center flex-wrap gap-1`}>
+                        <span>{node.text || 'Без названия'}</span>
+                        {activePomodoroNodeId === node.id && (
+                          <span className="inline-flex items-center gap-1 bg-red-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                            </span>
+                            <span>🍅</span>
                           </span>
-                          <span>🍅</span>
-                        </span>
-                      )}
-                    </p>
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
 
