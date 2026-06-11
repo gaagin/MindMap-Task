@@ -3589,7 +3589,7 @@ export default function MindMapCanvas({
                     }
                   }
                 }}
-                className={`absolute rounded-2xl border-2 ${(isDraggingThisNode || resizingNodeId === node.id) ? '' : 'transition-all duration-150'} ${
+                className={`absolute rounded-2xl border-2 ${(isDraggingThisNode || resizingNodeId === node.id) ? '' : 'transition-[background-color,border-color,opacity,box-shadow,transform] duration-150'} ${
                   isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                 } ${
                   draggedOverTagNodeId === node.id
@@ -4030,7 +4030,7 @@ const pInfo = getPriorityInfo(node.priority);
                   }
                 }
               }}
-              className={`absolute group cursor-grab active:cursor-grabbing w-[210px] rounded-xl border ${isDraggingThisNode ? '' : 'transition-all duration-150'} ${
+              className={`absolute group cursor-grab active:cursor-grabbing w-[210px] rounded-xl border ${isDraggingThisNode ? '' : 'transition-[background-color,border-color,opacity,box-shadow,transform] duration-150'} ${
                 isDimmed 
                   ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 hover:opacity-90 hover:grayscale-0 hover:scale-100 duration-300' 
                   : ''
