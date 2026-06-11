@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport } from '../types';
 
 // Registry for Deletion tracking to synchronize with Google Sheets Deletions tab
@@ -74,6 +74,53 @@ function sanitizeForFirestore(obj: any): any {
   return obj;
 }
 
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 /**
  * Saves current WorkspaceState snapshot to firestore database dynamically.
  * Features automatic Exponential Backoff and progressive retries to handle unstable connections.
@@ -128,6 +175,9 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
         console.log(`Firebase cloud sync completed successfully on attempt ${attempt}.`);
         return { success: true };
       } catch (error: any) {
+        if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
+          handleFirestoreError(error, OperationType.WRITE, `workspaces/${userId}`);
+        }
         lastError = error;
         console.warn(`Firebase save attempt ${attempt} failed: ${error?.message || error}`);
         
@@ -178,6 +228,9 @@ export async function loadFromFirebaseDirectly(userId: string): Promise<Workspac
       }
       return null;
     } catch (error: any) {
+      if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
+        handleFirestoreError(error, OperationType.GET, `workspaces/${userId}`);
+      }
       lastError = error;
       console.warn(`Firebase load attempt ${attempt} failed: ${error?.message || error}`);
       

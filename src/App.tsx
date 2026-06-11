@@ -2598,7 +2598,9 @@ export default function App() {
                 onClearLastCreatedNodeId={() => setLastCreatedNodeId(null)}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
-                  if (id === null) {
+                  if (id) {
+                    setIsDrawerOpen(true);
+                  } else {
                     setIsDrawerOpen(false);
                   }
                 }}

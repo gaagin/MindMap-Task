@@ -469,12 +469,12 @@ export default function MindMapCanvas({
           <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto">
             <span className="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest mb-1.5">Свободный холст</span>
             <span className="text-[9px] text-slate-400 dark:text-slate-500 max-w-[200px]">
-              Дочерние подзадачи свободно перемещаются по этому прямоугольнику. Добавьте задачу кнопкой <b>+</b> выше.
+              Дочерние подзадачи свободно перемещаются по этому прямоугольнику. Чтобы добавить, кликните дважды или перетащите задачу внутрь.
             </span>
           </div>
         );
       }
-      return <div className="flex-1 min-h-[140px]" />;
+      return null;
     }
 
     if (viewMode === 'list') {
@@ -519,38 +519,128 @@ export default function MindMapCanvas({
                   }}
                   className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 shadow-xs hover:border-slate-250 dark:hover:border-slate-705 group/item cursor-pointer text-slate-800 dark:text-slate-250 select-none transition-all hover:bg-slate-50/60 dark:hover:bg-slate-850/65"
                 >
-                  <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
                     <button 
-                      onClick={(e) => { e.stopPropagation(); onToggleNodeCompleted(child.id); }}
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        onSelectNode(child.id);
+                        onToggleNodeCompleted(child.id); 
+                      }}
                       onMouseDown={(e) => e.stopPropagation()}
                       data-drag-ignore
-                      className="text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                      className="text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer shrink-0"
                     >
                       {child.completed ? (
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : activePomodoroNodeId === child.id ? (
+                        <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0 inline-block">
+                          <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                          <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                        </span>
                       ) : (
                         <Circle className="w-3.5 h-3.5 text-slate-400" />
                       )}
                     </button>
-                    <span 
-                      onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
-                      className={`font-semibold leading-relaxed truncate cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${child.completed ? 'line-through text-slate-400 dark:text-slate-555' : 'text-slate-700 dark:text-slate-205'}`}
-                    >
-                      {child.text}
-                    </span>
+                    <input 
+                      type="text"
+                      value={child.text}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectNode(child.id);
+                      }}
+                      onChange={(e) => {
+                        onUpdateNode({ ...child, text: e.target.value });
+                      }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`flex-1 bg-transparent border-0 focus:ring-0 p-1 py-0 rounded hover:bg-slate-100/50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold focus:outline-none focus:bg-slate-100 dark:focus:bg-slate-850 truncate min-w-[60px] shrink ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${
+                        child.completed ? 'line-through text-slate-405 dark:text-slate-500 font-normal' : ''
+                      }`}
+                    />
                   </div>
                   
-                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                    {child.dueDate && (
-                      <span className="text-[8px] font-bold text-slate-400 px-1 py-0.5 rounded bg-slate-50 dark:bg-slate-950 font-mono border border-slate-200 dark:border-slate-800">
-                        {formatDisplayDate(child.dueDate)}
+                  <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                    {/* Pomodoro Timer Badge */}
+                    {child.pomodoroTotalTime ? (
+                      <span className="text-[8px] font-bold text-rose-600 dark:text-rose-400 font-mono shrink-0 flex items-center gap-0.5 bg-rose-500/5 px-1 py-0.5 rounded border border-rose-500/10" title="Фокусировка Pomodoro">
+                        🍅 {Math.round(child.pomodoroTotalTime / 60)}м
                       </span>
+                    ) : null}
+
+                    {/* Progressive cyclic button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectNode(child.id);
+                        const curr = child.progress || 0;
+                        onUpdateNode({ ...child, progress: curr >= 100 ? 0 : curr + 25 });
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="text-[8px] font-mono font-black border border-slate-200 dark:border-slate-800 px-1 py-0.5 rounded bg-slate-55 dark:bg-slate-950 text-slate-500 cursor-pointer min-w-[32px] text-center"
+                      title="Нажмите для циклической смены прогресса (0-25-50-75-100%)"
+                    >
+                      {child.progress || 0}%
+                    </button>
+
+                    {/* Cyclic Priority Badging */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectNode(child.id);
+                        const cycle: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
+                        const nextP = cycle[(cycle.indexOf(child.priority) + 1) % cycle.length];
+                        onUpdateNode({ ...child, priority: nextP });
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`px-1 py-0.5 rounded text-[8px] font-bold h-4 cursor-pointer scale-95 transition-all text-slate-500 border border-slate-200 dark:border-slate-800 ${
+                        child.priority === 'urgent' ? 'bg-rose-50/80 dark:bg-rose-950/45 text-rose-600 border-rose-205' :
+                        child.priority === 'high' ? 'bg-amber-50/80 dark:bg-amber-950/45 text-amber-600 border-amber-205' :
+                        child.priority === 'medium' ? 'bg-blue-50/80 dark:bg-blue-950/45 text-blue-600 border-blue-205' :
+                        child.priority === 'low' ? 'bg-emerald-50/80 dark:bg-emerald-950/45 text-emerald-600 border-emerald-205' :
+                        'opacity-50 hover:opacity-100 bg-white dark:bg-slate-900 border-slate-200'
+                      }`}
+                      title="Нажмите для циклической смены приоритета"
+                    >
+                      {child.priority === 'urgent' ? 'Крит' :
+                       child.priority === 'high' ? 'Выс' :
+                       child.priority === 'medium' ? 'Ср' :
+                       child.priority === 'low' ? 'Низ' : '—'}
+                    </button>
+
+                    {/* Interactive Due Date Calendar Picker */}
+                    <div className="flex items-center gap-0.5 bg-slate-50 dark:bg-slate-950 px-1 py-0.2 rounded border border-slate-200 dark:border-slate-800 text-slate-605" onClick={(e) => e.stopPropagation()}>
+                      <Calendar className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                      <input 
+                        type="date"
+                        value={child.dueDate || ''}
+                        onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          onUpdateNode({ ...child, dueDate: e.target.value });
+                        }}
+                        className="text-[8px] p-0.5 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-600 dark:text-slate-350 max-w-[76px] font-mono leading-none cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Tag badge items list */}
+                    {child.tags && child.tags.length > 0 && (
+                      <div className="flex gap-0.5 shrink-0 max-w-[80px] overflow-hidden truncate">
+                        {child.tags.slice(0, 1).map(t => (
+                          <span key={t} className="text-[7px] px-1 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold rounded border border-indigo-100/50">
+                            #{t}
+                          </span>
+                        ))}
+                        {child.tags.length > 1 && (
+                          <span className="text-[7px] text-slate-400 font-bold" title={child.tags.join(', ')}>+{child.tags.length - 1}</span>
+                        )}
+                      </div>
                     )}
+
                     <button
                       onClick={(e) => { e.stopPropagation(); setNotesModalNodeId(child.id); }}
                       onMouseDown={(e) => e.stopPropagation()}
                       data-drag-ignore
-                      className="p-0.5 rounded text-slate-400 hover:text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      className="p-0.5 rounded text-slate-400 hover:text-indigo-600 hover:bg-slate-55 dark:hover:bg-slate-805 transition-colors cursor-pointer"
                       title="Описание / Заметки"
                     >
                       <FileText className="w-3 h-3" />
@@ -559,7 +649,7 @@ export default function MindMapCanvas({
                       onClick={(e) => { e.stopPropagation(); onDeleteNode(child.id); }}
                       onMouseDown={(e) => e.stopPropagation()}
                       data-drag-ignore
-                      className="p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      className="p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-855 transition-colors cursor-pointer"
                       title="Удалить"
                     >
                       <Trash2 className="w-3 h-3" />
@@ -1510,10 +1600,12 @@ export default function MindMapCanvas({
           }}
           className="flex-1 flex flex-col min-h-0 cursor-pointer"
         >
-          <div className="w-full flex items-center border-b border-slate-150 dark:border-slate-800 pb-1 text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest select-none shrink-0 mb-1">
-            <div className="w-1/2">Задача</div>
-            <div className="w-1/4 text-center">Приоритет</div>
-            <div className="w-1/4 text-right">Срок</div>
+          <div className="w-full flex items-center border-b border-slate-150 dark:border-slate-800 pb-1 text-[8px] font-black text-slate-400 dark:text-slate-555 uppercase tracking-widest select-none shrink-0 mb-1 px-1">
+            <div className="w-[35%] md:w-[40%]">Задача</div>
+            <div className="w-[15%] text-center font-bold">Приор</div>
+            <div className="w-[15%] text-center font-bold">Прогр</div>
+            <div className="w-[20%] text-center font-bold">Срок</div>
+            <div className="w-[15%] text-right font-bold">Опции</div>
           </div>
           
           <div className={`flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar min-h-0 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[200px]'}`}>
@@ -1523,7 +1615,6 @@ export default function MindMapCanvas({
               </div>
             ) : (
               [...containerChildren].sort((a, b) => a.y - b.y).map(child => {
-                const pDot = child.priority === 'urgent' ? '🔴' : child.priority === 'high' ? '🟠' : child.priority === 'medium' ? '🔵' : child.priority === 'low' ? '🟢' : '⚪';
                 return (
                   <div 
                     key={child.id} 
@@ -1552,33 +1643,152 @@ export default function MindMapCanvas({
                     }}
                     className="w-full flex items-center py-1.5 border-b border-slate-100/50 dark:border-slate-850/60 hover:bg-slate-50/45 dark:hover:bg-slate-900/20 group/row cursor-pointer text-slate-850 dark:text-slate-200 select-none transition-all"
                   >
-                    <div className="w-1/2 min-w-0 pr-2 flex items-center gap-1.5">
+                    <div className="w-[35%] md:w-[40%] min-w-0 pr-1 flex items-center gap-1">
                        <button 
                          onClick={(e) => { e.stopPropagation(); onToggleNodeCompleted(child.id); }}
                          onMouseDown={(e) => e.stopPropagation()}
                          data-drag-ignore
-                         className="text-slate-400 hover:text-indigo-600 transition-all cursor-pointer text-[10px] shrink-0"
+                         className="text-slate-400 hover:text-indigo-600 transition-all cursor-pointer shrink-0"
                        >
-                         {child.completed ? '✅' : '⬜'}
+                         {child.completed ? (
+                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 animate-in fade-in zoom-in-50 duration-205" />
+                         ) : (
+                           <Circle className="w-3.5 h-3.5 text-slate-300 dark:text-slate-700 hover:scale-110 transition-transform" />
+                         )}
                        </button>
-                       <span 
-                         onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
-                         className={`truncate font-semibold cursor-pointer ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-205'}`}
-                       >
-                         {child.text}
-                       </span>
+                       <input 
+                         type="text"
+                         value={child.text}
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           onSelectNode(child.id);
+                         }}
+                         onChange={(e) => {
+                           onUpdateNode({ ...child, text: e.target.value });
+                         }}
+                         onKeyDown={(e) => e.stopPropagation()}
+                         onMouseDown={(e) => e.stopPropagation()}
+                         className={`flex-1 bg-transparent border-0 focus:ring-0 p-0.5 rounded hover:bg-slate-100/50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold focus:outline-none focus:bg-slate-100 dark:focus:bg-slate-855 truncate min-w-[50px] shrink ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${
+                           child.completed ? 'line-through text-slate-400 font-normal font-normal' : 'text-slate-700 dark:text-slate-205 font-semibold'
+                         }`}
+                       />
                     </div>
-                    <div className="w-1/4 text-center text-[9px] font-bold">
-                      <span title={`Приоритет: ${child.priority}`}>{pDot}</span>
+                    <div className="w-[15%] text-center text-[9px] font-bold flex justify-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNode(child.id);
+                          const cycle = ['none', 'low', 'medium', 'high', 'urgent'];
+                          const nextP = cycle[(cycle.indexOf(child.priority) + 1) % cycle.length];
+                          onUpdateNode({ ...child, priority: nextP as Priority });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className={`p-0.5 px-1 rounded-md text-[7.5px] font-extrabold cursor-pointer transition-colors leading-none ${
+                          child.priority === 'urgent' ? 'bg-rose-500/15 text-rose-600 dark:text-rose-455' :
+                          child.priority === 'high' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' :
+                          child.priority === 'medium' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-405' :
+                          child.priority === 'low' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
+                          'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                        }`}
+                        title="Приоритет (клик для изменения)"
+                      >
+                        {child.priority === 'urgent' ? 'Крит' :
+                         child.priority === 'high' ? 'Выс' :
+                         child.priority === 'medium' ? 'Ср' :
+                         child.priority === 'low' ? 'Низ' : '⚪'}
+                      </button>
                     </div>
-                    <div className="w-1/4 text-right font-mono text-[8.5px] text-slate-400 dark:text-slate-450 pr-0.5">
-                      {child.dueDate ? formatDisplayDate(child.dueDate) : '—'}
+                    <div className="w-[15%] text-center text-[9px] font-bold flex justify-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNode(child.id);
+                          const currentProg = child.progress || 0;
+                          const nextProg = currentProg >= 100 ? 0 : currentProg + 25;
+                          onUpdateNode({ ...child, progress: nextProg, completed: nextProg === 100 ? true : child.completed });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className={`p-0.5 px-1 rounded-md text-[7.5px] font-black cursor-pointer transition-colors leading-none ${
+                          child.completed || child.progress === 100 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
+                          (child.progress || 0) > 0 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-405' : 'bg-slate-100 dark:bg-slate-800 text-slate-450'
+                        }`}
+                        title="Прогресс (клик для изменения)"
+                      >
+                        {child.completed ? '100%' : `${child.progress || 0}%`}
+                      </button>
+                    </div>
+                    <div className="w-[20%] text-center flex justify-center" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-0.5 bg-slate-50 dark:bg-slate-950 px-1 py-0.2 rounded border border-slate-200 dark:border-slate-800 text-slate-650 shrink-0">
+                        <Calendar className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                        <input 
+                          type="date"
+                          value={child.dueDate || ''}
+                          onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            onUpdateNode({ ...child, dueDate: e.target.value });
+                          }}
+                          className="text-[8px] p-0.5 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-600 dark:text-slate-350 max-w-[70px] font-mono leading-none cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                    <div className="w-[15%] flex items-center justify-end gap-1 px-1 shrink-0 font-sans">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setNotesModalNodeId(child.id); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        data-drag-ignore
+                        className="p-0.5 rounded text-slate-400 hover:text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-805 transition-colors cursor-pointer"
+                        title="Описание / Заметки"
+                      >
+                        <FileText className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeleteNode(child.id); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        data-drag-ignore
+                        className="p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-855 transition-colors cursor-pointer"
+                        title="Удалить"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
                 );
               })
             )}
           </div>
+
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              const txt = inlineAddTexts[node.id] || '';
+              if (txt.trim()) {
+                onAddFloatingNode(node.x, node.y, node.id, txt.trim());
+                setInlineAddTexts(prev => ({ ...prev, [node.id]: '' }));
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="mt-2 flex items-center gap-1 border-t border-slate-100 dark:border-slate-800/60 pt-2 shrink-0 select-none font-sans"
+          >
+            <input 
+              type="text"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              value={inlineAddTexts[node.id] || ''}
+              onChange={(value) => {
+                setInlineAddTexts(prev => ({ ...prev, [node.id]: value.target.value }));
+              }}
+              placeholder="Новая подзадача..."
+              className="flex-1 text-[9px] p-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-md focus:outline-none focus:ring-0 text-slate-800 dark:text-slate-100 placeholder-slate-400"
+            />
+            <button
+              type="submit"
+              className="p-1 px-2 text-[9px] font-black bg-indigo-650 hover:bg-indigo-700 text-white rounded-md cursor-pointer transition flex items-center gap-0.5"
+            >
+              <Plus className="w-2.5 h-2.5" /> Добавить
+            </button>
+          </form>
         </div>
       );
     }
@@ -1586,7 +1796,7 @@ export default function MindMapCanvas({
     return null;
   };
 
-  // INBOX Container off-canvas persistent states
+// INBOX Container off-canvas persistent states
   const [isInboxCollapsed, setIsInboxCollapsed] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('task_mindmap_inbox_collapsed');
