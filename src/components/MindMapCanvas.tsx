@@ -3645,13 +3645,20 @@ export default function MindMapCanvas({
                           if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
                         }}
                         onKeyDown={(e) => {
+                          if (e.key === 'Escape' || e.key === 'Esc') {
+                            setEditingNodeId(null);
+                            if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                            if (!node.text.trim() || node.id === lastCreatedNodeId) {
+                              onDeleteNode(node.id);
+                            } else {
+                              e.currentTarget.blur();
+                            }
+                            return;
+                          }
                           e.stopPropagation();
                           if (e.key === 'Enter') {
                             setEditingNodeId(null);
                             if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
-                          }
-                          if (e.key === 'Escape' || e.key === 'Esc') {
-                            e.target.blur();
                           }
                         }}
                         onChange={(e) => {
@@ -4125,13 +4132,20 @@ const pInfo = getPriorityInfo(node.priority);
                           if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
                         }}
                         onKeyDown={(e) => {
+                          if (e.key === 'Escape' || e.key === 'Esc') {
+                            setEditingNodeId(null);
+                            if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                            if (!node.text.trim() || node.id === lastCreatedNodeId) {
+                              onDeleteNode(node.id);
+                            } else {
+                              e.currentTarget.blur();
+                            }
+                            return;
+                          }
                           e.stopPropagation(); // Avoid triggering global keyboard shortcuts like Delete!
                           if (e.key === 'Enter') {
                             setEditingNodeId(null);
                             if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
-                          }
-                          if (e.key === 'Escape' || e.key === 'Esc') {
-                            e.target.blur();
                           }
                         }}
                         onChange={(e) => {

@@ -1456,8 +1456,8 @@ export default function App() {
     setPanX(-Math.round(newX) * zoom);
     setPanY(-Math.round(newY) * zoom);
 
-    // Auto select new node so user can rename instantly! 🚀
-    setSelectedNodeId(newChild.id);
+    // Set lastCreatedNodeId so the new child node gets inline editing focused on the map,
+    // but do NOT change selectedNodeId so the parent properties details panel remains open!
     setLastCreatedNodeId(newChild.id);
   };
 
@@ -1530,8 +1530,10 @@ export default function App() {
       }
     }));
 
-    // Auto select the new floating node so user can rename instantly!
-    setSelectedNodeId(newFloatingNode.id);
+    // Auto select the new floating node only if it's a root level item (not a subtask)
+    if (!isInsideContainer) {
+      setSelectedNodeId(newFloatingNode.id);
+    }
     setLastCreatedNodeId(newFloatingNode.id);
   };
 
@@ -2029,7 +2031,11 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 h-full relative">
         
         {/* Workspace Top Action Bar Header */}
-        <header className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sm:px-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-20">
+        <header className={`h-16 border-b flex items-center justify-between px-4 sm:px-6 backdrop-blur-md z-20 transition-colors duration-300 ${
+          (!currentUser || !googleToken)
+            ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-900/40'
+            : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800'
+        }`}>
           <div className="flex items-center gap-3.5 min-w-0">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -2043,6 +2049,12 @@ export default function App() {
             <div className="min-w-0">
               <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-2">
                 {state.projects.find(p => p.id === state.activeProjectId)?.name || 'Карта задач'}
+                {(!currentUser || !googleToken) && (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 shadow-xs animate-pulse whitespace-nowrap">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                    <span>Нужна авторизация!</span>
+                  </span>
+                )}
               </h2>
               {viewMode !== 'mobile-list' && (
                 <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-400 font-serif">
@@ -2586,7 +2598,9 @@ export default function App() {
                 onClearLastCreatedNodeId={() => setLastCreatedNodeId(null)}
                 onSelectNode={(id) => {
                   setSelectedNodeId(id);
-                  if (id === null) {
+                  if (id) {
+                    setIsDrawerOpen(true);
+                  } else {
                     setIsDrawerOpen(false);
                   }
                 }}
