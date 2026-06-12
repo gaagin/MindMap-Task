@@ -15,12 +15,26 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
 googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
 
-// Cache the access token in memory purely, as per workspace-integration guidelines
+// Cache the access token in memory and persist in localStorage to survive page refreshes
 let cachedAccessToken: string | null = null;
+try {
+  cachedAccessToken = localStorage.getItem('google_oauth_access_token');
+} catch (e) {
+  console.error('[Firebase Auth] Failed to restore Google access token from localStorage:', e);
+}
 let isSigningIn = false;
 
 export const setAccessToken = (token: string | null) => {
   cachedAccessToken = token;
+  try {
+    if (token) {
+      localStorage.setItem('google_oauth_access_token', token);
+    } else {
+      localStorage.removeItem('google_oauth_access_token');
+    }
+  } catch (e) {
+    console.error('[Firebase Auth] Failed to set Google access token in localStorage:', e);
+  }
 };
 
 export const initAuth = (
