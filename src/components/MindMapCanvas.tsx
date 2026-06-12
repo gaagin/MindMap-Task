@@ -2822,8 +2822,8 @@ export default function MindMapCanvas({
             setDraggingNodeId(nodeId);
             setDragStart(potentialDragStartRef.current);
             setNodeOffsetStart(potentialNodeOffsetRef.current);
-            setHasDraggedNode(true);
-            didDragRef.current = true;
+            setHasDraggedNode(false); // Do not mark as dragged unless they actually move their finger
+            didDragRef.current = false;
             onSelectNode(nodeId, true);
 
             if (navigator.vibrate) {
@@ -3180,7 +3180,8 @@ export default function MindMapCanvas({
 
       if (!isLongPressDragging && potentialDragNodeIdRef.current) {
         onSelectNode(potentialDragNodeIdRef.current);
-      } else if (hasDraggedNode || isLongPressDragging) {
+      } else if (hasDraggedNode) {
+        // Only deselect if they actually moved and dragged the node
         onSelectNode(null);
       }
       setIsPanning(false);

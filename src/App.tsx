@@ -502,6 +502,7 @@ export default function App() {
     }
 
     if (isMulti) {
+      setIsMultiSelectMode(true);
       handleToggleSelectNode(id);
     } else {
       setSelectedNodeId(id);
