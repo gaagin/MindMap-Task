@@ -57,7 +57,7 @@ import {
   syncWithGoogleSheets, 
   logDeletion 
 } from './lib/syncService';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 
 /**
@@ -510,6 +510,55 @@ export default function App() {
     }
   };
 
+  const handleSelectAndCenterNode = (id: string | null, eOrIsMulti?: any) => {
+    if (!id) {
+      handleSelectNode(null, eOrIsMulti);
+      return;
+    }
+    
+    // Find absolute coordinates of the target node and which project it belongs to
+    let targetNode: TaskNode | undefined;
+    let targetProjectId: string | undefined;
+    
+    for (const [projectId, nodeList] of Object.entries(state.nodes)) {
+      const found = (nodeList as TaskNode[]).find(n => n.id === id);
+      if (found) {
+        targetNode = found;
+        targetProjectId = projectId;
+        break;
+      }
+    }
+
+    if (targetProjectId && targetProjectId !== state.activeProjectId) {
+      // Switch project
+      setState(prev => ({
+        ...prev,
+        activeProjectId: targetProjectId!
+      }));
+    }
+
+    handleSelectNode(id, eOrIsMulti);
+
+    if (targetNode && targetNode.x !== undefined && targetNode.y !== undefined) {
+      const targetZoom = 1.05;
+      setPanX(-targetNode.x * targetZoom);
+      setPanY(-targetNode.y * targetZoom);
+      setZoom(targetZoom);
+      
+      // Auto-scroll alternate views if they are active
+      setTimeout(() => {
+        const kanbanCard = document.getElementById(`kanban-card-${id}`);
+        if (kanbanCard) {
+          kanbanCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        const mobileCard = document.getElementById(`mobile-task-card-${id}`);
+        if (mobileCard) {
+          mobileCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 150);
+    }
+  };
+
   // Reminders check engine
   const [triggeredReminders, setTriggeredReminders] = useState<{
     nodeId: string;
@@ -856,6 +905,65 @@ export default function App() {
     }
   };
 
+  // Close / stop the active Pomodoro session
+  const handleClosePomo = () => {
+    if (!globalPomo) return;
+
+    // If it is an active work session (not break), save accumulated elapsed time
+    if (!globalPomo.isBreak && globalPomo.nodeId) {
+      const elapsed = globalPomo.duration - globalPomo.timeLeft;
+      if (elapsed > 0) {
+        let foundNode: TaskNode | undefined;
+        let foundPid: string | undefined;
+        for (const [pid, nodeList] of Object.entries(state.nodes)) {
+          const n = (nodeList as TaskNode[]).find(item => item.id === globalPomo.nodeId);
+          if (n) {
+            foundNode = n;
+            foundPid = pid;
+            break;
+          }
+        }
+
+        if (foundNode && foundPid) {
+          const updatedNode = {
+            ...foundNode,
+            pomodoroTotalTime: (foundNode.pomodoroTotalTime || 0) + elapsed,
+            pomodoroSessionsCount: (foundNode.pomodoroSessionsCount || 0) + 1
+          };
+          
+          setState(prev => {
+            const currentNodes = prev.nodes[foundPid!] || [];
+            const updatedList = currentNodes.map(n => n.id === updatedNode.id ? updatedNode : n);
+            const syncedNodes = syncCompletion(updatedList);
+            return {
+              ...prev,
+              nodes: {
+                ...prev.nodes,
+                [foundPid!]: syncedNodes
+              }
+            };
+          });
+        }
+      }
+    }
+
+    localStorage.removeItem('task_mindmap_pomodoro');
+    window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+
+    if (currentUser) {
+      try {
+        const docRef = doc(db, 'workspaces', currentUser.uid);
+        updateDoc(docRef, {
+          activePomodoro: null
+        }).catch(err => {
+          console.warn('[Firebase Pomo Sync] Failed to clear activePomodoro on close:', err);
+        });
+      } catch (err) {
+        console.error('[Firebase Pomo Sync] Error building Firestore path for clear activePomodoro:', err);
+      }
+    }
+  };
+
   // Quick single-button Google Sheets sync handler
   const handleQuickSheetsSync = async () => {
     if (isSyncingSheets) return;
@@ -892,7 +1000,11 @@ export default function App() {
         lastSyncedStateHashRef.current = getSyncHash(currentWorkspace); // Update hash to prevent reflection loops
         setUnsyncedEditsCount(0);
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-        setForceCloudSyncFeedback('Успешно выгружено в облако! Теперь откройте это приложение на другом устройстве и нажмите кнопку "Загрузить из облака".');
+        if (res.isOfflineQueued) {
+          setForceCloudSyncFeedback('Снимок успешно сохранен локально! Синхронизация с облаком произойдет автоматически при восстановлении стабильного интернет-соединения.');
+        } else {
+          setForceCloudSyncFeedback('Успешно выгружено в облако! Теперь откройте это приложение на другом устройстве и нажмите кнопку "Загрузить из облака".');
+        }
       } else {
         setForceCloudSyncFeedback(`Ошибка выгрузки: ${res.error || 'Проверьте интернет-соединение или права доступа.'}`);
       }
@@ -1049,14 +1161,10 @@ export default function App() {
 
         // Calculate and set absolute coordinates to recenter the canvas on startup
         if (targetNode.x !== undefined && targetNode.y !== undefined) {
-          // Adjust starting pan offset safely with standard coordinates
-          const offsetWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
-          const offsetHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
-          const panX = -targetNode.x + offsetWidth / 2 - 200;
-          const panY = -targetNode.y + offsetHeight / 2;
-          setPanX(panX);
-          setPanY(panY);
-          setZoom(1.05);
+          const targetZoom = 1.05;
+          setPanX(-targetNode.x * targetZoom);
+          setPanY(-targetNode.y * targetZoom);
+          setZoom(targetZoom);
         }
       }
     } catch (err) {
@@ -1923,21 +2031,25 @@ export default function App() {
   };
 
   // Create a new task originating from the Kanban Board view
-  const handleCreateKanbanTask = (text: string, initialTags: string[], initialPriority: Priority = 'none') => {
+  const handleCreateKanbanTask = (text: string, initialTags: string[], initialPriority: Priority = 'none', parentId: string | null = null) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
     const currentNodes = state.nodes[pid] || [];
     pushToUndo(pid, currentNodes);
 
+    const parentNode = parentId ? currentNodes.find(n => n.id === parentId) : null;
+    const parentX = parentNode ? parentNode.x : 350;
+    const parentY = parentNode ? parentNode.y : 350;
+
     const newTargetNode: TaskNode = {
       id: 'node-' + generateId(),
       projectId: pid,
       text,
-      x: 350 + Math.random() * 200,
-      y: 350 + Math.random() * 200,
-      parentId: null,
-      isFloating: true,
+      x: parentNode ? parentX + Math.random() * 100 : 350 + Math.random() * 200,
+      y: parentNode ? parentY + 120 + Math.random() * 80 : 350 + Math.random() * 200,
+      parentId,
+      isFloating: parentId ? undefined : true,
       priority: initialPriority,
       tags: initialTags,
       notes: '',
@@ -3007,7 +3119,7 @@ export default function App() {
             onUpdateNode={handleUpdateNode}
             onDeleteNode={handleDeleteNode}
             onAddChildNode={handleAddChildNode}
-            onSelectNode={setSelectedNodeId}
+            onSelectNode={handleSelectAndCenterNode}
             categories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
             onCreateTagCategory={handleCreateTagCategory}
             onUpdateTagCategory={handleUpdateTagCategory}
@@ -3025,7 +3137,7 @@ export default function App() {
               allNodes={activeNodes}
               onAddMultipleNodes={handleAddMultipleNodes}
               onUpdateNode={handleUpdateNode}
-              onSelectNode={setSelectedNodeId}
+              onSelectNode={handleSelectAndCenterNode}
               selectedNode={selectedNode}
               onClose={() => setAiConsoleOpen(false)}
             />
@@ -3052,7 +3164,7 @@ export default function App() {
           </div>
           <div className="flex flex-col min-w-0 pr-1">
             <span className={`text-[9px] font-extrabold uppercase tracking-wider ${globalPomo.isBreak ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-450'}`}>
-              {globalPomo.isBreak ? '☕ Фокус окончен / Перерыв' : '🎯 Идет фокус'}
+              {globalPomo.isBreak ? '☕ Фокус окончен / Перерыв' : '🎯 Идет focus'}
             </span>
             <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[155px] leading-tight flex items-center">
               {globalPomo.nodeText || 'Фокусировка'}
@@ -3061,6 +3173,17 @@ export default function App() {
           <div className={`px-2 py-1.5 rounded-xl text-xs font-black font-mono tracking-wider leading-none transition-colors ${globalPomo.isBreak ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400'}`}>
             {formatGlobalPomoTime(globalPomo.timeLeft)}
           </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClosePomo();
+            }}
+            className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-rose-500 dark:text-slate-500 dark:hover:text-rose-400 rounded-lg transition-colors cursor-pointer shrink-0"
+            title="Закрыть окошко Pomodoro"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 

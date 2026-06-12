@@ -14,7 +14,8 @@ import {
   ChevronDown,
   Sparkles,
   Tag,
-  Clock
+  Clock,
+  Link as LinkIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
@@ -28,7 +29,7 @@ interface KanbanViewProps {
   onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
-  onCreateTask: (text: string, initialTags: string[], priority?: Priority) => void;
+  onCreateTask: (text: string, initialTags: string[], priority?: Priority, parentId?: string | null) => void;
   onCreateTagCategory: (name: string, color: string) => void;
   selectedNodeIds?: string[];
   onToggleSelectNode?: (id: string) => void;
@@ -48,7 +49,7 @@ export default function KanbanView({
   selectedNodeIds = [],
   onToggleSelectNode,
 }: KanbanViewProps) {
-  const [groupBy, setGroupBy] = useState<'category' | 'priority'>(() => {
+  const [groupBy, setGroupBy] = useState<'category' | 'priority' | 'container'>(() => {
     return tagCategories.length === 0 ? 'priority' : 'category';
   });
 
@@ -97,6 +98,38 @@ export default function KanbanView({
   // Get tags of the active category
   const activeTags = activeCategory?.tags || [];
 
+  // Container filter states and helper methods
+  const [selectedContainerFilterId, setSelectedContainerFilterId] = useState<string>('all');
+  const allContainers = nodes.filter(n => n.isContainer && !n.archived);
+
+  const getTaskContainerId = (node: TaskNode): string | null => {
+    let curr: TaskNode | undefined = node;
+    const visited = new Set<string>();
+    while (curr && curr.parentId) {
+      if (visited.has(curr.parentId)) break; // cycle protection
+      visited.add(curr.parentId);
+      const parentNode = nodes.find(n => n.id === curr!.parentId);
+      if (parentNode && parentNode.isContainer) return parentNode.id;
+      curr = parentNode;
+    }
+    return null;
+  };
+
+  const isInsideAnyContainer = (node: TaskNode): boolean => {
+    return !!getTaskContainerId(node);
+  };
+
+  // Filter tasks shown on the board (only keep non-container tasks belonging to the filtered container)
+  const filteredNodes = nodes.filter(n => {
+    if (n.isContainer) return false;
+    if (n.archived) return false;
+    if (selectedContainerFilterId === 'all') return true;
+    if (selectedContainerFilterId === 'no-container') {
+      return !getTaskContainerId(n);
+    }
+    return getTaskContainerId(n) === selectedContainerFilterId;
+  });
+
   // Helper to extract which tag of the active category a node has
   const getNodeCategoryTag = (node: TaskNode): string | null => {
     if (!node.tags) return null;
@@ -110,15 +143,15 @@ export default function KanbanView({
 
   if (groupBy === 'priority') {
     columns.push(
-      { id: 'urgent', title: 'Критический', color: '#f43f5e', isUncategorized: false, items: nodes.filter(n => n.priority === 'urgent') },
-      { id: 'high', title: 'Высокий', color: '#f59e0b', isUncategorized: false, items: nodes.filter(n => n.priority === 'high') },
-      { id: 'medium', title: 'Средний', color: '#3b82f6', isUncategorized: false, items: nodes.filter(n => n.priority === 'medium') },
-      { id: 'low', title: 'Низкий', color: '#10b981', isUncategorized: false, items: nodes.filter(n => n.priority === 'low') },
-      { id: 'none', title: 'Без приоритета', color: '#64748b', isUncategorized: true, items: nodes.filter(n => !n.priority || n.priority === 'none') }
+      { id: 'urgent', title: 'Критический', color: '#f43f5e', isUncategorized: false, items: filteredNodes.filter(n => n.priority === 'urgent') },
+      { id: 'high', title: 'Высокий', color: '#f59e0b', isUncategorized: false, items: filteredNodes.filter(n => n.priority === 'high') },
+      { id: 'medium', title: 'Средний', color: '#3b82f6', isUncategorized: false, items: filteredNodes.filter(n => n.priority === 'medium') },
+      { id: 'low', title: 'Низкий', color: '#10b981', isUncategorized: false, items: filteredNodes.filter(n => n.priority === 'low') },
+      { id: 'none', title: 'Без приоритета', color: '#64748b', isUncategorized: true, items: filteredNodes.filter(n => !n.priority || n.priority === 'none') }
     );
-  } else {
+  } else if (groupBy === 'category') {
     // 1. Column for Uncategorized (Без тегов текущей категории)
-    const uncategorizedItems = nodes.filter(n => {
+    const uncategorizedItems = filteredNodes.filter(n => {
       const nodeTag = getNodeCategoryTag(n);
       return nodeTag === null;
     });
@@ -133,7 +166,7 @@ export default function KanbanView({
 
     // 2. Column for each tag in active category
     activeTags.forEach(tag => {
-      const items = nodes.filter(n => {
+      const items = filteredNodes.filter(n => {
         const nodeTag = getNodeCategoryTag(n);
         return nodeTag === tag;
       });
@@ -142,6 +175,32 @@ export default function KanbanView({
         id: tag,
         title: '#' + tag,
         color: activeCategory?.color || '#6366f1',
+        isUncategorized: false,
+        items
+      });
+    });
+  } else if (groupBy === 'container') {
+    // 1. Find all active containers in the project
+    const containerNodes = nodes.filter(n => n.isContainer && !n.archived);
+    
+    // 2. Column for "Without Container" (Без контейнера)
+    // A task is NOT in any container if none of its ancestors is a container
+    const tasksWithoutContainer = nodes.filter(n => !n.isContainer && !n.archived && !isInsideAnyContainer(n));
+    columns.push({
+      id: 'no-container',
+      title: 'Без контейнера',
+      color: '#94a3b8',
+      isUncategorized: true,
+      items: tasksWithoutContainer
+    });
+
+    // 3. Columns for each container
+    containerNodes.forEach(c => {
+      const items = nodes.filter(n => !n.isContainer && !n.archived && getTaskContainerId(n) === c.id);
+      columns.push({
+        id: c.id,
+        title: c.text,
+        color: c.color || '#6366f1',
         isUncategorized: false,
         items
       });
@@ -193,10 +252,23 @@ export default function KanbanView({
   };
 
   const moveCardToColumn = (node: TaskNode, targetColumnId: string) => {
+    let targetParentId = node.parentId;
+    if (selectedContainerFilterId !== 'all' && selectedContainerFilterId !== 'no-container') {
+      targetParentId = selectedContainerFilterId;
+    } else if (selectedContainerFilterId === 'no-container') {
+      targetParentId = null;
+    }
+
     if (groupBy === 'priority') {
       onUpdateNode({
         ...node,
-        priority: targetColumnId as Priority
+        priority: targetColumnId as Priority,
+        parentId: targetParentId
+      });
+    } else if (groupBy === 'container') {
+      onUpdateNode({
+        ...node,
+        parentId: targetColumnId === 'no-container' ? null : targetColumnId
       });
     } else {
       // Create new list of tags
@@ -212,7 +284,8 @@ export default function KanbanView({
 
       onUpdateNode({
         ...node,
-        tags: updatedTags
+        tags: updatedTags,
+        parentId: targetParentId
       });
     }
   };
@@ -221,14 +294,21 @@ export default function KanbanView({
     const text = newTaskNameInColumn.trim();
     if (!text) return;
 
+    let targetParentId: string | null = null;
+    if (selectedContainerFilterId !== 'all' && selectedContainerFilterId !== 'no-container') {
+      targetParentId = selectedContainerFilterId;
+    }
+
     if (groupBy === 'priority') {
-      onCreateTask(text, [], columnId as Priority);
+      onCreateTask(text, [], columnId as Priority, targetParentId);
+    } else if (groupBy === 'container') {
+      onCreateTask(text, [], 'none', columnId === 'no-container' ? null : columnId);
     } else {
       const tagsToAssign: string[] = [];
       if (columnId !== 'uncategorized') {
         tagsToAssign.push(columnId);
       }
-      onCreateTask(text, tagsToAssign, 'none');
+      onCreateTask(text, tagsToAssign, 'none', targetParentId);
     }
 
     // Reset inline input
@@ -285,6 +365,273 @@ export default function KanbanView({
     }
   };
 
+  const renderCard = (node: TaskNode) => {
+    const hasAttachments = node.files && node.files.length > 0;
+    const hasNotes = node.notes && node.notes.trim().length > 0;
+    const linkPattern = /(\[([^\]]+)\]\(task:([a-zA-Z0-9\-]+)\)|\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]|task:\/\/([a-zA-Z0-9\-]+))/;
+    const hasTaskLinks = node.notes && linkPattern.test(node.notes);
+    const hasDueDate = node.dueDate;
+
+    return (
+      <motion.div
+        key={node.id}
+        id={`kanban-card-${node.id}`}
+        draggable="true"
+        onDragStart={(e) => handleDragStart(e, node.id)}
+        onClick={(e) => onSelectNode(node.id, e)}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('application/task-tag')) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
+        onDragEnter={(e) => {
+          if (e.dataTransfer.types.includes('application/task-tag')) {
+            e.preventDefault();
+            e.stopPropagation();
+            setDraggedOverTagCardId(node.id);
+          }
+        }}
+        onDragLeave={() => {
+          if (draggedOverTagCardId === node.id) {
+            setDraggedOverTagCardId(null);
+          }
+        }}
+        onDrop={(e) => {
+          const tag = e.dataTransfer.getData('application/task-tag');
+          if (tag) {
+            e.preventDefault();
+            e.stopPropagation();
+            setDraggedOverTagCardId(null);
+            const existingTags = node.tags || [];
+            if (!existingTags.includes(tag)) {
+              onUpdateNode({
+                ...node,
+                tags: [...existingTags, tag]
+              });
+            }
+          }
+        }}
+        layoutId={`kanban-card-motion-${node.id}`}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.15 }}
+        className={`group select-none text-left bg-white dark:bg-slate-910 border hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] hover:translate-y-[-1.5px] transition-all duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
+          draggedOverTagCardId === node.id
+            ? 'border-emerald-500 dark:border-emerald-400 ring-4 ring-emerald-500/20 shadow-md bg-emerald-50/10 dark:bg-emerald-950/10 scale-[1.01]'
+            : (node.id === selectedNodeId || (selectedNodeIds && selectedNodeIds.includes(node.id))) 
+              ? 'border-[#4f46e5] dark:border-indigo-400 ring-4 ring-indigo-500/15 shadow-md scale-[1.015]' 
+              : 'border-slate-200/80 dark:border-slate-850'
+        }`}
+      >
+        {/* Completed toggle checkbox and text */}
+        <div className="flex items-start gap-3">
+          {onToggleSelectNode && (
+            <input
+              type="checkbox"
+              checked={selectedNodeIds.includes(node.id)}
+              onChange={(e) => {
+                e.stopPropagation();
+                onToggleSelectNode(node.id);
+              }}
+              className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-505 h-3.5 w-3.5 mt-1 cursor-pointer shrink-0 z-10"
+              title="Выбрать задачу"
+            />
+          )}
+          <button
+            id={`kanban-card-check-${node.id}`}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onUpdateNode({
+                ...node,
+                completed: !node.completed
+              });
+            }}
+            className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 mt-0.5 cursor-pointer"
+            title={node.completed ? "Отметить активной" : "Отметить выполненной"}
+          >
+            {node.completed ? (
+              <CheckCircle2 className="w-[18px] h-[18px] text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
+            ) : activePomodoroNodeId === node.id ? (
+              <span className="relative flex items-center justify-center w-[18px] h-[18px] shrink-0">
+                <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
+                <Loader2 className="w-[18px] h-[18px] text-rose-500 animate-spin" />
+              </span>
+            ) : (
+              <Circle className="w-[18px] h-[18px]" />
+            )}
+          </button>
+          
+          <div className="min-w-0 flex-1">
+            <p className={`text-[12px] font-bold leading-relaxed text-slate-800 dark:text-slate-100 ${
+              node.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
+            } flex items-center flex-wrap gap-1.5`}>
+              <span>{node.text}</span>
+              {node.externalLink && (
+                <a
+                  href={node.externalLink.startsWith('http') ? node.externalLink : `https://${node.externalLink}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center justify-center p-0.5 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                  title={`Открыть внешнюю ссылку: ${node.externalLink}`}
+                >
+                  <LinkIcon className="w-3 h-3 text-indigo-505" />
+                </a>
+              )}
+              {activePomodoroNodeId === node.id && (
+                <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+                  </span>
+                  <span>🍅</span>
+                </span>
+              )}
+            </p>
+          </div>
+
+          {/* Move category drop down for mobile touch responsiveness triggers */}
+          <div className="relative shrink-0 flex items-center">
+            <button
+              id={`kanban-card-more-${node.id}`}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveMoveMenuCardId(activeMoveMenuCardId === node.id ? null : node.id);
+              }}
+              className="p-0.5 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-650 dark:hover:text-slate-200 transition-all cursor-pointer"
+              title="Переместить в колонку"
+            >
+              <MoreVertical className="w-3.5 h-3.5" />
+            </button>
+
+            {activeMoveMenuCardId === node.id && (
+              <div 
+                className="absolute right-0 top-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-xl shadow-lg p-1.5 w-44 z-40 animate-in fade-in zoom-in-95 duration-100"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase px-2 mb-1 tracking-wider text-left">Переместить:</p>
+                <div className="space-y-0.5">
+                  {columns.map(destCol => {
+                    const isCurrent = (colIdOfNode(node) === destCol.id);
+                    if (isCurrent) return null;
+                    return (
+                      <button
+                        key={destCol.id}
+                        id={`kanban-card-move-to-${node.id}-${destCol.id}`}
+                        type="button"
+                        onClick={() => {
+                          moveCardToColumn(node, destCol.id);
+                          setActiveMoveMenuCardId(null);
+                        }}
+                        className="w-full text-left font-semibold hover:bg-slate-100 dark:hover:bg-slate-705 px-2 py-1 text-[10.5px] rounded text-slate-650 dark:text-slate-300 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: destCol.color }} />
+                        <span className="truncate">{destCol.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Progress slider visually if active */}
+        {node.progress !== undefined && node.progress > 0 && (
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between text-[10px] font-extrabold text-[#94a3b8] dark:text-slate-500 uppercase tracking-widest">
+              <span>Прогресс</span>
+              <span>{node.progress}%</span>
+            </div>
+            <div className="w-full bg-[#f1f5f9] dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-[#4f46e5] dark:bg-indigo-500 transition-all rounded-full shadow-[0_0_8px_rgba(79,70,229,0.2)]"
+                style={{ width: `${node.progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Card metadata row (Priority, Due Date, attachments/notes) */}
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+          {renderPriorityBadge(node.priority)}
+
+          {hasDueDate && (
+            <span className={`inline-flex items-center gap-1.5 text-[9.5px] px-2 py-0.5 rounded-lg border font-extrabold shadow-sm ${
+              isOverdue(node.dueDate)
+                ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-950/45'
+                : 'bg-white dark:bg-slate-800 text-slate-550 border-slate-200 dark:border-slate-705'
+            }`} title={isOverdue(node.dueDate) ? "Просрочен дедлайн" : "Дедлайн"}>
+              <Clock className="w-3 h-3 text-slate-400" />
+              <span>{formatRussianDate(node.dueDate)}</span>
+            </span>
+          )}
+
+          {hasNotes && (
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-lg bg-slate-50/50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 text-slate-400 hover:text-slate-600" title="Есть описание">
+              <FileText className="w-3 h-3" />
+            </span>
+          )}
+
+          {hasTaskLinks && (
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-lg bg-indigo-50/55 dark:bg-indigo-950/40 border border-indigo-150/50 dark:border-indigo-900/45 text-indigo-600 dark:text-indigo-400" title="Содержит ссылки на другие задачи">
+              <LinkIcon className="w-3 h-3" />
+            </span>
+          )}
+
+          {hasAttachments && (
+            <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 text-slate-500 font-bold" title="Прикреплены файлы">
+              <Paperclip className="w-3 h-3" />
+              <span>{node.files.length}</span>
+            </span>
+          )}
+        </div>
+
+        {/* Secondary tag pills (other tags excluding current category tags) */}
+        {(() => {
+          const otherTags = (node.tags || []).filter(t => !activeTags.includes(t));
+          if (otherTags.length === 0) return null;
+          return (
+            <div className="flex flex-wrap gap-1.5 border-t border-slate-100 dark:border-slate-800/40 pt-2.5">
+              {otherTags.map(t => (
+                <span 
+                  key={t} 
+                  className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-505 border border-slate-200/50 dark:border-slate-700/50 shadow-2xs"
+                >
+                  #{t}
+                </span>
+              ))}
+            </div>
+          );
+        })()}
+      </motion.div>
+    );
+  };
+
+  const colIdOfNode = (node: TaskNode): string => {
+    if (groupBy === 'priority') {
+      return node.priority || 'none';
+    } else if (groupBy === 'category') {
+      return getNodeCategoryTag(node) || 'uncategorized';
+    } else {
+      // Find parent container ID
+      let curr: TaskNode | undefined = node;
+      const visited = new Set<string>();
+      while (curr && curr.parentId) {
+        if (visited.has(curr.parentId)) break;
+        visited.add(curr.parentId);
+        const parentNode = nodes.find(n => n.id === curr!.parentId);
+        if (parentNode && parentNode.isContainer) return parentNode.id;
+        curr = parentNode;
+      }
+      return 'no-container';
+    }
+  };
+
   return (
     <div id="kanban-view-root" className="flex flex-col h-full w-full select-none">
       
@@ -293,6 +640,40 @@ export default function KanbanView({
         id="kanban-categories-bar" 
         className="bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-900 px-4 sm:px-6 py-4 select-none space-y-4"
       >
+        {/* Container Selection Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1 border-b border-slate-200/40 dark:border-slate-800/20 pb-3">
+          <span className="text-[10px] font-black text-slate-505 dark:text-slate-400 uppercase tracking-widest shrink-0 flex items-center gap-1.5">
+            <KanbanIcon className="w-3.5 h-3.5 text-indigo-505 dark:text-indigo-400" />
+            КОНТЕЙНЕР:
+          </span>
+          <div className="relative min-w-[200px] max-w-xs animate-fade-in">
+            <select
+              id="kanban-container-filter-select"
+              value={selectedContainerFilterId}
+              onChange={(e) => setSelectedContainerFilterId(e.target.value)}
+              className="w-full appearance-none bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-705 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl px-3.5 py-1.5 pr-10 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-[#4f46e5] transition-all"
+            >
+              <option value="all">
+                Все задачи ({nodes.filter(n => !n.isContainer && !n.archived).length})
+              </option>
+              <option value="no-container">
+                Без контейнера ({nodes.filter(n => !n.isContainer && !n.archived && !isInsideAnyContainer(n)).length})
+              </option>
+              {allContainers.map(container => {
+                const count = nodes.filter(n => !n.isContainer && !n.archived && getTaskContainerId(n) === container.id).length;
+                return (
+                  <option key={container.id} value={container.id}>
+                    📦 {container.text} ({count})
+                  </option>
+                );
+              })}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 dark:text-slate-500">
+              <ChevronDown className="w-4 h-4" />
+            </div>
+          </div>
+        </div>
+
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/40 dark:border-slate-800/20">
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">ГРУППИРОВКА KANBAN:</span>
@@ -318,6 +699,17 @@ export default function KanbanView({
                 }`}
               >
                 По приоритетам
+              </button>
+              <button
+                type="button"
+                onClick={() => setGroupBy('container')}
+                className={`px-3.5 py-1 border text-[11px] font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                  groupBy === 'container' 
+                    ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
+                    : 'bg-transparent border-transparent text-slate-550 hover:text-slate-800 dark:hover:text-slate-350'
+                }`}
+              >
+                По контейнерам
               </button>
             </div>
           </div>
@@ -459,232 +851,7 @@ export default function KanbanView({
                   className="flex-1 overflow-y-auto space-y-2.5 pr-1 min-h-[50px] scrollbar-thin max-h-[calc(100vh-23rem)]"
                 >
                   <AnimatePresence initial={false}>
-                    {col.items.map(node => {
-                      const hasAttachments = node.files && node.files.length > 0;
-                      const hasNotes = node.notes && node.notes.trim().length > 0;
-                      const hasDueDate = node.dueDate;
-
-                      return (
-                        <motion.div
-                          key={node.id}
-                          id={`kanban-card-${node.id}`}
-                          draggable="true"
-                          onDragStart={(e) => handleDragStart(e, node.id)}
-                          onClick={(e) => onSelectNode(node.id, e)}
-                          onDragOver={(e) => {
-                            if (e.dataTransfer.types.includes('application/task-tag')) {
-                              e.preventDefault();
-                              e.stopPropagation();
-                            }
-                          }}
-                          onDragEnter={(e) => {
-                            if (e.dataTransfer.types.includes('application/task-tag')) {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setDraggedOverTagCardId(node.id);
-                            }
-                          }}
-                          onDragLeave={() => {
-                            if (draggedOverTagCardId === node.id) {
-                              setDraggedOverTagCardId(null);
-                            }
-                          }}
-                          onDrop={(e) => {
-                            const tag = e.dataTransfer.getData('application/task-tag');
-                            if (tag) {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setDraggedOverTagCardId(null);
-                              const existingTags = node.tags || [];
-                              if (!existingTags.includes(tag)) {
-                                onUpdateNode({
-                                  ...node,
-                                  tags: [...existingTags, tag]
-                                });
-                              }
-                            }
-                          }}
-                          layoutId={`kanban-card-motion-${node.id}`}
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95 }}
-                          transition={{ duration: 0.15 }}
-                          className={`group select-none bg-white dark:bg-slate-910 border hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] hover:translate-y-[-1.5px] transition-all duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
-                            draggedOverTagCardId === node.id
-                              ? 'border-emerald-500 dark:border-emerald-400 ring-4 ring-emerald-500/20 shadow-md bg-emerald-50/10 dark:bg-emerald-950/10 scale-[1.01]'
-                              : (node.id === selectedNodeId || (selectedNodeIds && selectedNodeIds.includes(node.id))) 
-                                ? 'border-[#4f46e5] dark:border-indigo-400 ring-4 ring-indigo-500/15 shadow-md scale-[1.015]' 
-                                : 'border-slate-200/80 dark:border-slate-850'
-                          }`}
-                        >
-                          {/* Completed toggle checkbox and text */}
-                          <div className="flex items-start gap-3">
-                            {onToggleSelectNode && (
-                              <input
-                                type="checkbox"
-                                checked={selectedNodeIds.includes(node.id)}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  onToggleSelectNode(node.id);
-                                }}
-                                className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-505 h-3.5 w-3.5 mt-1 cursor-pointer shrink-0 z-10"
-                                title="Выбрать задачу"
-                              />
-                            )}
-                            <button
-                              id={`kanban-card-check-${node.id}`}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateNode({
-                                  ...node,
-                                  completed: !node.completed
-                                });
-                              }}
-                              className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 mt-0.5 cursor-pointer"
-                              title={node.completed ? "Отметить активной" : "Отметить выполненной"}
-                            >
-                              {node.completed ? (
-                                <CheckCircle2 className="w-[18px] h-[18px] text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
-                              ) : activePomodoroNodeId === node.id ? (
-                                <span className="relative flex items-center justify-center w-[18px] h-[18px] shrink-0">
-                                  <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
-                                  <Loader2 className="w-[18px] h-[18px] text-rose-500 animate-spin" />
-                                </span>
-                              ) : (
-                                <Circle className="w-[18px] h-[18px]" />
-                              )}
-                            </button>
-                            
-                            <div className="min-w-0 flex-1">
-                              <p className={`text-[12px] font-bold leading-relaxed text-slate-800 dark:text-slate-100 ${
-                                node.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
-                              } flex items-center flex-wrap gap-1.5`}>
-                                <span>{node.text}</span>
-                                {activePomodoroNodeId === node.id && (
-                                  <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
-                                    <span className="relative flex h-1.5 w-1.5">
-                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
-                                    </span>
-                                    <span>🍅</span>
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-
-                            {/* Move category drop down for mobile touch responsiveness triggers */}
-                            <div className="relative shrink-0 flex items-center">
-                              <button
-                                id={`kanban-card-more-${node.id}`}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveMoveMenuCardId(activeMoveMenuCardId === node.id ? null : node.id);
-                                }}
-                                className="p-0.5 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-650 dark:hover:text-slate-200 transition-all cursor-pointer"
-                                title="Переместить в колонку"
-                              >
-                                <MoreVertical className="w-3.5 h-3.5" />
-                              </button>
-
-                              {activeMoveMenuCardId === node.id && (
-                                <div 
-                                  className="absolute right-0 top-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-755 rounded-xl shadow-lg p-1.5 w-44 z-40 animate-in fade-in zoom-in-95 duration-100"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase px-2 mb-1 tracking-wider">Переместить:</p>
-                                  <div className="space-y-0.5">
-                                    {columns.map(destCol => {
-                                      const isCurrent = (col.id === destCol.id);
-                                      if (isCurrent) return null;
-                                      return (
-                                        <button
-                                          key={destCol.id}
-                                          id={`kanban-card-move-to-${node.id}-${destCol.id}`}
-                                          type="button"
-                                          onClick={() => {
-                                            moveCardToColumn(node, destCol.id);
-                                            setActiveMoveMenuCardId(null);
-                                          }}
-                                          className="w-full text-left font-semibold hover:bg-slate-100 dark:hover:bg-slate-705 px-2 py-1 text-[10.5px] rounded text-slate-650 dark:text-slate-300 flex items-center gap-1.5 cursor-pointer"
-                                        >
-                                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: destCol.color }} />
-                                          <span className="truncate">{destCol.title}</span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Progress slider visually if active */}
-                          {node.progress !== undefined && node.progress > 0 && (
-                            <div className="space-y-1.5 pt-1">
-                              <div className="flex items-center justify-between text-[10px] font-extrabold text-slate-450 dark:text-slate-500 uppercase tracking-widest">
-                                <span>Прогресс</span>
-                                <span>{node.progress}%</span>
-                              </div>
-                              <div className="w-full bg-[#f1f5f9] dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-[#4f46e5] dark:bg-indigo-500 transition-all rounded-full shadow-[0_0_8px_rgba(79,70,229,0.2)]"
-                                  style={{ width: `${node.progress}%` }}
-                                />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Card metadata row (Priority, Due Date, attachments/notes) */}
-                          <div className="flex flex-wrap items-center gap-2 mt-1">
-                            {renderPriorityBadge(node.priority)}
-
-                            {hasDueDate && (
-                              <span className={`inline-flex items-center gap-1.5 text-[9.5px] px-2 py-0.5 rounded-lg border font-extrabold shadow-sm ${
-                                isOverdue(node.dueDate)
-                                  ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-950/45'
-                                  : 'bg-white dark:bg-slate-800 text-slate-550 border-slate-200 dark:border-slate-705'
-                              }`} title={isOverdue(node.dueDate) ? "Просрочен дедлайн" : "Дедлайн"}>
-                                <Clock className="w-3 h-3 text-slate-400" />
-                                <span>{formatRussianDate(node.dueDate)}</span>
-                              </span>
-                            )}
-
-                            {hasNotes && (
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-lg bg-slate-50/50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 text-slate-400 hover:text-slate-600" title="Есть описание">
-                                <FileText className="w-3 h-3" />
-                              </span>
-                            )}
-
-                            {hasAttachments && (
-                              <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 text-slate-500 font-bold" title="Прикреплены файлы">
-                                <Paperclip className="w-3 h-3" />
-                                <span>{node.files.length}</span>
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Secondary tag pills (other tags excluding current category tags) */}
-                          {(() => {
-                            const otherTags = (node.tags || []).filter(t => !activeTags.includes(t));
-                            if (otherTags.length === 0) return null;
-                            return (
-                              <div className="flex flex-wrap gap-1.5 border-t border-slate-100 dark:border-slate-800/40 pt-2.5">
-                                {otherTags.map(t => (
-                                  <span 
-                                    key={t} 
-                                    className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-505 border border-slate-200/50 dark:border-slate-700/50 shadow-2xs"
-                                  >
-                                    #{t}
-                                  </span>
-                                ))}
-                              </div>
-                            );
-                          })()}
-                        </motion.div>
-                      );
-                    })}
+                    {col.items.map(node => renderCard(node))}
                   </AnimatePresence>
 
                   {col.items.length === 0 && (

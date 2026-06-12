@@ -28,7 +28,8 @@ import {
   Pause,
   RotateCcw,
   Coffee,
-  History
+  History,
+  Search
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode } from '../utils';
@@ -109,6 +110,145 @@ export default function TaskDetailsPanel({
       return 25;
     }
   });
+
+  // Tab and insert links states for Task Notes
+  const [notesMode, setNotesMode] = useState<'edit' | 'preview'>('edit');
+  const [isInsertingLink, setIsInsertingLink] = useState(false);
+  const [linkSearchQuery, setLinkSearchQuery] = useState('');
+  const notesTextareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const handleInsertTaskLink = (targetId: string, targetText: string) => {
+    const linkText = `[${targetText}](task:${targetId})`;
+    const currentVal = node ? (node.notes || '') : '';
+    let newVal = currentVal;
+
+    const textarea = notesTextareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      newVal = currentVal.substring(0, start) + linkText + currentVal.substring(end);
+      
+      handlePropChange('notes', newVal);
+      
+      setTimeout(() => {
+        textarea.focus();
+        textarea.selectionStart = textarea.selectionEnd = start + linkText.length;
+      }, 50);
+    } else {
+      newVal = currentVal ? currentVal + '\n' + linkText : linkText;
+      handlePropChange('notes', newVal);
+    }
+    setIsInsertingLink(false);
+    setLinkSearchQuery('');
+  };
+
+  const renderNotesWithLinks = (notesText: string) => {
+    if (!notesText) {
+      return (
+        <span className="text-slate-400 dark:text-slate-500 italic text-xs block py-2">
+          Заметки пусты. Перейдите во вкладку «Редактор» для добавления.
+        </span>
+      );
+    }
+
+    const pattern = /(\[([^\]]+)\]\(task:([a-zA-Z0-9\-]+)\)|\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]|task:\/\/([a-zA-Z0-9\-]+))/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = pattern.exec(notesText)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(notesText.substring(lastIndex, match.index));
+      }
+
+      if (match[3]) {
+        // [Label](task:ID)
+        const label = match[2];
+        const targetId = match[3];
+        const targetNode = allNodes.find(n => n.id === targetId);
+        parts.push(
+          <button
+            key={match.index}
+            type="button"
+            onClick={() => onSelectNode?.(targetId)}
+            className="inline-flex items-center gap-1 mx-0.5 px-2 py-0.5 bg-indigo-50 hover:bg-indigo-150 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold rounded text-[11px] align-middle border border-indigo-100 dark:border-indigo-900/50 transition-all cursor-pointer"
+            title={`Перейти к задаче "${targetNode?.text || label}"`}
+          >
+            <LinkIcon className="w-3 h-3 shrink-0" />
+            {label}
+          </button>
+        );
+      } else if (match[4]) {
+        // [[Name]] or [[Name|ID]]
+        const nameOrLabel = match[4];
+        const explicitId = match[5];
+        
+        let targetNode = explicitId ? allNodes.find(n => n.id === explicitId) : null;
+        if (!targetNode && !explicitId) {
+          targetNode = allNodes.find(n => n.text?.trim().toLowerCase() === nameOrLabel.trim().toLowerCase());
+        }
+        
+        const label = nameOrLabel;
+        const targetId = targetNode ? targetNode.id : explicitId;
+
+        if (targetId) {
+          parts.push(
+            <button
+              key={match.index}
+              type="button"
+              onClick={() => onSelectNode?.(targetId)}
+              className="inline-flex items-center gap-1 mx-0.5 px-2 py-0.5 bg-indigo-50 hover:bg-indigo-150 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold rounded text-[11px] align-middle border border-indigo-100 dark:border-indigo-900/50 transition-all cursor-pointer"
+              title={`Перейти к задаче "${targetNode?.text || label}"`}
+            >
+              <LinkIcon className="w-3 h-3 shrink-0" />
+              {label}
+            </button>
+          );
+        } else {
+          parts.push(<span key={match.index} className="text-slate-400 dark:text-slate-500 font-mono text-[11px]">[[{nameOrLabel}]]</span>);
+        }
+      } else if (match[6]) {
+        // task://ID
+        const targetId = match[6];
+        const targetNode = allNodes.find(n => n.id === targetId);
+        parts.push(
+          <button
+            key={match.index}
+            type="button"
+            onClick={() => onSelectNode?.(targetId)}
+            className="inline-flex items-center gap-1 mx-0.5 px-2 py-0.5 bg-indigo-50 hover:bg-indigo-150 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold rounded text-[11px] align-middle border border-indigo-100 dark:border-indigo-900/50 transition-all cursor-pointer"
+            title={`Перейти к задаче "${targetNode?.text || targetId}"`}
+          >
+            <LinkIcon className="w-3 h-3 shrink-0" />
+            {targetNode?.text || `Задача ${targetId.substring(0, 6)}`}
+          </button>
+        );
+      }
+
+      lastIndex = pattern.lastIndex;
+    }
+
+    if (lastIndex < notesText.length) {
+      parts.push(notesText.substring(lastIndex));
+    }
+
+    return (
+      <div className="whitespace-pre-wrap leading-relaxed text-xs text-slate-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-950/30 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 min-h-[100px]">
+        {parts.map((part, idx) => {
+          if (typeof part === 'string') {
+            const lines = part.split('\n');
+            return lines.map((line, lIdx) => (
+              <React.Fragment key={`${idx}-${lIdx}`}>
+                {line}
+                {lIdx < lines.length - 1 && <br />}
+              </React.Fragment>
+            ));
+          }
+          return part;
+        })}
+      </div>
+    );
+  };
 
   // Pomodoro state definition and operations
   interface PomodoroState {
@@ -2068,27 +2208,157 @@ export default function TaskDetailsPanel({
           </div>
         </div>
 
-        {/* Notes (textarea) */}
+        {/* External Link */}
         <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-            Заметки и описание задачи
-          </label>
-          <textarea
-            value={node.notes}
-            onChange={(e) => handlePropChange('notes', e.target.value)}
-            onFocus={() => {
-              setOriginalText(node.text);
-              setOriginalNotes(node.notes || '');
-            }}
-            onBlur={() => {
-              if ((node.notes || '') !== originalNotes) {
-                recordHistoryVersion(originalText, originalNotes, 'Правка заметок');
-              }
-            }}
-            className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-sans"
-            rows={5}
-            placeholder="Опишите задачу поподробнее (поддерживается текстовая спецификация)..."
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+              Внешняя ссылка
+            </label>
+            {node.externalLink && (
+              <a
+                href={node.externalLink.startsWith('http') ? node.externalLink : `https://${node.externalLink}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                title="Открыть в новой вкладке"
+              >
+                Открыть ссылку <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
+              </a>
+            )}
+          </div>
+          <input
+            type="text"
+            placeholder="https://example.com"
+            value={node.externalLink || ''}
+            onChange={(e) => handlePropChange('externalLink', e.target.value)}
+            className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
           />
+        </div>
+
+        {/* Notes with links insertion & preview tabs */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800 pb-1.5">
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                Заметки и описание
+              </label>
+              
+              {/* Tab Toggles */}
+              <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 text-[10.5px]">
+                <button
+                  type="button"
+                  onClick={() => setNotesMode('edit')}
+                  className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                    notesMode === 'edit'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-450 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Редактор
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotesMode('preview')}
+                  className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                    notesMode === 'preview'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-450 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Предпросмотр
+                </button>
+              </div>
+            </div>
+
+            {/* Insertion trigger */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsInsertingLink(!isInsertingLink)}
+                className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                title="Связать эту задачу ссылкой с другой задачей"
+              >
+                <LinkIcon className="w-3 h-3" /> Связать задачу
+              </button>
+
+              {isInsertingLink && (
+                <div className="absolute right-0 top-6 z-50 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-3 space-y-2 animate-fade-in text-left">
+                  <div className="text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                    <span>Выберите задачу для ссылки</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsInsertingLink(false);
+                        setLinkSearchQuery('');
+                      }}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {/* Search input inside dialog */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Поиск по названию..."
+                      value={linkSearchQuery}
+                      onChange={(e) => setLinkSearchQuery(e.target.value)}
+                      className="w-full text-xs pl-7 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:text-slate-100"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="max-h-40 overflow-y-auto space-y-1 pr-1 text-xs">
+                    {(() => {
+                      const filtered = allNodes
+                        .filter(n => n.id !== node.id)
+                        .filter(n => n.text.toLowerCase().includes(linkSearchQuery.toLowerCase()));
+
+                      if (filtered.length === 0) {
+                        return <div className="text-slate-400 italic text-center py-2 text-[11px]">Задачи не найдены</div>;
+                      }
+
+                      return filtered.map(item => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleInsertTaskLink(item.id, item.text)}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 truncate block border border-transparent hover:border-slate-105 dark:hover:border-slate-700 transition-all text-[11px] cursor-pointer"
+                        >
+                          <span className="font-semibold block truncate text-slate-800 dark:text-slate-200">{item.text}</span>
+                          <span className="text-[9px] text-slate-400 font-mono truncate block">{item.id.slice(0, 8)}...</span>
+                        </button>
+                      ));
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {notesMode === 'edit' ? (
+            <textarea
+              ref={notesTextareaRef}
+              value={node.notes}
+              onChange={(e) => handlePropChange('notes', e.target.value)}
+              onFocus={() => {
+                setOriginalText(node.text);
+                setOriginalNotes(node.notes || '');
+              }}
+              onBlur={() => {
+                if ((node.notes || '') !== originalNotes) {
+                  recordHistoryVersion(originalText, originalNotes, 'Правка заметок');
+                }
+              }}
+              className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-sans"
+              rows={5}
+              placeholder="Опишите задачу подробнее. Например, [[Название задачи]] или воспользуйтесь кнопкой «Связать задачу»..."
+            />
+          ) : (
+            renderNotesWithLinks(node.notes)
+          )}
         </div>
 
         {/* Version History Section */}

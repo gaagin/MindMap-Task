@@ -125,7 +125,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
  * Saves current WorkspaceState snapshot to firestore database dynamically.
  * Features automatic Exponential Backoff and progressive retries to handle unstable connections.
  */
-export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; error?: string }> {
+export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; isOfflineQueued?: boolean; error?: string }> {
   try {
     const docRef = doc(db, 'workspaces', userId);
     // Load and include local active pomodoro state if any
@@ -164,9 +164,9 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
       throw new Error(`Размер вашей карты (${sizeInKb} KB) превышает лимит базы данных Firestore (1000 KB) из-за прикрепленных тяжелых картинок или файлов. Удалите некоторые вложения, чтобы возобновить синхронизацию!`);
     }
 
-    // We run standard setDoc directly. We add a single generous timeout (e.g. 60s) to notify the user if offline,
+    // We run standard setDoc directly. We add a single generous timeout (e.g. 25s) to notify the user if offline,
     // but we do NOT run a retry loop that triggers duplicate parallel queued writes, preventing retry storms.
-    const currentTimeoutMs = 60000;
+    const currentTimeoutMs = 25000;
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`Превышено время ожидания сервера (${currentTimeoutMs / 1000}с). Снимок сохранён локально, синхронизация ожидает стабильного подключения.`)), currentTimeoutMs)
     );
@@ -182,10 +182,20 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
     if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
       handleFirestoreError(error, OperationType.WRITE, `workspaces/${userId}`);
     }
+    
+    if (error?.message && error.message.includes('Превышено время ожидания сервера')) {
+      console.info('Firebase sync offline queued:', error.message);
+      return { 
+        success: true, 
+        isOfflineQueued: true, 
+        error: error.message 
+      };
+    }
+
     console.error('Firebase snapshot save error:', error);
     return { 
       success: false, 
-      error: error?.message || 'Превышено время ожидания сервера (таймаут 60с). Пожалуйста, обновите страницу или проверьте интернет-соединение.' 
+      error: error?.message || 'Превышено время ожидания сервера (таймаут 25с). Пожалуйста, обновите страницу или проверьте интернет-соединение.' 
     };
   }
 }
@@ -214,7 +224,11 @@ export async function loadFromFirebaseDirectly(userId: string): Promise<Workspac
     if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
       handleFirestoreError(error, OperationType.GET, `workspaces/${userId}`);
     }
-    console.error('Firebase snapshot load error:', error);
+    if (error?.message && error.message.includes('Превышено время ожидания')) {
+      console.warn('Firebase snapshot load timeout:', error.message);
+    } else {
+      console.error('Firebase snapshot load error:', error);
+    }
     throw error || new Error('Превышено время ожидания загрузки. Пожалуйста, проверьте интернет-соединение.');
   }
 }

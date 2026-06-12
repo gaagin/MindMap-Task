@@ -13,7 +13,8 @@ import {
   Sparkles,
   SlidersHorizontal,
   ArrowUpDown,
-  FileText
+  FileText,
+  Link as LinkIcon
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
@@ -484,6 +485,8 @@ export default function TableView({
             ) : (
               sortedTasks.map(task => {
                 const isSelected = selectedNodeId === task.id;
+                const linkPattern = /(\[([^\]]+)\]\(task:([a-zA-Z0-9\-]+)\)|\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]|task:\/\/([a-zA-Z0-9\-]+))/;
+                const hasTaskLinks = task.notes && linkPattern.test(task.notes);
  
                 return (
                   <tr
@@ -553,6 +556,26 @@ export default function TableView({
                             task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
                           }`}
                         />
+                        {task.externalLink && (
+                          <a
+                            href={task.externalLink.startsWith('http') ? task.externalLink : `https://${task.externalLink}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center justify-center p-1 hover:bg-slate-200 dark:hover:bg-slate-700 text-indigo-550 dark:text-indigo-400 rounded-md shrink-0 transition-colors"
+                            title={`Открыть внешнюю ссылку: ${task.externalLink}`}
+                          >
+                            <LinkIcon className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                        {hasTaskLinks && (
+                          <span 
+                            className="inline-flex items-center justify-center p-1 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 rounded-md shrink-0 border border-indigo-150/20"
+                            title="Описание содержит перекрестные ссылки на другие задачи"
+                          >
+                            <LinkIcon className="w-3.5 h-3.5" />
+                          </span>
+                        )}
                         {activePomodoroNodeId === task.id && (
                           <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-450 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
                             <span className="relative flex h-1.5 w-1.5">

@@ -12,7 +12,8 @@ import {
   AlignLeft,
   Settings,
   MoreHorizontal,
-  Calendar
+  Calendar,
+  Link as LinkIcon
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
@@ -356,6 +357,18 @@ export default function GanttView({
                       task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
                     } flex items-center gap-1`}>
                       <span>{task.text}</span>
+                      {task.externalLink && (
+                        <a
+                          href={task.externalLink.startsWith('http') ? task.externalLink : `https://${task.externalLink}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center justify-center p-0.5 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                          title={`Открыть внешнюю ссылку: ${task.externalLink}`}
+                        >
+                          <LinkIcon className="w-3.5 h-3.5 text-indigo-505" />
+                        </a>
+                      )}
                       {activePomodoroNodeId === task.id && (
                         <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
                       )}

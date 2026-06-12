@@ -33,7 +33,8 @@ import {
   Eye,
   Link2Off,
   Mic,
-  MicOff
+  MicOff,
+  Link as LinkIcon
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
@@ -587,6 +588,19 @@ export default function MindMapCanvas({
                       onKeyDown={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                     />
+                    {child.externalLink && (
+                      <a
+                        href={child.externalLink.startsWith('http') ? child.externalLink : `https://${child.externalLink}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="inline-flex items-center justify-center p-1 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                        title={`Открыть внешнюю ссылку: ${child.externalLink}`}
+                      >
+                        <LinkIcon className="w-3.5 h-3.5 text-indigo-505" />
+                      </a>
+                    )}
                   </div>
                   
                   <div className="flex items-center gap-1.5 shrink-0 opacity-75 group-hover/item:opacity-100 transition-opacity">
@@ -4229,8 +4243,10 @@ export default function MindMapCanvas({
             );
           }
 const pInfo = getPriorityInfo(node.priority);
-          const hasNotes = node.notes.trim().length > 0;
-          const hasFiles = node.files.length > 0;
+          const hasNotes = node.notes && node.notes.trim().length > 0;
+          const hasFiles = node.files && node.files.length > 0;
+          const linkPattern = /(\[([^\]]+)\]\(task:([a-zA-Z0-9\-]+)\)|\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]|task:\/\/([a-zA-Z0-9\-]+))/;
+          const hasTaskLinks = node.notes && linkPattern.test(node.notes);
           const isRoot = node.parentId === null && !node.isFloating;
           const hasChildren = nodes.some(n => n.parentId === node.id);
           const isLeftBranch = !isRoot && node.x < 0;
@@ -4469,6 +4485,23 @@ const pInfo = getPriorityInfo(node.priority);
                           : 'text-slate-800 dark:text-slate-100 font-medium'
                       } ${node.completed ? 'line-through opacity-60 italic' : ''} flex items-center flex-wrap gap-1`}>
                         <span>{node.text || 'Без названия'}</span>
+                        {node.externalLink && (
+                          <a
+                            href={node.externalLink.startsWith('http') ? node.externalLink : `https://${node.externalLink}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className={`inline-flex items-center justify-center p-0.5 rounded transition-colors shrink-0 ${
+                              isRoot 
+                                ? 'hover:bg-indigo-600 text-indigo-200' 
+                                : 'hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-550 dark:text-indigo-400'
+                            }`}
+                            title={`Открыть внешнюю ссылку: ${node.externalLink}`}
+                          >
+                            <LinkIcon className="w-3.5 h-3.5" />
+                          </a>
+                        )}
                         {activePomodoroNodeId === node.id && (
                           <span className="inline-flex items-center gap-1 bg-red-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
                             <span className="relative flex h-2 w-2">
@@ -4532,6 +4565,17 @@ const pInfo = getPriorityInfo(node.priority);
                           title="Есть описание"
                         >
                           <FileText className="w-3 h-3 opacity-80" />
+                        </span>
+                      )}
+
+                      {hasTaskLinks && (
+                        <span 
+                          className={`inline-flex items-center text-[9px] px-1 py-0.5 ${
+                            isRoot ? 'text-indigo-200' : 'text-indigo-500 dark:text-indigo-400'
+                          }`} 
+                          title="Содержит ссылки на другие задачи"
+                        >
+                          <LinkIcon className="w-3 h-3 opacity-95" />
                         </span>
                       )}
 

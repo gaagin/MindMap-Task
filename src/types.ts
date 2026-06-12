@@ -53,6 +53,7 @@ export interface TaskNode {
   archived?: boolean; // Optional flag to mark task as archived
   history?: TaskVersion[]; // Version history stack/list for tracking edits
   tagCategories?: TagCategory[]; // Optional private card-specific tag categories and tags
+  externalLink?: string; // Optional external URL link
 }
 
 export interface Project {
