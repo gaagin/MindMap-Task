@@ -2551,8 +2551,10 @@ export default function MindMapCanvas({
       }
 
       // Constraints
-      const newWidth = Math.max(300, newRight - newLeft);
-      const newHeight = Math.max(200, newBottom - newTop);
+      const minW = node.isContainer ? 300 : 150;
+      const minH = node.isContainer ? 200 : 40;
+      const newWidth = Math.max(minW, newRight - newLeft);
+      const newHeight = Math.max(minH, newBottom - newTop);
 
       if (dir.includes('w')) {
         newLeft = newRight - newWidth;
@@ -2944,8 +2946,10 @@ export default function MindMapCanvas({
       }
 
       // Constraints
-      const newWidth = Math.max(300, newRight - newLeft);
-      const newHeight = Math.max(200, newBottom - newTop);
+      const minW = node.isContainer ? 300 : 150;
+      const minH = node.isContainer ? 200 : 40;
+      const newWidth = Math.max(minW, newRight - newLeft);
+      const newHeight = Math.max(minH, newBottom - newTop);
 
       if (dir.includes('w')) {
         newLeft = newRight - newWidth;
@@ -3227,7 +3231,7 @@ export default function MindMapCanvas({
     didDragRef.current = false;
   };
 
-  // Start container resizing from Mouse Down
+  // Start container/card resizing from Mouse Down
   const startResize = (e: React.MouseEvent, node: TaskNode, direction: string = 'se') => {
     e.stopPropagation();
     e.preventDefault();
@@ -3236,13 +3240,13 @@ export default function MindMapCanvas({
     setResizeDirection(direction);
     setResizeStartPos({ x: e.clientX, y: e.clientY });
     setResizeStartSize({
-      width: node.width || 520,
-      height: node.height || 400
+      width: node.width || (node.isContainer ? 520 : 210),
+      height: node.height || (node.isContainer ? 400 : 125)
     });
     setResizeStartCenter({ x: node.x, y: node.y });
   };
 
-  // Start container resizing from Touch Start
+  // Start container/card resizing from Touch Start
   const startResizeTouch = (e: React.TouchEvent, node: TaskNode, direction: string = 'se') => {
     if (e.touches.length === 0) return;
     e.stopPropagation();
@@ -3252,8 +3256,8 @@ export default function MindMapCanvas({
     const touch = e.touches[0];
     setResizeStartPos({ x: touch.clientX, y: touch.clientY });
     setResizeStartSize({
-      width: node.width || 520,
-      height: node.height || 400
+      width: node.width || (node.isContainer ? 520 : 210),
+      height: node.height || (node.isContainer ? 400 : 125)
     });
     setResizeStartCenter({ x: node.x, y: node.y });
   };
@@ -4299,6 +4303,7 @@ const pInfo = getPriorityInfo(node.priority);
                 top: node.y,
                 transform: 'translate(-50%, -50%)',
                 zIndex: cardZIndex,
+                width: node.width ? `${node.width}px` : '210px',
               }}
               onDragOver={(e) => {
                 if (e.dataTransfer.types.includes('application/task-tag')) {
@@ -4333,7 +4338,7 @@ const pInfo = getPriorityInfo(node.priority);
                   }
                 }
               }}
-              className={`absolute group cursor-grab active:cursor-grabbing w-[210px] rounded-xl border ${isDraggingThisNode ? '' : 'transition-[background-color,border-color,opacity,box-shadow,transform] duration-150'} ${
+              className={`absolute group cursor-grab active:cursor-grabbing rounded-xl border ${isDraggingThisNode ? '' : 'transition-[background-color,border-color,opacity,box-shadow,transform] duration-150'} ${
                 isDimmed 
                   ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 hover:opacity-90 hover:grayscale-0 hover:scale-100 duration-300' 
                   : ''
@@ -4898,6 +4903,20 @@ const pInfo = getPriorityInfo(node.priority);
                   )}
                 </button>
               )}
+
+              {/* Resize Handles (widen left/right) for standard task cards */}
+              <div
+                onMouseDown={(e) => startResize(e, node, 'w')}
+                onTouchStart={(e) => startResizeTouch(e, node, 'w')}
+                className="absolute top-2 bottom-2 -left-1 w-2 cursor-ew-resize z-30 select-none opacity-0 group-hover:opacity-100 active:opacity-100 hover:bg-indigo-500/25 active:bg-indigo-500/50 rounded transition-all duration-150"
+                title="Изменить ширину (влево)"
+              />
+              <div
+                onMouseDown={(e) => startResize(e, node, 'e')}
+                onTouchStart={(e) => startResizeTouch(e, node, 'e')}
+                className="absolute top-2 bottom-2 -right-1 w-2 cursor-ew-resize z-30 select-none opacity-0 group-hover:opacity-100 active:opacity-100 hover:bg-indigo-500/25 active:bg-indigo-500/50 rounded transition-all duration-150"
+                title="Изменить ширину (вправо)"
+              />
             </div>
           );
         })}
