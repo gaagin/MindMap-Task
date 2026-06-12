@@ -869,7 +869,12 @@ export async function syncWithGoogleSheets(
     console.log('Bilateral Symmetrical Google Sheets Sync Completed Successfully!');
     return { state: mergedState, success: true, report: syncReportData };
   } catch (error: any) {
-    console.error('Bilateral Symmetrical Sync Error:', error);
+    const isUnauth = error?.message?.includes('401') || error?.message?.includes('UNAUTHENTICATED') || error?.message?.toLowerCase().includes('auth');
+    if (isUnauth) {
+      console.warn('Bilateral Symmetrical Google Sheets Sync authorization expired:', error?.message);
+    } else {
+      console.error('Bilateral Symmetrical Sync Error:', error);
+    }
     return { state: localState, success: false, error: error?.message || String(error) };
   }
 }

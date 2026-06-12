@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface MindMapCanvasProps {
   nodes: TaskNode[];
@@ -132,6 +133,7 @@ export default function MindMapCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [expandedCardSubtasks, setExpandedCardSubtasks] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (lastCreatedNodeId) {
@@ -4645,6 +4647,93 @@ const pInfo = getPriorityInfo(node.priority);
                         })}
                       </div>
                     )}
+
+                    {/* Subtasks inline list */}
+                    {(() => {
+                      const subtasks = nodes.filter(n => n.parentId === node.id && !n.isContainer && !n.archived);
+                      if (subtasks.length === 0) return null;
+                      const isExpanded = expandedCardSubtasks[node.id] || false;
+                      const completedCount = subtasks.filter(s => s.completed).length;
+
+                      return (
+                        <div 
+                          className="border-t border-slate-100 dark:border-slate-805/60 pt-2.5 mt-2 bg-transparent select-none" 
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onTouchStart={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedCardSubtasks(prev => ({
+                                ...prev,
+                                [node.id]: !isExpanded
+                              }));
+                            }}
+                            className="flex items-center justify-between w-full text-[9px] font-black text-slate-500 hover:text-[#4f46e5] dark:text-slate-400 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                          >
+                            <span className="flex items-center gap-1.5 pl-0.5 pb-0.5">
+                              <span className="relative flex h-1.5 w-1.5 shrink-0">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
+                              </span>
+                              <span>ПОДЗАДАЧИ:</span>
+                              <span className="px-1.5 py-0.2 rounded-full text-[8.5px] bg-slate-100 dark:bg-slate-800/80 font-extrabold text-slate-600 dark:text-slate-400">
+                                {completedCount}/{subtasks.length}
+                              </span>
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[8.5px] font-medium text-slate-400">{isExpanded ? 'Свернуть' : 'Развернуть'}</span>
+                              <ChevronDown className={`w-3 h-3 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                            </div>
+                          </button>
+
+                          <AnimatePresence initial={false}>
+                            {isExpanded && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="mt-2 pl-1.5 border-l-2 border-indigo-100 dark:border-indigo-950/60 space-y-1.5 overflow-hidden text-left"
+                              >
+                                {subtasks.map(subtask => (
+                                  <div
+                                    key={subtask.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSelectNode(subtask.id, e);
+                                    }}
+                                    className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850/40 flex items-center gap-2 transition-all text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onUpdateNode({
+                                          ...subtask,
+                                          completed: !subtask.completed
+                                        });
+                                      }}
+                                      className="text-slate-505 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
+                                    >
+                                      {subtask.completed ? (
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
+                                      ) : (
+                                        <Circle className="w-3.5 h-3.5 text-slate-300 dark:text-slate-700" />
+                                      )}
+                                    </button>
+                                    <span className={`truncate leading-normal font-semibold text-[10px] ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+                                      {subtask.text}
+                                    </span>
+                                  </div>
+                                ))}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    })()}
                   </>
                 ) : (
                   <div className="flex items-center gap-1.5 mt-2 text-[9px] text-slate-400 dark:text-slate-500 font-medium select-none">

@@ -880,19 +880,25 @@ export default function App() {
         
         const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
         if (isStaleToken) {
+          console.warn('Google Sheets token expired (handled):', errMsg);
           setSheetsError('Сессия Google Таблиц истекла. Пожалуйста, выйдите и авторизуйтесь заново в меню "Google Таблицы".');
           setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
           setAccessToken(null); // Clear stored token from localStorage
         } else {
+          console.error('Google Sheets sync failed:', errMsg);
           setSheetsError(errMsg);
         }
       }
     } catch (e: any) {
-      console.error('Error running symmetrical sheets sync:', e);
-      setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
-      
       const errMsg = e?.message || String(e);
       const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
+      if (isStaleToken) {
+        console.warn('Google Sheets sync exception (OAuth token expired, handled):', errMsg);
+      } else {
+        console.error('Error running symmetrical sheets sync:', e);
+      }
+      setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+      
       if (isStaleToken) {
         setSheetsError('Сессия Google Таблиц истекла. Пожалуйста, выйдите и авторизуйтесь заново в меню "Google Таблицы".');
         setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam

@@ -53,6 +53,49 @@ export default function KanbanView({
     return tagCategories.length === 0 ? 'priority' : 'category';
   });
 
+  // State to manage whether completed tasks are globally collapsed
+  const [collapseCompleted, setCollapseCompleted] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_kanban_collapse_completed');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return false;
+  });
+
+  const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>({});
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('task_mindmap_kanban_collapse_completed', String(collapseCompleted));
+    } catch {}
+  }, [collapseCompleted]);
+
+  // State to manage whether subtasks are shown in lists
+  const [showSubtasks, setShowSubtasks] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_kanban_show_subtasks');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return true;
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('task_mindmap_kanban_show_subtasks', String(showSubtasks));
+    } catch {}
+  }, [showSubtasks]);
+
+  const isSubtask = (node: TaskNode): boolean => {
+    if (!node.parentId) return false;
+    const parentNode = nodes.find(n => n.id === node.parentId);
+    return !!parentNode && !parentNode.isContainer;
+  };
+
+  const matchesSubtaskFilter = (node: TaskNode): boolean => {
+    if (showSubtasks) return true;
+    return !isSubtask(node);
+  };
+
   // Try to pre-select the first category if any exists
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(() => {
     return tagCategories.length > 0 ? tagCategories[0].id : null;
@@ -62,6 +105,9 @@ export default function KanbanView({
   // Map of column key (either 'uncategorized' or tag name) to boolean and text value
   const [activeAddInColumn, setActiveAddInColumn] = useState<string | null>(null);
   const [newTaskNameInColumn, setNewTaskNameInColumn] = useState('');
+
+  // Track which cards have expanded subtasks nested inline
+  const [expandedCardSubtasks, setExpandedCardSubtasks] = useState<Record<string, boolean>>({});
 
   // Dropdown card move menu state for mobile and responsive accessibility
   const [activeMoveMenuCardId, setActiveMoveMenuCardId] = useState<string | null>(null);
@@ -123,6 +169,7 @@ export default function KanbanView({
   const filteredNodes = nodes.filter(n => {
     if (n.isContainer) return false;
     if (n.archived) return false;
+    if (!matchesSubtaskFilter(n)) return false;
     if (selectedContainerFilterId === 'all') return true;
     if (selectedContainerFilterId === 'no-container') {
       return !getTaskContainerId(n);
@@ -185,7 +232,7 @@ export default function KanbanView({
     
     // 2. Column for "Without Container" (Без контейнера)
     // A task is NOT in any container if none of its ancestors is a container
-    const tasksWithoutContainer = nodes.filter(n => !n.isContainer && !n.archived && !isInsideAnyContainer(n));
+    const tasksWithoutContainer = nodes.filter(n => !n.isContainer && !n.archived && !isInsideAnyContainer(n) && matchesSubtaskFilter(n));
     columns.push({
       id: 'no-container',
       title: 'Без контейнера',
@@ -196,7 +243,7 @@ export default function KanbanView({
 
     // 3. Columns for each container
     containerNodes.forEach(c => {
-      const items = nodes.filter(n => !n.isContainer && !n.archived && getTaskContainerId(n) === c.id);
+      const items = nodes.filter(n => !n.isContainer && !n.archived && getTaskContainerId(n) === c.id && matchesSubtaskFilter(n));
       columns.push({
         id: c.id,
         title: c.text,
@@ -608,6 +655,87 @@ export default function KanbanView({
             </div>
           );
         })()}
+
+        {/* Subtasks inline list */}
+        {(() => {
+          const subtasks = nodes.filter(n => n.parentId === node.id && !n.isContainer && !n.archived);
+          if (subtasks.length === 0) return null;
+          const isExpanded = expandedCardSubtasks[node.id] || false;
+          const completedCount = subtasks.filter(s => s.completed).length;
+
+          return (
+            <div className="border-t border-slate-100 dark:border-slate-800/60 pt-2.5 mt-1" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => {
+                  setExpandedCardSubtasks(prev => ({
+                    ...prev,
+                    [node.id]: !isExpanded
+                  }));
+                }}
+                className="flex items-center justify-between w-full text-[10px] font-black text-slate-505 hover:text-[#4f46e5] dark:text-slate-400 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+              >
+                <span className="flex items-center gap-1.5 pl-0.5 pb-0.5">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
+                  </span>
+                  <span>ПОДЗАДАЧИ:</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-slate-100 dark:bg-slate-800/80 font-extrabold text-slate-600 dark:text-slate-400">
+                    {completedCount}/{subtasks.length}
+                  </span>
+                </span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] font-medium text-slate-400">{isExpanded ? 'Свернуть' : 'Развернуть'}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                </div>
+              </button>
+
+              <AnimatePresence initial={false}>
+                {isExpanded && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-2 pl-1.5 border-l-2 border-indigo-100 dark:border-indigo-950/60 space-y-1.5 overflow-hidden"
+                  >
+                    {subtasks.map(subtask => (
+                      <div
+                        key={subtask.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNode(subtask.id, e);
+                        }}
+                        className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center gap-2 transition-all text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer"
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUpdateNode({
+                              ...subtask,
+                              completed: !subtask.completed
+                            });
+                          }}
+                          className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
+                        >
+                          {subtask.completed ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
+                          ) : (
+                            <Circle className="w-3.5 h-3.5 text-slate-400" />
+                          )}
+                        </button>
+                        <span className={`truncate leading-normal font-semibold ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+                          {subtask.text}
+                        </span>
+                      </div>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })()}
       </motion.div>
     );
   };
@@ -638,174 +766,211 @@ export default function KanbanView({
       {/* Category selector panel */}
       <div 
         id="kanban-categories-bar" 
-        className="bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-900 px-4 sm:px-6 py-4 select-none space-y-4"
+        className="bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-900 px-4 sm:px-6 py-4 select-none"
       >
-        {/* Container Selection Row */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1 border-b border-slate-200/40 dark:border-slate-800/20 pb-3">
-          <span className="text-[10px] font-black text-slate-505 dark:text-slate-400 uppercase tracking-widest shrink-0 flex items-center gap-1.5">
-            <KanbanIcon className="w-3.5 h-3.5 text-indigo-505 dark:text-indigo-400" />
-            КОНТЕЙНЕР:
-          </span>
-          <div className="relative min-w-[200px] max-w-xs animate-fade-in">
-            <select
-              id="kanban-container-filter-select"
-              value={selectedContainerFilterId}
-              onChange={(e) => setSelectedContainerFilterId(e.target.value)}
-              className="w-full appearance-none bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-705 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl px-3.5 py-1.5 pr-10 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-[#4f46e5] transition-all"
-            >
-              <option value="all">
-                Все задачи ({nodes.filter(n => !n.isContainer && !n.archived).length})
-              </option>
-              <option value="no-container">
-                Без контейнера ({nodes.filter(n => !n.isContainer && !n.archived && !isInsideAnyContainer(n)).length})
-              </option>
-              {allContainers.map(container => {
-                const count = nodes.filter(n => !n.isContainer && !n.archived && getTaskContainerId(n) === container.id).length;
-                return (
-                  <option key={container.id} value={container.id}>
-                    📦 {container.text} ({count})
-                  </option>
-                );
-              })}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 dark:text-slate-500">
-              <ChevronDown className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/40 dark:border-slate-800/20">
-          <div className="flex items-center gap-3">
-            <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">ГРУППИРОВКА KANBAN:</span>
-            <div className="flex items-center gap-1 bg-slate-200/60 dark:bg-slate-900/60 p-1 rounded-xl border border-slate-200/50 dark:border-slate-850">
-              <button
-                type="button"
-                onClick={() => setGroupBy('category')}
-                className={`px-3.5 py-1 border text-[11px] font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  groupBy === 'category' 
-                    ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
-                    : 'bg-transparent border-transparent text-slate-505 hover:text-slate-800 dark:hover:text-slate-350'
-                }`}
+        <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-x-8 gap-y-4">
+          {/* Container Selection Row */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1 border-b border-slate-200/40 dark:border-slate-800/20 pb-3 lg:border-none lg:pb-0 lg:pt-0">
+            <span className="text-[10px] font-black text-slate-505 dark:text-slate-400 uppercase tracking-widest shrink-0 flex items-center gap-1.5">
+              <KanbanIcon className="w-3.5 h-3.5 text-indigo-505 dark:text-indigo-400" />
+              КОНТЕЙНЕР:
+            </span>
+            <div className="relative min-w-[200px] max-w-xs animate-fade-in">
+              <select
+                id="kanban-container-filter-select"
+                value={selectedContainerFilterId}
+                onChange={(e) => setSelectedContainerFilterId(e.target.value)}
+                className="w-full appearance-none bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-705 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl px-3.5 py-1.5 pr-10 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-[#4f46e5] transition-all"
               >
-                По категориям
-              </button>
-              <button
-                type="button"
-                onClick={() => setGroupBy('priority')}
-                className={`px-3.5 py-1 border text-[11px] font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  groupBy === 'priority' 
-                    ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
-                    : 'bg-transparent border-transparent text-slate-550 hover:text-slate-800 dark:hover:text-slate-350'
-                }`}
-              >
-                По приоритетам
-              </button>
-              <button
-                type="button"
-                onClick={() => setGroupBy('container')}
-                className={`px-3.5 py-1 border text-[11px] font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  groupBy === 'container' 
-                    ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
-                    : 'bg-transparent border-transparent text-slate-550 hover:text-slate-800 dark:hover:text-slate-350'
-                }`}
-              >
-                По контейнерам
-              </button>
-            </div>
-          </div>
-          {groupBy === 'category' && (
-            <button
-              id="kanban-create-first-cat-btn"
-              onClick={() => {
-                const name = prompt('Введите название новой категории тегов (например, Статус):');
-                if (name && name.trim()) {
-                  onCreateTagCategory(name.trim(), '#6366f1');
-                }
-              }}
-              className="px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] hover:scale-[1.01] active:scale-[0.99] text-white rounded-xl text-[10.5px] font-black shadow-[0_3px_12px_rgba(79,70,229,0.25)] transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" /> Добавить категорию
-            </button>
-          )}
-        </div>
-
-        {groupBy === 'category' && tagCategories.length > 0 && (
-          <>
-            {/* Mobile Header Toggle, visible on mobile, hidden on tablet/desktop */}
-            <div className="flex md:hidden items-center justify-between">
-              <button 
-                type="button"
-                onClick={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
-                className="flex items-center gap-2 cursor-pointer py-1 text-left focus:outline-none"
-              >
-                <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                  КАТЕГОРИЯ:
-                </span>
-                {activeCategory && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700/60 text-[11px] font-bold text-slate-705 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-subtle" style={{ backgroundColor: activeCategory.color }} />
-                    <span>{activeCategory.name}</span>
-                  </span>
-                )}
-                <ChevronDown 
-                  className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${
-                    isCategoriesExpanded ? 'rotate-180' : ''
-                  }`} 
-                />
-              </button>
-            </div>
-
-            {/* Categories container: always visible on desktop, conditionally collapsed/expanded with animation on mobile */}
-            <div className={`${isCategoriesExpanded ? 'flex' : 'hidden md:flex'} mt-1 flex-col md:flex-row md:items-center gap-3 overflow-x-auto scrollbar-none`}>
-              <span className="hidden md:inline text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest shrink-0">
-                КАТЕГОРИЯ:
-              </span>
-              
-              <div className="flex flex-wrap md:flex-nowrap items-center gap-2.5 overflow-[x-auto] py-0.5 scrollbar-none">
-                {tagCategories.map(cat => {
-                  const isSelected = cat.id === selectedCategoryId;
-                  
-                  // Count cards belonging to this category overall
-                  const count = nodes.filter(n => {
-                    if (!n.tags) return false;
-                    return n.tags.some(t => cat.tags?.includes(t));
-                  }).length;
-
+                <option value="all">
+                  Все задачи ({nodes.filter(n => !n.isContainer && !n.archived).length})
+                </option>
+                <option value="no-container">
+                  Без контейнера ({nodes.filter(n => !n.isContainer && !n.archived && !isInsideAnyContainer(n)).length})
+                </option>
+                {allContainers.map(container => {
+                  const count = nodes.filter(n => !n.isContainer && !n.archived && getTaskContainerId(n) === container.id).length;
                   return (
-                    <button
-                      key={cat.id}
-                      id={`kanban-cat-tab-${cat.id}`}
-                      onClick={() => {
-                        setSelectedCategoryId(cat.id);
-                        // Automatically collapse picker on mobile/tablet after selection
-                        if (window.innerWidth < 768) {
-                          setIsCategoriesExpanded(false);
-                        }
-                      }}
-                      className={`px-4 py-2 rounded-2xl border text-xs font-black flex items-center gap-2.5 cursor-pointer transition-all duration-200 shrink-0 ${
-                        isSelected 
-                          ? 'bg-white dark:bg-slate-900 border-[#4f46e5]/85 dark:border-indigo-500 text-[#4f46e5] dark:text-indigo-300 ring-2 ring-indigo-500/10 shadow-[0_4px_15px_rgba(79,70,229,0.06)] scale-[1.01]'
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-705 hover:bg-slate-50/60 dark:hover:bg-slate-850'
-                      }`}
-                    >
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                      <span>{cat.name}</span>
-                      <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-450">
-                        {count}
-                      </span>
-                    </button>
+                    <option key={container.id} value={container.id}>
+                      📦 {container.text} ({count})
+                    </option>
                   );
                 })}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 dark:text-slate-500">
+                <ChevronDown className="w-4 h-4" />
               </div>
             </div>
-          </>
-        )}
-
-        {groupBy === 'category' && tagCategories.length === 0 && (
-          <div className="text-center py-2 text-[10.5px] text-slate-500 dark:text-slate-450 font-medium">
-            Нет категорий. Вы всегда можете переключиться на вид по приоритетам выше!
           </div>
-        )}
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/40 dark:border-slate-800/20 lg:border-none lg:pb-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">ГРУППИРОВКА KANBAN:</span>
+              <div className="flex items-center gap-1 bg-slate-200/60 dark:bg-slate-900/60 p-1 rounded-xl border border-slate-200/50 dark:border-slate-850">
+                <button
+                  type="button"
+                  onClick={() => setGroupBy('category')}
+                  className={`px-3.5 py-1 border text-[11px] font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    groupBy === 'category' 
+                      ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
+                      : 'bg-transparent border-transparent text-slate-505 hover:text-slate-800 dark:hover:text-slate-350'
+                  }`}
+                >
+                  По категориям
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGroupBy('priority')}
+                  className={`px-3.5 py-1 border text-[11px] font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    groupBy === 'priority' 
+                      ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
+                      : 'bg-transparent border-transparent text-slate-550 hover:text-slate-800 dark:hover:text-slate-350'
+                  }`}
+                >
+                  По приоритетам
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGroupBy('container')}
+                  className={`px-3.5 py-1 border text-[11px] font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    groupBy === 'container' 
+                      ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
+                      : 'bg-transparent border-transparent text-slate-550 hover:text-slate-805 dark:hover:text-slate-350'
+                  }`}
+                >
+                  По контейнерам
+                </button>
+              </div>
+
+              {/* Global toggle for completed tasks */}
+              <button
+                type="button"
+                onClick={() => {
+                  const newVal = !collapseCompleted;
+                  setCollapseCompleted(newVal);
+                  // Apply new state across all columns
+                  const updated: Record<string, boolean> = {};
+                  columns.forEach(col => {
+                    updated[col.id] = newVal;
+                  });
+                  setCollapsedColumns(updated);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-black rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                  collapseCompleted 
+                    ? 'bg-indigo-50/75 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-900/40 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-805 text-slate-600 dark:text-slate-300 hover:bg-slate-50/50 dark:hover:bg-slate-850'
+                }`}
+                title={collapseCompleted ? "Развернуть выполненные задачи во всех колонках" : "Свернуть выполненные задачи во всех колонках"}
+              >
+                <CheckCircle2 className={`w-3.5 h-3.5 ${collapseCompleted ? 'text-indigo-505 dark:text-indigo-400' : 'text-slate-400'}`} />
+                <span>{collapseCompleted ? 'Выполненные: Свёрнуты' : 'Выполненные: Свернуть все'}</span>
+              </button>
+
+              {/* Subtasks show/hide filter toggle */}
+              <button
+                type="button"
+                onClick={() => setShowSubtasks(!showSubtasks)}
+                className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-black rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                  showSubtasks 
+                    ? 'bg-emerald-50/75 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-600 dark:text-emerald-400 shadow-sm' 
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-805 text-slate-605 dark:text-slate-350 hover:bg-slate-50/50 dark:hover:bg-slate-850'
+                }`}
+                title={showSubtasks ? "Скрыть дочерние подзадачи во всех колонках" : "Показать дочерние подзадачи во всех колонках"}
+              >
+                <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
+                  showSubtasks 
+                    ? 'border-emerald-500 bg-emerald-500 text-white' 
+                    : 'border-slate-300 dark:border-slate-700'
+                }`}>
+                  {showSubtasks && (
+                    <svg className="w-2.5 h-2.5 text-white stroke-[3.5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+                <span>Показывать подзадачи</span>
+              </button>
+            </div>
+          </div>
+
+          {groupBy === 'category' && tagCategories.length > 0 && (
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3 w-full lg:w-auto">
+              {/* Mobile Header Toggle, visible on mobile, hidden on tablet/desktop */}
+              <div className="flex md:hidden items-center justify-between">
+                <button 
+                  type="button"
+                  onClick={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
+                  className="flex items-center gap-2 cursor-pointer py-1 text-left focus:outline-none"
+                >
+                  <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                    КАТЕГОРИЯ:
+                  </span>
+                  {activeCategory && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700/60 text-[11px] font-bold text-slate-705 dark:text-slate-200">
+                      <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-subtle" style={{ backgroundColor: activeCategory.color }} />
+                      <span>{activeCategory.name}</span>
+                    </span>
+                  )}
+                  <ChevronDown 
+                    className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${
+                      isCategoriesExpanded ? 'rotate-180' : ''
+                    }`} 
+                  />
+                </button>
+              </div>
+
+              {/* Categories container: always visible on desktop, conditionally collapsed/expanded with animation on mobile */}
+              <div className={`${isCategoriesExpanded ? 'flex' : 'hidden md:flex'} mt-1 lg:mt-0 flex-col md:flex-row md:items-center gap-3 overflow-x-auto scrollbar-none`}>
+                <span className="hidden md:inline text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest shrink-0">
+                  КАТЕГОРИЯ:
+                </span>
+                
+                <div className="flex flex-wrap md:flex-nowrap items-center gap-2.5 overflow-[x-auto] py-0.5 scrollbar-none">
+                  {tagCategories.map(cat => {
+                    const isSelected = cat.id === selectedCategoryId;
+                    
+                    // Count cards belonging to this category overall
+                    const count = nodes.filter(n => {
+                      if (!n.tags) return false;
+                      return n.tags.some(t => cat.tags?.includes(t));
+                    }).length;
+
+                    return (
+                      <button
+                        key={cat.id}
+                        id={`kanban-cat-tab-${cat.id}`}
+                        onClick={() => {
+                          setSelectedCategoryId(cat.id);
+                          // Automatically collapse picker on mobile/tablet after selection
+                          if (window.innerWidth < 768) {
+                            setIsCategoriesExpanded(false);
+                          }
+                        }}
+                        className={`px-4 py-2 rounded-2xl border text-xs font-black flex items-center gap-2.5 cursor-pointer transition-all duration-200 shrink-0 ${
+                          isSelected 
+                            ? 'bg-white dark:bg-slate-900 border-[#4f46e5]/85 dark:border-indigo-500 text-[#4f46e5] dark:text-indigo-300 ring-2 ring-indigo-500/10 shadow-[0_4px_15px_rgba(79,70,229,0.06)] scale-[1.01]'
+                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-705 hover:bg-slate-50/60 dark:hover:bg-slate-850'
+                        }`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                        <span>{cat.name}</span>
+                        <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-450">
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {groupBy === 'category' && tagCategories.length === 0 && (
+            <div className="text-center py-2 text-[10.5px] text-slate-500 dark:text-slate-450 font-medium lg:py-0 lg:ml-auto">
+              Нет категорий. Вы всегда можете переключиться на вид по приоритетам выше!
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Pillars Columns Area */}
@@ -850,15 +1015,69 @@ export default function KanbanView({
                   id={`kanban-column-cards-${col.id}`}
                   className="flex-1 overflow-y-auto space-y-2.5 pr-1 min-h-[50px] scrollbar-thin max-h-[calc(100vh-23rem)]"
                 >
-                  <AnimatePresence initial={false}>
-                    {col.items.map(node => renderCard(node))}
-                  </AnimatePresence>
+                  {(() => {
+                    const sortedItems = [...col.items].sort((a, b) => {
+                      if (a.completed && !b.completed) return 1;
+                      if (!a.completed && b.completed) return -1;
+                      return 0;
+                    });
+                    const activeItems = sortedItems.filter(n => !n.completed);
+                    const completedItems = sortedItems.filter(n => n.completed);
+                    const isCompletedCollapsed = collapsedColumns[col.id] !== undefined
+                      ? collapsedColumns[col.id]
+                      : collapseCompleted;
 
-                  {col.items.length === 0 && (
-                    <div className="text-center py-6 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-[10.5px] font-bold text-slate-400 dark:text-slate-555 select-none">
-                      Перетащите карточки сюда
-                    </div>
-                  )}
+                    return (
+                      <>
+                        <AnimatePresence initial={false}>
+                          {activeItems.map(node => renderCard(node))}
+                        </AnimatePresence>
+
+                        {completedItems.length > 0 && (
+                          <div id={`completed-section-${col.id}`} className="mt-3.5 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCollapsedColumns(prev => ({
+                                  ...prev,
+                                  [col.id]: !isCompletedCollapsed
+                                }));
+                              }}
+                              className="w-full flex items-center justify-between py-1.5 px-2 bg-slate-100/70 dark:bg-slate-800/40 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors rounded-xl text-[10px] font-bold text-slate-500 dark:text-slate-400 cursor-pointer mb-2 shadow-xs"
+                            >
+                              <span className="flex items-center gap-1.5 pl-0.5">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 shrink-0" />
+                                <span>Выполненные</span>
+                                <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-slate-200/80 dark:bg-slate-705 font-extrabold shrink-0 text-slate-600 dark:text-slate-350">
+                                  {completedItems.length}
+                                </span>
+                              </span>
+                              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${isCompletedCollapsed ? '-rotate-90' : ''}`} />
+                            </button>
+
+                            <AnimatePresence initial={false}>
+                              {!isCompletedCollapsed && (
+                                <motion.div
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: 'auto' }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  className="space-y-2.5 overflow-hidden"
+                                >
+                                  {completedItems.map(node => renderCard(node))}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        )}
+
+                        {col.items.length === 0 && (
+                          <div className="text-center py-6 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-[10.5px] font-bold text-slate-400 dark:text-slate-555 select-none">
+                            Перетащите карточки сюда
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Inline Add Task panel in column */}
