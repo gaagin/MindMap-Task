@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Menu, 
-  Moon, 
-  Sun, 
   Layers,
   Search,
   Undo2,
@@ -470,12 +468,46 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
+  // Selected task nodes for multiple selection
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+
   // Sync isDrawerOpen when selectedNodeId becomes null
   useEffect(() => {
     if (selectedNodeId === null) {
       setIsDrawerOpen(false);
     }
   }, [selectedNodeId]);
+
+  const handleSelectNode = (id: string | null, eOrIsMulti?: any) => {
+    let isMulti = false;
+    
+    if (typeof eOrIsMulti === 'boolean') {
+      isMulti = eOrIsMulti;
+    } else if (eOrIsMulti) {
+      isMulti = !!(eOrIsMulti.ctrlKey || eOrIsMulti.metaKey);
+    }
+    
+    if (isMultiSelectMode && id !== null) {
+      isMulti = true;
+    }
+
+    if (id === null) {
+      if (!isMulti) {
+        setSelectedNodeId(null);
+        setSelectedNodeIds([]);
+        setIsDrawerOpen(false);
+      }
+      return;
+    }
+
+    if (isMulti) {
+      handleToggleSelectNode(id);
+    } else {
+      setSelectedNodeId(id);
+      setIsDrawerOpen(true);
+    }
+  };
 
   // Reminders check engine
   const [triggeredReminders, setTriggeredReminders] = useState<{
@@ -627,6 +659,46 @@ export default function App() {
       if (!snap.exists()) return;
       const cloudData = snap.data();
       if (!cloudData) return;
+
+      // Real-time Pomodoro state synchronization across devices
+      if (cloudData.activePomodoro) {
+        try {
+          const localPomoSaved = localStorage.getItem('task_mindmap_pomodoro');
+          const localPomo = localPomoSaved ? JSON.parse(localPomoSaved) : null;
+          const cloudPomo = cloudData.activePomodoro;
+
+          const isPomoSubstantivelyDifferent = !localPomo || 
+            localPomo.nodeId !== cloudPomo.nodeId ||
+            localPomo.isRunning !== cloudPomo.isRunning ||
+            localPomo.isPaused !== cloudPomo.isPaused ||
+            localPomo.isBreak !== cloudPomo.isBreak ||
+            // Support small clock deviations between devices by checking if endTime difference is larger than 2 seconds
+            Math.abs((localPomo.endTime || 0) - (cloudPomo.endTime || 0)) > 2000 ||
+            localPomo.nodeText !== cloudPomo.nodeText;
+
+          if (isPomoSubstantivelyDifferent) {
+            console.log('[Sync] Received substantive active Pomodoro update from Firestore, updating local state.');
+            localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(cloudPomo));
+            window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+          }
+        } catch (e) {
+          console.error('[Sync] Error syncing active Pomodoro from Firestore snapshot:', e);
+        }
+      } else {
+        try {
+          const localPomoSaved = localStorage.getItem('task_mindmap_pomodoro');
+          if (localPomoSaved) {
+            const localPomo = JSON.parse(localPomoSaved);
+            if (localPomo && localPomo.isRunning) {
+              console.log('[Sync] Pomodoro cleared in cloud, resetting local timer.');
+              localStorage.removeItem('task_mindmap_pomodoro');
+              window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+            }
+          }
+        } catch (e) {
+          console.error('[Sync] Error checking local active Pomodoro when cloud is empty:', e);
+        }
+      }
 
       const cloudState: WorkspaceState = {
         folders: cloudData.folders || [],
@@ -1092,6 +1164,8 @@ export default function App() {
     setPanY(0);
     setZoom(1);
     setSelectedNodeId(null);
+    setSelectedNodeIds([]);
+    setIsMultiSelectMode(false);
     setSearchQuery('');
     
     // Automatically close the sidebar overlay drawer on mobile/tablet screen widths
@@ -1630,6 +1704,144 @@ export default function App() {
     setLastCreatedNodeId(newContainerNode.id);
   };
 
+  // ----- BULK MULTIPLE SELECTION OPERATIONS -----
+  const handleToggleSelectNode = (id: string) => {
+    setSelectedNodeIds(prev => 
+      prev.includes(id) ? prev.filter(nid => nid !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = (ids: string[]) => {
+    setSelectedNodeIds(prev => {
+      const allSelected = ids.every(id => prev.includes(id));
+      if (allSelected) {
+        return prev.filter(id => !ids.includes(id));
+      } else {
+        return Array.from(new Set([...prev, ...ids]));
+      }
+    });
+  };
+
+  const handleBulkDelete = () => {
+    const pid = state.activeProjectId;
+    if (!pid || selectedNodeIds.length === 0) return;
+
+    if (!window.confirm(`Вы уверены, что хотите безвозвратно удалить выбранные задачи (${selectedNodeIds.length})?`)) {
+      return;
+    }
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const collectIdsToDelete = (targetId: string, list: string[] = []): string[] => {
+      list.push(targetId);
+      const children = currentNodes.filter(n => n.parentId === targetId);
+      children.forEach(child => collectIdsToDelete(child.id, list));
+      return list;
+    };
+
+    const allIdsToDelete: string[] = [];
+    selectedNodeIds.forEach(id => {
+      collectIdsToDelete(id, allIdsToDelete);
+    });
+
+    const uniqueIdsToDelete = Array.from(new Set(allIdsToDelete));
+    uniqueIdsToDelete.forEach(nid => logDeletion('node', nid));
+
+    setState(prev => {
+      const remainingNodes = currentNodes.filter(n => !uniqueIdsToDelete.includes(n.id));
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncCompletion(remainingNodes)
+        }
+      };
+    });
+
+    setSelectedNodeIds([]);
+    if (selectedNodeId && uniqueIdsToDelete.includes(selectedNodeId)) {
+      setSelectedNodeId(null);
+    }
+  };
+
+  const handleBulkToggleCompleted = (completed: boolean) => {
+    const pid = state.activeProjectId;
+    if (!pid || selectedNodeIds.length === 0) return;
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    let updatedNodes = [...currentNodes];
+    selectedNodeIds.forEach(id => {
+      updatedNodes = toggleNodeAndDescendants(id, completed, updatedNodes);
+    });
+
+    const synced = syncCompletion(updatedNodes);
+
+    setState(prev => ({
+      ...prev,
+      nodes: {
+        ...prev.nodes,
+        [pid]: synced
+      }
+    }));
+  };
+
+  const handleBulkChangePriority = (priority: Priority) => {
+    const pid = state.activeProjectId;
+    if (!pid || selectedNodeIds.length === 0) return;
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const updatedNodes = currentNodes.map(n => {
+      if (selectedNodeIds.includes(n.id)) {
+        return { ...n, priority, updatedAt: new Date().toISOString() };
+      }
+      return n;
+    });
+
+    setState(prev => ({
+      ...prev,
+      nodes: {
+        ...prev.nodes,
+        [pid]: updatedNodes
+      }
+    }));
+  };
+
+  const handleBulkAddTag = (tag: string) => {
+    const pid = state.activeProjectId;
+    if (!pid || !tag.trim() || selectedNodeIds.length === 0) return;
+
+    const cleanTag = tag.trim();
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const updatedNodes = currentNodes.map(n => {
+      if (selectedNodeIds.includes(n.id)) {
+        const existingTags = n.tags || [];
+        if (!existingTags.includes(cleanTag)) {
+          return { 
+            ...n, 
+            tags: [...existingTags, cleanTag],
+            updatedAt: new Date().toISOString()
+          };
+        }
+      }
+      return n;
+    });
+
+    setState(prev => ({
+      ...prev,
+      nodes: {
+        ...prev.nodes,
+        [pid]: updatedNodes
+      }
+    }));
+  };
+
   // Recursive deletion of subnodes to avoid orphan paths in mapping svg
   const handleDeleteNode = (id: string, skipConfirm = false) => {
     const pid = state.activeProjectId;
@@ -2080,6 +2292,8 @@ export default function App() {
         currentWorkspaceState={state}
         onApplySyncedState={setState}
         version={APP_VERSION}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode(!darkMode)}
       />
 
       {/* Main Workspace Frame */}
@@ -2239,10 +2453,36 @@ export default function App() {
               <button
                 onClick={handleUndo}
                 title="Отменить последнее ветвление или удаление"
-                className="p-1.5 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center gap-1 text-xs cursor-pointer"
+                className="p-1.5 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center gap-1 text-xs cursor-pointer focus:outline-none"
               >
                 <Undo2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                 <span className="hidden sm:inline">Отмена</span>
+              </button>
+            )}
+
+            {/* Touch & Quick Multiple-Selection Mode Toggle Button */}
+            {state.activeProjectId && (
+              <button
+                id="toolbar-multi-select-btn"
+                type="button"
+                onClick={() => {
+                  const val = !isMultiSelectMode;
+                  setIsMultiSelectMode(val);
+                  if (val) {
+                    // Start selection Mode
+                  } else {
+                    setSelectedNodeIds([]); // Reset selection when turning off
+                  }
+                }}
+                title="Режим выбора нескольких задач (Мульти-выбор)"
+                className={`p-1.5 border rounded-lg flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-all focus:outline-none ${
+                  isMultiSelectMode
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
+                    : 'text-slate-600 dark:text-slate-350 bg-slate-55 dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full shrink-0 ${isMultiSelectMode ? 'bg-white animate-ping' : 'bg-slate-300 dark:bg-slate-550'}`} />
+                <span>Выбор</span>
               </button>
             )}
 
@@ -2390,15 +2630,6 @@ export default function App() {
             >
               <Sparkles className={`w-4 h-4 ${aiConsoleOpen ? 'animate-pulse' : ''}`} />
             </button>
-
-            {/* Dark light theme toggler */}
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="p-2 text-slate-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-              title={darkMode ? "Включить светлую тему" : "Включить темную тему"}
-            >
-              {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
-            </button>
           </div>
         </header>
 
@@ -2544,14 +2775,7 @@ export default function App() {
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={(id) => {
-                  setSelectedNodeId(id);
-                  if (id) {
-                    setIsDrawerOpen(true);
-                  } else {
-                    setIsDrawerOpen(false);
-                  }
-                }}
+                onSelectNode={handleSelectNode}
                 onUpdateNode={handleUpdateNode}
                 onDeleteNode={handleDeleteNode}
                 onCreateTask={handleCreateMobileTask}
@@ -2566,18 +2790,13 @@ export default function App() {
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={(id) => {
-                  setSelectedNodeId(id);
-                  if (id) {
-                    setIsDrawerOpen(true);
-                  } else {
-                    setIsDrawerOpen(false);
-                  }
-                }}
+                onSelectNode={handleSelectNode}
                 onUpdateNode={handleUpdateNode}
                 onDeleteNode={handleDeleteNode}
                 onCreateTask={handleCreateKanbanTask}
                 onCreateTagCategory={handleCreateTagCategory}
+                selectedNodeIds={selectedNodeIds}
+                onToggleSelectNode={handleToggleSelectNode}
               />
             ) : viewMode === 'calendar' ? (
               <CalendarView
@@ -2586,14 +2805,7 @@ export default function App() {
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={(id) => {
-                  setSelectedNodeId(id);
-                  if (id) {
-                    setIsDrawerOpen(true);
-                  } else {
-                    setIsDrawerOpen(false);
-                  }
-                }}
+                onSelectNode={handleSelectNode}
                 onUpdateNode={handleUpdateNode}
                 onDeleteNode={handleDeleteNode}
                 onCreateTask={(text, initialTags, dueDate, dueTime) => {
@@ -2607,14 +2819,7 @@ export default function App() {
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={(id) => {
-                  setSelectedNodeId(id);
-                  if (id) {
-                    setIsDrawerOpen(true);
-                  } else {
-                    setIsDrawerOpen(false);
-                  }
-                }}
+                onSelectNode={handleSelectNode}
                 onUpdateNode={handleUpdateNode}
                 onDeleteNode={handleDeleteNode}
                 onCreateTask={(text, initialTags, dueDate) => {
@@ -2628,19 +2833,15 @@ export default function App() {
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={(id) => {
-                  setSelectedNodeId(id);
-                  if (id) {
-                    setIsDrawerOpen(true);
-                  } else {
-                    setIsDrawerOpen(false);
-                  }
-                }}
+                onSelectNode={handleSelectNode}
                 onUpdateNode={handleUpdateNode}
                 onDeleteNode={handleDeleteNode}
                 onCreateTask={(text, initialTags) => {
                   handleCreateMobileTask(text, initialTags || [], 'none');
                 }}
+                selectedNodeIds={selectedNodeIds}
+                onToggleSelectNode={handleToggleSelectNode}
+                onToggleSelectAll={handleToggleSelectAll}
               />
             ) : (
               <MindMapCanvas
@@ -2651,12 +2852,9 @@ export default function App() {
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 lastCreatedNodeId={lastCreatedNodeId}
                 onClearLastCreatedNodeId={() => setLastCreatedNodeId(null)}
-                onSelectNode={(id) => {
-                  setSelectedNodeId(id);
-                  if (id === null) {
-                    setIsDrawerOpen(false);
-                  }
-                }}
+                onSelectNode={handleSelectNode}
+                selectedNodeIds={selectedNodeIds}
+                isMultiSelectMode={isMultiSelectMode}
                 onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
                 onUpdateNodeParent={handleUpdateNodeParent}
                 onAddChildNode={handleAddChildNode}
@@ -2695,6 +2893,109 @@ export default function App() {
 
 
         </div>
+
+        {/* Bulk Multiple-Selection Actions Control Panel Bar */}
+        {selectedNodeIds.length > 0 && (
+          <div className="fixed bottom-24 left-4 right-4 md:bottom-6 md:left-1/2 md:-translate-x-1/2 z-45 flex flex-col sm:flex-row items-center gap-3 sm:gap-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 p-4 rounded-2xl shadow-2xl max-w-full md:max-w-4xl text-xs select-none animate-in fade-in slide-in-from-bottom-4 duration-205">
+            
+            {/* Left part: Selection counter */}
+            <div className="flex items-center justify-between w-full sm:w-auto gap-3 border-r pr-0 sm:pr-4 border-slate-200 dark:border-slate-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-[10px] font-mono font-extrabold text-indigo-600 dark:text-indigo-405">
+                  {selectedNodeIds.length}
+                </span>
+                <span className="font-extrabold text-slate-800 dark:text-slate-100">выделено</span>
+              </div>
+              <button 
+                onClick={() => setSelectedNodeIds([])}
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                title="Сбросить выделение"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Right part: Bulk Actions */}
+            <div className="flex flex-wrap items-center gap-2.5 w-full justify-center sm:justify-start">
+              
+              {/* Change Completion Status */}
+              <button
+                onClick={() => handleBulkToggleCompleted(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 rounded-xl transition-all cursor-pointer font-bold"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Выполнить</span>
+              </button>
+              
+              <button
+                onClick={() => handleBulkToggleCompleted(false)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-55 hover:bg-slate-100 dark:bg-slate-805 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 rounded-xl transition-all cursor-pointer font-bold"
+              >
+                <span className="w-3.5 h-3.5 rounded-full border border-slate-400 dark:border-slate-500 block shrink-0" />
+                <span>В активные</span>
+              </button>
+
+              {/* Set Priority dropdown/select */}
+              <div className="flex items-center gap-1 bg-slate-55 dark:bg-slate-805 py-1 px-1.5 rounded-xl border border-slate-200/60 dark:border-slate-750 text-[11px]">
+                <span className="text-slate-400 font-bold text-[10px] uppercase pl-1.5">Приоритет:</span>
+                <select
+                  aria-label="Смена приоритета"
+                  onChange={(e) => {
+                    handleBulkChangePriority(e.target.value as Priority);
+                    e.target.value = ""; // Reset
+                  }}
+                  defaultValue=""
+                  className="bg-transparent border-0 text-slate-750 dark:text-slate-200 py-1 px-2.5 font-bold cursor-pointer focus:outline-none focus:ring-0"
+                >
+                  <option value="" disabled className="bg-white dark:bg-slate-900 text-slate-450">Сделать...</option>
+                  <option value="none" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Без приоритета</option>
+                  <option value="low" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Низкий</option>
+                  <option value="medium" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Средний</option>
+                  <option value="high" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Высокий</option>
+                  <option value="urgent" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Критический</option>
+                </select>
+              </div>
+
+              {/* Add Tag Tool */}
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const target = e.target as HTMLFormElement;
+                  const input = target.elements.namedItem('tagInput') as HTMLInputElement;
+                  if (input && input.value.trim()) {
+                    handleBulkAddTag(input.value);
+                    input.value = '';
+                  }
+                }}
+                className="flex items-center bg-slate-55 dark:bg-slate-805 pl-2 pr-1 py-1 rounded-xl border border-slate-200/60 dark:border-slate-750"
+              >
+                <input
+                  type="text"
+                  name="tagInput"
+                  placeholder="Добавить тег..."
+                  className="bg-transparent border-0 text-slate-850 dark:text-slate-100 placeholder-slate-400 max-w-[100px] text-[11px] focus:outline-none focus:ring-0"
+                />
+                <button
+                  type="submit"
+                  className="px-2 py-1 bg-indigo-50 dark:bg-indigo-950 text-indigo-650 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-lg cursor-pointer transition-all font-extrabold text-[10px]"
+                >
+                  +
+                </button>
+              </form>
+
+              {/* Bulk Delete */}
+              <button
+                onClick={handleBulkDelete}
+                className="flex items-center gap-1 py-1.5 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-400 rounded-xl transition-all cursor-pointer font-bold ml-auto sm:ml-2 border border-rose-200/40"
+                title="Удалить все выбранные задачи"
+              >
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Удалить</span>
+              </button>
+
+            </div>
+          </div>
+        )}
 
         {/* Task Properties slide-out drawer displays only on explicit open clicking Eye button */}
         {isDrawerOpen && selectedNode && (

@@ -128,6 +128,17 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; error?: string }> {
   try {
     const docRef = doc(db, 'workspaces', userId);
+    // Load and include local active pomodoro state if any
+    let activePomodoro = null;
+    try {
+      const localPomoSaved = localStorage.getItem('task_mindmap_pomodoro');
+      if (localPomoSaved) {
+        activePomodoro = JSON.parse(localPomoSaved);
+      }
+    } catch (e) {
+      console.error('Failed to parse local pomodoro state for Firestore syncer:', e);
+    }
+
     const rawPayload = {
       userId,
       folders: state.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
@@ -140,6 +151,7 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
       tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
       googleSheetsFileId: state.googleSheetsFileId || localStorage.getItem('google_sheets_sync_file_id') || null,
       taskSheetsSpreadsheetId: state.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || null,
+      activePomodoro,
       updatedAt: new Date().toISOString()
     };
     

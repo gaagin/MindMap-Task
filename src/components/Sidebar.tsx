@@ -15,7 +15,9 @@ import {
   X,
   FolderOpen,
   AlertCircle,
-  Move
+  Move,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { Folder, Project, TagCategory, WorkspaceState } from '../types';
 import GoogleSheetsSync from './GoogleSheetsSync';
@@ -44,6 +46,8 @@ interface SidebarProps {
   currentWorkspaceState: WorkspaceState;
   onApplySyncedState: (state: WorkspaceState) => void;
   version?: string;
+  darkMode: boolean;
+  onToggleDarkMode: () => void;
 }
 
 export default function Sidebar({
@@ -69,7 +73,9 @@ export default function Sidebar({
   onDeleteTagCategory,
   currentWorkspaceState,
   onApplySyncedState,
-  version = "2.5.0"
+  version = "2.5.0",
+  darkMode,
+  onToggleDarkMode
 }: SidebarProps) {
   // Folder tree expansion state, loaded and persisted in localStorage
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
@@ -537,19 +543,32 @@ export default function Sidebar({
               </p>
             </div>
           </div>
-          {/* Close button that works on both desktop and mobile */}
-          <button 
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer transition-colors"
-            title="Свернуть панель"
-          >
-            <span className="hidden lg:inline">
-              <ChevronLeft className="w-5 h-5 animate-bounce-horizontal" />
-            </span>
-            <span className="lg:hidden">
-              <X className="w-5 h-5" />
-            </span>
-          </button>
+          {/* Theme toggle and Close buttons */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={onToggleDarkMode}
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer transition-colors"
+              title={darkMode ? "Включить светлую тему" : "Включить темную тему"}
+            >
+              {darkMode ? (
+                <Sun className="w-5 h-5 text-amber-500" />
+              ) : (
+                <Moon className="w-5 h-5 text-indigo-500" />
+              )}
+            </button>
+            <button 
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer transition-colors"
+              title="Свернуть панель"
+            >
+              <span className="hidden lg:inline">
+                <ChevronLeft className="w-5 h-5 animate-bounce-horizontal" />
+              </span>
+              <span className="lg:hidden">
+                <X className="w-5 h-5" />
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Create root action shortcuts */}
@@ -1063,6 +1082,8 @@ export default function Sidebar({
               />
             </label>
           </div>
+
+          {/* Dark mode button has been moved to the sidebar header */}
 
           <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-mono pt-1 select-none">
             <span>Класс версии ПО</span>

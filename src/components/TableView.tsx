@@ -23,10 +23,13 @@ interface TableViewProps {
   activeProjectId: string;
   selectedNodeId: string | null;
   activePomodoroNodeId?: string | null;
-  onSelectNode: (id: string | null) => void;
+  onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask?: (text: string, initialTags: string[]) => void;
+  selectedNodeIds: string[];
+  onToggleSelectNode: (id: string) => void;
+  onToggleSelectAll: (ids: string[]) => void;
 }
 
 type SortField = 'text' | 'completed' | 'priority' | 'progress' | 'dueDate' | 'pomodoroTotalTime';
@@ -41,7 +44,10 @@ export default function TableView({
   onSelectNode,
   onUpdateNode,
   onDeleteNode,
-  onCreateTask
+  onCreateTask,
+  selectedNodeIds = [],
+  onToggleSelectNode,
+  onToggleSelectAll,
 }: TableViewProps) {
   const [sortField, setSortField] = useState<SortField>('text');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -53,12 +59,15 @@ export default function TableView({
     try {
       const saved = localStorage.getItem('task_spreadsheet_column_widths');
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (!parsed.select) parsed.select = 44;
+        return parsed;
       }
     } catch (e) {
       console.error(e);
     }
     return {
+      select: 44,
       completed: 72,
       text: 352,
       priority: 120,
@@ -389,6 +398,23 @@ export default function TableView({
           
           <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-150 dark:border-slate-800 h-10 shrink-0 font-extrabold text-[10px] uppercase tracking-wider text-slate-400 sticky top-0 z-20">
             <tr>
+              <th className="group relative px-4 py-2 border-r border-[#e2e8f0]/40 dark:border-slate-850 bg-slate-55 dark:bg-slate-850 text-center font-bold" style={{ width: widths.select || 44 }}>
+                <div className="flex items-center justify-center">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-300 dark:border-slate-750 text-indigo-650 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
+                    checked={sortedTasks.length > 0 && sortedTasks.every(t => selectedNodeIds.includes(t.id))}
+                    onChange={() => {
+                      const allIds = sortedTasks.map(t => t.id);
+                      if (onToggleSelectAll) {
+                        onToggleSelectAll(allIds);
+                      }
+                    }}
+                    title="Выделить все задачи"
+                  />
+                </div>
+                {renderResizer('select')}
+              </th>
               <th className={`group ${getHeaderClass('completed')}`} style={{ width: widths.completed }} onClick={() => handleSort('completed')}>
                 <div className="flex items-center gap-1 justify-center">
                   <span>Статус</span>
@@ -451,7 +477,7 @@ export default function TableView({
           <tbody className="divide-y divide-slate-150 dark:divide-slate-800">
             {sortedTasks.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-20 text-center text-slate-400 text-xs">
+                <td colSpan={9} className="py-20 text-center text-slate-400 text-xs">
                   Задачи не найдены. Создайте новую задачу или измените поисковый запрос.
                 </td>
               </tr>
@@ -462,11 +488,23 @@ export default function TableView({
                 return (
                   <tr
                     key={task.id}
-                    onClick={() => onSelectNode(task.id)}
+                    onClick={(e) => onSelectNode(task.id, e)}
                     className={`group/row transition-all h-12 text-xs hover:bg-slate-50/55 dark:hover:bg-slate-850/45 cursor-pointer ${
-                      isSelected ? 'bg-indigo-50/30 dark:bg-indigo-950/15' : ''
+                      isSelected || selectedNodeIds.includes(task.id) ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : ''
                     }`}
                   >
+                    {/* Multiselect Checkbox */}
+                    <td className="px-4 py-2 text-center border-r border-slate-150 dark:border-slate-850/80" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
+                          checked={selectedNodeIds.includes(task.id)}
+                          onChange={() => onToggleSelectNode(task.id)}
+                          title="Выбрать эту задачу"
+                        />
+                      </div>
+                    </td>
                     {/* Done Checklist Checkbox */}
                     <td className="px-4 py-2 text-center border-r border-slate-150 dark:border-slate-850/80">
                       <button

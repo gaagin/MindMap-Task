@@ -43,8 +43,10 @@ interface MindMapCanvasProps {
   darkMode: boolean;
   activeProjectId: string | null;
   selectedNodeId: string | null;
+  selectedNodeIds?: string[];
+  isMultiSelectMode?: boolean;
   activePomodoroNodeId?: string | null;
-  onSelectNode: (id: string | null) => void;
+  onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
   onUpdateNodeCoordinates: (id: string, x: number, y: number) => void;
   onUpdateNodeParent: (id: string, newParentId: string | null, newX?: number, newY?: number) => void;
   onAddChildNode: (parentId: string) => void;
@@ -93,6 +95,8 @@ export default function MindMapCanvas({
   darkMode,
   activeProjectId,
   selectedNodeId,
+  selectedNodeIds = [],
+  isMultiSelectMode = false,
   activePomodoroNodeId,
   onSelectNode,
   onUpdateNodeCoordinates,
@@ -2820,7 +2824,7 @@ export default function MindMapCanvas({
             setNodeOffsetStart(potentialNodeOffsetRef.current);
             setHasDraggedNode(true);
             didDragRef.current = true;
-            onSelectNode(nodeId);
+            onSelectNode(nodeId, true);
 
             if (navigator.vibrate) {
               try { navigator.vibrate(60); } catch (err) {}
@@ -4264,6 +4268,8 @@ const pInfo = getPriorityInfo(node.priority);
           const cardZIndex = ancestorContainer
             ? containerZ + (isSelected ? 5 : 2)
             : (isSelected ? 60 : 5);
+            
+          const isMultiSelected = selectedNodeIds.includes(node.id);
 
           return (
             <div
@@ -4318,14 +4324,14 @@ const pInfo = getPriorityInfo(node.priority);
                   : hoverTargetId === node.id
                     ? 'bg-indigo-50/10 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500 scale-[1.03] shadow-[0_0_15px_rgba(99,102,241,0.4)] animate-pulse'
                     : isRoot
-                      ? isSelected
+                      ? isSelected || isMultiSelected
                         ? 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent ring-4 ring-indigo-250 dark:ring-indigo-900 shadow-xl'
                         : 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent shadow-md hover:shadow-lg hover:scale-[1.02]'
                       : priorityViewActive
-                        ? `bg-white dark:bg-slate-900 ${getPriorityCardStyles(node.priority, isSelected)}`
-                        : isSelected 
-                          ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-500 ring-4 ring-indigo-50 dark:ring-indigo-950/40 shadow-lg' 
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-650 shadow-sm'
+                        ? `bg-white dark:bg-slate-900 ${getPriorityCardStyles(node.priority, isSelected || isMultiSelected)}`
+                        : isSelected || isMultiSelected
+                          ? 'bg-white dark:bg-slate-900 border-indigo-650 dark:border-indigo-400 ring-4 ring-indigo-100 dark:ring-indigo-950/40 shadow-lg' 
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-655 shadow-sm'
               } ${node.completed ? 'opacity-85' : isOverdue(node.dueDate) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5' : ''}`}
               onMouseDown={(e) => startDragNode(e, node)}
               onDoubleClick={(e) => {
@@ -4335,7 +4341,7 @@ const pInfo = getPriorityInfo(node.priority);
               onClick={(e) => {
                 if (hasDraggedNode || didDragRef.current) return; // ignore click if dragged
                 e.stopPropagation();
-                onSelectNode(node.id);
+                onSelectNode(node.id, e);
               }}
             >
               {showDetachHint && (
@@ -4347,6 +4353,23 @@ const pInfo = getPriorityInfo(node.priority);
               {hoverTargetId === node.id && (
                 <div className="absolute -top-7 left-1/2 transform -translate-x-1/2 bg-indigo-600 text-white px-2.5 py-1 rounded-full text-[9px] font-bold tracking-wider uppercase animate-bounce shadow-md whitespace-nowrap z-50">
                   Сделать родительской
+                </div>
+              )}
+
+              {/* Multi-selection Checkbox Indicator */}
+              {(isMultiSelectMode || selectedNodeIds.length > 0) && (
+                <div className="absolute top-2 right-2 z-40" onClick={(e) => { e.stopPropagation(); onSelectNode(node.id, true); }}>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
+                    isMultiSelected
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-md scale-110'
+                      : 'bg-white/80 dark:bg-slate-900/80 border-slate-300 dark:border-slate-700 text-transparent hover:border-indigo-500 hover:scale-110'
+                  }`}>
+                    {isMultiSelected && (
+                      <svg className="w-2.5 h-2.5 stroke-current" viewBox="0 0 24 24" fill="none" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </div>
                 </div>
               )}
 

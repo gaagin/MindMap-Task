@@ -22,7 +22,7 @@ interface CalendarViewProps {
   activeProjectId: string;
   selectedNodeId: string | null;
   activePomodoroNodeId?: string | null;
-  onSelectNode: (id: string | null) => void;
+  onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask?: (text: string, initialTags: string[], dueDate?: string, dueTime?: string) => void;
@@ -90,7 +90,7 @@ export default function CalendarView({
   const [newDayTaskText, setNewDayTaskText] = useState('');
   const [activeHourAddInput, setActiveHourAddInput] = useState<string | null>(null); // e.g. '09:00'
   const [newHourTaskText, setNewHourTaskText] = useState('');
-  const [isUnscheduledExpandedMobile, setIsUnscheduledExpandedMobile] = useState(false);
+  const [isUnscheduledExpandedMobile, setIsUnscheduledExpandedMobile] = useState(true);
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
 
   // Drag and drop states for moving tasks between calendar days
@@ -627,7 +627,7 @@ export default function CalendarView({
                                           key={task.id}
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            onSelectNode(task.id);
+                                            onSelectNode(task.id, e);
                                           }}
                                           draggable={true}
                                           onDragStart={(e) => {
@@ -669,7 +669,7 @@ export default function CalendarView({
                                       <div 
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          onSelectNode(dayTasks[maxVisible].id);
+                                          onSelectNode(dayTasks[maxVisible].id, e);
                                         }}
                                         className="text-[8px] md:text-[9px] font-extrabold text-slate-500 dark:text-slate-450 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800/85 py-0.5 rounded-lg text-center cursor-pointer select-none pointer-events-auto"
                                       >
@@ -809,7 +809,7 @@ export default function CalendarView({
                               key={task.id}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onSelectNode(task.id);
+                                onSelectNode(task.id, e);
                               }}
                               draggable={true}
                               onDragStart={(e) => {
@@ -952,7 +952,7 @@ export default function CalendarView({
                                 key={task.id}
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    onSelectNode(task.id);
+                                    onSelectNode(task.id, e);
                                 }}
                                 draggable={true}
                                 onDragStart={(e) => {
@@ -1087,7 +1087,7 @@ export default function CalendarView({
                                         key={task.id}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          onSelectNode(task.id);
+                                          onSelectNode(task.id, e);
                                         }}
                                         draggable={true}
                                         onDragStart={(e) => {
@@ -1215,15 +1215,19 @@ export default function CalendarView({
       </div>
 
       {/* Unscheduled Right deck drawer sidebar */}
-      <div className={`w-full lg:w-80 bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 flex flex-col p-3 md:p-5 shrink-0 lg:h-full overflow-hidden transition-all duration-300 ${
-        isUnscheduledExpandedMobile ? 'h-[280px] lg:h-full' : 'h-[56px] lg:h-full'
+      <div className={`w-full bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 flex flex-col p-3 md:p-5 shrink-0 transition-all duration-300 ${
+        isUnscheduledExpandedMobile 
+          ? 'h-[280px] lg:h-full lg:w-80' 
+          : 'h-[56px] lg:h-full lg:w-16 lg:px-3 lg:py-5 lg:items-center'
       }`}>
           <div 
             onClick={() => setIsUnscheduledExpandedMobile(!isUnscheduledExpandedMobile)}
-            className="flex items-center gap-2 mb-3 shrink-0 cursor-pointer lg:pointer-events-none select-none hover:bg-slate-50 dark:hover:bg-slate-800/40 lg:hover:bg-transparent p-1 px-2 lg:p-0 rounded-xl transition-colors"
+            className={`flex items-center gap-2 mb-3 shrink-0 cursor-pointer select-none hover:bg-slate-50 dark:hover:bg-slate-800/40 p-1 px-2 rounded-xl transition-colors ${
+              isUnscheduledExpandedMobile ? 'w-full flex-row' : 'flex-row lg:flex-col lg:gap-3 lg:mb-5'
+            }`}
           >
             <span className="text-sm shrink-0"><span>📥</span></span>
-            <div className="min-w-0 flex-1">
+            <div className={`min-w-0 flex-1 ${isUnscheduledExpandedMobile ? 'block' : 'block lg:hidden'}`}>
               <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 uppercase tracking-wider truncate">
                 Планирование (Без даты)
               </h3>
@@ -1231,17 +1235,34 @@ export default function CalendarView({
                 {isUnscheduledExpandedMobile ? 'Нажмите, чтобы убрать список' : 'Нажмите, чтобы распределить по датам'}
               </p>
             </div>
-            <span className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-mono text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0">
+            <span className="bg-indigo-55 dark:bg-indigo-955 text-indigo-600 dark:text-indigo-400 font-mono text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0">
               {unscheduledTasks.length}
             </span>
-            {/* Collapse/Expand indicator for mobile */}
-            <span className="text-slate-400 text-[10px] lg:hidden font-bold select-none px-1">
-              {isUnscheduledExpandedMobile ? '▼' : '▲'}
+            {/* Collapse/Expand indicator for both mobile and desktop */}
+            <span className="text-slate-400 text-[10px] font-bold select-none px-1">
+              {isUnscheduledExpandedMobile ? (
+                <>
+                  <span className="hidden lg:inline">▶</span>
+                  <span className="lg:hidden">▼</span>
+                </>
+              ) : (
+                <>
+                  <span className="hidden lg:inline">◀</span>
+                  <span className="lg:hidden">▲</span>
+                </>
+              )}
             </span>
           </div>
 
+          {/* Vertical rotated text for desktop when collapsed */}
+          {!isUnscheduledExpandedMobile && (
+            <span className="hidden lg:block text-[9.5px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest [writing-mode:vertical-lr] rotate-180 py-4 select-none animate-fade-in">
+              Планирование
+            </span>
+          )}
+
           {/* Quick search input inside unscheduled sidebar of calendar */}
-          <div className="relative mb-3.5 shrink-0 animate-fade-in">
+          <div className={`relative mb-3.5 shrink-0 animate-fade-in ${isUnscheduledExpandedMobile ? 'block' : 'hidden'}`}>
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
@@ -1262,7 +1283,7 @@ export default function CalendarView({
               handleTaskDrop(taskId, null);
             }}
             className={`overflow-y-auto space-y-2 pr-1 custom-scrollbar transition-all duration-200 p-1 rounded-xl ${
-              isUnscheduledExpandedMobile ? 'flex-1 flex flex-col animate-fade-in' : 'hidden lg:flex lg:flex-col lg:flex-1 lg:animate-none'
+              isUnscheduledExpandedMobile ? 'flex-1 flex flex-col animate-fade-in' : 'hidden'
             } ${
               draggedOverUnscheduled 
                 ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20' 
@@ -1281,7 +1302,7 @@ export default function CalendarView({
               unscheduledTasks.map(task => (
                 <div
                   key={task.id}
-                  onClick={() => onSelectNode(task.id)}
+                  onClick={(e) => onSelectNode(task.id, e)}
                   draggable={true}
                   onDragStart={(e) => {
                     e.dataTransfer.setData('text/plain', task.id);

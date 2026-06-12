@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode } from '../utils';
+import { auth, db } from '../lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 interface TaskDetailsPanelProps {
   node: TaskNode | null;
@@ -173,6 +175,21 @@ export default function TaskDetailsPanel({
     setPomo(newState);
     localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(newState));
     window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+
+    // Sync active Pomodoro state to Cloud Firestore (real-time cross-device syncer)
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        const docRef = doc(db, 'workspaces', user.uid);
+        updateDoc(docRef, {
+          activePomodoro: newState
+        }).catch(err => {
+          console.error('[Firebase Pomo Sync] Failed to update activePomodoro in Firestore:', err);
+        });
+      } catch (err) {
+        console.error('[Firebase Pomo Sync] Error building Firestore path for Pomodoro sync:', err);
+      }
+    }
   };
 
   const handleChangeCustomMinutes = (mins: number) => {
@@ -262,6 +279,46 @@ export default function TaskDetailsPanel({
 
     return () => clearInterval(interval);
   }, [pomo.isRunning, pomo.isPaused, pomo.endTime, pomo.isBreak, pomo.nodeId, pomo.nodeText, customPomoMinutes]);
+
+  React.useEffect(() => {
+    const handleExternalPomoChange = () => {
+      try {
+        const saved = localStorage.getItem('task_mindmap_pomodoro');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.isRunning && !parsed.isPaused && parsed.endTime) {
+            const now = Date.now();
+            const remaining = Math.max(0, Math.round((parsed.endTime - now) / 1000));
+            setPomo({
+              ...parsed,
+              timeLeft: remaining
+            });
+          } else {
+            setPomo(parsed);
+          }
+        } else {
+          setPomo(prev => ({
+            ...prev,
+            nodeId: '',
+            nodeText: '',
+            isRunning: false,
+            isPaused: false,
+            isBreak: false,
+            endTime: null,
+          }));
+        }
+      } catch (e) {
+        console.error('Failed to parse pomodoro state externally in TaskDetailsPanel:', e);
+      }
+    };
+
+    window.addEventListener('storage', handleExternalPomoChange);
+    window.addEventListener('task_mindmap_pomo_update', handleExternalPomoChange);
+    return () => {
+      window.removeEventListener('storage', handleExternalPomoChange);
+      window.removeEventListener('task_mindmap_pomo_update', handleExternalPomoChange);
+    };
+  }, []);
 
   const handleStartFocus = (customDuration?: number) => {
     if (!node) return;

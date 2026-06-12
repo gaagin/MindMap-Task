@@ -24,7 +24,7 @@ interface GanttViewProps {
   activeProjectId: string;
   selectedNodeId: string | null;
   activePomodoroNodeId?: string | null;
-  onSelectNode: (id: string | null) => void;
+  onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask?: (text: string, initialTags: string[], dueDate?: string) => void;
@@ -323,7 +323,7 @@ export default function GanttView({
               tasks.map(task => (
                 <div
                   key={task.id}
-                  onClick={() => onSelectNode(task.id)}
+                  onClick={(e) => onSelectNode(task.id, e)}
                   className={`h-11 px-3.5 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors border-l-4 ${
                     selectedNodeId === task.id 
                       ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-500' 
@@ -451,7 +451,7 @@ export default function GanttView({
                       {/* Gantt Bar spanning multiple days based on dueDate */}
                       {range ? (
                         <div
-                          onClick={() => onSelectNode(task.id)}
+                          onClick={(e) => onSelectNode(task.id, e)}
                           style={{
                             left: `${(range.start / 28) * 100}%`,
                             width: `${(range.span / 28) * 100}%`
@@ -491,7 +491,7 @@ export default function GanttView({
                           </div>
                         ) : (
                           <div 
-                            onClick={() => onSelectNode(task.id)}
+                            onClick={(e) => onSelectNode(task.id, e)}
                             className="absolute left-4 h-7 border-2 border-dashed border-slate-201 dark:border-slate-800 bg-transparent text-slate-400 dark:text-slate-500 hover:border-slate-350 dark:hover:border-slate-700 hover:text-slate-650 transition-all py-1 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer z-10 font-bold text-[9.5px]"
                           >
                             <Calendar className="w-3 h-3 text-indigo-500" /> Срок не назначен

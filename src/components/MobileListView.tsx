@@ -35,7 +35,7 @@ interface MobileListViewProps {
   activeProjectId: string;
   selectedNodeId: string | null;
   activePomodoroNodeId?: string | null;
-  onSelectNode: (id: string | null) => void;
+  onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask: (text: string, tags: string[], priority: Priority, dueDate?: string, parentId?: string | null) => void;
@@ -685,8 +685,8 @@ export default function MobileListView({
                     ) : (
                       <div 
                         className="text-[12.5px] font-semibold text-slate-800 dark:text-slate-200 cursor-pointer pr-1.5 break-words flex items-center flex-wrap gap-1.5"
-                        onClick={() => {
-                          onSelectNode(node.id);
+                        onClick={(e) => {
+                          onSelectNode(node.id, e);
                         }}
                       >
                         <span className={node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal font-sans' : 'font-sans'}>
@@ -770,8 +770,8 @@ export default function MobileListView({
 
                   <button
                     type="button"
-                    onClick={() => {
-                      onSelectNode(node.id === selectedNodeId ? null : node.id);
+                    onClick={(e) => {
+                      onSelectNode(node.id === selectedNodeId ? null : node.id, e);
                     }}
                     className={`p-1 rounded-md border cursor-pointer transition-all ${
                       isSelected

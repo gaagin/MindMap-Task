@@ -25,11 +25,13 @@ interface KanbanViewProps {
   activeProjectId: string;
   selectedNodeId: string | null;
   activePomodoroNodeId?: string | null;
-  onSelectNode: (id: string | null) => void;
+  onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask: (text: string, initialTags: string[], priority?: Priority) => void;
   onCreateTagCategory: (name: string, color: string) => void;
+  selectedNodeIds?: string[];
+  onToggleSelectNode?: (id: string) => void;
 }
 
 export default function KanbanView({
@@ -43,6 +45,8 @@ export default function KanbanView({
   onDeleteNode,
   onCreateTask,
   onCreateTagCategory,
+  selectedNodeIds = [],
+  onToggleSelectNode,
 }: KanbanViewProps) {
   const [groupBy, setGroupBy] = useState<'category' | 'priority'>(() => {
     return tagCategories.length === 0 ? 'priority' : 'category';
@@ -466,7 +470,7 @@ export default function KanbanView({
                           id={`kanban-card-${node.id}`}
                           draggable="true"
                           onDragStart={(e) => handleDragStart(e, node.id)}
-                          onClick={() => onSelectNode(node.id)}
+                          onClick={(e) => onSelectNode(node.id, e)}
                           onDragOver={(e) => {
                             if (e.dataTransfer.types.includes('application/task-tag')) {
                               e.preventDefault();
@@ -508,13 +512,25 @@ export default function KanbanView({
                           className={`group select-none bg-white dark:bg-slate-910 border hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] hover:translate-y-[-1.5px] transition-all duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
                             draggedOverTagCardId === node.id
                               ? 'border-emerald-500 dark:border-emerald-400 ring-4 ring-emerald-500/20 shadow-md bg-emerald-50/10 dark:bg-emerald-950/10 scale-[1.01]'
-                              : node.id === selectedNodeId 
-                                ? 'border-[#4f46e5] dark:border-indigo-400 ring-4 ring-indigo-500/10 shadow-sm' 
+                              : (node.id === selectedNodeId || (selectedNodeIds && selectedNodeIds.includes(node.id))) 
+                                ? 'border-[#4f46e5] dark:border-indigo-400 ring-4 ring-indigo-500/15 shadow-md scale-[1.015]' 
                                 : 'border-slate-200/80 dark:border-slate-850'
                           }`}
                         >
                           {/* Completed toggle checkbox and text */}
                           <div className="flex items-start gap-3">
+                            {onToggleSelectNode && (
+                              <input
+                                type="checkbox"
+                                checked={selectedNodeIds.includes(node.id)}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  onToggleSelectNode(node.id);
+                                }}
+                                className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-505 h-3.5 w-3.5 mt-1 cursor-pointer shrink-0 z-10"
+                                title="Выбрать задачу"
+                              />
+                            )}
                             <button
                               id={`kanban-card-check-${node.id}`}
                               type="button"
