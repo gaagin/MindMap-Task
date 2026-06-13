@@ -510,6 +510,36 @@ export default function App() {
     }
   };
 
+  const handleSelectCanvasNode = (id: string | null, eOrIsMulti?: any) => {
+    let isMulti = false;
+    
+    if (typeof eOrIsMulti === 'boolean') {
+      isMulti = eOrIsMulti;
+    } else if (eOrIsMulti) {
+      isMulti = !!(eOrIsMulti.ctrlKey || eOrIsMulti.metaKey);
+    }
+    
+    if (isMultiSelectMode && id !== null) {
+      isMulti = true;
+    }
+
+    if (id === null) {
+      if (!isMulti) {
+        setSelectedNodeId(null);
+        setSelectedNodeIds([]);
+        setIsDrawerOpen(false);
+      }
+      return;
+    }
+
+    if (isMulti) {
+      setIsMultiSelectMode(true);
+      handleToggleSelectNode(id);
+    } else {
+      setSelectedNodeId(id);
+    }
+  };
+
   const handleSelectAndCenterNode = (id: string | null, eOrIsMulti?: any) => {
     if (!id) {
       handleSelectNode(null, eOrIsMulti);
@@ -750,14 +780,55 @@ export default function App() {
         }
       }
 
+      const localDeletions = (() => {
+        try {
+          const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
+          return JSON.parse(listJson) || [];
+        } catch {
+          return [];
+        }
+      })();
+      const cloudDeletions = cloudData.deletions || [];
+      const mergedDeletions: any[] = [];
+      const appendUnique = (rec: any) => {
+        if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
+          mergedDeletions.push(rec);
+        }
+      };
+      (localDeletions || []).forEach(appendUnique);
+      (cloudDeletions || []).forEach(appendUnique);
+
+      // Save them back to local storage
+      try {
+        localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
+      } catch (e) {
+        console.error(e);
+      }
+
+      const isDeleted = (type: string, id: string) => {
+        return mergedDeletions.some(d => d.type === type && d.id === id);
+      };
+
+      const filteredFolders = (cloudData.folders || []).filter((f: any) => !isDeleted('folder', f.id));
+      const filteredProjects = (cloudData.projects || []).filter((p: any) => !isDeleted('project', p.id));
+      const filteredNodes: Record<string, TaskNode[]> = {};
+      Object.keys(cloudData.nodes || {}).forEach(pid => {
+        const list = (cloudData.nodes[pid] || []).filter((n: any) => !isDeleted('node', n.id));
+        if (list.length > 0) {
+          filteredNodes[pid] = list;
+        }
+      });
+      const filteredTagCats = (cloudData.tagCategories || []).filter((tc: any) => !isDeleted('tagCategory', tc.id));
+
       const cloudState: WorkspaceState = {
-        folders: cloudData.folders || [],
-        projects: cloudData.projects || [],
-        nodes: cloudData.nodes || {},
+        folders: filteredFolders,
+        projects: filteredProjects,
+        nodes: filteredNodes,
         activeProjectId: cloudData.activeProjectId || null,
-        tagCategories: cloudData.tagCategories || [],
+        tagCategories: filteredTagCats,
         googleSheetsFileId: cloudData.googleSheetsFileId || undefined,
-        taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined
+        taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined,
+        deletions: mergedDeletions
       };
 
       const currentState = stateRef.current;
@@ -1028,12 +1099,54 @@ export default function App() {
     try {
       const cloudData = await loadFromFirebaseDirectly(currentUser.uid);
       if (cloudData) {
+        const localDeletions = (() => {
+          try {
+            const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
+            return JSON.parse(listJson) || [];
+          } catch {
+            return [];
+          }
+        })();
+        const cloudDeletions = cloudData.deletions || [];
+        const mergedDeletions: any[] = [];
+        const appendUnique = (rec: any) => {
+          if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
+            mergedDeletions.push(rec);
+          }
+        };
+        (localDeletions || []).forEach(appendUnique);
+        (cloudDeletions || []).forEach(appendUnique);
+
+        try {
+          localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
+        } catch (e) {
+          console.error(e);
+        }
+
+        const isDeleted = (type: string, id: string) => {
+          return mergedDeletions.some(d => d.type === type && d.id === id);
+        };
+
+        const filteredFolders = (cloudData.folders || []).filter((f: any) => !isDeleted('folder', f.id));
+        const filteredProjects = (cloudData.projects || []).filter((p: any) => !isDeleted('project', p.id));
+        const filteredNodes: Record<string, TaskNode[]> = {};
+        Object.keys(cloudData.nodes || {}).forEach(pid => {
+          const list = (cloudData.nodes[pid] || []).filter((n: any) => !isDeleted('node', n.id));
+          if (list.length > 0) {
+            filteredNodes[pid] = list;
+          }
+        });
+        const filteredTagCats = (cloudData.tagCategories || []).filter((tc: any) => !isDeleted('tagCategory', tc.id));
+
         const cloudState: WorkspaceState = {
-          folders: cloudData.folders || [],
-          projects: cloudData.projects || [],
-          nodes: cloudData.nodes || {},
+          folders: filteredFolders,
+          projects: filteredProjects,
+          nodes: filteredNodes,
           activeProjectId: cloudData.activeProjectId || null,
-          tagCategories: cloudData.tagCategories || []
+          tagCategories: filteredTagCats,
+          googleSheetsFileId: cloudData.googleSheetsFileId || undefined,
+          taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined,
+          deletions: mergedDeletions
         };
         ignoreNextStateChangeRef.current = true;
         const normalized = normalizeWorkspaceState(cloudState);
@@ -2971,7 +3084,7 @@ export default function App() {
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
                 lastCreatedNodeId={lastCreatedNodeId}
                 onClearLastCreatedNodeId={() => setLastCreatedNodeId(null)}
-                onSelectNode={handleSelectNode}
+                onSelectNode={handleSelectCanvasNode}
                 selectedNodeIds={selectedNodeIds}
                 isMultiSelectMode={isMultiSelectMode}
                 onUpdateNodeCoordinates={handleUpdateNodeCoordinates}

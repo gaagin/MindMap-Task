@@ -2842,7 +2842,7 @@ export default function MindMapCanvas({
             setNodeOffsetStart(potentialNodeOffsetRef.current);
             setHasDraggedNode(false); // Do not mark as dragged unless they actually move their finger
             didDragRef.current = false;
-            onSelectNode(nodeId, true);
+            onSelectNode(nodeId);
 
             if (navigator.vibrate) {
               try { navigator.vibrate(60); } catch (err) {}

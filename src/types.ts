@@ -80,6 +80,12 @@ export interface TagCategory {
   updatedAt?: string; // ISO string for conflict resolution sync
 }
 
+export interface DeletionRecord {
+  type: 'folder' | 'project' | 'node' | 'tagCategory';
+  id: string;
+  deletedAt: string;
+}
+
 export interface WorkspaceState {
   folders: Folder[];
   projects: Project[];
@@ -88,6 +94,8 @@ export interface WorkspaceState {
   tagCategories?: TagCategory[];
   googleSheetsFileId?: string;       // ID of the background sync Google Spreadsheet, synchronized across devices
   taskSheetsSpreadsheetId?: string;  // ID of the manual sync Google Spreadsheet, synchronized across devices
+  deletions?: DeletionRecord[];
+  activePomodoro?: any;
 }
 
 export interface SyncReport {

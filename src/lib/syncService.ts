@@ -1,13 +1,6 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport } from '../types';
-
-// Registry for Deletion tracking to synchronize with Google Sheets Deletions tab
-export interface DeletionRecord {
-  type: 'folder' | 'project' | 'node' | 'tagCategory';
-  id: string;
-  deletedAt: string;
-}
+import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport, DeletionRecord } from '../types';
 
 const DELETIONS_KEY = 'milli_deleted_registry';
 
@@ -122,12 +115,209 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 }
 
 /**
+ * Fully symmetrical logic for merging two workspace states
+ * (local state and cloud state fetched from Firestore).
+ * Ensures that updatedAt timestamps and deletions are strictly and authoritatively respected.
+ */
+export function mergeWorkspaceStates(
+  local: WorkspaceState,
+  cloud: WorkspaceState,
+  mergedDeletions: DeletionRecord[]
+): WorkspaceState {
+  const isDeleted = (type: string, id: string) => {
+    return mergedDeletions.some(d => d.type === type && d.id === id);
+  };
+
+  // 1. Merge Folders
+  const mergedFoldersMap = new Map<string, Folder>();
+  (local.folders || []).forEach(f => {
+    if (!isDeleted('folder', f.id)) {
+      mergedFoldersMap.set(f.id, { ...f, updatedAt: f.updatedAt || new Date(0).toISOString() });
+    }
+  });
+
+  (cloud.folders || []).forEach(sf => {
+    if (isDeleted('folder', sf.id)) return;
+    const existingF = mergedFoldersMap.get(sf.id);
+    if (!existingF) {
+      mergedFoldersMap.set(sf.id, sf);
+    } else {
+      const localTime = new Date(existingF.updatedAt || 0).getTime();
+      const remoteTime = new Date(sf.updatedAt || 0).getTime();
+      if (remoteTime > localTime) {
+        mergedFoldersMap.set(sf.id, sf);
+      }
+    }
+  });
+
+  // 2. Merge Projects
+  const mergedProjectsMap = new Map<string, Project>();
+  (local.projects || []).forEach(p => {
+    if (!isDeleted('project', p.id)) {
+      mergedProjectsMap.set(p.id, { ...p, updatedAt: p.updatedAt || new Date(0).toISOString() });
+    }
+  });
+
+  (cloud.projects || []).forEach(sp => {
+    if (isDeleted('project', sp.id)) return;
+    const existingP = mergedProjectsMap.get(sp.id);
+    if (!existingP) {
+      mergedProjectsMap.set(sp.id, sp);
+    } else {
+      const localTime = new Date(existingP.updatedAt || 0).getTime();
+      const remoteTime = new Date(sp.updatedAt || 0).getTime();
+      if (remoteTime > localTime) {
+        mergedProjectsMap.set(sp.id, sp);
+      }
+    }
+  });
+
+  // 3. Merge Nodes (flat merge)
+  const mergedNodesMap = new Map<string, TaskNode>();
+  Object.values(local.nodes || {}).flat().forEach(node => {
+    if (node && !isDeleted('node', node.id)) {
+      mergedNodesMap.set(node.id, { ...node, updatedAt: node.updatedAt || new Date(0).toISOString() });
+    }
+  });
+
+  Object.values(cloud.nodes || {}).flat().forEach(sn => {
+    if (!sn || isDeleted('node', sn.id)) return;
+    const existingN = mergedNodesMap.get(sn.id);
+    if (!existingN) {
+      mergedNodesMap.set(sn.id, sn);
+    } else {
+      const localTime = new Date(existingN.updatedAt || 0).getTime();
+      const remoteTime = new Date(sn.updatedAt || 0).getTime();
+      if (remoteTime > localTime) {
+        // REMOTE wins! Restore full local base64 dataUrl if Google Sheets or remote cloud has placeholder string
+        const mergedFiles = (sn.files || []).map(remoteFile => {
+          if (remoteFile.dataUrl?.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+            const localFile = (existingN.files || []).find(lf => lf.id === remoteFile.id);
+            if (localFile && localFile.dataUrl && !localFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
+              return {
+                ...remoteFile,
+                dataUrl: localFile.dataUrl
+              };
+            }
+          }
+          return remoteFile;
+        });
+        mergedNodesMap.set(sn.id, {
+          ...sn,
+          files: mergedFiles
+        });
+      }
+    }
+  });
+
+  // Group nodes back into project maps
+  const finalNodesMap: Record<string, TaskNode[]> = {};
+  mergedNodesMap.forEach(node => {
+    if (mergedProjectsMap.has(node.projectId)) {
+      if (!finalNodesMap[node.projectId]) finalNodesMap[node.projectId] = [];
+      finalNodesMap[node.projectId].push(node);
+    }
+  });
+
+  // 4. Merge TagCategories
+  const mergedTagCatsMap = new Map<string, TagCategory>();
+  (local.tagCategories || []).forEach(tc => {
+    if (!isDeleted('tagCategory', tc.id)) {
+      mergedTagCatsMap.set(tc.id, { ...tc, updatedAt: tc.updatedAt || new Date(0).toISOString() });
+    }
+  });
+
+  (cloud.tagCategories || []).forEach(stc => {
+    if (isDeleted('tagCategory', stc.id)) return;
+    const existingTC = mergedTagCatsMap.get(stc.id);
+    if (!existingTC) {
+      mergedTagCatsMap.set(stc.id, stc);
+    } else {
+      const localTime = new Date(existingTC.updatedAt || 0).getTime();
+      const remoteTime = new Date(stc.updatedAt || 0).getTime();
+      if (remoteTime > localTime) {
+        mergedTagCatsMap.set(stc.id, stc);
+      }
+    }
+  });
+
+  const finalFolders = Array.from(mergedFoldersMap.values());
+  const finalProjects = Array.from(mergedProjectsMap.values());
+  const finalTagCats = Array.from(mergedTagCatsMap.values());
+
+  let finalActiveProjectId = local.activeProjectId;
+  if (finalProjects.length > 0) {
+    if (!finalActiveProjectId || !mergedProjectsMap.has(finalActiveProjectId)) {
+      finalActiveProjectId = finalProjects[0].id;
+    }
+  } else {
+    finalActiveProjectId = null;
+  }
+
+  return {
+    folders: finalFolders,
+    projects: finalProjects,
+    nodes: finalNodesMap,
+    activeProjectId: finalActiveProjectId,
+    tagCategories: finalTagCats,
+    googleSheetsFileId: local.googleSheetsFileId || cloud.googleSheetsFileId,
+    taskSheetsSpreadsheetId: local.taskSheetsSpreadsheetId || cloud.taskSheetsSpreadsheetId
+  };
+}
+
+/**
  * Saves current WorkspaceState snapshot to firestore database dynamically.
  * Features automatic Exponential Backoff and progressive retries to handle unstable connections.
  */
 export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; isOfflineQueued?: boolean; error?: string }> {
   try {
     const docRef = doc(db, 'workspaces', userId);
+    
+    // Fetch existing cloud doc to merge
+    let cloudData: any = null;
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        cloudData = snap.data();
+      }
+    } catch (e) {
+      console.warn('[saveToFirebaseDirectly] Failed to fetch existing cloud doc, proceeding with overwrite/local override:', e);
+    }
+
+    const cloudDeletions: DeletionRecord[] = cloudData?.deletions || [];
+    const localDeletions = getLocalDeletions();
+    
+    // Merge deletions
+    const mergedDeletions: DeletionRecord[] = [];
+    const appendUniqueDeletion = (rec: DeletionRecord) => {
+      if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
+        mergedDeletions.push(rec);
+      }
+    };
+    cloudDeletions.forEach(appendUniqueDeletion);
+    localDeletions.forEach(appendUniqueDeletion);
+
+    // Update local deletion registry to be fully aligned
+    try {
+      localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
+    } catch (e) {
+      console.error(e);
+    }
+
+    const cloudState: WorkspaceState = {
+      folders: cloudData?.folders || [],
+      projects: cloudData?.projects || [],
+      nodes: cloudData?.nodes || {},
+      activeProjectId: cloudData?.activeProjectId || null,
+      tagCategories: cloudData?.tagCategories || [],
+      googleSheetsFileId: cloudData?.googleSheetsFileId || undefined,
+      taskSheetsSpreadsheetId: cloudData?.taskSheetsSpreadsheetId || undefined
+    };
+
+    const mergedState = cloudData
+      ? mergeWorkspaceStates(state, cloudState, mergedDeletions)
+      : state;
+
     // Load and include local active pomodoro state if any
     let activePomodoro = null;
     try {
@@ -141,17 +331,18 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
 
     const rawPayload = {
       userId,
-      folders: state.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
-      projects: state.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() })),
-      nodes: Object.keys(state.nodes).reduce((acc, key) => {
-        acc[key] = state.nodes[key].map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
+      folders: mergedState.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
+      projects: mergedState.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() })),
+      nodes: Object.keys(mergedState.nodes).reduce((acc, key) => {
+        acc[key] = mergedState.nodes[key].map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
         return acc;
       }, {} as Record<string, TaskNode[]>),
-      activeProjectId: state.activeProjectId,
-      tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
-      googleSheetsFileId: state.googleSheetsFileId || localStorage.getItem('google_sheets_sync_file_id') || null,
-      taskSheetsSpreadsheetId: state.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || null,
+      activeProjectId: mergedState.activeProjectId,
+      tagCategories: (mergedState.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
+      googleSheetsFileId: mergedState.googleSheetsFileId || localStorage.getItem('google_sheets_sync_file_id') || null,
+      taskSheetsSpreadsheetId: mergedState.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || null,
       activePomodoro,
+      deletions: mergedDeletions,
       updatedAt: new Date().toISOString()
     };
     
