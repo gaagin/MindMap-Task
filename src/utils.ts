@@ -100,6 +100,37 @@ export function loadWorkspace(): WorkspaceState {
     if (!state.taskSheetsSpreadsheetId) {
       state.taskSheetsSpreadsheetId = localStorage.getItem('task_sheets_spreadsheet_id') || undefined;
     }
+
+    // Filter out deleted elements using milli_deleted_registry
+    try {
+      const deletionsJson = localStorage.getItem('milli_deleted_registry') || '[]';
+      const deletions = JSON.parse(deletionsJson) || [];
+      if (Array.isArray(deletions) && deletions.length > 0) {
+        const isDeleted = (type: string, id: string) => {
+          return deletions.some((d: any) => d && d.type === type && d.id === id);
+        };
+        
+        state.folders = state.folders.filter(f => !isDeleted('folder', f.id));
+        state.projects = state.projects.filter(p => !isDeleted('project', p.id));
+        if (state.tagCategories) {
+          state.tagCategories = state.tagCategories.filter(tc => !isDeleted('tagCategory', tc.id));
+        }
+        
+        const filteredNodes: Record<string, TaskNode[]> = {};
+        Object.keys(state.nodes || {}).forEach(pid => {
+          if (!isDeleted('project', pid)) {
+            const list = (state.nodes[pid] || []).filter(n => !isDeleted('node', n.id));
+            if (list.length > 0) {
+              filteredNodes[pid] = list;
+            }
+          }
+        });
+        state.nodes = filteredNodes;
+      }
+    } catch (e) {
+      console.error('Failed to filter local workspace against deletions on load:', e);
+    }
+
     return state;
   } catch (error) {
     console.error('Failed to load workspace, starting clean demo', error);

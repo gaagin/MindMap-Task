@@ -836,12 +836,15 @@ export default function App() {
       const currentState = stateRef.current;
       const normalizedCloud = normalizeWorkspaceState(cloudState);
       const isEquivalent = isStateSemanticallyEqual(currentState, normalizedCloud);
+      const fromCache = !!snap.metadata?.fromCache;
 
       if (!isEquivalent) {
         // Only absorb incoming changes if we are not actively typing/syncing locally,
         // OR if this is the first snapshot load of our session (forces cloud data loading on boot/device switch).
         if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
-          isFirstSnapshotRef.current = false;
+          if (!fromCache) {
+            isFirstSnapshotRef.current = false;
+          }
           ignoreNextStateChangeRef.current = true;
           lastSyncedStateHashRef.current = getSyncHash(normalizedCloud); // Update hash to prevent loops
           setRawState(normalizedCloud);
@@ -855,7 +858,9 @@ export default function App() {
           setCloudUpdateState(cloudState);
         }
       } else {
-        isFirstSnapshotRef.current = false;
+        if (!fromCache) {
+          isFirstSnapshotRef.current = false;
+        }
         setHasCloudUpdates(false);
         setCloudUpdateState(null);
       }
