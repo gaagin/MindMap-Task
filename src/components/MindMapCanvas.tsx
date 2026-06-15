@@ -3200,6 +3200,12 @@ export default function MindMapCanvas({
 
       if (!isLongPressDragging && potentialDragNodeIdRef.current) {
         onSelectNode(potentialDragNodeIdRef.current);
+      } else if (isLongPressDragging && !hasDraggedNode && potentialDragNodeIdRef.current) {
+        // Long press registered but released without dragging: Activate multi-select mode on this card
+        onSelectNode(potentialDragNodeIdRef.current, true);
+        if (navigator.vibrate) {
+          try { navigator.vibrate([40, 40]); } catch (err) {}
+        }
       } else if (hasDraggedNode) {
         // Only deselect if they actually moved and dragged the node
         onSelectNode(null);

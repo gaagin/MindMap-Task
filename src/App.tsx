@@ -14,6 +14,7 @@ import {
   Network,
   Smartphone,
   ChevronRight,
+  ChevronDown,
   Cloud,
   Database,
   RefreshCw,
@@ -675,6 +676,7 @@ export default function App() {
 
   // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'
   const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'>('canvas');
+  const [isMobileViewSwitcherOpen, setIsMobileViewSwitcherOpen] = useState(false);
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
@@ -2645,7 +2647,7 @@ export default function App() {
               title="Фильтрация по параметрам"
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Фильтры</span>
+              <span className="hidden md:inline">Фильтры</span>
               {isAnyFilterActive && (
                 <span className="bg-indigo-600 text-white dark:bg-indigo-500 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold">
                   {activeFilterCount}
@@ -2710,102 +2712,221 @@ export default function App() {
                 className={`p-1.5 border rounded-lg flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-all focus:outline-none ${
                   isMultiSelectMode
                     ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
-                    : 'text-slate-600 dark:text-slate-350 bg-slate-55 dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
+                    : 'text-slate-600 dark:text-slate-350 bg-slate-55 dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-755'
                 }`}
               >
                 <span className={`w-2 h-2 rounded-full shrink-0 ${isMultiSelectMode ? 'bg-white animate-ping' : 'bg-slate-300 dark:bg-slate-550'}`} />
-                <span>Выбор</span>
+                <span className="hidden sm:inline">Выбор</span>
               </button>
             )}
 
             {/* View Mode Switching Tabs */}
             {state.activeProjectId && (
-              <div id="view-mode-toggle-group" className="bg-slate-100 dark:bg-slate-850 p-1 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center shrink-0">
-                <button
-                  id="view-mode-canvas-btn"
-                  type="button"
-                  onClick={() => setViewMode('canvas')}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                    viewMode === 'canvas'
-                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                  }`}
-                  title="Режим интеллект-карты"
-                >
-                  <Network className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Холст</span>
-                </button>
-                <button
-                  id="view-mode-kanban-btn"
-                  type="button"
-                  onClick={() => setViewMode('kanban')}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                    viewMode === 'kanban'
-                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                  }`}
-                  title="Режим Канбан-доски"
-                >
-                  <Kanban className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Канбан</span>
-                </button>
-                <button
-                  id="view-mode-mobile-btn"
-                  type="button"
-                  onClick={() => setViewMode('mobile-list')}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                    viewMode === 'mobile-list'
-                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                  }`}
-                  title="Мобильный список (TickTick)"
-                >
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Мобильный</span>
-                </button>
-                <button
-                  id="view-mode-calendar-btn"
-                  type="button"
-                  onClick={() => setViewMode('calendar')}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                    viewMode === 'calendar'
-                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                  }`}
-                  title="Календарный вид"
-                >
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Календарь</span>
-                </button>
-                <button
-                  id="view-mode-gantt-btn"
-                  type="button"
-                  onClick={() => setViewMode('gantt')}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                    viewMode === 'gantt'
-                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                  }`}
-                  title="Линейный график Ганнта"
-                >
-                  <GanttChart className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Ганнт</span>
-                </button>
-                <button
-                  id="view-mode-table-btn"
-                  type="button"
-                  onClick={() => setViewMode('table')}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                    viewMode === 'table'
-                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                  }`}
-                  title="Табличный вид"
-                >
-                  <Table className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Таблица</span>
-                </button>
-              </div>
+              <>
+                {/* Desktop Switcher: Hidden on Mobile */}
+                <div id="view-mode-toggle-group" className="hidden sm:flex bg-slate-100 dark:bg-slate-850 p-1 rounded-lg border border-slate-200 dark:border-slate-800 items-center shrink-0">
+                  <button
+                    id="view-mode-canvas-btn"
+                    type="button"
+                    onClick={() => setViewMode('canvas')}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                      viewMode === 'canvas'
+                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    }`}
+                    title="Режим интеллект-карты"
+                  >
+                    <Network className="w-3.5 h-3.5" />
+                    <span>Холст</span>
+                  </button>
+                  <button
+                    id="view-mode-kanban-btn"
+                    type="button"
+                    onClick={() => setViewMode('kanban')}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                      viewMode === 'kanban'
+                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    }`}
+                    title="Режим Канбан-доски"
+                  >
+                    <Kanban className="w-3.5 h-3.5" />
+                    <span>Канбан</span>
+                  </button>
+                  <button
+                    id="view-mode-mobile-btn"
+                    type="button"
+                    onClick={() => setViewMode('mobile-list')}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                      viewMode === 'mobile-list'
+                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    }`}
+                    title="Мобильный список (TickTick)"
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                    <span>Мобильный</span>
+                  </button>
+                  <button
+                    id="view-mode-calendar-btn"
+                    type="button"
+                    onClick={() => setViewMode('calendar')}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                      viewMode === 'calendar'
+                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    }`}
+                    title="Календарный вид"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Календарь</span>
+                  </button>
+                  <button
+                    id="view-mode-gantt-btn"
+                    type="button"
+                    onClick={() => setViewMode('gantt')}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                      viewMode === 'gantt'
+                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    }`}
+                    title="Линейный график Ганнта"
+                  >
+                    <GanttChart className="w-3.5 h-3.5" />
+                    <span>Ганнт</span>
+                  </button>
+                  <button
+                    id="view-mode-table-btn"
+                    type="button"
+                    onClick={() => setViewMode('table')}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                      viewMode === 'table'
+                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    }`}
+                    title="Табличный вид"
+                  >
+                    <Table className="w-3.5 h-3.5" />
+                    <span>Таблица</span>
+                  </button>
+                </div>
+
+                {/* Mobile Selector Dropdown: Visible on Mobile Only */}
+                <div className="relative sm:hidden shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileViewSwitcherOpen(!isMobileViewSwitcherOpen)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-indigo-650 dark:text-indigo-400 shadow-xs hover:bg-slate-100 dark:hover:bg-slate-750 transition-all cursor-pointer select-none"
+                  >
+                    {viewMode === 'canvas' && <Network className="w-3.5 h-3.5" />}
+                    {viewMode === 'kanban' && <Kanban className="w-3.5 h-3.5" />}
+                    {viewMode === 'mobile-list' && <Smartphone className="w-3.5 h-3.5" />}
+                    {viewMode === 'calendar' && <Calendar className="w-3.5 h-3.5" />}
+                    {viewMode === 'gantt' && <GanttChart className="w-3.5 h-3.5" />}
+                    {viewMode === 'table' && <Table className="w-3.5 h-3.5" />}
+                    
+                    <span>
+                      {viewMode === 'canvas' && 'Холст'}
+                      {viewMode === 'kanban' && 'Канбан'}
+                      {viewMode === 'mobile-list' && 'Мобильный'}
+                      {viewMode === 'calendar' && 'Календарь'}
+                      {viewMode === 'gantt' && 'Ганнт'}
+                      {viewMode === 'table' && 'Таблица'}
+                    </span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMobileViewSwitcherOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isMobileViewSwitcherOpen && (
+                    <>
+                      {/* Full-width transparent overlay backdrop for click-away behavior */}
+                      <div 
+                        className="fixed inset-0 z-30" 
+                        onClick={() => setIsMobileViewSwitcherOpen(false)} 
+                      />
+                      <div className="absolute right-0 mt-1.5 w-40 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl py-1 z-40">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewMode('canvas');
+                            setIsMobileViewSwitcherOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                            viewMode === 'canvas' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <Network className="w-3.5 h-3.5" />
+                          <span>Холст</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewMode('kanban');
+                            setIsMobileViewSwitcherOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                            viewMode === 'kanban' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <Kanban className="w-3.5 h-3.5" />
+                          <span>Канбан</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewMode('mobile-list');
+                            setIsMobileViewSwitcherOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                            viewMode === 'mobile-list' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <Smartphone className="w-3.5 h-3.5" />
+                          <span>Мобильный</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewMode('calendar');
+                            setIsMobileViewSwitcherOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                            viewMode === 'calendar' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>Календарь</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewMode('gantt');
+                            setIsMobileViewSwitcherOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                            viewMode === 'gantt' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <GanttChart className="w-3.5 h-3.5" />
+                          <span>Ганнт</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewMode('table');
+                            setIsMobileViewSwitcherOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                            viewMode === 'table' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <Table className="w-3.5 h-3.5" />
+                          <span>Таблица</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
             )}
 
             {/* Symmetrical Sync and Backup Trigger Button */}
@@ -2821,7 +2942,7 @@ export default function App() {
               title="Открыть панель резервного копирования и синхронизации"
             >
               <Database className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-              <span className="hidden sm:inline">Синхронизация</span>
+              <span className="hidden lg:inline">Синхронизация</span>
               {hasSyncOrAuthError ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
               ) : currentUser ? (
