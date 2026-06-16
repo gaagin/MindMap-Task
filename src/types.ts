@@ -31,6 +31,14 @@ export interface Comment {
   imageWebViewLink?: string; // Optional Google Drive web view URL
 }
 
+export interface WorkflowConnection {
+  id: string;
+  fromSide: 'top' | 'right' | 'bottom' | 'left';
+  toNodeId: string;
+  toSide: 'top' | 'right' | 'bottom' | 'left';
+  text?: string;
+}
+
 export interface TaskNode {
   id: string;
   projectId: string;
@@ -54,6 +62,12 @@ export interface TaskNode {
   progress?: number; // Optional progress percentage (0 to 100)
   isFloating?: boolean; // Optional flag for independent floating nodes
   isContainer?: boolean; // Optional flag for a container box node
+  isWorkflowRectangle?: boolean; // Optional flag for workflow rectangle nodes
+  workflowConnections?: WorkflowConnection[]; // Optional outgoing workflow connections
+  zoneWidth?: number; // Optional outer dashed trigger zone width
+  zoneHeight?: number; // Optional outer dashed trigger zone height
+  zoneOffsetX?: number; // Optional outer dashed trigger zone X offset from node center
+  zoneOffsetY?: number; // Optional outer dashed trigger zone Y offset from node center
   width?: number; // Optional custom width (for containers)
   height?: number; // Optional custom height (for containers)
   updatedAt?: string; // ISO string for conflict resolution sync

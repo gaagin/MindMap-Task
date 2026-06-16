@@ -93,6 +93,99 @@ function isDescendantOrSelf(candidateParentId: string, nodeId: string, allNodes:
   return false;
 }
 
+function getFlowchartPath(
+  x1: number, y1: number, side1: string,
+  x2: number, y2: number, side2: string
+): string {
+  const getOffset = (side: string) => {
+    switch (side) {
+      case 'top': return { x: 0, y: -24 };
+      case 'bottom': return { x: 0, y: 24 };
+      case 'left': return { x: -24, y: 0 };
+      case 'right': return { x: 24, y: 0 };
+      default: return { x: 0, y: 0 };
+    }
+  };
+
+  const off1 = getOffset(side1);
+  const off2 = getOffset(side2);
+
+  const start_stub_x = x1 + off1.x;
+  const start_stub_y = y1 + off1.y;
+  const end_stub_x = x2 + off2.x;
+  const end_stub_y = y2 + off2.y;
+
+  const points: { x: number; y: number }[] = [];
+  points.push({ x: x1, y: y1 });
+  points.push({ x: start_stub_x, y: start_stub_y });
+
+  if (side1 === 'left' || side1 === 'right') {
+    if (side2 === 'top' || side2 === 'bottom') {
+      points.push({ x: start_stub_x, y: end_stub_y });
+    } else {
+      const midX = (start_stub_x + end_stub_x) / 2;
+      points.push({ x: midX, y: start_stub_y });
+      points.push({ x: midX, y: end_stub_y });
+    }
+  } else {
+    if (side2 === 'left' || side2 === 'right') {
+      points.push({ x: end_stub_x, y: start_stub_y });
+    } else {
+      const midY = (start_stub_y + end_stub_y) / 2;
+      points.push({ x: start_stub_x, y: midY });
+      points.push({ x: end_stub_x, y: midY });
+    }
+  }
+
+  points.push({ x: end_stub_x, y: end_stub_y });
+  points.push({ x: x2, y: y2 });
+
+  let path = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    if (points[i].x !== points[i - 1].x || points[i].y !== points[i - 1].y) {
+      path += ` L ${points[i].x} ${points[i].y}`;
+    }
+  }
+  return path;
+}
+
+function getBezierMidpoint(
+  x1: number, y1: number, side1: string,
+  x2: number, y2: number, side2: string
+) {
+  const getOffset = (side: string) => {
+    switch (side) {
+      case 'top': return { x: 0, y: -24 };
+      case 'bottom': return { x: 0, y: 24 };
+      case 'left': return { x: -24, y: 0 };
+      case 'right': return { x: 24, y: 0 };
+      default: return { x: 0, y: 0 };
+    }
+  };
+
+  const off1 = getOffset(side1);
+  const off2 = getOffset(side2);
+
+  const start_stub_x = x1 + off1.x;
+  const start_stub_y = y1 + off1.y;
+  const end_stub_x = x2 + off2.x;
+  const end_stub_y = y2 + off2.y;
+
+  return {
+    x: (start_stub_x + end_stub_x) / 2,
+    y: (start_stub_y + end_stub_y) / 2
+  };
+}
+
+function getOppositeSide(side: 'top' | 'right' | 'bottom' | 'left'): 'top' | 'right' | 'bottom' | 'left' {
+  switch (side) {
+    case 'top': return 'bottom';
+    case 'right': return 'left';
+    case 'bottom': return 'top';
+    case 'left': return 'right';
+  }
+}
+
 export default function MindMapCanvas({
   nodes: incomingNodes,
   darkMode,
@@ -147,6 +240,18 @@ export default function MindMapCanvas({
   const [nestedDragNodeId, setNestedDragNodeId] = useState<string | null>(null);
   // States for trailing tags drag and drop onto nodes on canvas
   const [draggedOverTagNodeId, setDraggedOverTagNodeId] = useState<string | null>(null);
+
+  // States for Flowchart Workflow connectors dragging
+  const [activeConnector, setActiveConnector] = useState<{
+    nodeId: string;
+    side: 'top' | 'right' | 'bottom' | 'left';
+    startX: number;
+    startY: number;
+  } | null>(null);
+
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [hoveredSide, setHoveredSide] = useState<'top' | 'right' | 'bottom' | 'left' | null>(null);
 
   const handleContainerChildDrop = (draggedId: string, targetId: string) => {
     const draggedNode = nodes.find(n => n.id === draggedId);
@@ -479,11 +584,33 @@ export default function MindMapCanvas({
     if (viewMode === 'canvas') {
       if (containerChildren.length === 0) {
         return (
-          <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto">
-            <span className="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest mb-1.5">Свободный холст</span>
-            <span className="text-[9px] text-slate-400 dark:text-slate-500 max-w-[200px]">
-              Дочерние подзадачи свободно перемещаются по этому прямоугольнику. Чтобы добавить, кликните дважды или перетащите задачу внутрь.
+          <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto transition-all">
+            <span className="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest mb-1">Свободный холст</span>
+            <span className="text-[9px] text-slate-400 dark:text-slate-500 max-w-[200px] mb-3">
+              Дочерние подзадачи свободно перемещаются по этому прямоугольнику.
             </span>
+            <div className="flex gap-2 pointer-events-auto">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddFloatingNode(node.x, node.y, node.id, 'Workflow Шаг', { isWorkflowRectangle: true });
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wide uppercase bg-indigo-500 hover:bg-indigo-600 text-white shadow-xs transition-transform hover:scale-105 cursor-pointer"
+              >
+                <Network className="w-3 h-3 text-white" />
+                🟦 Прямоугольник Workflow
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddFloatingNode(node.x, node.y, node.id, 'Новая задача');
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wide uppercase bg-slate-150 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-250 dark:border-slate-700 shadow-xs transition-transform hover:scale-105 cursor-pointer"
+              >
+                <Plus className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+                Обычная задача
+              </button>
+            </div>
           </div>
         );
       }
@@ -2521,6 +2648,21 @@ export default function MindMapCanvas({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (activeConnector) {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const cursorX = e.clientX - rect.left;
+        const cursorY = e.clientY - rect.top;
+        
+        const canvasX = (cursorX - centerX - panX) / zoom;
+        const canvasY = (cursorY - centerY - panY) / zoom;
+        setMousePos({ x: canvasX, y: canvasY });
+      }
+      return;
+    }
+
     // 0. Resize container operation
     if (resizingNodeId) {
       const node = nodes.find(n => n.id === resizingNodeId);
@@ -2528,6 +2670,66 @@ export default function MindMapCanvas({
 
       const deltaX = (e.clientX - resizeStartPos.x) / zoom;
       const deltaY = (e.clientY - resizeStartPos.y) / zoom;
+
+      if (node.isWorkflowRectangle) {
+        const w = 170;
+        const h = 70;
+        const startWidth = resizeStartSize.width;
+        const startHeight = resizeStartSize.height;
+        const startOffsetX = resizeStartCenter.x;
+        const startOffsetY = resizeStartCenter.y;
+
+        const startLeft = startOffsetX - startWidth / 2;
+        const startRight = startOffsetX + startWidth / 2;
+        const startTop = startOffsetY - startHeight / 2;
+        const startBottom = startOffsetY + startHeight / 2;
+
+        let newLeft = startLeft;
+        let newRight = startRight;
+        let newTop = startTop;
+        let newBottom = startBottom;
+
+        const dir = resizeDirection || 'se';
+
+        if (dir.includes('e')) {
+          newRight = Math.max(w / 2 + 10, startRight + deltaX);
+        } else if (dir.includes('w')) {
+          newLeft = Math.min(-w / 2 - 10, startLeft + deltaX);
+        }
+
+        if (dir.includes('s')) {
+          newBottom = Math.max(h / 2 + 10, startBottom + deltaY);
+        } else if (dir.includes('n')) {
+          newTop = Math.min(-h / 2 - 10, startTop + deltaY);
+        }
+
+        const newWidth = Math.max(w + 20, newRight - newLeft);
+        const newHeight = Math.max(h + 20, newBottom - newTop);
+
+        if (dir.includes('w')) {
+          newLeft = newRight - newWidth;
+        } else if (dir.includes('e')) {
+          newRight = newLeft + newWidth;
+        }
+
+        if (dir.includes('n')) {
+          newTop = newBottom - newHeight;
+        } else if (dir.includes('s')) {
+          newBottom = newTop + newHeight;
+        }
+
+        const newOffsetX = parseFloat((newLeft + newWidth / 2).toFixed(1));
+        const newOffsetY = parseFloat((newTop + newHeight / 2).toFixed(1));
+
+        onUpdateNode({
+          ...node,
+          zoneWidth: Math.round(newWidth),
+          zoneHeight: Math.round(newHeight),
+          zoneOffsetX: Math.round(newOffsetX),
+          zoneOffsetY: Math.round(newOffsetY)
+        });
+        return;
+      }
 
       const startLeft = resizeStartCenter.x - resizeStartSize.width / 2;
       const startRight = resizeStartCenter.x + resizeStartSize.width / 2;
@@ -2698,10 +2900,50 @@ export default function MindMapCanvas({
     setResizingNodeId(null);
     setResizeDirection(null);
 
+    if (activeConnector) {
+      if (hoveredNodeId && hoveredSide) {
+        const sourceNode = nodes.find(n => n.id === activeConnector.nodeId);
+        if (sourceNode) {
+          const newConn = {
+            id: generateId(),
+            fromSide: activeConnector.side,
+            toNodeId: hoveredNodeId,
+            toSide: hoveredSide,
+            text: ''
+          };
+          const existingConnections = sourceNode.workflowConnections || [];
+          const isDuplicate = existingConnections.some(
+            c => c.toNodeId === hoveredNodeId && c.fromSide === activeConnector.side && c.toSide === hoveredSide
+          );
+          if (!isDuplicate) {
+            onUpdateNode({
+              ...sourceNode,
+              workflowConnections: [...existingConnections, newConn]
+            });
+          }
+        }
+      }
+      setActiveConnector(null);
+      setMousePos(null);
+      setHoveredNodeId(null);
+      setHoveredSide(null);
+      return;
+    }
+
     if (draggingNodeId && hasDraggedNode) {
       const node = nodes.find(n => n.id === draggingNodeId);
       if (node) {
-        onUpdateNodeCoordinates(draggingNodeId, node.x, node.y);
+        const updatedTags = checkWorkflowTriggerCollisions(node, node.x, node.y);
+        if (updatedTags) {
+          onUpdateNode({
+            ...node,
+            x: node.x,
+            y: node.y,
+            tags: updatedTags
+          });
+        } else {
+          onUpdateNodeCoordinates(draggingNodeId, node.x, node.y);
+        }
         const overlap = getOverlapParent(draggingNodeId, node.x, node.y);
         const currentParent = nodes.find(p => p.id === node.parentId);
         
@@ -3138,7 +3380,17 @@ export default function MindMapCanvas({
       if (draggingNodeId && hasDraggedNode) {
         const node = nodes.find(n => n.id === draggingNodeId);
         if (node) {
-          onUpdateNodeCoordinates(draggingNodeId, node.x, node.y);
+          const updatedTags = checkWorkflowTriggerCollisions(node, node.x, node.y);
+          if (updatedTags) {
+            onUpdateNode({
+              ...node,
+              x: node.x,
+              y: node.y,
+              tags: updatedTags
+            });
+          } else {
+            onUpdateNodeCoordinates(draggingNodeId, node.x, node.y);
+          }
           const overlap = getOverlapParent(draggingNodeId, node.x, node.y);
           const currentParent = nodes.find(p => p.id === node.parentId);
           
@@ -3226,6 +3478,104 @@ export default function MindMapCanvas({
         didDragRef.current = false;
       }, 50);
     }
+  };
+
+  // Check if a card is touching any workflow outer dashed trigger zone
+  const checkWorkflowTriggerCollisions = (movedNode: TaskNode, currentX: number, currentY: number): string[] | null => {
+    if (movedNode.isWorkflowRectangle || movedNode.isContainer) return null;
+
+    const cardW = movedNode.width || 210;
+    const cardH = movedNode.height || 110;
+    const movedLeft = currentX - cardW / 2;
+    const movedRight = currentX + cardW / 2;
+    const movedTop = currentY - cardH / 2;
+    const movedBottom = currentY + cardH / 2;
+
+    let updatedTags: string[] | null = null;
+
+    nodes.forEach(flow => {
+      if (!flow.isWorkflowRectangle) return;
+
+      const w = 170;
+      const h = 70;
+      const zoneW = flow.zoneWidth !== undefined ? flow.zoneWidth : (w + 100);
+      const zoneH = flow.zoneHeight !== undefined ? flow.zoneHeight : (h + 80);
+      const zoneOX = flow.zoneOffsetX || 0;
+      const zoneOY = flow.zoneOffsetY || 0;
+
+      const zoneLeft = flow.x + zoneOX - zoneW / 2;
+      const zoneRight = flow.x + zoneOX + zoneW / 2;
+      const zoneTop = flow.y + zoneOY - zoneH / 2;
+      const zoneBottom = flow.y + zoneOY + zoneH / 2;
+
+      const overlaps = (
+        movedLeft <= zoneRight &&
+        movedRight >= zoneLeft &&
+        movedTop <= zoneBottom &&
+        movedBottom >= zoneTop
+      );
+
+      if (overlaps && flow.text?.trim()) {
+        const flowName = flow.text.trim();
+        const currentTags = updatedTags || movedNode.tags || [];
+
+        // Check if flowName belongs to any tag category
+        const cats = movedNode.tagCategories || tagCategories || [];
+        const matchedCategory = cats.find(cat => cat.tags && cat.tags.includes(flowName));
+
+        if (matchedCategory) {
+          // Filter out existing tags that belong to this category
+          const filtered = currentTags.filter(t => !matchedCategory.tags.includes(t));
+          if (!filtered.includes(flowName)) {
+            updatedTags = [...filtered, flowName];
+          } else {
+            updatedTags = filtered;
+          }
+        } else {
+          // If it doesn't belong to any category, append if not present
+          if (!currentTags.includes(flowName)) {
+            updatedTags = [...currentTags, flowName];
+          } else {
+            updatedTags = currentTags;
+          }
+        }
+      }
+    });
+
+    if (updatedTags) {
+      const orig = movedNode.tags || [];
+      const same = orig.length === updatedTags.length && orig.every((t, i) => t === updatedTags![i]);
+      if (same) return null;
+    }
+
+    return updatedTags;
+  };
+
+  // Start drawing a connector from one of the side anchor dots
+  const startConnectorDrag = (e: React.MouseEvent, nodeId: string, side: 'top' | 'right' | 'bottom' | 'left') => {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    
+    const w = node.width || (node.isWorkflowRectangle ? 170 : 210);
+    const h = node.height || (node.isWorkflowRectangle ? 70 : 110);
+    
+    let startX = node.x;
+    let startY = node.y;
+    if (side === 'top') startY -= h / 2;
+    else if (side === 'right') startX += w / 2;
+    else if (side === 'bottom') startY += h / 2;
+    else if (side === 'left') startX -= w / 2;
+    
+    setActiveConnector({
+      nodeId,
+      side,
+      startX,
+      startY
+    });
+    setMousePos({ x: startX, y: startY });
   };
 
   // Start dragging a node from Mouse Down
@@ -3627,6 +3977,33 @@ export default function MindMapCanvas({
                   />
                 </div>
               </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => {
+                    const x = Math.round(-panX / zoom);
+                    const y = Math.round(-panY / zoom);
+                    onAddFloatingNode(x, y, focusedContainerId, 'Workflow Шаг', { isWorkflowRectangle: true });
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wide font-extrabold bg-indigo-500 hover:bg-indigo-600 text-white shadow-md hover:scale-[1.02] transition-all cursor-pointer border border-transparent"
+                  title="Добавить шаг workflow в сфокусированный контейнер"
+                >
+                  <Network className="w-3.5 h-3.5 text-white" />
+                  <span>+ Шаг Workflow</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const x = Math.round(-panX / zoom);
+                    const y = Math.round(-panY / zoom);
+                    onAddFloatingNode(x, y, focusedContainerId);
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wide font-extrabold bg-emerald-500 hover:bg-emerald-600 text-white shadow-md hover:scale-[1.02] transition-all cursor-pointer border border-transparent"
+                  title="Добавить простую задачу в сфокусированный контейнер"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-white" />
+                  <span>+ Задача</span>
+                </button>
+              </div>
               
               <button
                 onClick={() => {
@@ -3735,6 +4112,20 @@ export default function MindMapCanvas({
         </button>
 
         <button
+          onClick={() => {
+            const x = Math.round(-panX / zoom);
+            const y = Math.round(-panY / zoom);
+            onAddFloatingNode(x, y, focusedContainerId, 'Workflow Шаг', { isWorkflowRectangle: true });
+          }}
+          title={focusedContainerId ? "Создать прямоугольник workflow внутри текущего контейнера" : "Создать прямоугольник workflow по центру холста"}
+          className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40 shrink-0"
+        >
+          <Network className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="hidden sm:inline">Прямоугольник Workflow</span>
+          <span className="sm:hidden">Workflow</span>
+        </button>
+
+        <button
           onClick={startCanvasDictation}
           title={focusedContainerId ? "Продиктовать название новой задачи внутри текущего контейнера" : "Записать новую задачу на холст голосом"}
           className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-indigo-600 dark:text-indigo-400 hover:text-indigo-705 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40 shrink-0"
@@ -3787,6 +4178,148 @@ export default function MindMapCanvas({
       >
         {/* SVG connection lines render */}
         <svg className="absolute inset-0 pointer-events-none overflow-visible w-1 h-1">
+          <defs>
+            <marker
+              id="flow-arrow"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="currentColor" />
+            </marker>
+          </defs>
+
+          {/* Render Flowchart Workflow connections */}
+          {visibleNodes.map(node => {
+            if (!node.workflowConnections) return null;
+            return node.workflowConnections.map(conn => {
+              const target = nodes.find(t => t.id === conn.toNodeId);
+              if (!target) return null; // Target node deleted or missing
+              
+              // Calculate start coordinate on origin node
+              const w1 = node.width || (node.isWorkflowRectangle ? 170 : 210);
+              const h1 = node.height || (node.isWorkflowRectangle ? 70 : 110);
+              let x1 = node.x;
+              let y1 = node.y;
+              if (conn.fromSide === 'top') y1 -= h1 / 2;
+              else if (conn.fromSide === 'right') x1 += w1 / 2;
+              else if (conn.fromSide === 'bottom') y1 += h1 / 2;
+              else if (conn.fromSide === 'left') x1 -= w1 / 2;
+
+              // Calculate end coordinate on target node
+              const w2 = target.width || (target.isWorkflowRectangle ? 170 : 210);
+              const h2 = target.height || (target.isWorkflowRectangle ? 70 : 110);
+              let x2 = target.x;
+              let y2 = target.y;
+              if (conn.toSide === 'top') y2 -= h2 / 2;
+              else if (conn.toSide === 'right') x2 += w2 / 2;
+              else if (conn.toSide === 'bottom') y2 += h2 / 2;
+              else if (conn.toSide === 'left') x2 -= w2 / 2;
+
+              const pathColor = node.color || '#6366f1'; // Indigo flowchart color
+              const isSelected = selectedNodeId === node.id || selectedNodeId === target.id;
+              
+              // Compute midpoint
+              const mid = getBezierMidpoint(x1, y1, conn.fromSide, x2, y2, conn.toSide);
+
+              return (
+                <g key={`flow-${node.id}-${conn.id}`} className="group/line" style={{ color: pathColor }}>
+                  {/* Thick glow under selected path */}
+                  {isSelected && (
+                    <path
+                      d={getFlowchartPath(x1, y1, conn.fromSide, x2, y2, conn.toSide)}
+                      fill="none"
+                      stroke={pathColor}
+                      strokeWidth={8}
+                      className="opacity-25 blur-[1px]"
+                    />
+                  )}
+
+                  {/* Visual path line */}
+                  <path
+                    d={getFlowchartPath(x1, y1, conn.fromSide, x2, y2, conn.toSide)}
+                    fill="none"
+                    stroke={pathColor}
+                    strokeWidth={isSelected ? 3.5 : 2.5}
+                    markerEnd="url(#flow-arrow)"
+                    className="transition-all duration-150"
+                  />
+
+                  {/* Midpoint overlay controls (Label input & Delete button) */}
+                  <foreignObject
+                    x={mid.x - 55}
+                    y={mid.y - 14}
+                    width={110}
+                    height={28}
+                    className="pointer-events-auto overflow-visible"
+                  >
+                    <div className="flex items-center justify-center gap-1.5 h-full select-none">
+                      {/* Label Input with Double click or single hover */}
+                      <input
+                        type="text"
+                        value={conn.text || ''}
+                        placeholder="..."
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const updatedConns = node.workflowConnections?.map(c => 
+                            c.id === conn.id ? { ...c, text: val } : c
+                          ) || [];
+                          onUpdateNode({
+                            ...node,
+                            workflowConnections: updatedConns
+                          });
+                        }}
+                        className="text-[9px] font-black tracking-wide text-center bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 w-16 px-1 py-0.5 rounded shadow-xs text-slate-800 dark:text-slate-100 hover:border-indigo-400 focus:outline-none focus:border-indigo-500 font-sans leading-tight truncate"
+                        title="Кликните, чтобы подписать связь..."
+                      />
+                      
+                      {/* Delete connection button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const updatedConns = node.workflowConnections?.filter(c => c.id !== conn.id) || [];
+                          onUpdateNode({
+                            ...node,
+                            workflowConnections: updatedConns
+                          });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="w-4 h-4 flex items-center justify-center rounded-full bg-rose-500 hover:bg-rose-600 text-white shadow-xs hover:scale-110 transition-transform cursor-pointer shrink-0"
+                        title="Удалить соединение"
+                      >
+                        <X className="w-2.5 h-2.5 stroke-[3]" />
+                      </button>
+                    </div>
+                  </foreignObject>
+                </g>
+              );
+            });
+          })}
+
+          {/* Flowchart Connector Connection Preview Path */}
+          {activeConnector && mousePos && (
+            <path
+              d={getFlowchartPath(
+                activeConnector.startX,
+                activeConnector.startY,
+                activeConnector.side,
+                mousePos.x,
+                mousePos.y,
+                hoveredSide || getOppositeSide(activeConnector.side)
+              )}
+              fill="none"
+              stroke="#6366f1"
+              strokeWidth={3}
+              strokeDasharray="5,5"
+              markerEnd="url(#flow-arrow)"
+              className="opacity-95"
+            />
+          )}
+
           {connections.map(({ child, parent }) => {
             const pathColor = child.color || parent.color || '#818cf8';
             const isSelected = selectedNodeId === child.id || selectedNodeId === parent.id;
@@ -4049,6 +4582,21 @@ export default function MindMapCanvas({
                         <Plus className="w-3.5 h-3.5" />
                       </button>
                     )}
+                    {/* Add workflow rectangle inside container */}
+                    {!node.collapsed && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddFloatingNode(node.x, node.y, node.id, 'Workflow Шаг', { isWorkflowRectangle: true });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        data-drag-ignore
+                        title="Добавить прямоугольник workflow в контейнер"
+                        className="p-1 rounded-md text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        <Network className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     {/* Focus Mode toggle */}
                     <button
                       onClick={(e) => {
@@ -4264,7 +4812,399 @@ export default function MindMapCanvas({
               </div>
             );
           }
-const pInfo = getPriorityInfo(node.priority);
+
+          if (node.isWorkflowRectangle) {
+            const ancestorContainer = getAncestorContainer(node.parentId);
+            let containerZ = 10;
+            if (ancestorContainer) {
+              const isAncestorSelected = selectedNodeId === ancestorContainer.id;
+              const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
+              containerZ = isAncestorSelected ? 50 : (isAncestorLastActive ? 30 : 10);
+            }
+            const cardZIndex = ancestorContainer
+              ? containerZ + (isSelected ? 12 : 8)
+              : (isSelected ? 70 : 8);
+
+            const matches = isNodeMatched(node);
+            const isDimmed = isAnyFilterActive && !matches;
+
+            const w = node.width || 170;
+            const h = node.height || 70;
+
+            const isOpponentHovered = hoveredNodeId === node.id;
+
+            return (
+              <React.Fragment key={node.id}>
+                {/* Sibling dashed trigger zone for workflow rectangle */}
+                {(() => {
+                  const zoneW = node.zoneWidth !== undefined ? node.zoneWidth : (w + 100);
+                  const zoneH = node.zoneHeight !== undefined ? node.zoneHeight : (h + 80);
+                  const zoneOX = node.zoneOffsetX || 0;
+                  const zoneOY = node.zoneOffsetY || 0;
+
+                  const zoneLeft = node.x + zoneOX - zoneW / 2;
+                  const zoneRight = node.x + zoneOX + zoneW / 2;
+                  const zoneTop = node.y + zoneOY - zoneH / 2;
+                  const zoneBottom = node.y + zoneOY + zoneH / 2;
+
+                  // Check if any dragging node is currently overlapping this zone
+                  let isAnyDraggingNodeOverlapping = false;
+                  if (draggingNodeId) {
+                    const draggingNode = nodes.find(n => n.id === draggingNodeId);
+                    if (draggingNode && !draggingNode.isWorkflowRectangle && !draggingNode.isContainer) {
+                      const cardW = draggingNode.width || 210;
+                      const cardH = draggingNode.height || 110;
+                      const dragLeft = draggingNode.x - cardW / 2;
+                      const dragRight = draggingNode.x + cardW / 2;
+                      const dragTop = draggingNode.y - cardH / 2;
+                      const dragBottom = draggingNode.y + cardH / 2;
+
+                      isAnyDraggingNodeOverlapping = (
+                        dragLeft <= zoneRight &&
+                        dragRight >= zoneLeft &&
+                        dragTop <= zoneBottom &&
+                        dragBottom >= zoneTop
+                      );
+                    }
+                  }
+
+                  return (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: node.x + zoneOX,
+                        top: node.y + zoneOY,
+                        transform: 'translate(-50%, -50%)',
+                        zIndex: cardZIndex - 1,
+                        width: `${zoneW}px`,
+                        height: `${zoneH}px`
+                      }}
+                      className={`rounded-2xl border-2 border-dashed transition-all pointer-events-none ${
+                        isAnyDraggingNodeOverlapping
+                          ? 'border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/15 scale-[1.01] shadow-lg ring-4 ring-emerald-500/25'
+                          : isSelected
+                            ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/10 shadow-md'
+                            : 'border-slate-350 dark:border-slate-700 bg-slate-50/5 dark:bg-slate-900/5'
+                      }`}
+                    >
+                      {/* Title label at the top center of the zone */}
+                      <div className={`absolute -top-5 left-1/2 transform -translate-x-1/2 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-xs pointer-events-none border select-none transition-all duration-150 whitespace-nowrap ${
+                        isAnyDraggingNodeOverlapping
+                          ? 'bg-emerald-500 text-white border-emerald-600'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                      }`}>
+                        {isAnyDraggingNodeOverlapping ? `🔗 Авто-тег: ${node.text || 'Шаг_Workflow'}` : 'Зона Триггера'}
+                      </div>
+
+                      {/* Resize Handles of trigger zone - visible only when active workflow step is selected */}
+                      {isSelected && (
+                        <>
+                          {/* Top border resizer */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setResizingNodeId(node.id);
+                              setResizeDirection('n');
+                              setResizeStartPos({ x: e.clientX, y: e.clientY });
+                              setResizeStartSize({ width: zoneW, height: zoneH });
+                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
+                            }}
+                            className="absolute -top-1 left-2 right-2 h-2 cursor-ns-resize pointer-events-auto z-40 hover:bg-indigo-500/30 rounded transition-colors"
+                            title="Изменить высоту зоны (вверх)"
+                          />
+                          {/* Bottom border resizer */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setResizingNodeId(node.id);
+                              setResizeDirection('s');
+                              setResizeStartPos({ x: e.clientX, y: e.clientY });
+                              setResizeStartSize({ width: zoneW, height: zoneH });
+                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
+                            }}
+                            className="absolute -bottom-1 left-2 right-2 h-2 cursor-ns-resize pointer-events-auto z-40 hover:bg-indigo-500/30 rounded transition-colors"
+                            title="Изменить высоту зоны (вниз)"
+                          />
+                          {/* Left border resizer */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setResizingNodeId(node.id);
+                              setResizeDirection('w');
+                              setResizeStartPos({ x: e.clientX, y: e.clientY });
+                              setResizeStartSize({ width: zoneW, height: zoneH });
+                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
+                            }}
+                            className="absolute top-2 bottom-2 -left-1 w-2 cursor-ew-resize pointer-events-auto z-40 hover:bg-indigo-500/30 rounded transition-colors"
+                            title="Изменить ширину зоны (влево)"
+                          />
+                          {/* Right border resizer */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setResizingNodeId(node.id);
+                              setResizeDirection('e');
+                              setResizeStartPos({ x: e.clientX, y: e.clientY });
+                              setResizeStartSize({ width: zoneW, height: zoneH });
+                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
+                            }}
+                            className="absolute top-2 bottom-2 -right-1 w-2 cursor-ew-resize pointer-events-auto z-40 hover:bg-indigo-500/30 rounded transition-colors"
+                            title="Изменить ширину зоны (вправо)"
+                          />
+
+                          {/* Top-Left corner resizer */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setResizingNodeId(node.id);
+                              setResizeDirection('nw');
+                              setResizeStartPos({ x: e.clientX, y: e.clientY });
+                              setResizeStartSize({ width: zoneW, height: zoneH });
+                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
+                            }}
+                            className="absolute -top-1.5 -left-1.5 w-3 h-3 cursor-nwse-resize pointer-events-auto z-50 rounded-full bg-white dark:bg-slate-900 border border-indigo-505 shadow-sm transition-all hover:scale-125"
+                          />
+                          {/* Top-Right corner resizer */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setResizingNodeId(node.id);
+                              setResizeDirection('ne');
+                              setResizeStartPos({ x: e.clientX, y: e.clientY });
+                              setResizeStartSize({ width: zoneW, height: zoneH });
+                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
+                            }}
+                            className="absolute -top-1.5 -right-1.5 w-3 h-3 cursor-nesw-resize pointer-events-auto z-50 rounded-full bg-white dark:bg-slate-900 border border-indigo-505 shadow-sm transition-all hover:scale-125"
+                          />
+                          {/* Bottom-Left corner resizer */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setResizingNodeId(node.id);
+                              setResizeDirection('sw');
+                              setResizeStartPos({ x: e.clientX, y: e.clientY });
+                              setResizeStartSize({ width: zoneW, height: zoneH });
+                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
+                            }}
+                            className="absolute -bottom-1.5 -left-1.5 w-3 h-3 cursor-nesw-resize pointer-events-auto z-50 rounded-full bg-white dark:bg-slate-900 border border-indigo-505 shadow-sm transition-all hover:scale-125"
+                          />
+                          {/* Bottom-Right corner resizer */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setResizingNodeId(node.id);
+                              setResizeDirection('se');
+                              setResizeStartPos({ x: e.clientX, y: e.clientY });
+                              setResizeStartSize({ width: zoneW, height: zoneH });
+                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
+                            }}
+                            className="absolute -bottom-1.5 -right-1.5 w-3 h-3 cursor-nwse-resize pointer-events-auto z-50 rounded-full bg-white dark:bg-slate-900 border border-indigo-505 shadow-sm transition-all hover:scale-125"
+                          />
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Main solid inner workflow node */}
+                <div
+                  data-node-id={node.id}
+                  style={{
+                    position: 'absolute',
+                    left: node.x,
+                    top: node.y,
+                    transform: 'translate(-50%, -50%)',
+                    zIndex: cardZIndex,
+                    width: `${w}px`,
+                    height: `${h}px`
+                  }}
+                  onMouseEnter={() => {
+                    if (activeConnector && activeConnector.nodeId !== node.id) {
+                      setHoveredNodeId(node.id);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (hoveredNodeId === node.id) {
+                      setHoveredNodeId(null);
+                      setHoveredSide(null);
+                    }
+                  }}
+                  onMouseMove={(e) => {
+                    if (activeConnector && activeConnector.nodeId !== node.id) {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const centerX = rect.left + rect.width / 2;
+                      const centerY = rect.top + rect.height / 2;
+                      const localMouseX = e.clientX - centerX;
+                      const localMouseY = e.clientY - centerY;
+                      let side: 'top' | 'right' | 'bottom' | 'left' = 'left';
+                      if (Math.abs(localMouseX / rect.width) > Math.abs(localMouseY / rect.height)) {
+                        side = localMouseX > 0 ? 'right' : 'left';
+                      } else {
+                        side = localMouseY > 0 ? 'bottom' : 'top';
+                      }
+                      setHoveredSide(side);
+                    }
+                  }}
+                  onMouseDown={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (target.tagName === 'INPUT' || target.closest('button')) return;
+                    startDragNode(e, node);
+                  }}
+                  onClick={(e) => {
+                    if (hasDraggedNode || didDragRef.current) return;
+                    e.stopPropagation();
+                    onSelectNode(node.id, e);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setEditingNodeId(node.id);
+                  }}
+                  className={`absolute group cursor-grab active:cursor-grabbing rounded-xl border-2 shadow-md transition-[background-color,border-color,box-shadow,transform] duration-150 ${
+                    isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
+                  } ${
+                    isOpponentHovered
+                      ? 'bg-indigo-50/15 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500/25 scale-[1.025] shadow-lg'
+                      : isSelected
+                        ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-400 ring-4 ring-indigo-120 dark:ring-indigo-950/40 shadow-lg'
+                        : node.completed
+                          ? 'bg-emerald-50/10 dark:bg-emerald-950/10 border-emerald-500 shadow-sm'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
+                  }`}
+                >
+                  {/* Title and Completed State inside workflow step */}
+                  <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center select-text">
+                    {editingNodeId === node.id ? (
+                      <input
+                        type="text"
+                        value={node.text}
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                        onBlur={() => {
+                          setEditingNodeId(null);
+                          if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter') {
+                            setEditingNodeId(null);
+                            if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                          } else if (e.key === 'Escape') {
+                            setEditingNodeId(null);
+                            if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                          }
+                        }}
+                        onChange={(e) => {
+                          onUpdateNode({
+                            ...node,
+                            text: e.target.value
+                          });
+                        }}
+                        className="w-full text-xs font-black bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 py-1 px-1.5 rounded border border-indigo-400 focus:outline-none text-center"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center gap-1.5 min-w-0">
+                        <span className={`text-[11px] font-sans font-bold tracking-wide leading-snug break-words max-w-[145px] ${node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : 'text-slate-800 dark:text-slate-150'}`}>
+                          {node.text || 'Шаг Workflow'}
+                        </span>
+                        {node.completed && (
+                          <span className="text-[8px] font-black uppercase text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 dark:bg-emerald-500/5 px-1.5 py-0.5 rounded">
+                            ✔️ Готово
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Micro Actions Overlay */}
+                  <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 z-30">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdateNode({
+                          ...node,
+                          completed: !node.completed
+                        });
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`p-0.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-450 hover:text-emerald-500 shadow-xs cursor-pointer ${node.completed ? 'text-emerald-500 border-emerald-500/35' : ''}`}
+                      title="Выполнено/В работе"
+                    >
+                      <CheckCircle2 className="w-2.5 h-2.5" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteNode(node.id);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="p-0.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-450 hover:text-rose-500 shadow-xs cursor-pointer"
+                      title="Удалить шаг"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+
+                  {/* Anchor connection handles on active select/hover */}
+                  {(isSelected || isOpponentHovered || hoveredNodeId === node.id || activeConnector) && (
+                    <>
+                      {/* Top Anchor Dot */}
+                      <div
+                        onMouseDown={(e) => startConnectorDrag(e, node.id, 'top')}
+                        className={`absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
+                          isOpponentHovered && hoveredSide === 'top' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
+                        }`}
+                        title="Тянуть связь вверх"
+                      >
+                        <div className={`w-1 h-1 rounded-full ${isOpponentHovered && hoveredSide === 'top' ? 'bg-white' : 'bg-indigo-500 dark:bg-indigo-400'}`} />
+                      </div>
+                      {/* Right Anchor Dot */}
+                      <div
+                        onMouseDown={(e) => startConnectorDrag(e, node.id, 'right')}
+                        className={`absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
+                          isOpponentHovered && hoveredSide === 'right' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
+                        }`}
+                        title="Тянуть связь вправо"
+                      >
+                        <div className={`w-1 h-1 rounded-full ${isOpponentHovered && hoveredSide === 'right' ? 'bg-white' : 'bg-indigo-500 dark:bg-indigo-400'}`} />
+                      </div>
+                      {/* Bottom Anchor Dot */}
+                      <div
+                        onMouseDown={(e) => startConnectorDrag(e, node.id, 'bottom')}
+                        className={`absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
+                          isOpponentHovered && hoveredSide === 'bottom' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
+                        }`}
+                        title="Тянуть связь вниз"
+                      >
+                        <div className={`w-1 h-1 rounded-full ${isOpponentHovered && hoveredSide === 'bottom' ? 'bg-white' : 'bg-indigo-500 dark:bg-indigo-400'}`} />
+                      </div>
+                      {/* Left Anchor Dot */}
+                      <div
+                        onMouseDown={(e) => startConnectorDrag(e, node.id, 'left')}
+                        className={`absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
+                          isOpponentHovered && hoveredSide === 'left' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
+                        }`}
+                        title="Тянуть связь влево"
+                      >
+                        <div className={`w-1 h-1 rounded-full ${isOpponentHovered && hoveredSide === 'left' ? 'bg-white' : 'bg-indigo-500 dark:bg-indigo-400'}`} />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </React.Fragment>
+            );
+          }
+
+          const pInfo = getPriorityInfo(node.priority);
           const hasNotes = node.notes && node.notes.trim().length > 0;
           const hasFiles = node.files && node.files.length > 0;
           const linkPattern = /(\[([^\]]+)\]\(task:([a-zA-Z0-9\-]+)\)|\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]|task:\/\/([a-zA-Z0-9\-]+))/;
