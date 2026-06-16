@@ -470,7 +470,9 @@ export default function KanbanView({
             ? 'border-emerald-500 dark:border-emerald-400 ring-4 ring-emerald-500/20 shadow-md bg-emerald-50/10 dark:bg-emerald-950/10 scale-[1.01]'
             : (node.id === selectedNodeId || (selectedNodeIds && selectedNodeIds.includes(node.id))) 
               ? 'border-[#4f46e5] dark:border-indigo-400 ring-4 ring-indigo-500/15 shadow-md scale-[1.015]' 
-              : 'border-slate-200/80 dark:border-slate-850'
+              : isNodeOverdue(node, nodes)
+                ? 'border-rose-400 dark:border-rose-900/60 bg-rose-50/5 dark:bg-rose-950/2 shadow-sm'
+                : 'border-slate-200/80 dark:border-slate-850'
         }`}
       >
         {/* Completed toggle checkbox and text */}
@@ -610,11 +612,11 @@ export default function KanbanView({
 
           {hasDueDate && (
             <span className={`inline-flex items-center gap-1.5 text-[9.5px] px-2 py-0.5 rounded-lg border font-extrabold shadow-sm ${
-              isNodeOverdue(node)
+              isNodeOverdue(node, nodes)
                 ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-950/45 animate-pulse'
                 : 'bg-white dark:bg-slate-800 text-slate-550 border-slate-200 dark:border-slate-705'
-            }`} title={isNodeOverdue(node) ? `Просрочен дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}` : `Дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}`}>
-              <Clock className={`w-3 h-3 ${isNodeOverdue(node) ? 'text-rose-550' : 'text-slate-400'}`} />
+            }`} title={isNodeOverdue(node, nodes) ? `Просрочен дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}` : `Дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}`}>
+              <Clock className={`w-3 h-3 ${isNodeOverdue(node, nodes) ? 'text-rose-550' : 'text-slate-400'}`} />
               <span>{formatRussianDate(node.dueDate)}{node.dueTime ? ` ${node.dueTime}` : ''}</span>
             </span>
           )}
@@ -707,28 +709,40 @@ export default function KanbanView({
                           e.stopPropagation();
                           onSelectNode(subtask.id, e);
                         }}
-                        className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center gap-2 transition-all text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer"
+                        className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer"
                       >
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onUpdateNode({
-                              ...subtask,
-                              completed: !subtask.completed
-                            });
-                          }}
-                          className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
-                        >
-                          {subtask.completed ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
-                          ) : (
-                            <Circle className="w-3.5 h-3.5 text-slate-400" />
-                          )}
-                        </button>
-                        <span className={`truncate leading-normal font-semibold ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
-                          {subtask.text}
-                        </span>
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({
+                                ...subtask,
+                                completed: !subtask.completed
+                              });
+                            }}
+                            className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
+                          >
+                            {subtask.completed ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
+                            ) : (
+                              <Circle className="w-3.5 h-3.5 text-slate-400" />
+                            )}
+                          </button>
+                          <span className={`truncate leading-normal font-semibold ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}>
+                            {subtask.text}
+                          </span>
+                        </div>
+                        {subtask.dueDate && (
+                          <span className={`shrink-0 flex items-center gap-1.5 text-[9px] px-1.5 py-0.5 rounded-lg border font-extrabold shadow-xs ${
+                            isNodeOverdue(subtask, nodes) && !subtask.completed
+                              ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-950/30'
+                              : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-205 dark:border-slate-700/60'
+                          }`}>
+                            <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500" />
+                            <span>{formatRussianDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
+                          </span>
+                        )}
                       </div>
                     ))}
                   </motion.div>

@@ -34,7 +34,8 @@ import {
   Link2Off,
   Mic,
   MicOff,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Clock
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue } from '../utils';
@@ -2335,7 +2336,7 @@ export default function MindMapCanvas({
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (filterDueDate === "overdue") {
-          if (!isNodeOverdue(node)) return false;
+          if (!isNodeOverdue(node, nodes)) return false;
         } else if (filterDueDate === "today") {
           if (diffDays !== 0) return false;
         } else if (filterDueDate === "this_week") {
@@ -4370,8 +4371,8 @@ const pInfo = getPriorityInfo(node.priority);
                         ? `bg-white dark:bg-slate-900 ${getPriorityCardStyles(node.priority, isSelected || isMultiSelected)}`
                         : isSelected || isMultiSelected
                           ? 'bg-white dark:bg-slate-900 border-indigo-650 dark:border-indigo-400 ring-4 ring-indigo-100 dark:ring-indigo-950/40 shadow-lg' 
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-655 shadow-sm'
-              } ${node.completed ? 'opacity-85' : isNodeOverdue(node) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5 animate-pulse' : ''}`}
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:hover:border-slate-655 shadow-sm'
+              } ${node.completed ? 'opacity-85' : isNodeOverdue(node, nodes) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5 animate-pulse' : ''}`}
               onMouseDown={(e) => startDragNode(e, node)}
               onDoubleClick={(e) => {
                 e.stopPropagation();
@@ -4556,7 +4557,7 @@ const pInfo = getPriorityInfo(node.priority);
                               ? isRoot
                                 ? 'bg-indigo-700/50 text-indigo-200 border-indigo-500/30'
                                 : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-505 border-slate-200 dark:border-slate-800'
-                              : isNodeOverdue(node)
+                              : isNodeOverdue(node, nodes)
                                 ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-900/60 animate-pulse font-extrabold shadow-[0_0_6px_rgba(244,63,94,0.3)]'
                                 : isRoot
                                   ? 'bg-indigo-500/20 text-indigo-100 border-indigo-400/30'
@@ -4565,12 +4566,12 @@ const pInfo = getPriorityInfo(node.priority);
                           title={
                             node.completed 
                               ? `Срок выполнения: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Выполнено)`
-                              : isNodeOverdue(node)
+                              : isNodeOverdue(node, nodes)
                                 ? `Внимание! Срок выполнения истек: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}`
                                 : `Срок выполнения: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}`
                           }
                         >
-                          {isNodeOverdue(node) && !node.completed ? (
+                          {isNodeOverdue(node, nodes) && !node.completed ? (
                             <AlertTriangle className="w-2.5 h-2.5 text-rose-500 animate-bounce" />
                           ) : (
                             <Calendar className="w-2.5 h-2.5 text-indigo-500 dark:text-indigo-400" />
@@ -4724,28 +4725,40 @@ const pInfo = getPriorityInfo(node.priority);
                                       e.stopPropagation();
                                       onSelectNode(subtask.id, e);
                                     }}
-                                    className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850/40 flex items-center gap-2 transition-all text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer"
+                                    className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850/40 flex items-center justify-between gap-2 transition-all text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer"
                                   >
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onUpdateNode({
-                                          ...subtask,
-                                          completed: !subtask.completed
-                                        });
-                                      }}
-                                      className="text-slate-505 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
-                                    >
-                                      {subtask.completed ? (
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
-                                      ) : (
-                                        <Circle className="w-3.5 h-3.5 text-slate-300 dark:text-slate-700" />
-                                      )}
-                                    </button>
-                                    <span className={`truncate leading-normal font-semibold text-[10px] ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
-                                      {subtask.text}
-                                    </span>
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onUpdateNode({
+                                            ...subtask,
+                                            completed: !subtask.completed
+                                          });
+                                        }}
+                                        className="text-slate-505 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
+                                      >
+                                        {subtask.completed ? (
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
+                                        ) : (
+                                          <Circle className="w-3.5 h-3.5 text-slate-300 dark:text-slate-700" />
+                                        )}
+                                      </button>
+                                      <span className={`truncate leading-normal font-semibold text-[10px] ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}>
+                                        {subtask.text}
+                                      </span>
+                                    </div>
+                                    {subtask.dueDate && (
+                                      <span className={`shrink-0 flex items-center gap-1 text-[8.5px] px-1.5 py-0.5 rounded-md border font-extrabold shadow-sm leading-none ${
+                                        isNodeOverdue(subtask, nodes) && !subtask.completed
+                                          ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-950/30'
+                                          : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200/50 dark:border-slate-750'
+                                      }`}>
+                                        <Clock className="w-2.5 h-2.5 text-slate-450 dark:text-slate-550" />
+                                        <span>{formatDisplayDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
+                                      </span>
+                                    )}
                                   </div>
                                 ))}
                               </motion.div>

@@ -992,9 +992,14 @@ export default function CalendarView({
                                     <Circle className="w-3.5 h-3.5 shrink-0" />
                                   )}
                                 </button>
-                                <span className={`font-semibold truncate max-w-[150px] ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-205'}`}>
-                                  {task.text}
-                                </span>
+                                <div className="flex flex-col min-w-0">
+                                  <span className={`font-semibold truncate max-w-[150px] ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-205'}`}>
+                                    {task.text}
+                                  </span>
+                                  <span className="text-[8px] font-bold text-indigo-600 dark:text-indigo-400 font-mono mt-0.5 flex items-center gap-0.5">
+                                    📅 {task.dueDate ? task.dueDate.split('-').reverse().join('.') : ''}
+                                  </span>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -1079,7 +1084,27 @@ export default function CalendarView({
                           <div className="flex-1 flex flex-wrap gap-2 items-center px-4 py-1.5 relative">
                             {/* Render hour tasks or inline box */}
                             {(() => {
-                              const hourTasks = scheduledTasks.filter(task => task.dueDate === currentDateStr && (task.dueTime === hour || task.startTime === hour));
+                              const hourTasks = scheduledTasks.filter(task => {
+                                if (task.dueDate !== currentDateStr) return false;
+                                const timeStr = task.dueTime || task.startTime;
+                                if (!timeStr) return false;
+                                
+                                const parts = timeStr.split(':');
+                                if (parts.length === 0) return false;
+                                const taskHourVal = parseInt(parts[0], 10);
+                                if (isNaN(taskHourVal)) return false;
+                                
+                                const rowHourVal = parseInt(hour.split(':')[0], 10);
+                                if (isNaN(rowHourVal)) return false;
+
+                                if (rowHourVal === 7) {
+                                  return taskHourVal <= 7;
+                                }
+                                if (rowHourVal === 22) {
+                                  return taskHourVal >= 22;
+                                }
+                                return taskHourVal === rowHourVal;
+                              });
                               if (hourTasks.length > 0) {
                                 return (
                                   <div className="flex flex-wrap gap-2 items-center flex-1" onClick={(e) => e.stopPropagation()}>
@@ -1100,7 +1125,7 @@ export default function CalendarView({
                                           e.stopPropagation();
                                           setDraggingTaskId(null);
                                         }}
-                                        className={`group/task border text-[11px] leading-snug py-1 px-2.5 rounded-xl flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative shadow-xs shrink-0 max-w-[240px] ${getPriorityColor(task.priority)} ${
+                                        className={`group/task border text-[11px] leading-snug py-1.5 px-2.5 rounded-xl flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative shadow-xs shrink-0 max-w-[240px] ${getPriorityColor(task.priority)} ${
                                           draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
                                         }`}
                                       >
@@ -1125,9 +1150,15 @@ export default function CalendarView({
                                             <Circle className="w-3.5 h-3.5 shrink-0" />
                                           )}
                                         </button>
-                                        <span className={`font-semibold truncate flex-1 ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-100'}`}>
-                                          {task.text}
-                                        </span>
+                                        <div className="flex flex-col min-w-0 flex-1">
+                                          <span className={`font-semibold truncate ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-100'}`}>
+                                            {task.text}
+                                          </span>
+                                          <span className="text-[8.5px] font-bold text-indigo-600 dark:text-indigo-400 font-mono mt-0.5 flex items-center gap-1">
+                                            <span>🕒 {task.dueTime || task.startTime}</span>
+                                            {task.dueDate && <span className="text-slate-400">({task.dueDate.split('-').reverse().slice(0, 2).join('.')})</span>}
+                                          </span>
+                                        </div>
                                         {/* Quick cross to remove hour */}
                                         <button
                                           onClick={(e) => {

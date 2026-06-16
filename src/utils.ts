@@ -230,13 +230,44 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
     current = current.map(node => {
       // Find direct children
       const children = current.filter(n => n.parentId === node.id);
+      let nextNode = { ...node };
+      let nodeChanged = false;
+
       if (children.length > 0) {
         // A node/container is marked completed if and only if all its sub-elements/children are completed
         const allCompleted = children.every(c => c.completed);
-        if (node.completed !== allCompleted) {
-          changed = true;
-          return { ...node, completed: allCompleted };
+        if (nextNode.completed !== allCompleted) {
+          nextNode.completed = allCompleted;
+          nodeChanged = true;
         }
+
+        // If a task has subtasks with date and time, set the latest date and time for it
+        const subtasksWithDates = children.filter(c => c.dueDate && !c.archived);
+        if (subtasksWithDates.length > 0) {
+          let latestSub = subtasksWithDates[0];
+          for (let i = 1; i < subtasksWithDates.length; i++) {
+            const curr = subtasksWithDates[i];
+            const latestStr = `${latestSub.dueDate}T${latestSub.dueTime || '00:00'}`;
+            const currStr = `${curr.dueDate}T${curr.dueTime || '00:00'}`;
+            if (currStr > latestStr) {
+              latestSub = curr;
+            }
+          }
+
+          if (nextNode.dueDate !== latestSub.dueDate) {
+            nextNode.dueDate = latestSub.dueDate;
+            nodeChanged = true;
+          }
+          if (nextNode.dueTime !== latestSub.dueTime) {
+            nextNode.dueTime = latestSub.dueTime;
+            nodeChanged = true;
+          }
+        }
+      }
+
+      if (nodeChanged) {
+        changed = true;
+        return nextNode;
       }
       return node;
     });
@@ -361,25 +392,42 @@ export function formatTotalPomoTime(totalSeconds: number): string {
 }
 
 // Helper to check if a task is overdue (not completed, has dueDate and date or time is in the past)
-export function isNodeOverdue(node: TaskNode): boolean {
+// Also checks if any subtask is overdue when allNodes is provided.
+export function isNodeOverdue(node: TaskNode, allNodes?: TaskNode[]): boolean {
   if (node.isContainer || node.completed || node.archived) return false;
-  if (!node.dueDate) return false;
 
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const currentDateStr = `${year}-${month}-${day}`;
+  const checkSingleOverdue = (targetNode: TaskNode): boolean => {
+    if (!targetNode.dueDate) return false;
 
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const currentTimeStr = `${hours}:${minutes}`;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const currentDateStr = `${year}-${month}-${day}`;
 
-  if (node.dueDate < currentDateStr) {
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const currentTimeStr = `${hours}:${minutes}`;
+
+    if (targetNode.dueDate < currentDateStr) {
+      return true;
+    }
+    if (targetNode.dueDate === currentDateStr && targetNode.dueTime) {
+      return targetNode.dueTime < currentTimeStr;
+    }
+
+    return false;
+  };
+
+  // If the node itself is overdue
+  if (checkSingleOverdue(node)) {
     return true;
   }
-  if (node.dueDate === currentDateStr && node.dueTime) {
-    return node.dueTime < currentTimeStr;
+
+  // If any subtask (descendant in mind map tree) is overdue
+  if (allNodes && allNodes.length > 0) {
+    const descendants = getDescendants(node.id, allNodes);
+    return descendants.some(desc => !desc.isContainer && !desc.completed && !desc.archived && checkSingleOverdue(desc));
   }
 
   return false;
