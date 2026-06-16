@@ -126,12 +126,14 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         pn.progress !== nn.progress ||
         pn.isFloating !== nn.isFloating ||
         pn.isContainer !== nn.isContainer ||
+        pn.isWorkflowRectangle !== nn.isWorkflowRectangle ||
         pn.width !== nn.width ||
         pn.height !== nn.height ||
         JSON.stringify(pn.files) !== JSON.stringify(nn.files) ||
         JSON.stringify(pn.tags) !== JSON.stringify(nn.tags) ||
         JSON.stringify(pn.history) !== JSON.stringify(nn.history) ||
-        JSON.stringify(pn.tagCategories) !== JSON.stringify(nn.tagCategories);
+        JSON.stringify(pn.tagCategories) !== JSON.stringify(nn.tagCategories) ||
+        JSON.stringify(pn.workflowConnections) !== JSON.stringify(nn.workflowConnections);
 
       if (changed) {
         return { ...nn, updatedAt: now };
@@ -294,11 +296,23 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         progress: n.progress !== undefined ? Math.round(Number(n.progress) || 0) : null,
         isFloating: !!n.isFloating,
         isContainer: !!n.isContainer,
+        isWorkflowRectangle: !!n.isWorkflowRectangle,
         width: n.width !== undefined ? Math.round(Number(n.width) || 0) : null,
         height: n.height !== undefined ? Math.round(Number(n.height) || 0) : null,
         history: (n.history || []).map(h => ({ id: h.id, text: h.text, notes: h.notes, timestamp: h.timestamp })),
         tagCategories: (n.tagCategories || []).map(t => ({ id: t.id, name: t.name, color: t.color, tags: [...(t.tags || [])].sort() })),
-        files: (n.files || []).map(f => ({ id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl }))
+        files: (n.files || []).map(f => ({ id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl })),
+        workflowConnections: (n.workflowConnections || [])
+          .map(wc => ({
+            id: wc.id,
+            toNodeId: wc.toNodeId,
+            fromSide: wc.fromSide,
+            toSide: wc.toSide,
+            text: wc.text || '',
+            bendOffsetX: wc.bendOffsetX !== undefined ? wc.bendOffsetX : null,
+            bendOffsetY: wc.bendOffsetY !== undefined ? wc.bendOffsetY : null
+          }))
+          .sort((a, b) => a.id.localeCompare(b.id))
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
     nodes.push({ projectId: pid, list: projectNodes });
