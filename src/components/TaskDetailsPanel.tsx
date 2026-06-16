@@ -151,11 +151,7 @@ export default function TaskDetailsPanel({
     }
   }, [node?.comments, activeTab]);
 
-  const handleCommentImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const file = files[0];
-    
+  const uploadCommentImage = async (file: File) => {
     // Set local preview
     const reader = new FileReader();
     reader.onload = () => {
@@ -172,6 +168,8 @@ export default function TaskDetailsPanel({
         const folderId = await getOrCreateGoogleDriveFolder(googleToken);
 
         // 2. Create the file metadata reference on Google Drive
+        const name = file.name || `Pasted_Image_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+        const mimeType = file.type || 'image/png';
         const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
           method: 'POST',
           headers: {
@@ -179,8 +177,8 @@ export default function TaskDetailsPanel({
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            name: file.name,
-            mimeType: file.type || 'image/png',
+            name,
+            mimeType,
             parents: folderId ? [folderId] : undefined
           })
         });
@@ -198,7 +196,7 @@ export default function TaskDetailsPanel({
           method: 'PATCH',
           headers: {
             'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': file.type || 'image/png'
+            'Content-Type': mimeType
           },
           body: file
         });
@@ -248,6 +246,29 @@ export default function TaskDetailsPanel({
       setCommentImagePreview(null);
     } finally {
       setIsUploadingCommentImage(false);
+    }
+  };
+
+  const handleCommentImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    await uploadCommentImage(file);
+  };
+
+  const handleCommentAreaPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf('image') !== -1) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          await uploadCommentImage(file);
+          break; // only upload first image
+        }
+      }
     }
   };
 
@@ -3024,7 +3045,8 @@ export default function TaskDetailsPanel({
                       handleSendComment();
                     }
                   }}
-                  placeholder="Напишите комментарий... (Enter)"
+                  onPaste={handleCommentAreaPaste}
+                  placeholder="Напишите комментарий... (Enter, Ctrl+V для вставки изображения)"
                   className="w-full bg-slate-50 dark:bg-slate-850/60 border border-slate-200/85 dark:border-slate-700 text-xs rounded-xl py-2 pl-3 pr-8 focus:outline-none focus:ring-1 focus:ring-indigo-505/50 focus:border-indigo-500 dark:text-slate-200 resize-none max-h-20 min-h-[38px]"
                   style={{ height: '38px' }}
                 />
