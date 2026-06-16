@@ -360,6 +360,45 @@ export function formatTotalPomoTime(totalSeconds: number): string {
   return parts.join(' ');
 }
 
+// Helper to check if a task is overdue (not completed, has dueDate and date or time is in the past)
+export function isNodeOverdue(node: TaskNode): boolean {
+  if (node.isContainer || node.completed || node.archived) return false;
+  if (!node.dueDate) return false;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const currentDateStr = `${year}-${month}-${day}`;
+
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const currentTimeStr = `${hours}:${minutes}`;
+
+  if (node.dueDate < currentDateStr) {
+    return true;
+  }
+  if (node.dueDate === currentDateStr && node.dueTime) {
+    return node.dueTime < currentTimeStr;
+  }
+
+  return false;
+}
+
+// Helper to check if a container contains any overdue task
+export function isContainerOverdue(containerNode: TaskNode, allNodes: TaskNode[]): boolean {
+  if (!containerNode.isContainer) return false;
+  return allNodes.some(n => 
+    !n.isContainer && 
+    !n.completed &&
+    !n.archived &&
+    isDescendantOrSelf(n.id, containerNode.id, allNodes) && 
+    n.id !== containerNode.id &&
+    isNodeOverdue(n)
+  );
+}
+
+
 
 
 

@@ -37,7 +37,7 @@ import {
   Link as LinkIcon
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
-import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
+import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface MindMapCanvasProps {
@@ -2335,8 +2335,7 @@ export default function MindMapCanvas({
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (filterDueDate === "overdue") {
-          const isOverdue = diffDays < 0 && !node.completed;
-          if (!isOverdue) return false;
+          if (!isNodeOverdue(node)) return false;
         } else if (filterDueDate === "today") {
           if (diffDays !== 0) return false;
         } else if (filterDueDate === "this_week") {
@@ -3849,6 +3848,7 @@ export default function MindMapCanvas({
             const isDraggingThisNode = draggingNodeId === node.id || (isLongPressDragging && potentialDragNodeIdRef.current === node.id);
             const matches = isNodeMatched(node);
             const isDimmed = isAnyFilterActive && !matches;
+            const isOverdueCont = isContainerOverdue(node, nodes);
 
             return (
               <div
@@ -3902,9 +3902,11 @@ export default function MindMapCanvas({
                     ? 'bg-emerald-50/10 dark:bg-emerald-950/10 border-emerald-500 ring-4 ring-emerald-500/30 scale-[1.015]'
                     : hoverTargetId === node.id
                       ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
-                      : isContainerSelected
-                        ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
-                        : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
+                      : isOverdueCont
+                        ? 'bg-white dark:bg-slate-900 border-rose-500 dark:border-rose-600/80 shadow-[0_0_15px_rgba(239,68,68,0.25)] ring-4 ring-rose-500/20'
+                        : isContainerSelected
+                          ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
+                          : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
                 } flex flex-col`}
                 onMouseDown={(e) => startDragNode(e, node)}
                 onClick={(e) => {
@@ -3936,9 +3938,11 @@ export default function MindMapCanvas({
                   }}
                 >
                   <div className={`flex items-center gap-1.5 px-3 py-1 font-sans font-extrabold text-[11px] uppercase tracking-wider whitespace-nowrap rounded-[5px] border cursor-grab active:cursor-grabbing select-none shadow-sm transition-all duration-150 ${
-                    isContainerSelected
-                      ? 'bg-amber-500 text-white border-amber-600 shadow-md'
-                      : 'bg-slate-100 dark:bg-slate-805 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-750'
+                    isOverdueCont
+                      ? 'bg-rose-500 text-white border-rose-600 shadow-md animate-pulse'
+                      : isContainerSelected
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-md'
+                        : 'bg-slate-100 dark:bg-slate-805 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-750'
                   }`}>
                     {editingNodeId === node.id ? (
                       <input
@@ -4008,7 +4012,7 @@ export default function MindMapCanvas({
                           cx="16"
                           cy="16"
                           r="13"
-                          className="text-amber-500 dark:text-amber-400 transition-all duration-300"
+                          className={`${isOverdueCont ? 'text-rose-500' : 'text-amber-500 dark:text-amber-400'} transition-all duration-300`}
                           strokeWidth="2.5"
                           strokeDasharray={2 * Math.PI * 13}
                           strokeDashoffset={2 * Math.PI * 13 * (1 - containerProgress / 100)}
@@ -4367,7 +4371,7 @@ const pInfo = getPriorityInfo(node.priority);
                         : isSelected || isMultiSelected
                           ? 'bg-white dark:bg-slate-900 border-indigo-650 dark:border-indigo-400 ring-4 ring-indigo-100 dark:ring-indigo-950/40 shadow-lg' 
                           : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-655 shadow-sm'
-              } ${node.completed ? 'opacity-85' : isOverdue(node.dueDate) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5' : ''}`}
+              } ${node.completed ? 'opacity-85' : isNodeOverdue(node) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5 animate-pulse' : ''}`}
               onMouseDown={(e) => startDragNode(e, node)}
               onDoubleClick={(e) => {
                 e.stopPropagation();
@@ -4552,7 +4556,7 @@ const pInfo = getPriorityInfo(node.priority);
                               ? isRoot
                                 ? 'bg-indigo-700/50 text-indigo-200 border-indigo-500/30'
                                 : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-505 border-slate-200 dark:border-slate-800'
-                              : isOverdue(node.dueDate)
+                              : isNodeOverdue(node)
                                 ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-900/60 animate-pulse font-extrabold shadow-[0_0_6px_rgba(244,63,94,0.3)]'
                                 : isRoot
                                   ? 'bg-indigo-500/20 text-indigo-100 border-indigo-400/30'
@@ -4560,18 +4564,18 @@ const pInfo = getPriorityInfo(node.priority);
                           }`}
                           title={
                             node.completed 
-                              ? `Срок выполнения: ${formatDisplayDate(node.dueDate)} (Выполнено)`
-                              : isOverdue(node.dueDate)
-                                ? `Внимание! Срок выполнения истек: ${formatDisplayDate(node.dueDate)}`
-                                : `Срок выполнения: ${formatDisplayDate(node.dueDate)}`
+                              ? `Срок выполнения: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Выполнено)`
+                              : isNodeOverdue(node)
+                                ? `Внимание! Срок выполнения истек: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}`
+                                : `Срок выполнения: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}`
                           }
                         >
-                          {isOverdue(node.dueDate) && !node.completed ? (
+                          {isNodeOverdue(node) && !node.completed ? (
                             <AlertTriangle className="w-2.5 h-2.5 text-rose-500 animate-bounce" />
                           ) : (
                             <Calendar className="w-2.5 h-2.5 text-indigo-500 dark:text-indigo-400" />
                           )}
-                          <span>{formatDisplayDate(node.dueDate)}</span>
+                          <span>{formatDisplayDate(node.dueDate)}{node.dueTime ? `, ${node.dueTime}` : ''}</span>
                         </span>
                       )}
 
