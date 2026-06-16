@@ -112,14 +112,26 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         pn.collapsed !== nn.collapsed ||
         pn.isCardCollapsed !== nn.isCardCollapsed ||
         pn.dueDate !== nn.dueDate ||
+        pn.dueTime !== nn.dueTime ||
+        pn.startDate !== nn.startDate ||
+        pn.startTime !== nn.startTime ||
+        pn.reminderDate !== nn.reminderDate ||
+        pn.reminderTime !== nn.reminderTime ||
+        pn.reminderMinutesBefore !== nn.reminderMinutesBefore ||
+        pn.reminderDismissed !== nn.reminderDismissed ||
+        pn.pomodoroTotalTime !== nn.pomodoroTotalTime ||
+        pn.pomodoroSessionsCount !== nn.pomodoroSessionsCount ||
+        pn.archived !== nn.archived ||
+        pn.externalLink !== nn.externalLink ||
         pn.progress !== nn.progress ||
         pn.isFloating !== nn.isFloating ||
         pn.isContainer !== nn.isContainer ||
         pn.width !== nn.width ||
         pn.height !== nn.height ||
         JSON.stringify(pn.files) !== JSON.stringify(nn.files) ||
-        JSON.stringify(pn.tags) !== JSON.stringify(nn.tags);
-//        JSON.stringify(pn.tags) !== JSON.stringify(nn.tags); // Note: I might have removed this inadvertently
+        JSON.stringify(pn.tags) !== JSON.stringify(nn.tags) ||
+        JSON.stringify(pn.history) !== JSON.stringify(nn.history) ||
+        JSON.stringify(pn.tagCategories) !== JSON.stringify(nn.tagCategories);
 
       if (changed) {
         return { ...nn, updatedAt: now };
@@ -267,11 +279,26 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         color: n.color || '',
         collapsed: !!n.collapsed,
         dueDate: n.dueDate || null,
+        dueTime: n.dueTime || null,
+        startDate: n.startDate || null,
+        startTime: n.startTime || null,
+        reminderDate: n.reminderDate || null,
+        reminderTime: n.reminderTime || null,
+        reminderMinutesBefore: n.reminderMinutesBefore !== undefined ? n.reminderMinutesBefore : null,
+        reminderDismissed: !!n.reminderDismissed,
+        pomodoroTotalTime: n.pomodoroTotalTime !== undefined ? n.pomodoroTotalTime : null,
+        pomodoroSessionsCount: n.pomodoroSessionsCount !== undefined ? n.pomodoroSessionsCount : null,
+        archived: !!n.archived,
+        externalLink: n.externalLink || '',
+        isCardCollapsed: !!n.isCardCollapsed,
         progress: n.progress !== undefined ? Math.round(Number(n.progress) || 0) : null,
         isFloating: !!n.isFloating,
         isContainer: !!n.isContainer,
         width: n.width !== undefined ? Math.round(Number(n.width) || 0) : null,
-        height: n.height !== undefined ? Math.round(Number(n.height) || 0) : null
+        height: n.height !== undefined ? Math.round(Number(n.height) || 0) : null,
+        history: (n.history || []).map(h => ({ id: h.id, text: h.text, notes: h.notes, timestamp: h.timestamp })),
+        tagCategories: (n.tagCategories || []).map(t => ({ id: t.id, name: t.name, color: t.color, tags: [...(t.tags || [])].sort() })),
+        files: (n.files || []).map(f => ({ id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl }))
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
     nodes.push({ projectId: pid, list: projectNodes });
