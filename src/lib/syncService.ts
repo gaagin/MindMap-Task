@@ -594,6 +594,32 @@ export async function syncWithGoogleSheets(
     const sheetTagCatsRows = valueRanges[3]?.values || [];
     const sheetDeletionsRows = valueRanges[4]?.values || [];
 
+    // Auto-upgrade existing Sheets without the AB Column (Comments (JSON))
+    if (sheetNodesRows.length > 0 && sheetNodesRows[0] && sheetNodesRows[0].length < 28) {
+      console.log('Upgrading existing spreadsheet with "Comments (JSON)" column');
+      try {
+        const updateHeadersUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Nodes!A1:AB1?valueInputOption=RAW`;
+        await fetch(updateHeadersUrl, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            range: 'Nodes!A1:AB1',
+            values: [[
+              'Node ID', 'Project ID', 'Text', 'X', 'Y', 'Parent ID', 'Priority', 'Tags', 'Notes',
+              'Completed', 'Color', 'Collapsed', 'Due Date', 'Progress', 'Is Floating', 'Is Container',
+              'Width', 'Height', 'Files (JSON)', 'Updated At',
+              'Due Time', 'Start Date', 'Start Time', 'Reminder Date', 'Reminder Time', 'Reminder Minutes Before', 'Reminder Dismissed', 'Comments (JSON)'
+            ]]
+          })
+        });
+      } catch (upgradeErr) {
+        console.error('Failed to auto-upgrade Google Sheets header column:', upgradeErr);
+      }
+    }
+
     // Skip header row
     const parseFolders = (rows: any[]): Folder[] => {
       if (rows.length < 2) return [];

@@ -831,7 +831,8 @@ export default function TaskDetailsPanel({
   const handlePropChange = <K extends keyof TaskNode>(key: K, value: TaskNode[K]) => {
     onUpdateNode({
       ...node,
-      [key]: value
+      [key]: value,
+      updatedAt: new Date().toISOString()
     });
   };
 

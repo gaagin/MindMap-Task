@@ -2272,7 +2272,13 @@ export default function App() {
 
     setState(prev => {
       const targetNode = currentNodes.find(n => n.id === updatedNode.id);
-      let updatedList = currentNodes.map(n => n.id === updatedNode.id ? updatedNode : n);
+      
+      const nodeWithTimeStamp = {
+        ...updatedNode,
+        updatedAt: new Date().toISOString()
+      };
+
+      let updatedList = currentNodes.map(n => n.id === updatedNode.id ? nodeWithTimeStamp : n);
       
       // If completed state was toggled from details panel, sync all descendants
       if (targetNode && targetNode.completed !== updatedNode.completed) {
