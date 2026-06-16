@@ -5224,20 +5224,44 @@ export default function MindMapCanvas({
                     e.stopPropagation();
                     setEditingNodeId(node.id);
                   }}
-                  className={`absolute group cursor-grab active:cursor-grabbing rounded-xl border-2 shadow-md transition-[background-color,border-color,box-shadow,transform] duration-150 ${
+                  className={`absolute group cursor-grab active:cursor-grabbing transition-all duration-150 ${
                     isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                   } ${
-                    isOpponentHovered
-                      ? 'bg-indigo-50/15 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500/25 scale-[1.025] shadow-lg'
-                      : isSelected
-                        ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-400 ring-4 ring-indigo-120 dark:ring-indigo-950/40 shadow-lg'
-                        : node.completed
-                          ? 'bg-emerald-50/10 dark:bg-emerald-950/10 border-emerald-500 shadow-sm'
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
+                    node.isWorkflowDiamond
+                      ? `bg-transparent border-0 shadow-none ${
+                          isOpponentHovered ? 'scale-[1.025] filter drop-shadow-lg' : isSelected ? 'filter drop-shadow-lg' : 'filter drop-shadow-md'
+                        }`
+                      : `rounded-xl border-2 shadow-md ${
+                          isOpponentHovered
+                            ? 'bg-indigo-50/15 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500/25 scale-[1.025] shadow-lg'
+                            : isSelected
+                              ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-400 ring-4 ring-indigo-120 dark:ring-indigo-950/40 shadow-lg'
+                              : node.completed
+                                ? 'bg-emerald-50/10 dark:bg-emerald-950/10 border-emerald-500 shadow-sm'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
+                        }`
                   }`}
                 >
+                  {/* SVG Shape background for Diamond shape */}
+                  {node.isWorkflowDiamond && (
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+                      <polygon
+                        points="50,2 98,50 50,98 2,50"
+                        className={`transition-all duration-150 ${
+                          isOpponentHovered
+                            ? 'fill-indigo-50/15 dark:fill-indigo-950/20 stroke-indigo-500 stroke-[3px]'
+                            : isSelected
+                              ? 'fill-white dark:fill-slate-900 stroke-indigo-600 dark:stroke-indigo-400 stroke-[3px]'
+                              : node.completed
+                                ? 'fill-emerald-50/10 dark:fill-emerald-950/10 stroke-emerald-500 stroke-[2px]'
+                                : 'fill-white dark:fill-slate-900 stroke-slate-200 dark:stroke-slate-800 group-hover:stroke-slate-400 dark:group-hover:stroke-slate-700 stroke-[2px]'
+                        }`}
+                      />
+                    </svg>
+                  )}
+
                   {/* Title and Completed State inside workflow step */}
-                  <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center select-text">
+                  <div className={`w-full h-full flex flex-col items-center justify-center text-center select-text relative z-10 ${node.isWorkflowDiamond ? 'px-6 py-3' : 'p-3'}`}>
                     {editingNodeId === node.id ? (
                       <input
                         type="text"
@@ -5283,7 +5307,25 @@ export default function MindMapCanvas({
                   </div>
 
                   {/* Micro Actions Overlay */}
-                  <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 z-30">
+                  <div className={`absolute opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 z-30 ${node.isWorkflowDiamond ? 'top-1 right-6' : 'top-1 right-1'}`}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdateNode({
+                          ...node,
+                          isWorkflowDiamond: !node.isWorkflowDiamond
+                        });
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="p-0.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-450 hover:text-indigo-500 shadow-xs cursor-pointer flex items-center justify-center"
+                      title={node.isWorkflowDiamond ? "Работать с прямоугольником" : "Работать с ромбом"}
+                    >
+                      {node.isWorkflowDiamond ? (
+                        <span className="text-[9px]">🟦</span>
+                      ) : (
+                        <span className="inline-block rotate-45 select-none text-[6px] border border-current w-1.5 h-1.5 font-bold"></span>
+                      )}
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

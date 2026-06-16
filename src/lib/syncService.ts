@@ -523,13 +523,13 @@ async function writeHeaders(spreadsheetId: string, accessToken: string) {
       values: [['Project ID', 'Name', 'Folder ID', 'Created At', 'Updated At']]
     },
     {
-      range: 'Nodes!A1:AD1',
+      range: 'Nodes!A1:AE1',
       values: [[
         'Node ID', 'Project ID', 'Text', 'X', 'Y', 'Parent ID', 'Priority', 'Tags', 'Notes',
         'Completed', 'Color', 'Collapsed', 'Due Date', 'Progress', 'Is Floating', 'Is Container',
         'Width', 'Height', 'Files (JSON)', 'Updated At',
         'Due Time', 'Start Date', 'Start Time', 'Reminder Date', 'Reminder Time', 'Reminder Minutes Before', 'Reminder Dismissed', 'Comments (JSON)',
-        'Is Workflow Rectangle', 'Workflow Connections (JSON)'
+        'Is Workflow Rectangle', 'Workflow Connections (JSON)', 'Is Workflow Diamond'
       ]]
     },
     {
@@ -607,13 +607,13 @@ export async function syncWithGoogleSheets(
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            range: 'Nodes!A1:AD1',
+            range: 'Nodes!A1:AE1',
             values: [[
               'Node ID', 'Project ID', 'Text', 'X', 'Y', 'Parent ID', 'Priority', 'Tags', 'Notes',
               'Completed', 'Color', 'Collapsed', 'Due Date', 'Progress', 'Is Floating', 'Is Container',
               'Width', 'Height', 'Files (JSON)', 'Updated At',
               'Due Time', 'Start Date', 'Start Time', 'Reminder Date', 'Reminder Time', 'Reminder Minutes Before', 'Reminder Dismissed', 'Comments (JSON)',
-              'Is Workflow Rectangle', 'Workflow Connections (JSON)'
+              'Is Workflow Rectangle', 'Workflow Connections (JSON)', 'Is Workflow Diamond'
             ]]
           })
         });
@@ -700,6 +700,7 @@ export async function syncWithGoogleSheets(
           reminderMinutesBefore: r[25] && r[25] !== 'NULL' ? Number(r[25]) : undefined,
           reminderDismissed: r[26] === 'TRUE' || r[26] === 'true',
           isWorkflowRectangle: r[28] === 'TRUE' || r[28] === 'true',
+          isWorkflowDiamond: r[30] === 'TRUE' || r[30] === 'true',
           workflowConnections: workflowConnections.length > 0 ? workflowConnections : undefined
         };
       });
@@ -1083,7 +1084,8 @@ export async function syncWithGoogleSheets(
         n.reminderDismissed ? 'TRUE' : 'FALSE',
         safeCellString(JSON.stringify(n.comments || [])),
         n.isWorkflowRectangle ? 'TRUE' : 'FALSE',
-        safeCellString(workflowConnectionsJson)
+        safeCellString(workflowConnectionsJson),
+        n.isWorkflowDiamond ? 'TRUE' : 'FALSE'
       ];
     });
 

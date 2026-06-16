@@ -127,6 +127,7 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         pn.isFloating !== nn.isFloating ||
         pn.isContainer !== nn.isContainer ||
         pn.isWorkflowRectangle !== nn.isWorkflowRectangle ||
+        pn.isWorkflowDiamond !== nn.isWorkflowDiamond ||
         pn.width !== nn.width ||
         pn.height !== nn.height ||
         JSON.stringify(pn.files) !== JSON.stringify(nn.files) ||
@@ -297,6 +298,7 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         isFloating: !!n.isFloating,
         isContainer: !!n.isContainer,
         isWorkflowRectangle: !!n.isWorkflowRectangle,
+        isWorkflowDiamond: !!n.isWorkflowDiamond,
         width: n.width !== undefined ? Math.round(Number(n.width) || 0) : null,
         height: n.height !== undefined ? Math.round(Number(n.height) || 0) : null,
         history: (n.history || []).map(h => ({ id: h.id, text: h.text, notes: h.notes, timestamp: h.timestamp })),
