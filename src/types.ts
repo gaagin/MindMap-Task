@@ -39,6 +39,8 @@ export interface WorkflowConnection {
   text?: string;
   bendX?: number;
   bendY?: number;
+  bendOffsetX?: number;
+  bendOffsetY?: number;
 }
 
 export interface TaskNode {

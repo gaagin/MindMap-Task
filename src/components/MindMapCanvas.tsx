@@ -97,56 +97,8 @@ function getFlowchartPath(
   x1: number, y1: number, side1: string,
   x2: number, y2: number, side2: string
 ): string {
-  const getOffset = (side: string) => {
-    switch (side) {
-      case 'top': return { x: 0, y: -24 };
-      case 'bottom': return { x: 0, y: 24 };
-      case 'left': return { x: -24, y: 0 };
-      case 'right': return { x: 24, y: 0 };
-      default: return { x: 0, y: 0 };
-    }
-  };
-
-  const off1 = getOffset(side1);
-  const off2 = getOffset(side2);
-
-  const start_stub_x = x1 + off1.x;
-  const start_stub_y = y1 + off1.y;
-  const end_stub_x = x2 + off2.x;
-  const end_stub_y = y2 + off2.y;
-
-  const points: { x: number; y: number }[] = [];
-  points.push({ x: x1, y: y1 });
-  points.push({ x: start_stub_x, y: start_stub_y });
-
-  if (side1 === 'left' || side1 === 'right') {
-    if (side2 === 'top' || side2 === 'bottom') {
-      points.push({ x: start_stub_x, y: end_stub_y });
-    } else {
-      const midX = (start_stub_x + end_stub_x) / 2;
-      points.push({ x: midX, y: start_stub_y });
-      points.push({ x: midX, y: end_stub_y });
-    }
-  } else {
-    if (side2 === 'left' || side2 === 'right') {
-      points.push({ x: end_stub_x, y: start_stub_y });
-    } else {
-      const midY = (start_stub_y + end_stub_y) / 2;
-      points.push({ x: start_stub_x, y: midY });
-      points.push({ x: end_stub_x, y: midY });
-    }
-  }
-
-  points.push({ x: end_stub_x, y: end_stub_y });
-  points.push({ x: x2, y: y2 });
-
-  let path = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    if (points[i].x !== points[i - 1].x || points[i].y !== points[i - 1].y) {
-      path += ` L ${points[i].x} ${points[i].y}`;
-    }
-  }
-  return path;
+  const mid = getOrthogonalMidpoint(x1, y1, side1, x2, y2, side2);
+  return getCustomWorkflowPath(x1, y1, side1, mid.x, mid.y, x2, y2, side2);
 }
 
 function getCustomWorkflowPath(
@@ -154,56 +106,66 @@ function getCustomWorkflowPath(
   bx: number, by: number,
   x2: number, y2: number, side2: string
 ): string {
-  const getOffset = (side: string) => {
-    switch (side) {
-      case 'top': return { x: 0, y: -24 };
-      case 'bottom': return { x: 0, y: 24 };
-      case 'left': return { x: -24, y: 0 };
-      case 'right': return { x: 24, y: 0 };
-      default: return { x: 0, y: 0 };
-    }
-  };
-
-  const off1 = getOffset(side1);
-  const off2 = getOffset(side2);
-
-  const start_stub_x = x1 + off1.x;
-  const start_stub_y = y1 + off1.y;
-  const end_stub_x = x2 + off2.x;
-  const end_stub_y = y2 + off2.y;
+  const isHoriz1 = side1 === 'left' || side1 === 'right';
+  const isHoriz2 = side2 === 'left' || side2 === 'right';
 
   const points: { x: number; y: number }[] = [];
   points.push({ x: x1, y: y1 });
-  points.push({ x: start_stub_x, y: start_stub_y });
 
-  // Route orthogonally to (bx, by)
-  if (side1 === 'left' || side1 === 'right') {
-    points.push({ x: bx, y: start_stub_y });
+  if (isHoriz1 && !isHoriz2) {
+    // Perpendicular: Horiz start, vert end
+    points.push({ x: bx, y: y1 });
     points.push({ x: bx, y: by });
+    points.push({ x: x2, y: by });
+  } else if (!isHoriz1 && isHoriz2) {
+    // Perpendicular: Vert start, horiz end
+    points.push({ x: x1, y: by });
+    points.push({ x: bx, y: by });
+    points.push({ x: bx, y: y2 });
+  } else if (isHoriz1 && isHoriz2) {
+    // Parallel Horizontal
+    points.push({ x: bx, y: y1 });
+    points.push({ x: bx, y: y2 });
   } else {
-    points.push({ x: start_stub_x, y: by });
-    points.push({ x: bx, y: by });
+    // Parallel Vertical
+    points.push({ x: x1, y: by });
+    points.push({ x: x2, y: by });
   }
 
-  // Route orthogonally from (bx, by) to (end_stub_x, end_stub_y)
-  if (side2 === 'left' || side2 === 'right') {
-    points.push({ x: bx, y: end_stub_y });
-    points.push({ x: end_stub_x, y: end_stub_y });
-  } else {
-    points.push({ x: end_stub_x, y: by });
-    points.push({ x: end_stub_x, y: end_stub_y });
-  }
-
-  points.push({ x: end_stub_x, y: end_stub_y });
   points.push({ x: x2, y: y2 });
 
+  // Streamline and build SVG Path
   let path = `M ${points[0].x} ${points[0].y}`;
   for (let i = 1; i < points.length; i++) {
-    if (points[i].x !== points[i - 1].x || points[i].y !== points[i - 1].y) {
-      path += ` L ${points[i].x} ${points[i].y}`;
+    const prev = points[i - 1];
+    const curr = points[i];
+    if (curr.x !== prev.x || curr.y !== prev.y) {
+      path += ` L ${curr.x} ${curr.y}`;
     }
   }
   return path;
+}
+
+function getOrthogonalMidpoint(
+  x1: number, y1: number, side1: string,
+  x2: number, y2: number, side2: string
+) {
+  const isHoriz1 = side1 === 'left' || side1 === 'right';
+  const isHoriz2 = side2 === 'left' || side2 === 'right';
+
+  if (isHoriz1 && !isHoriz2) {
+    // Perpendicular: Horiz start, vert end: corner is at (x2, y1)
+    return { x: x2, y: y1 };
+  } else if (!isHoriz1 && isHoriz2) {
+    // Perpendicular: Vert start, horiz end: corner is at (x1, y2)
+    return { x: x1, y: y2 };
+  } else {
+    // Parallel/Same axis: standard center midpoint
+    return {
+      x: (x1 + x2) / 2,
+      y: (y1 + y2) / 2
+    };
+  }
 }
 
 function getBezierMidpoint(
@@ -491,8 +453,8 @@ export default function MindMapCanvas({
   const [draggingConn, setDraggingConn] = useState<{
     nodeId: string;
     connId: string;
-    startBendX: number;
-    startBendY: number;
+    startOffsetX: number;
+    startOffsetY: number;
   } | null>(null);
   const [localNodes, setLocalNodes] = useState<TaskNode[]>(incomingNodes);
 
@@ -2714,8 +2676,8 @@ export default function MindMapCanvas({
     if (draggingConn) {
       const deltaX = (e.clientX - dragStart.x) / zoom;
       const deltaY = (e.clientY - dragStart.y) / zoom;
-      const newBendX = Math.round(draggingConn.startBendX + deltaX);
-      const newBendY = Math.round(draggingConn.startBendY + deltaY);
+      const newOffsetX = Math.round(draggingConn.startOffsetX + deltaX);
+      const newOffsetY = Math.round(draggingConn.startOffsetY + deltaY);
 
       setLocalNodes(prev => {
         return prev.map(n => {
@@ -2724,8 +2686,8 @@ export default function MindMapCanvas({
               if (c.id === draggingConn.connId) {
                 return {
                   ...c,
-                  bendX: newBendX,
-                  bendY: newBendY
+                  bendOffsetX: newOffsetX,
+                  bendOffsetY: newOffsetY
                 };
               }
               return c;
@@ -3218,8 +3180,8 @@ export default function MindMapCanvas({
       const touch = e.touches[0];
       const deltaX = (touch.clientX - dragStart.x) / zoom;
       const deltaY = (touch.clientY - dragStart.y) / zoom;
-      const newBendX = Math.round(draggingConn.startBendX + deltaX);
-      const newBendY = Math.round(draggingConn.startBendY + deltaY);
+      const newOffsetX = Math.round(draggingConn.startOffsetX + deltaX);
+      const newOffsetY = Math.round(draggingConn.startOffsetY + deltaY);
 
       setLocalNodes(prev => {
         return prev.map(n => {
@@ -3228,8 +3190,8 @@ export default function MindMapCanvas({
               if (c.id === draggingConn.connId) {
                 return {
                   ...c,
-                  bendX: newBendX,
-                  bendY: newBendY
+                  bendOffsetX: newOffsetX,
+                  bendOffsetY: newOffsetY
                 };
               }
               return c;
@@ -4373,10 +4335,10 @@ export default function MindMapCanvas({
               const isSelected = selectedNodeId === node.id || selectedNodeId === target.id;
               
               // Compute dynamic bend midpoint
-              const defaultMid = getBezierMidpoint(x1, y1, conn.fromSide, x2, y2, conn.toSide);
+              const defaultMid = getOrthogonalMidpoint(x1, y1, conn.fromSide, x2, y2, conn.toSide);
               const mid = {
-                x: conn.bendX !== undefined ? conn.bendX : defaultMid.x,
-                y: conn.bendY !== undefined ? conn.bendY : defaultMid.y,
+                x: defaultMid.x + (conn.bendOffsetX !== undefined ? conn.bendOffsetX : 0),
+                y: defaultMid.y + (conn.bendOffsetY !== undefined ? conn.bendOffsetY : 0),
               };
 
               const pathD = getCustomWorkflowPath(x1, y1, conn.fromSide, mid.x, mid.y, x2, y2, conn.toSide);
@@ -4417,13 +4379,28 @@ export default function MindMapCanvas({
                     onMouseDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
+                      setLocalNodes(incomingNodes); // Pre-sync state to prevent jump
                       setDraggingConn({
                         nodeId: node.id,
                         connId: conn.id,
-                        startBendX: mid.x,
-                        startBendY: mid.y
+                        startOffsetX: conn.bendOffsetX || 0,
+                        startOffsetY: conn.bendOffsetY || 0
                       });
                       setDragStart({ x: e.clientX, y: e.clientY });
+                    }}
+                    onTouchStart={(e) => {
+                      if (e.touches.length !== 1) return;
+                      const touch = e.touches[0];
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setLocalNodes(incomingNodes); // Pre-sync state to prevent jump
+                      setDraggingConn({
+                        nodeId: node.id,
+                        connId: conn.id,
+                        startOffsetX: conn.bendOffsetX || 0,
+                        startOffsetY: conn.bendOffsetY || 0
+                      });
+                      setDragStart({ x: touch.clientX, y: touch.clientY });
                     }}
                     title="Перетащите, чтобы изменить изгиб линии"
                   />
