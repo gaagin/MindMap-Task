@@ -1861,39 +1861,6 @@ export default function TaskDetailsPanel({
           })()}
         </div>
 
-        {/* Shape control if it is a workflow node */}
-        {node.isWorkflowRectangle && (
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Форма элемента Workflow
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handlePropChange('isWorkflowDiamond', false)}
-                className={`py-2 px-3 text-center text-xs font-semibold rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  !node.isWorkflowDiamond
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-750 dark:bg-indigo-950/20 dark:text-indigo-400 border-2'
-                    : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <span>🟦</span> Прямоугольник
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePropChange('isWorkflowDiamond', true)}
-                className={`py-2 px-3 text-center text-xs font-semibold rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  node.isWorkflowDiamond
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-750 dark:bg-indigo-950/20 dark:text-indigo-400 border-2'
-                    : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <span className="inline-block rotate-45 select-none text-[8px] border-2 border-current w-2 h-2 mr-0.5"></span> Ромб
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Priority buttons */}
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
