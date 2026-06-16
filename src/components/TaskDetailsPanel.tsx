@@ -29,7 +29,9 @@ import {
   RotateCcw,
   Coffee,
   History,
-  Search
+  Search,
+  Send,
+  Image
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode } from '../utils';
@@ -127,6 +129,161 @@ export default function TaskDetailsPanel({
   const [isInsertingLink, setIsInsertingLink] = useState(false);
   const [linkSearchQuery, setLinkSearchQuery] = useState('');
   const notesTextareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  // Chat/Comments state variables
+  const [activeTab, setActiveTab] = useState<'details' | 'chat'>('details');
+  const [commentText, setCommentText] = useState('');
+  const [isUploadingCommentImage, setIsUploadingCommentImage] = useState(false);
+  const [commentImagePreview, setCommentImagePreview] = useState<string | null>(null);
+  const [uploadedCommentImageInfo, setUploadedCommentImageInfo] = useState<{
+    imageUrl?: string;
+    imageGoogleDriveId?: string;
+    imageWebViewLink?: string;
+  } | null>(null);
+  
+  const chatEndRef = React.useRef<HTMLDivElement>(null);
+  const commentImageInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Scroll to chat bottom
+  React.useEffect(() => {
+    if (activeTab === 'chat' && chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [node?.comments, activeTab]);
+
+  const handleCommentImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    
+    // Set local preview
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCommentImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    setFileError(null);
+    setIsUploadingCommentImage(true);
+
+    try {
+      if (googleToken) {
+        // 1. Get or create special folder on Google Drive
+        const folderId = await getOrCreateGoogleDriveFolder(googleToken);
+
+        // 2. Create the file metadata reference on Google Drive
+        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${googleToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: file.name,
+            mimeType: file.type || 'image/png',
+            parents: folderId ? [folderId] : undefined
+          })
+        });
+
+        if (!createRes.ok) {
+          const errText = await createRes.text();
+          throw new Error(`Не удалось создать метаданные на Диске: ${errText}`);
+        }
+
+        const createData = await createRes.json();
+        const driveFileId = createData.id;
+
+        // 3. Upload raw file body as media
+        const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${googleToken}`,
+            'Content-Type': file.type || 'image/png'
+          },
+          body: file
+        });
+
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text();
+          throw new Error(`Не удалось загрузить тело файла: ${errText}`);
+        }
+
+        // 4. Retrieve web links
+        const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
+          headers: {
+            'Authorization': `Bearer ${googleToken}`
+          }
+        });
+
+        if (!finalRes.ok) {
+          throw new Error('Не удалось получить ссылки на файл с Диска');
+        }
+
+        const finalData = await finalRes.json();
+        setUploadedCommentImageInfo({
+          imageUrl: finalData.webViewLink || finalData.webContentLink || '',
+          imageGoogleDriveId: driveFileId,
+          imageWebViewLink: finalData.webViewLink
+        });
+      } else {
+        const MAX_BYTES = 1024 * 1024; // 1MB limit for comments local image
+        if (file.size > MAX_BYTES) {
+          setFileError('Размер изображения для чата превышает 1 МБ. Войдите через Google для хранения без лимитов!');
+          setCommentImagePreview(null);
+          setIsUploadingCommentImage(false);
+          return;
+        }
+
+        const readerLocal = new FileReader();
+        readerLocal.onload = () => {
+          setUploadedCommentImageInfo({
+            imageUrl: readerLocal.result as string
+          });
+        };
+        readerLocal.readAsDataURL(file);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setFileError(`Не удалось загрузить картинку в чат: ${err.message || err}`);
+      setCommentImagePreview(null);
+    } finally {
+      setIsUploadingCommentImage(false);
+    }
+  };
+
+  const handleSendComment = () => {
+    if (!commentText.trim() && !uploadedCommentImageInfo?.imageUrl) return;
+
+    const user = auth.currentUser;
+    const commenterName = user?.displayName || user?.email || 'Пользователь';
+    const commenterPhoto = user?.photoURL || '';
+    const commenterUid = user?.uid || 'anonymous';
+
+    const newComment = {
+      id: generateId(),
+      userId: commenterUid,
+      userName: commenterName,
+      userPhoto: commenterPhoto,
+      text: commentText.trim(),
+      createdAt: new Date().toISOString(),
+      imageUrl: uploadedCommentImageInfo?.imageUrl,
+      imageGoogleDriveId: uploadedCommentImageInfo?.imageGoogleDriveId,
+      imageWebViewLink: uploadedCommentImageInfo?.imageWebViewLink
+    };
+
+    const updatedComments = node.comments ? [...node.comments, newComment] : [newComment];
+    handlePropChange('comments', updatedComments);
+
+    setCommentText('');
+    setCommentImagePreview(null);
+    setUploadedCommentImageInfo(null);
+  };
+
+  const handleDeleteComment = (commentId: string) => {
+    if (!node.comments) return;
+    const updated = node.comments.filter(c => c.id !== commentId);
+    handlePropChange('comments', updated);
+  };
 
   const handleInsertTaskLink = (targetId: string, targetText: string) => {
     const linkText = `[${targetText}](task:${targetId})`;
@@ -800,21 +957,36 @@ export default function TaskDetailsPanel({
       ...node, 
       [key]: val || undefined 
     };
+
+    if (key === 'startDate' && !val) {
+      updatedNode.startTime = undefined;
+    }
+
+    if (key === 'dueDate' && !val) {
+      updatedNode.dueTime = undefined;
+      updatedNode.reminderMinutesBefore = undefined;
+      updatedNode.reminderDate = undefined;
+      updatedNode.reminderTime = undefined;
+      updatedNode.reminderDismissed = undefined;
+    }
     
     if ((key === 'dueDate' || key === 'dueTime') && updatedNode.reminderMinutesBefore !== undefined) {
       const mBefore = updatedNode.reminderMinutesBefore;
-      const dueDateStr = updatedNode.dueDate || new Date().toISOString().split('T')[0];
-      const dueTimeStr = updatedNode.dueTime || '12:00';
-      try {
-        const dueDateTime = new Date(`${dueDateStr}T${dueTimeStr}`);
-        if (!isNaN(dueDateTime.getTime())) {
-          const reminderDateTime = new Date(dueDateTime.getTime() - mBefore * 60 * 1000);
-          updatedNode.reminderDate = reminderDateTime.toISOString().split('T')[0];
-          updatedNode.reminderTime = reminderDateTime.toTimeString().split(' ')[0].substring(0, 5);
-          updatedNode.reminderDismissed = false;
+      // Only recalculate reminder if dueDate exists
+      if (updatedNode.dueDate) {
+        const dueDateStr = updatedNode.dueDate || new Date().toISOString().split('T')[0];
+        const dueTimeStr = updatedNode.dueTime || '12:00';
+        try {
+          const dueDateTime = new Date(`${dueDateStr}T${dueTimeStr}`);
+          if (!isNaN(dueDateTime.getTime())) {
+            const reminderDateTime = new Date(dueDateTime.getTime() - mBefore * 60 * 1000);
+            updatedNode.reminderDate = reminderDateTime.toISOString().split('T')[0];
+            updatedNode.reminderTime = reminderDateTime.toTimeString().split(' ')[0].substring(0, 5);
+            updatedNode.reminderDismissed = false;
+          }
+        } catch (e) {
+          console.error(e);
         }
-      } catch (e) {
-        console.error(e);
       }
     }
 
@@ -1063,7 +1235,41 @@ export default function TaskDetailsPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+      {/* Tab Switcher */}
+      <div className="flex border-b border-slate-150/80 dark:border-slate-805 bg-slate-50/50 dark:bg-slate-950/20 p-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab('details')}
+          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeTab === 'details'
+              ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs ring-1 ring-slate-205/50 dark:ring-slate-700/50'
+              : 'text-slate-505 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-702 dark:hover:text-slate-350'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          Параметры
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('chat')}
+          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 relative cursor-pointer ${
+            activeTab === 'chat'
+              ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs ring-1 ring-slate-205/50 dark:ring-slate-700/50'
+              : 'text-slate-505 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-720 dark:hover:text-slate-350'
+          }`}
+        >
+          <FileText className="w-3.5 h-3.5" />
+          Чат и Обсуждение
+          {node.comments && node.comments.length > 0 && (
+            <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-mono animate-pulse">
+              {node.comments.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'details' && (
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         
         {/* Name / Heading */}
         <div className="space-y-2">
@@ -2657,9 +2863,198 @@ export default function TaskDetailsPanel({
           )}
         </div>
       </div>
+      )}
+
+      {/* Elegant Chat/Discussion tab view */}
+      {activeTab === 'chat' && (
+        <div className="flex-1 flex flex-col min-h-0 bg-slate-50/25 dark:bg-slate-900/50">
+          {/* Messages Scroll Panel */}
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            {(node.comments || []).length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center p-6 text-slate-400 dark:text-slate-500 animate-fade-in">
+                <FileText className="w-10 h-10 mb-3 opacity-40 text-slate-400" />
+                <p className="text-xs font-bold uppercase tracking-wider mb-1">
+                  Обсуждение пусто
+                </p>
+                <p className="text-[11px] leading-relaxed max-w-[240px]">
+                  Задайте вопрос, оставьте примечание или прикрепите референс.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {(node.comments || []).map((comment) => (
+                  <div key={comment.id} className="flex gap-3 items-start group animate-fade-in">
+                    {comment.userPhoto ? (
+                      <img
+                        src={comment.userPhoto}
+                        alt={comment.userName}
+                        className="w-8 h-8 rounded-full border border-slate-200/60 dark:border-slate-800 bg-slate-100 shrink-0 object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-xs shrink-0 select-none border border-indigo-100/30">
+                        {comment.userName.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0 bg-white dark:bg-slate-850 border border-slate-150/65 dark:border-slate-800/80 rounded-2xl p-3 shadow-2xs">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 truncate">
+                          {comment.userName}
+                        </span>
+                        <span className="text-[9px] text-slate-400 dark:text-slate-550 font-mono shrink-0">
+                          {new Date(comment.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-700 dark:text-slate-300 break-words whitespace-pre-wrap leading-relaxed selection:bg-indigo-100 dark:selection:bg-indigo-950">
+                        {comment.text}
+                      </p>
+
+                      {comment.imageUrl && (
+                        <div className="mt-2.5">
+                          <div
+                            onClick={() => setLightboxImage({
+                              id: comment.id,
+                              name: 'Изображение из обсуждения',
+                              type: 'image/jpeg',
+                              size: 0,
+                              dataUrl: comment.imageUrl || '',
+                              googleDriveId: comment.imageGoogleDriveId,
+                              webViewLink: comment.imageWebViewLink,
+                            })}
+                            className="relative w-32 h-32 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-slate-200/60 dark:border-slate-755 cursor-pointer group/img shadow-2xs hover:scale-[1.02] hover:border-indigo-400/85 transition-all"
+                            title="Нажмите для увеличения"
+                          >
+                            <img
+                              src={comment.imageGoogleDriveId ? `https://drive.google.com/thumbnail?id=${comment.imageGoogleDriveId}&sz=w300` : comment.imageUrl}
+                              alt="Comment upload"
+                              className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="absolute inset-0 bg-black/15 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                              <Eye className="w-4 h-4 text-white drop-shadow-sm" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions: delete comment */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity self-center shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteComment(comment.id)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition cursor-pointer"
+                        title="Удалить комментарий"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Composer / Form Area */}
+          <div className="p-3 border-t border-slate-150 dark:border-slate-800 bg-white dark:bg-slate-900/80 space-y-2">
+            
+            {/* Image Preview inside composer if uploaded */}
+            {commentImagePreview && (
+              <div className="relative inline-block border border-slate-200 dark:border-slate-700 rounded-xl p-1 bg-slate-50 dark:bg-slate-850 shrink-0">
+                <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800">
+                  <img
+                    src={commentImagePreview}
+                    alt="Upload thumbnail"
+                    className="w-full h-full object-cover"
+                  />
+                  {isUploadingCommentImage && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCommentImagePreview(null);
+                    setUploadedCommentImageInfo(null);
+                  }}
+                  className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-md hover:scale-105 transition duration-200"
+                  title="Удалить картинку"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-end gap-2">
+              {/* Add image trigger */}
+              <button
+                type="button"
+                onClick={() => commentImageInputRef.current?.click()}
+                disabled={isUploadingCommentImage}
+                className="p-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-600 rounded-xl border border-slate-200/50 dark:border-slate-705/50 shadow-sm transition disabled:opacity-50 shrink-0 cursor-pointer h-10 w-10 flex items-center justify-center"
+                title="Прикрепить изображение"
+              >
+                {isUploadingCommentImage ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                ) : (
+                  <Image className="w-4 h-4" />
+                )}
+              </button>
+
+              <input
+                type="file"
+                ref={commentImageInputRef}
+                onChange={handleCommentImageSelected}
+                accept="image/*"
+                className="hidden"
+              />
+
+              {/* Text Input Row */}
+              <div className="flex-1 min-w-0 relative">
+                <textarea
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendComment();
+                    }
+                  }}
+                  placeholder="Напишите комментарий... (Enter)"
+                  className="w-full bg-slate-50 dark:bg-slate-850/60 border border-slate-200/85 dark:border-slate-700 text-xs rounded-xl py-2 pl-3 pr-8 focus:outline-none focus:ring-1 focus:ring-indigo-505/50 focus:border-indigo-500 dark:text-slate-200 resize-none max-h-20 min-h-[38px]"
+                  style={{ height: '38px' }}
+                />
+              </div>
+
+              {/* Send Button */}
+              <button
+                type="button"
+                onClick={handleSendComment}
+                disabled={isUploadingCommentImage || (!commentText.trim() && !uploadedCommentImageInfo?.imageUrl)}
+                className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 text-white disabled:text-slate-400 dark:disabled:text-slate-650 rounded-xl shadow-xs hover:shadow-md transition active:scale-95 disabled:active:scale-100 shrink-0 h-10 w-10 flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
+                title="Отправить"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+            {googleToken ? (
+              <p className="text-[9px] text-emerald-600 dark:text-emerald-400 pl-1 font-sans">
+                ✓ Картинки сохраняются на вашем Google Диске!
+              </p>
+            ) : (
+              <p className="text-[9px] text-amber-600 dark:text-amber-500 pl-1 font-sans">
+                До 1 МБ локально. Войдите через Google, чтобы хранить картинки в облаке на Google Диске!
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Dangerous/Root operations */}
-      {!isCentralRootNode ? (
+      {!isCentralRootNode && activeTab === 'details' ? (
         <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/60 space-y-2">
           {/* Archive / Restore Button */}
           <button

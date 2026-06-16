@@ -434,6 +434,7 @@ export default function MobileListView({
     onUpdateNode({
       ...node,
       dueDate: date || undefined,
+      dueTime: !date ? undefined : node.dueTime,
     });
   };
 

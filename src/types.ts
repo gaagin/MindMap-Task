@@ -19,6 +19,18 @@ export interface TaskVersion {
   description?: string; // Description of the change (auto/manual/restore etc.)
 }
 
+export interface Comment {
+  id: string;
+  userId: string;
+  userName: string;
+  userPhoto?: string;
+  text: string;
+  createdAt: string; // ISO string
+  imageUrl?: string; // Base64 data url or direct download/content link
+  imageGoogleDriveId?: string; // Google Drive file ID if uploaded there
+  imageWebViewLink?: string; // Optional Google Drive web view URL
+}
+
 export interface TaskNode {
   id: string;
   projectId: string;
@@ -31,6 +43,7 @@ export interface TaskNode {
   notes: string;
   completed: boolean;
   files: AttachmentFile[];
+  comments?: Comment[]; // Task chat feedback comments list
   color?: string; // Optional custom border/connector color for the node
   collapsed?: boolean; // Optional state to collapse/hide sub-branches
   isCardCollapsed?: boolean; // Optional state to collapse/fold only the task card visual details

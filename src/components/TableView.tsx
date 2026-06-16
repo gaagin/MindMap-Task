@@ -615,9 +615,11 @@ export default function TableView({
                             onSelectNode(task.id);
                           }}
                           onChange={(e) => {
+                            const newDueDate = e.target.value;
                             onUpdateNode({
                               ...task,
-                              dueDate: e.target.value
+                              dueDate: newDueDate || undefined,
+                              dueTime: !newDueDate ? undefined : task.dueTime
                             });
                           }}
                           className="text-[11px] bg-slate-55 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-201 dark:border-slate-705 px-1.5 py-0.5 rounded-lg focus:outline-none focus:border-indigo-500 max-w-[110px]"

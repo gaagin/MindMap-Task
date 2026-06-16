@@ -523,12 +523,12 @@ async function writeHeaders(spreadsheetId: string, accessToken: string) {
       values: [['Project ID', 'Name', 'Folder ID', 'Created At', 'Updated At']]
     },
     {
-      range: 'Nodes!A1:AA1',
+      range: 'Nodes!A1:AB1',
       values: [[
         'Node ID', 'Project ID', 'Text', 'X', 'Y', 'Parent ID', 'Priority', 'Tags', 'Notes',
         'Completed', 'Color', 'Collapsed', 'Due Date', 'Progress', 'Is Floating', 'Is Container',
         'Width', 'Height', 'Files (JSON)', 'Updated At',
-        'Due Time', 'Start Date', 'Start Time', 'Reminder Date', 'Reminder Time', 'Reminder Minutes Before', 'Reminder Dismissed'
+        'Due Time', 'Start Date', 'Start Time', 'Reminder Date', 'Reminder Time', 'Reminder Minutes Before', 'Reminder Dismissed', 'Comments (JSON)'
       ]]
     },
     {
@@ -574,7 +574,7 @@ export async function syncWithGoogleSheets(
     }
 
     // 1. Fetch values from Google Sheet
-    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchGet?ranges=Folders!A1:D&ranges=Projects!A1:E&ranges=Nodes!A1:AA&ranges=TagCategories!A1:E&ranges=Deletions!A1:C`;
+    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchGet?ranges=Folders!A1:D&ranges=Projects!A1:E&ranges=Nodes!A1:AB&ranges=TagCategories!A1:E&ranges=Deletions!A1:C`;
     const getRes = await fetch(getUrl, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -626,6 +626,13 @@ export async function syncWithGoogleSheets(
           // Fallback
         }
 
+        let comments: any[] = [];
+        try {
+          if (r[27]) comments = JSON.parse(r[27]);
+        } catch {
+          // Fallback
+        }
+
         return {
           id: r[0],
           projectId: r[1],
@@ -646,6 +653,7 @@ export async function syncWithGoogleSheets(
           width: r[16] ? Number(r[16]) : undefined,
           height: r[17] ? Number(r[17]) : undefined,
           files,
+          comments,
           updatedAt: r[19] || new Date().toISOString(),
           dueTime: r[20] === 'NULL' || !r[20] ? undefined : r[20],
           startDate: r[21] === 'NULL' || !r[21] ? undefined : r[21],
@@ -932,7 +940,7 @@ export async function syncWithGoogleSheets(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:AA', 'TagCategories!A2:E', 'Deletions!A2:C']
+        ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:AB', 'TagCategories!A2:E', 'Deletions!A2:C']
       })
     });
     if (!clearRes.ok) {
@@ -1024,7 +1032,8 @@ export async function syncWithGoogleSheets(
         n.reminderDate || 'NULL',
         n.reminderTime || 'NULL',
         n.reminderMinutesBefore !== undefined ? n.reminderMinutesBefore : 'NULL',
-        n.reminderDismissed ? 'TRUE' : 'FALSE'
+        n.reminderDismissed ? 'TRUE' : 'FALSE',
+        safeCellString(JSON.stringify(n.comments || []))
       ];
     });
 
@@ -1047,7 +1056,7 @@ export async function syncWithGoogleSheets(
     const dataToWrite = [];
     if (folderRows.length > 0) dataToWrite.push({ range: `Folders!A2:D${folderRows.length + 1}`, values: folderRows });
     if (projectRows.length > 0) dataToWrite.push({ range: `Projects!A2:E${projectRows.length + 1}`, values: projectRows });
-    if (nodeRows.length > 0) dataToWrite.push({ range: `Nodes!A2:AA${nodeRows.length + 1}`, values: nodeRows });
+    if (nodeRows.length > 0) dataToWrite.push({ range: `Nodes!A2:AB${nodeRows.length + 1}`, values: nodeRows });
     if (tagCatRows.length > 0) dataToWrite.push({ range: `TagCategories!A2:E${tagCatRows.length + 1}`, values: tagCatRows });
     if (deletionRows.length > 0) dataToWrite.push({ range: `Deletions!A2:C${deletionRows.length + 1}`, values: deletionRows });
 

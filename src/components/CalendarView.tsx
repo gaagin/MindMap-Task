@@ -1395,9 +1395,11 @@ export default function CalendarView({
                       value={task.dueDate || ''}
                       title="Назначить срок"
                       onChange={(e) => {
+                        const newDueDate = e.target.value;
                         onUpdateNode({
                           ...task,
-                          dueDate: e.target.value
+                          dueDate: newDueDate || undefined,
+                          dueTime: !newDueDate ? undefined : task.dueTime
                         });
                       }}
                       className="flex-1 text-[10px] bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded-lg focus:outline-none"
