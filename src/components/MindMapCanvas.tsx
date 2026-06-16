@@ -149,6 +149,63 @@ function getFlowchartPath(
   return path;
 }
 
+function getCustomWorkflowPath(
+  x1: number, y1: number, side1: string,
+  bx: number, by: number,
+  x2: number, y2: number, side2: string
+): string {
+  const getOffset = (side: string) => {
+    switch (side) {
+      case 'top': return { x: 0, y: -24 };
+      case 'bottom': return { x: 0, y: 24 };
+      case 'left': return { x: -24, y: 0 };
+      case 'right': return { x: 24, y: 0 };
+      default: return { x: 0, y: 0 };
+    }
+  };
+
+  const off1 = getOffset(side1);
+  const off2 = getOffset(side2);
+
+  const start_stub_x = x1 + off1.x;
+  const start_stub_y = y1 + off1.y;
+  const end_stub_x = x2 + off2.x;
+  const end_stub_y = y2 + off2.y;
+
+  const points: { x: number; y: number }[] = [];
+  points.push({ x: x1, y: y1 });
+  points.push({ x: start_stub_x, y: start_stub_y });
+
+  // Route orthogonally to (bx, by)
+  if (side1 === 'left' || side1 === 'right') {
+    points.push({ x: bx, y: start_stub_y });
+    points.push({ x: bx, y: by });
+  } else {
+    points.push({ x: start_stub_x, y: by });
+    points.push({ x: bx, y: by });
+  }
+
+  // Route orthogonally from (bx, by) to (end_stub_x, end_stub_y)
+  if (side2 === 'left' || side2 === 'right') {
+    points.push({ x: bx, y: end_stub_y });
+    points.push({ x: end_stub_x, y: end_stub_y });
+  } else {
+    points.push({ x: end_stub_x, y: by });
+    points.push({ x: end_stub_x, y: end_stub_y });
+  }
+
+  points.push({ x: end_stub_x, y: end_stub_y });
+  points.push({ x: x2, y: y2 });
+
+  let path = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    if (points[i].x !== points[i - 1].x || points[i].y !== points[i - 1].y) {
+      path += ` L ${points[i].x} ${points[i].y}`;
+    }
+  }
+  return path;
+}
+
 function getBezierMidpoint(
   x1: number, y1: number, side1: string,
   x2: number, y2: number, side2: string
@@ -431,13 +488,19 @@ export default function MindMapCanvas({
 
   // Drag states for dragging a specific card
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [draggingConn, setDraggingConn] = useState<{
+    nodeId: string;
+    connId: string;
+    startBendX: number;
+    startBendY: number;
+  } | null>(null);
   const [localNodes, setLocalNodes] = useState<TaskNode[]>(incomingNodes);
 
   useEffect(() => {
     setLocalNodes(incomingNodes);
   }, [incomingNodes]);
 
-  const nodes = draggingNodeId ? localNodes : incomingNodes;
+  const nodes = (draggingNodeId || draggingConn) ? localNodes : incomingNodes;
 
   const handleLocalUpdateCoordinates = (id: string, x: number, y: number) => {
     setLocalNodes(prev => {
@@ -2648,6 +2711,36 @@ export default function MindMapCanvas({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (draggingConn) {
+      const deltaX = (e.clientX - dragStart.x) / zoom;
+      const deltaY = (e.clientY - dragStart.y) / zoom;
+      const newBendX = Math.round(draggingConn.startBendX + deltaX);
+      const newBendY = Math.round(draggingConn.startBendY + deltaY);
+
+      setLocalNodes(prev => {
+        return prev.map(n => {
+          if (n.id === draggingConn.nodeId) {
+            const updatedConns = n.workflowConnections?.map(c => {
+              if (c.id === draggingConn.connId) {
+                return {
+                  ...c,
+                  bendX: newBendX,
+                  bendY: newBendY
+                };
+              }
+              return c;
+            }) || [];
+            return {
+              ...n,
+              workflowConnections: updatedConns
+            };
+          }
+          return n;
+        });
+      });
+      return;
+    }
+
     if (activeConnector) {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
@@ -2900,6 +2993,18 @@ export default function MindMapCanvas({
     setResizingNodeId(null);
     setResizeDirection(null);
 
+    if (draggingConn) {
+      const targetNode = nodes.find(n => n.id === draggingConn.nodeId);
+      if (targetNode) {
+        onUpdateNode({
+          ...targetNode,
+          workflowConnections: targetNode.workflowConnections
+        });
+      }
+      setDraggingConn(null);
+      return;
+    }
+
     if (activeConnector) {
       if (hoveredNodeId && hoveredSide) {
         const sourceNode = nodes.find(n => n.id === activeConnector.nodeId);
@@ -3109,6 +3214,38 @@ export default function MindMapCanvas({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    if (draggingConn && e.touches.length === 1) {
+      const touch = e.touches[0];
+      const deltaX = (touch.clientX - dragStart.x) / zoom;
+      const deltaY = (touch.clientY - dragStart.y) / zoom;
+      const newBendX = Math.round(draggingConn.startBendX + deltaX);
+      const newBendY = Math.round(draggingConn.startBendY + deltaY);
+
+      setLocalNodes(prev => {
+        return prev.map(n => {
+          if (n.id === draggingConn.nodeId) {
+            const updatedConns = n.workflowConnections?.map(c => {
+              if (c.id === draggingConn.connId) {
+                return {
+                  ...c,
+                  bendX: newBendX,
+                  bendY: newBendY
+                };
+              }
+              return c;
+            }) || [];
+            return {
+              ...n,
+              workflowConnections: updatedConns
+            };
+          }
+          return n;
+        });
+      });
+      e.preventDefault();
+      return;
+    }
+
     if (e.touches.length === 2) {
       if (pinchStartDistRef.current !== null) {
         const t1 = e.touches[0];
@@ -3352,6 +3489,19 @@ export default function MindMapCanvas({
   const handleTouchEnd = (e: React.TouchEvent) => {
     setResizingNodeId(null);
     setResizeDirection(null);
+
+    if (draggingConn) {
+      const targetNode = nodes.find(n => n.id === draggingConn.nodeId);
+      if (targetNode) {
+        onUpdateNode({
+          ...targetNode,
+          workflowConnections: targetNode.workflowConnections
+        });
+      }
+      setDraggingConn(null);
+      return;
+    }
+
     // If fewer than 2 touches, clean up the pinch distance tracker
     if (e.touches.length < 2) {
       pinchStartDistRef.current = null;
@@ -4222,15 +4372,21 @@ export default function MindMapCanvas({
               const pathColor = node.color || '#6366f1'; // Indigo flowchart color
               const isSelected = selectedNodeId === node.id || selectedNodeId === target.id;
               
-              // Compute midpoint
-              const mid = getBezierMidpoint(x1, y1, conn.fromSide, x2, y2, conn.toSide);
+              // Compute dynamic bend midpoint
+              const defaultMid = getBezierMidpoint(x1, y1, conn.fromSide, x2, y2, conn.toSide);
+              const mid = {
+                x: conn.bendX !== undefined ? conn.bendX : defaultMid.x,
+                y: conn.bendY !== undefined ? conn.bendY : defaultMid.y,
+              };
+
+              const pathD = getCustomWorkflowPath(x1, y1, conn.fromSide, mid.x, mid.y, x2, y2, conn.toSide);
 
               return (
                 <g key={`flow-${node.id}-${conn.id}`} className="group/line" style={{ color: pathColor }}>
                   {/* Thick glow under selected path */}
                   {isSelected && (
                     <path
-                      d={getFlowchartPath(x1, y1, conn.fromSide, x2, y2, conn.toSide)}
+                      d={pathD}
                       fill="none"
                       stroke={pathColor}
                       strokeWidth={8}
@@ -4240,7 +4396,7 @@ export default function MindMapCanvas({
 
                   {/* Visual path line */}
                   <path
-                    d={getFlowchartPath(x1, y1, conn.fromSide, x2, y2, conn.toSide)}
+                    d={pathD}
                     fill="none"
                     stroke={pathColor}
                     strokeWidth={isSelected ? 3.5 : 2.5}
@@ -4248,10 +4404,34 @@ export default function MindMapCanvas({
                     className="transition-all duration-150"
                   />
 
+                  {/* Pull-to-bend drag handle */}
+                  <circle
+                    cx={mid.x}
+                    cy={mid.y}
+                    r={6}
+                    fill={pathColor}
+                    stroke="white"
+                    strokeWidth={1.5}
+                    className="cursor-move shadow pointer-events-auto hover:scale-130 transition-transform hover:fill-indigo-500 hover:stroke-white z-50"
+                    style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.3))' }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setDraggingConn({
+                        nodeId: node.id,
+                        connId: conn.id,
+                        startBendX: mid.x,
+                        startBendY: mid.y
+                      });
+                      setDragStart({ x: e.clientX, y: e.clientY });
+                    }}
+                    title="Перетащите, чтобы изменить изгиб линии"
+                  />
+
                   {/* Midpoint overlay controls (Label input & Delete button) */}
                   <foreignObject
                     x={mid.x - 55}
-                    y={mid.y - 14}
+                    y={mid.y - 34}
                     width={110}
                     height={28}
                     className="pointer-events-auto overflow-visible"

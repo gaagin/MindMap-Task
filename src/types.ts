@@ -37,6 +37,8 @@ export interface WorkflowConnection {
   toNodeId: string;
   toSide: 'top' | 'right' | 'bottom' | 'left';
   text?: string;
+  bendX?: number;
+  bendY?: number;
 }
 
 export interface TaskNode {
