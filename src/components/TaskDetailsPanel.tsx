@@ -80,6 +80,17 @@ export default function TaskDetailsPanel({
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Image Lightbox zoom and rotation states
+  const [lightboxImage, setLightboxImage] = useState<AttachmentFile | null>(null);
+  const [lightboxScale, setLightboxScale] = useState(1);
+  const [lightboxRotation, setLightboxRotation] = useState(0);
+
+  // Reset zoom/rotation when image changes
+  React.useEffect(() => {
+    setLightboxScale(1);
+    setLightboxRotation(0);
+  }, [lightboxImage?.id]);
+
   // Version history states
   const [originalText, setOriginalText] = useState('');
   const [originalNotes, setOriginalNotes] = useState('');
@@ -1015,7 +1026,8 @@ export default function TaskDetailsPanel({
   };
 
   return (
-    <aside className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out">
+    <>
+      <aside className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out">
       {/* Header */}
       <div className="h-16 px-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 uppercase tracking-wider font-sans flex items-center gap-2">
@@ -2562,17 +2574,38 @@ export default function TaskDetailsPanel({
                     key={file.id}
                     className="flex items-center justify-between p-2 bg-[#FAFBFD]/60 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs"
                   >
-                    <div className="flex items-center gap-2 min-w-0 pr-2">
+                    <div className="flex items-center gap-3 min-w-0 pr-2 flex-1">
                       {isImg ? (
-                        <FileImage className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                        <div 
+                          onClick={() => setLightboxImage(file)}
+                          className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-slate-200/50 dark:border-slate-700 cursor-pointer group shadow-sm hover:scale-105 active:scale-95 transition-all"
+                          title="Нажмите для предпросмотра"
+                        >
+                          <img 
+                            src={file.googleDriveId ? `https://drive.google.com/thumbnail?id=${file.googleDriveId}&sz=w150` : file.dataUrl} 
+                            alt={file.name} 
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Eye className="w-3.5 h-3.5 text-white drop-shadow-sm" />
+                          </div>
+                        </div>
                       ) : (
-                        <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                        <div className="w-12 h-12 rounded-lg bg-indigo-50/50 dark:bg-slate-800/50 flex items-center justify-center border border-slate-100/80 dark:border-slate-800 shrink-0">
+                          <FileText className="w-5 h-5 text-indigo-500" />
+                        </div>
                       )}
-                      <div className="min-w-0">
-                        <p className="text-slate-700 dark:text-slate-300 font-medium truncate" title={file.name}>
+                      
+                      <div className="min-w-0 flex-1">
+                        <p 
+                          onClick={isImg ? () => setLightboxImage(file) : undefined} 
+                          className={`text-slate-700 dark:text-slate-300 font-semibold truncate text-xs ${isImg ? 'hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer' : ''}`}
+                          title={file.name}
+                        >
                           {file.name}
                         </p>
-                        <p className="text-[10px] text-slate-450 flex items-center gap-1">
+                        <p className="text-[10px] text-slate-450 dark:text-slate-500 flex items-center gap-1.5 mt-0.5">
                           <span>{formatFileSize(file.size)}</span>
                           {isCloud && (
                             <span className="font-extrabold text-[8px] bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded px-1 py-0.2 select-none uppercase tracking-wide">
@@ -2677,5 +2710,93 @@ export default function TaskDetailsPanel({
         </div>
       )}
     </aside>
+
+    {/* Elegant Attachment Image Lightbox Modal */}
+    {lightboxImage && (
+      <div className="fixed inset-0 bg-slate-950/90 z-[100] flex flex-col items-center justify-center select-none" onClick={() => setLightboxImage(null)}>
+        {/* Lightbox Header */}
+        <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-black/85 to-transparent px-6 flex items-center justify-between text-white z-10" onClick={e => e.stopPropagation()}>
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate max-w-[200px] sm:max-w-md">{lightboxImage.name}</p>
+            <p className="text-[10px] text-slate-300 font-mono mt-0.5">
+              {formatFileSize(lightboxImage.size)} • {lightboxImage.type}
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Zoom Out Button */}
+            <button
+              type="button"
+              onClick={() => setLightboxScale(prev => Math.max(0.5, prev - 0.25))}
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 hover:text-indigo-400 transition cursor-pointer font-bold text-xs shrink-0 w-8 h-8 flex items-center justify-center"
+              title="Уменьшить"
+            >
+              -
+            </button>
+
+            {/* Zoom In Button */}
+            <button
+              type="button"
+              onClick={() => setLightboxScale(prev => Math.min(3, prev + 0.25))}
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 hover:text-indigo-400 transition cursor-pointer font-bold text-xs shrink-0 w-8 h-8 flex items-center justify-center"
+              title="Увеличить"
+            >
+              +
+            </button>
+
+            {/* Rotate Button */}
+            <button
+              type="button"
+              onClick={() => setLightboxRotation(prev => (prev + 90) % 360)}
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 hover:text-indigo-400 transition cursor-pointer shrink-0 w-8 h-8 flex items-center justify-center"
+              title="Повернуть"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+
+            {/* Download Button */}
+            <a
+              href={lightboxImage.webContentLink || lightboxImage.dataUrl}
+              target="_blank"
+              rel="noreferrer"
+              download={!lightboxImage.googleDriveId ? lightboxImage.name : undefined}
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 hover:text-indigo-400 transition shrink-0 w-8 h-8 flex items-center justify-center"
+              title="Скачать"
+            >
+              <Download className="w-4 h-4" />
+            </a>
+
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setLightboxImage(null)}
+              className="p-2 rounded-lg bg-white/10 hover:bg-rose-600 hover:text-white transition cursor-pointer shrink-0 w-8 h-8 flex items-center justify-center ml-1"
+              title="Закрыть"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Lightbox Body / Image Preview */}
+        <div className="flex-1 w-full h-full flex items-center justify-center p-4">
+          <div 
+            className="transition-transform duration-200 select-none max-w-[90%] max-h-[80vh]"
+            style={{
+              transform: `scale(${lightboxScale}) rotate(${lightboxRotation}deg)`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img 
+              src={lightboxImage.googleDriveId ? `https://drive.google.com/thumbnail?id=${lightboxImage.googleDriveId}&sz=w1000` : lightboxImage.dataUrl} 
+              alt={lightboxImage.name} 
+              className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10 cursor-grab active:cursor-grabbing"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

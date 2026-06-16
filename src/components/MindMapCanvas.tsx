@@ -942,11 +942,16 @@ export default function MindMapCanvas({
                         onClick={(e) => {
                           e.stopPropagation();
                           onSelectNode(child.id);
+                          onOpenDrawer();
                         }}
                         className="p-2 rounded-xl border border-slate-105 dark:border-slate-800/80 bg-white dark:bg-slate-900 shadow-xs flex flex-col gap-1.5 group/item cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-900 select-none transition-all hover:bg-slate-50/40 dark:hover:bg-slate-850/40"
                       >
                         <span 
-                          onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectNode(child.id);
+                            onOpenDrawer();
+                          }}
                           className={`font-semibold leading-relaxed cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-420 dark:text-slate-500 font-normal' : 'text-slate-755 dark:text-slate-200 font-extrabold'}`}
                         >
                           {child.text}
@@ -5329,19 +5334,33 @@ const pInfo = getPriorityInfo(node.priority);
                   )}
 
                   {node.files && node.files.length > 0 ? (
-                    <div className="space-y-1.5 max-h-[140px] overflow-y-auto">
-                      {node.files.map((file) => (
-                        <div 
-                          key={file.id} 
-                          className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-750 text-xs text-slate-700 dark:text-slate-300"
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-                            <Paperclip className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                            <span className="truncate font-medium">{file.name}</span>
-                            <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 flex-shrink-0">
-                              ({formatFileSize(file.size)})
-                            </span>
-                          </div>
+                    <div className="space-y-1.5 max-h-[140px] overflow-y-auto font-sans">
+                      {node.files.map((file) => {
+                        const isImg = file.type && file.type.startsWith('image/');
+                        const imgUrl = file.googleDriveId ? `https://drive.google.com/thumbnail?id=${file.googleDriveId}&sz=w150` : file.dataUrl;
+                        return (
+                          <div 
+                            key={file.id} 
+                            className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-750 text-xs text-slate-700 dark:text-slate-300 gap-2"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
+                              {isImg ? (
+                                <div className="w-8 h-8 rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-slate-200/60 dark:border-slate-700 shadow-3xs">
+                                  <img 
+                                    src={imgUrl} 
+                                    alt="" 
+                                    className="w-full h-full object-cover" 
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                              ) : (
+                                <Paperclip className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                              )}
+                              <span className="truncate font-medium">{file.name}</span>
+                              <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 flex-shrink-0">
+                                ({formatFileSize(file.size)})
+                              </span>
+                            </div>
 
                           <div className="flex items-center gap-1">
                             {/* Download */}
@@ -5367,7 +5386,8 @@ const pInfo = getPriorityInfo(node.priority);
                             </button>
                           </div>
                         </div>
-                      ))}
+                      );
+                    })}
                     </div>
                   ) : (
                     <div className="p-3 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center text-xs text-slate-400 dark:text-slate-500 italic font-sans animate-fade-in">
