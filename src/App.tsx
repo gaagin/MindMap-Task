@@ -30,7 +30,9 @@ import {
   Upload,
   Download,
   Info,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Eye,
+  Check
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
@@ -507,7 +509,6 @@ export default function App() {
       handleToggleSelectNode(id);
     } else {
       setSelectedNodeId(id);
-      setIsDrawerOpen(true);
     }
   };
 
@@ -2565,10 +2566,73 @@ export default function App() {
                 )}
               </h2>
               {viewMode !== 'mobile-list' && (
-                <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-400 font-serif">
-                  <span>Задач в карте: {activeNodes.length}</span>
-                  <span className="text-slate-300 dark:text-slate-700">|</span>
-                  <span>Выполнено: {activeNodes.filter(n => n.completed).length}</span>
+                <div className="hidden sm:flex items-center gap-3.5 text-[11px] text-slate-500 dark:text-slate-400 font-sans select-none relative group z-30">
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 rounded-2xl border border-slate-150 dark:border-slate-800/60 shadow-xs cursor-pointer hover:border-indigo-200 dark:hover:border-indigo-950 transition-all duration-200">
+                    {/* Symmetrical SVG Pie/Donut Chart */}
+                    <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
+                      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 32 32">
+                        {/* Background total / pending circle */}
+                        <circle
+                          cx="16"
+                          cy="16"
+                          r="12"
+                          className="text-slate-205 dark:text-slate-800"
+                          strokeWidth="3.5"
+                          stroke="currentColor"
+                          fill="transparent"
+                        />
+                        {/* Completed tasks sector circle */}
+                        <circle
+                          cx="16"
+                          cy="16"
+                          r="12"
+                          className="text-emerald-500 dark:text-emerald-400 transition-all duration-500"
+                          strokeWidth="3.5"
+                          strokeDasharray={2 * Math.PI * 12}
+                          strokeDashoffset={2 * Math.PI * 12 * (1 - (activeNodes.length > 0 ? activeNodes.filter(n => n.completed).length / activeNodes.length : 0))}
+                          strokeLinecap="round"
+                          stroke="currentColor"
+                          fill="transparent"
+                        />
+                      </svg>
+                      <span className="absolute text-[8px] font-extrabold text-slate-700 dark:text-slate-300 font-mono">
+                        {activeNodes.length > 0 ? Math.round((activeNodes.filter(n => n.completed).length / activeNodes.length) * 100) : 0}%
+                      </span>
+                    </div>
+
+                    {/* Stats Texts */}
+                    <div className="flex flex-col text-[10px] leading-tight font-serif">
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400 dark:text-slate-500">Задач:</span>
+                        <span className="font-extrabold text-slate-700 dark:text-slate-300 font-mono">{activeNodes.length}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400 dark:text-slate-500">Выполнено:</span>
+                        <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">{activeNodes.filter(n => n.completed).length}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Elegant Tooltip Popover on Hover */}
+                  <div className="absolute top-12 left-0 z-50 hidden group-hover:block bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 p-3 rounded-xl shadow-2xl min-w-[180px] text-xs pointer-events-none select-none">
+                    <div className="font-bold text-slate-800 dark:text-slate-200 mb-1.5 border-b pb-1 border-slate-100 dark:border-slate-800">
+                      Статистика прогресса
+                    </div>
+                    <div className="space-y-1 font-mono text-[11px] text-slate-605 dark:text-slate-400">
+                      <div className="flex justify-between">
+                        <span>Всего задач:</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200">{activeNodes.length}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                        <span>Выполнено:</span>
+                        <span className="font-bold">{activeNodes.filter(n => n.completed).length} ({activeNodes.length > 0 ? Math.round((activeNodes.filter(n => n.completed).length / activeNodes.length) * 100) : 0}%)</span>
+                      </div>
+                      <div className="flex justify-between text-amber-500 dark:text-amber-400">
+                        <span>В процессе:</span>
+                        <span className="font-bold">{activeNodes.length - activeNodes.filter(n => n.completed).length} ({activeNodes.length > 0 ? Math.round(((activeNodes.length - activeNodes.filter(n => n.completed).length) / activeNodes.length) * 100) : 0}%)</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -3352,6 +3416,81 @@ export default function App() {
               </button>
 
             </div>
+          </div>
+        )}
+
+        {/* Single-Selection Floating Quick Actions Control Bar */}
+        {selectedNodeId !== null && !isDrawerOpen && selectedNode && selectedNodeIds.length === 0 && (
+          <div className="fixed bottom-24 left-4 right-4 md:bottom-6 md:left-1/2 md:-translate-x-1/2 z-45 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 p-3 px-4 rounded-2xl shadow-2xl max-w-full md:w-max min-w-[320px] md:max-w-2xl select-none animate-in fade-in slide-in-from-bottom-4 duration-205">
+            
+            {/* Left section: Info/Text */}
+            <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
+              <span className={`w-3 h-3 rounded-full shrink-0 ${selectedNode.completed ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              <div className="flex flex-col min-w-0">
+                <span className={`text-[10px] font-black tracking-wider uppercase ${selectedNode.completed ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                  {selectedNode.completed ? 'Выполнено' : 'Выбранная задача'}
+                </span>
+                <span className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 truncate max-w-[200px] sm:max-w-[300px]">
+                  {selectedNode.text || '(Без текста)'}
+                </span>
+              </div>
+            </div>
+
+            {/* Right section: Action Buttons */}
+            <div className="flex items-center gap-2.5 shrink-0">
+              {/* Properties Eye Action */}
+              <button
+                onClick={() => setIsDrawerOpen(true)}
+                className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-750 dark:text-indigo-300 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-900 rounded-xl transition-all cursor-pointer font-bold text-[11px] border border-indigo-150 dark:border-indigo-900/30 shadow-xs"
+                title="Открыть свойства и описание (Глаз)"
+              >
+                <Eye className="w-4 h-4 shrink-0" />
+                <span>Открыть свойства</span>
+              </button>
+
+              {/* Complete Toggle Action */}
+              <button
+                onClick={() => {
+                  handleToggleNodeCompleted(selectedNode.id);
+                }}
+                className={`flex items-center gap-1.5 py-1.5 px-3 rounded-xl transition-all cursor-pointer font-bold text-[11px] border ${
+                  selectedNode.completed
+                    ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border-emerald-200/40'
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-350 border-slate-200 dark:border-slate-700'
+                }`}
+                title={selectedNode.completed ? 'Снять выполнение' : 'Выполнить задачу'}
+              >
+                <Check className={`w-4 h-4 ${selectedNode.completed ? 'text-emerald-500' : 'text-slate-400'}`} />
+                <span>{selectedNode.completed ? 'Выполнено' : 'Выполнить'}</span>
+              </button>
+
+              {/* Delete Action */}
+              <button
+                onClick={() => {
+                  if (confirm('Вы уверены, что хотите удалить эту задачу?')) {
+                    handleDeleteNode(selectedNode.id);
+                  }
+                }}
+                className="p-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-450 border border-rose-150 dark:border-rose-900/30 rounded-xl transition-all cursor-pointer"
+                title="Удалить задачу"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+
+              <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 mx-1" />
+
+              {/* Close/Deselect Action */}
+              <button
+                onClick={() => {
+                  setSelectedNodeId(null);
+                }}
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 rounded-xl transition-all cursor-pointer"
+                title="Снять выделение"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
           </div>
         )}
 

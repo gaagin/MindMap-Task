@@ -4724,6 +4724,7 @@ const pInfo = getPriorityInfo(node.priority);
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       onSelectNode(subtask.id, e);
+                                      onOpenDrawer();
                                     }}
                                     className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850/40 flex items-center justify-between gap-2 transition-all text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer"
                                   >

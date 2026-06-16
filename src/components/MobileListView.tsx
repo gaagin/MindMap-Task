@@ -894,10 +894,20 @@ export default function MobileListView({
                       <div className="max-h-[160px] overflow-y-auto space-y-1 mb-2 bg-slate-55/40 dark:bg-slate-850 p-2 rounded-lg divide-y divide-slate-100 dark:divide-slate-800/40">
                         {allDirectChildren.map((child) => (
                           <div key={child.id} className="flex items-center justify-between py-1 first:pt-0 last:pb-0 gap-2 text-xs">
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <div 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectNode(child.id, e);
+                              }}
+                              className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/30 rounded duration-150 py-0.5 px-1"
+                              title="Открыть свойства подзадачи"
+                            >
                               <button
                                 type="button"
-                                onClick={() => handleToggleCompleted(child)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleCompleted(child);
+                                }}
                                 className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 transition-all ${
                                   child.completed
                                     ? 'bg-emerald-500 border-emerald-500 text-white'
@@ -939,17 +949,18 @@ export default function MobileListView({
                               )}
                             </div>
                             <button
-                              type="button"
-                              onClick={() => {
-                                if (confirmDeleteSubtaskId === child.id) {
-                                  onDeleteNode(child.id);
-                                  setConfirmDeleteSubtaskId(null);
-                                } else {
-                                  setConfirmDeleteSubtaskId(child.id);
-                                  setTimeout(() => setConfirmDeleteSubtaskId(curr => curr === child.id ? null : curr), 4000);
-                                }
-                              }}
-                              className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer"
+                               type="button"
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 if (confirmDeleteSubtaskId === child.id) {
+                                   onDeleteNode(child.id);
+                                   setConfirmDeleteSubtaskId(null);
+                                 } else {
+                                   setConfirmDeleteSubtaskId(child.id);
+                                   setTimeout(() => setConfirmDeleteSubtaskId(curr => curr === child.id ? null : curr), 4000);
+                                 }
+                               }}
+                               className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer shrink-0"
                             >
                               <Trash2 className="w-3 h-3" />
                             </button>

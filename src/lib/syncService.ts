@@ -523,11 +523,12 @@ async function writeHeaders(spreadsheetId: string, accessToken: string) {
       values: [['Project ID', 'Name', 'Folder ID', 'Created At', 'Updated At']]
     },
     {
-      range: 'Nodes!A1:T1',
+      range: 'Nodes!A1:AA1',
       values: [[
         'Node ID', 'Project ID', 'Text', 'X', 'Y', 'Parent ID', 'Priority', 'Tags', 'Notes',
         'Completed', 'Color', 'Collapsed', 'Due Date', 'Progress', 'Is Floating', 'Is Container',
-        'Width', 'Height', 'Files (JSON)', 'Updated At'
+        'Width', 'Height', 'Files (JSON)', 'Updated At',
+        'Due Time', 'Start Date', 'Start Time', 'Reminder Date', 'Reminder Time', 'Reminder Minutes Before', 'Reminder Dismissed'
       ]]
     },
     {
@@ -573,7 +574,7 @@ export async function syncWithGoogleSheets(
     }
 
     // 1. Fetch values from Google Sheet
-    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchGet?ranges=Folders!A1:D&ranges=Projects!A1:E&ranges=Nodes!A1:T&ranges=TagCategories!A1:E&ranges=Deletions!A1:C`;
+    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchGet?ranges=Folders!A1:D&ranges=Projects!A1:E&ranges=Nodes!A1:AA&ranges=TagCategories!A1:E&ranges=Deletions!A1:C`;
     const getRes = await fetch(getUrl, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -645,7 +646,14 @@ export async function syncWithGoogleSheets(
           width: r[16] ? Number(r[16]) : undefined,
           height: r[17] ? Number(r[17]) : undefined,
           files,
-          updatedAt: r[19] || new Date().toISOString()
+          updatedAt: r[19] || new Date().toISOString(),
+          dueTime: r[20] === 'NULL' || !r[20] ? undefined : r[20],
+          startDate: r[21] === 'NULL' || !r[21] ? undefined : r[21],
+          startTime: r[22] === 'NULL' || !r[22] ? undefined : r[22],
+          reminderDate: r[23] === 'NULL' || !r[23] ? undefined : r[23],
+          reminderTime: r[24] === 'NULL' || !r[24] ? undefined : r[24],
+          reminderMinutesBefore: r[25] && r[25] !== 'NULL' ? Number(r[25]) : undefined,
+          reminderDismissed: r[26] === 'TRUE' || r[26] === 'true'
         };
       });
     };
@@ -924,7 +932,7 @@ export async function syncWithGoogleSheets(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:T', 'TagCategories!A2:E', 'Deletions!A2:C']
+        ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:AA', 'TagCategories!A2:E', 'Deletions!A2:C']
       })
     });
     if (!clearRes.ok) {
@@ -1009,7 +1017,14 @@ export async function syncWithGoogleSheets(
         n.width !== undefined ? n.width : '',
         n.height !== undefined ? n.height : '',
         safeCellString(filesJson),
-        n.updatedAt || new Date().toISOString()
+        n.updatedAt || new Date().toISOString(),
+        n.dueTime || 'NULL',
+        n.startDate || 'NULL',
+        n.startTime || 'NULL',
+        n.reminderDate || 'NULL',
+        n.reminderTime || 'NULL',
+        n.reminderMinutesBefore !== undefined ? n.reminderMinutesBefore : 'NULL',
+        n.reminderDismissed ? 'TRUE' : 'FALSE'
       ];
     });
 
@@ -1032,7 +1047,7 @@ export async function syncWithGoogleSheets(
     const dataToWrite = [];
     if (folderRows.length > 0) dataToWrite.push({ range: `Folders!A2:D${folderRows.length + 1}`, values: folderRows });
     if (projectRows.length > 0) dataToWrite.push({ range: `Projects!A2:E${projectRows.length + 1}`, values: projectRows });
-    if (nodeRows.length > 0) dataToWrite.push({ range: `Nodes!A2:T${nodeRows.length + 1}`, values: nodeRows });
+    if (nodeRows.length > 0) dataToWrite.push({ range: `Nodes!A2:AA${nodeRows.length + 1}`, values: nodeRows });
     if (tagCatRows.length > 0) dataToWrite.push({ range: `TagCategories!A2:E${tagCatRows.length + 1}`, values: tagCatRows });
     if (deletionRows.length > 0) dataToWrite.push({ range: `Deletions!A2:C${deletionRows.length + 1}`, values: deletionRows });
 
