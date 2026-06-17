@@ -1397,7 +1397,7 @@ export default function App() {
         return; // Ignore other shortcuts (like Delete) while typing in inputs
       }
 
-      if (e.key === 'Delete' || e.key === 'Del') {
+      if (e.key === 'Delete' || e.key === 'Del' || e.key === 'Backspace') {
         if (selectedNodeId) {
           handleDeleteNode(selectedNodeId);
         }

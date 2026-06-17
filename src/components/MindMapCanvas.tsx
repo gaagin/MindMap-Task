@@ -5916,7 +5916,9 @@ export default function MindMapCanvas({
                   </div>
 
                   {/* Micro Actions Overlay */}
-                  <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 z-30">
+                  <div className={`absolute top-1 right-1 transition-opacity flex items-center gap-1 z-30 ${
+                    isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -5994,6 +5996,61 @@ export default function MindMapCanvas({
                     </>
                   )}
                 </div>
+
+                {/* Workflow Rectangle quick selection action overlay */}
+                {isSelected && draggingNodeId === null && potentialDragNodeIdRef.current === null && (
+                  <div
+                    data-drag-ignore
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute flex items-center gap-1.5 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-[0_8px_25px_-4px_rgba(99,102,241,0.25)] dark:shadow-[0_8px_25px_-4px_rgba(0,0,0,0.6)] z-50 pointer-events-auto whitespace-nowrap animate-fade-in"
+                    style={{
+                      left: node.x,
+                      top: node.y + h / 2 + 24,
+                      transform: `translateX(-50%) scale(${1 / zoom})`,
+                      transformOrigin: 'top center'
+                    }}
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdateNode({
+                          ...node,
+                          completed: !node.completed
+                        });
+                      }}
+                      title="Выполнено / В работе"
+                      className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      <CheckCircle2 className={`w-4 h-4 ${node.completed ? 'text-emerald-500' : ''}`} />
+                    </button>
+
+                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenDrawer();
+                      }}
+                      title="Открыть свойства"
+                      className="flex items-center justify-center w-8 h-8 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+
+                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteNode(node.id);
+                      }}
+                      title="Удалить прямоугольник Workflow"
+                      className="flex items-center justify-center w-8 h-8 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors animate-pulse"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </React.Fragment>
             );
           }

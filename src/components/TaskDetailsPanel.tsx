@@ -3120,7 +3120,7 @@ export default function TaskDetailsPanel({
             <span className="truncate">
               {confirmDelete 
                 ? 'Уверены?' 
-                : (node.isContainer ? 'Удалить вложенное' : 'Удалить текущую')}
+                : (node.isWorkflowRectangle ? 'Удалить workflow-шаг' : node.isContainer ? 'Удалить вложенное' : 'Удалить текущую')}
             </span>
           </button>
         </div>
