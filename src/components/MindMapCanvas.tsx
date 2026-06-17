@@ -3339,6 +3339,55 @@ export default function MindMapCanvas({
       return;
     }
 
+    if (activeConnector && e.touches.length === 1) {
+      const touch = e.touches[0];
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const cursorX = touch.clientX - rect.left;
+        const cursorY = touch.clientY - rect.top;
+        
+        const canvasX = (cursorX - centerX - panX) / zoom;
+        const canvasY = (cursorY - centerY - panY) / zoom;
+        setMousePos({ x: canvasX, y: canvasY });
+
+        // Touch hover/drag-over detection to find target node structure
+        const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+        const cardElement = elem?.closest('[data-node-id]');
+        if (cardElement) {
+          const nodeId = cardElement.getAttribute('data-node-id');
+          if (nodeId && nodeId !== activeConnector.nodeId) {
+            setHoveredNodeId(nodeId);
+            const hoveredNode = nodes.find(n => n.id === nodeId);
+            if (hoveredNode) {
+              const cardRect = cardElement.getBoundingClientRect();
+              const cX = cardRect.left + cardRect.width / 2;
+              const cY = cardRect.top + cardRect.height / 2;
+              const localTouchX = touch.clientX - cX;
+              const localTouchY = touch.clientY - cY;
+              
+              let side: 'top' | 'right' | 'bottom' | 'left' = 'left';
+              if (Math.abs(localTouchX / cardRect.width) > Math.abs(localTouchY / cardRect.height)) {
+                side = localTouchX > 0 ? 'right' : 'left';
+              } else {
+                side = localTouchY > 0 ? 'bottom' : 'top';
+              }
+              setHoveredSide(side);
+            }
+          } else {
+            setHoveredNodeId(null);
+            setHoveredSide(null);
+          }
+        } else {
+          setHoveredNodeId(null);
+          setHoveredSide(null);
+        }
+      }
+      e.preventDefault();
+      return;
+    }
+
     if (e.touches.length === 2) {
       if (pinchStartDistRef.current !== null) {
         const t1 = e.touches[0];
@@ -3395,6 +3444,67 @@ export default function MindMapCanvas({
 
       const deltaX = (touch.clientX - resizeStartPos.x) / zoom;
       const deltaY = (touch.clientY - resizeStartPos.y) / zoom;
+
+      if (node.isWorkflowRectangle) {
+        const w = 170;
+        const h = 70;
+        const startWidth = resizeStartSize.width;
+        const startHeight = resizeStartSize.height;
+        const startOffsetX = resizeStartCenter.x;
+        const startOffsetY = resizeStartCenter.y;
+
+        const startLeft = startOffsetX - startWidth / 2;
+        const startRight = startOffsetX + startWidth / 2;
+        const startTop = startOffsetY - startHeight / 2;
+        const startBottom = startOffsetY + startHeight / 2;
+
+        let newLeft = startLeft;
+        let newRight = startRight;
+        let newTop = startTop;
+        let newBottom = startBottom;
+
+        const dir = resizeDirection || 'se';
+
+        if (dir.includes('e')) {
+          newRight = Math.max(w / 2 + 10, startRight + deltaX);
+        } else if (dir.includes('w')) {
+          newLeft = Math.min(-w / 2 - 10, startLeft + deltaX);
+        }
+
+        if (dir.includes('s')) {
+          newBottom = Math.max(h / 2 + 10, startBottom + deltaY);
+        } else if (dir.includes('n')) {
+          newTop = Math.min(-h / 2 - 10, startTop + deltaY);
+        }
+
+        const newWidth = Math.max(w + 20, newRight - newLeft);
+        const newHeight = Math.max(h + 20, newBottom - newTop);
+
+        if (dir.includes('w')) {
+          newLeft = newRight - newWidth;
+        } else if (dir.includes('e')) {
+          newRight = newLeft + newWidth;
+        }
+
+        if (dir.includes('n')) {
+          newTop = newBottom - newHeight;
+        } else if (dir.includes('s')) {
+          newBottom = newTop + newHeight;
+        }
+
+        const newOffsetX = parseFloat((newLeft + newWidth / 2).toFixed(1));
+        const newOffsetY = parseFloat((newTop + newHeight / 2).toFixed(1));
+
+        onUpdateNode({
+          ...node,
+          zoneWidth: Math.round(newWidth),
+          zoneHeight: Math.round(newHeight),
+          zoneOffsetX: Math.round(newOffsetX),
+          zoneOffsetY: Math.round(newOffsetY)
+        });
+        e.preventDefault();
+        return;
+      }
 
       const startLeft = resizeStartCenter.x - resizeStartSize.width / 2;
       const startRight = resizeStartCenter.x + resizeStartSize.width / 2;
@@ -3582,6 +3692,42 @@ export default function MindMapCanvas({
   const handleTouchEnd = (e: React.TouchEvent) => {
     setResizingNodeId(null);
     setResizeDirection(null);
+
+    if (activeConnector) {
+      if (hoveredNodeId && hoveredSide) {
+        const sourceNode = nodes.find(n => n.id === activeConnector.nodeId);
+        if (sourceNode) {
+          const newConn = {
+            id: generateId(),
+            fromSide: activeConnector.side,
+            toNodeId: hoveredNodeId,
+            toSide: hoveredSide,
+            text: ''
+          };
+          const existingConnections = sourceNode.workflowConnections || [];
+          const isDuplicate = existingConnections.some(
+            c => c.toNodeId === hoveredNodeId && c.fromSide === activeConnector.side && c.toSide === hoveredSide
+          );
+          if (!isDuplicate) {
+            onUpdateNode({
+              ...sourceNode,
+              workflowConnections: [...existingConnections, newConn]
+            });
+          }
+        }
+      }
+      setActiveConnector(null);
+      setMousePos(null);
+      setHoveredNodeId(null);
+      setHoveredSide(null);
+      
+      pinchStartDistRef.current = null;
+      if (longPressTimeoutRef.current) {
+        clearTimeout(longPressTimeoutRef.current);
+        longPressTimeoutRef.current = null;
+      }
+      return;
+    }
 
     if (draggingConn) {
       const targetNode = nodes.find(n => n.id === draggingConn.nodeId);
@@ -3795,9 +3941,9 @@ export default function MindMapCanvas({
   };
 
   // Start drawing a connector from one of the side anchor dots
-  const startConnectorDrag = (e: React.MouseEvent, nodeId: string, side: 'top' | 'right' | 'bottom' | 'left') => {
+  const startConnectorDrag = (e: React.MouseEvent | React.TouchEvent, nodeId: string, side: 'top' | 'right' | 'bottom' | 'left') => {
     e.stopPropagation();
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
@@ -3864,6 +4010,44 @@ export default function MindMapCanvas({
       height: node.height || (node.isContainer ? 400 : 125)
     });
     setResizeStartCenter({ x: node.x, y: node.y });
+  };
+
+  // Start workflow step trigger zone resizing (dashed box)
+  const startZoneResize = (
+    e: React.MouseEvent,
+    node: TaskNode,
+    direction: string,
+    zoneW: number,
+    zoneH: number,
+    zoneOX: number,
+    zoneOY: number
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setResizingNodeId(node.id);
+    setResizeDirection(direction);
+    setResizeStartPos({ x: e.clientX, y: e.clientY });
+    setResizeStartSize({ width: zoneW, height: zoneH });
+    setResizeStartCenter({ x: zoneOX, y: zoneOY });
+  };
+
+  const startZoneResizeTouch = (
+    e: React.TouchEvent,
+    node: TaskNode,
+    direction: string,
+    zoneW: number,
+    zoneH: number,
+    zoneOX: number,
+    zoneOY: number
+  ) => {
+    if (e.touches.length === 0) return;
+    e.stopPropagation();
+    setResizingNodeId(node.id);
+    setResizeDirection(direction);
+    const touch = e.touches[0];
+    setResizeStartPos({ x: touch.clientX, y: touch.clientY });
+    setResizeStartSize({ width: zoneW, height: zoneH });
+    setResizeStartCenter({ x: zoneOX, y: zoneOY });
   };
 
   // Auto-fit container around its child nodes
@@ -5474,111 +5658,55 @@ export default function MindMapCanvas({
                         <>
                           {/* Top border resizer */}
                           <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setResizingNodeId(node.id);
-                              setResizeDirection('n');
-                              setResizeStartPos({ x: e.clientX, y: e.clientY });
-                              setResizeStartSize({ width: zoneW, height: zoneH });
-                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
-                            }}
+                            onMouseDown={(e) => startZoneResize(e, node, 'n', zoneW, zoneH, zoneOX, zoneOY)}
+                            onTouchStart={(e) => startZoneResizeTouch(e, node, 'n', zoneW, zoneH, zoneOX, zoneOY)}
                             className="absolute -top-1 left-2 right-2 h-2 cursor-ns-resize pointer-events-auto z-40 hover:bg-indigo-500/30 rounded transition-colors"
                             title="Изменить высоту зоны (вверх)"
                           />
                           {/* Bottom border resizer */}
                           <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setResizingNodeId(node.id);
-                              setResizeDirection('s');
-                              setResizeStartPos({ x: e.clientX, y: e.clientY });
-                              setResizeStartSize({ width: zoneW, height: zoneH });
-                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
-                            }}
+                            onMouseDown={(e) => startZoneResize(e, node, 's', zoneW, zoneH, zoneOX, zoneOY)}
+                            onTouchStart={(e) => startZoneResizeTouch(e, node, 's', zoneW, zoneH, zoneOX, zoneOY)}
                             className="absolute -bottom-1 left-2 right-2 h-2 cursor-ns-resize pointer-events-auto z-40 hover:bg-indigo-500/30 rounded transition-colors"
                             title="Изменить высоту зоны (вниз)"
                           />
                           {/* Left border resizer */}
                           <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setResizingNodeId(node.id);
-                              setResizeDirection('w');
-                              setResizeStartPos({ x: e.clientX, y: e.clientY });
-                              setResizeStartSize({ width: zoneW, height: zoneH });
-                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
-                            }}
+                            onMouseDown={(e) => startZoneResize(e, node, 'w', zoneW, zoneH, zoneOX, zoneOY)}
+                            onTouchStart={(e) => startZoneResizeTouch(e, node, 'w', zoneW, zoneH, zoneOX, zoneOY)}
                             className="absolute top-2 bottom-2 -left-1 w-2 cursor-ew-resize pointer-events-auto z-40 hover:bg-indigo-500/30 rounded transition-colors"
                             title="Изменить ширину зоны (влево)"
                           />
                           {/* Right border resizer */}
                           <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setResizingNodeId(node.id);
-                              setResizeDirection('e');
-                              setResizeStartPos({ x: e.clientX, y: e.clientY });
-                              setResizeStartSize({ width: zoneW, height: zoneH });
-                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
-                            }}
+                            onMouseDown={(e) => startZoneResize(e, node, 'e', zoneW, zoneH, zoneOX, zoneOY)}
+                            onTouchStart={(e) => startZoneResizeTouch(e, node, 'e', zoneW, zoneH, zoneOX, zoneOY)}
                             className="absolute top-2 bottom-2 -right-1 w-2 cursor-ew-resize pointer-events-auto z-40 hover:bg-indigo-500/30 rounded transition-colors"
                             title="Изменить ширину зоны (вправо)"
                           />
 
                           {/* Top-Left corner resizer */}
                           <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setResizingNodeId(node.id);
-                              setResizeDirection('nw');
-                              setResizeStartPos({ x: e.clientX, y: e.clientY });
-                              setResizeStartSize({ width: zoneW, height: zoneH });
-                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
-                            }}
+                            onMouseDown={(e) => startZoneResize(e, node, 'nw', zoneW, zoneH, zoneOX, zoneOY)}
+                            onTouchStart={(e) => startZoneResizeTouch(e, node, 'nw', zoneW, zoneH, zoneOX, zoneOY)}
                             className="absolute -top-1.5 -left-1.5 w-3 h-3 cursor-nwse-resize pointer-events-auto z-50 rounded-full bg-white dark:bg-slate-900 border border-indigo-505 shadow-sm transition-all hover:scale-125"
                           />
                           {/* Top-Right corner resizer */}
                           <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setResizingNodeId(node.id);
-                              setResizeDirection('ne');
-                              setResizeStartPos({ x: e.clientX, y: e.clientY });
-                              setResizeStartSize({ width: zoneW, height: zoneH });
-                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
-                            }}
+                            onMouseDown={(e) => startZoneResize(e, node, 'ne', zoneW, zoneH, zoneOX, zoneOY)}
+                            onTouchStart={(e) => startZoneResizeTouch(e, node, 'ne', zoneW, zoneH, zoneOX, zoneOY)}
                             className="absolute -top-1.5 -right-1.5 w-3 h-3 cursor-nesw-resize pointer-events-auto z-50 rounded-full bg-white dark:bg-slate-900 border border-indigo-505 shadow-sm transition-all hover:scale-125"
                           />
                           {/* Bottom-Left corner resizer */}
                           <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setResizingNodeId(node.id);
-                              setResizeDirection('sw');
-                              setResizeStartPos({ x: e.clientX, y: e.clientY });
-                              setResizeStartSize({ width: zoneW, height: zoneH });
-                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
-                            }}
+                            onMouseDown={(e) => startZoneResize(e, node, 'sw', zoneW, zoneH, zoneOX, zoneOY)}
+                            onTouchStart={(e) => startZoneResizeTouch(e, node, 'sw', zoneW, zoneH, zoneOX, zoneOY)}
                             className="absolute -bottom-1.5 -left-1.5 w-3 h-3 cursor-nesw-resize pointer-events-auto z-50 rounded-full bg-white dark:bg-slate-900 border border-indigo-505 shadow-sm transition-all hover:scale-125"
                           />
                           {/* Bottom-Right corner resizer */}
                           <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setResizingNodeId(node.id);
-                              setResizeDirection('se');
-                              setResizeStartPos({ x: e.clientX, y: e.clientY });
-                              setResizeStartSize({ width: zoneW, height: zoneH });
-                              setResizeStartCenter({ x: zoneOX, y: zoneOY });
-                            }}
+                            onMouseDown={(e) => startZoneResize(e, node, 'se', zoneW, zoneH, zoneOX, zoneOY)}
+                            onTouchStart={(e) => startZoneResizeTouch(e, node, 'se', zoneW, zoneH, zoneOX, zoneOY)}
                             className="absolute -bottom-1.5 -right-1.5 w-3 h-3 cursor-nwse-resize pointer-events-auto z-50 rounded-full bg-white dark:bg-slate-900 border border-indigo-505 shadow-sm transition-all hover:scale-125"
                           />
                         </>
@@ -5733,6 +5861,7 @@ export default function MindMapCanvas({
                       {/* Top Anchor Dot */}
                       <div
                         onMouseDown={(e) => startConnectorDrag(e, node.id, 'top')}
+                        onTouchStart={(e) => startConnectorDrag(e, node.id, 'top')}
                         className={`absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
                           isOpponentHovered && hoveredSide === 'top' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
                         }`}
@@ -5743,6 +5872,7 @@ export default function MindMapCanvas({
                       {/* Right Anchor Dot */}
                       <div
                         onMouseDown={(e) => startConnectorDrag(e, node.id, 'right')}
+                        onTouchStart={(e) => startConnectorDrag(e, node.id, 'right')}
                         className={`absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
                           isOpponentHovered && hoveredSide === 'right' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
                         }`}
@@ -5753,6 +5883,7 @@ export default function MindMapCanvas({
                       {/* Bottom Anchor Dot */}
                       <div
                         onMouseDown={(e) => startConnectorDrag(e, node.id, 'bottom')}
+                        onTouchStart={(e) => startConnectorDrag(e, node.id, 'bottom')}
                         className={`absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
                           isOpponentHovered && hoveredSide === 'bottom' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
                         }`}
@@ -5763,6 +5894,7 @@ export default function MindMapCanvas({
                       {/* Left Anchor Dot */}
                       <div
                         onMouseDown={(e) => startConnectorDrag(e, node.id, 'left')}
+                        onTouchStart={(e) => startConnectorDrag(e, node.id, 'left')}
                         className={`absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
                           isOpponentHovered && hoveredSide === 'left' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
                         }`}
