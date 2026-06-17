@@ -2845,6 +2845,49 @@ export default function MindMapCanvas({
         const canvasX = (cursorX - centerX - panX) / zoom;
         const canvasY = (cursorY - centerY - panY) / zoom;
         setMousePos({ x: canvasX, y: canvasY });
+
+        // Robust coordinate-based node and side detection for connecting arrows
+        let foundNodeId: string | null = null;
+        let foundSide: 'top' | 'right' | 'bottom' | 'left' | null = null;
+
+        for (const n of nodes) {
+          if (n.id === activeConnector.nodeId) continue;
+
+          let w = 210;
+          let h = 110;
+          if (n.isWorkflowRectangle) {
+            w = n.width || 170;
+            h = n.height || 70;
+          } else if (n.isContainer) {
+            w = n.width || 520;
+            h = n.height || 400;
+          } else {
+            w = n.width || 210;
+            h = n.height || 110;
+          }
+
+          // 30px boundary snap margin for cozy magnetic connections
+          const snapMargin = 30;
+          const left = n.x - w / 2 - snapMargin;
+          const right = n.x + w / 2 + snapMargin;
+          const top = n.y - h / 2 - snapMargin;
+          const bottom = n.y + h / 2 + snapMargin;
+
+          if (canvasX >= left && canvasX <= right && canvasY >= top && canvasY <= bottom) {
+            foundNodeId = n.id;
+            const dx = canvasX - n.x;
+            const dy = canvasY - n.y;
+            if (Math.abs(dx / w) > Math.abs(dy / h)) {
+              foundSide = dx > 0 ? 'right' : 'left';
+            } else {
+              foundSide = dy > 0 ? 'bottom' : 'top';
+            }
+            break;
+          }
+        }
+
+        setHoveredNodeId(foundNodeId);
+        setHoveredSide(foundSide);
       }
       return;
     }
@@ -3352,37 +3395,48 @@ export default function MindMapCanvas({
         const canvasY = (cursorY - centerY - panY) / zoom;
         setMousePos({ x: canvasX, y: canvasY });
 
-        // Touch hover/drag-over detection to find target node structure
-        const elem = document.elementFromPoint(touch.clientX, touch.clientY);
-        const cardElement = elem?.closest('[data-node-id]');
-        if (cardElement) {
-          const nodeId = cardElement.getAttribute('data-node-id');
-          if (nodeId && nodeId !== activeConnector.nodeId) {
-            setHoveredNodeId(nodeId);
-            const hoveredNode = nodes.find(n => n.id === nodeId);
-            if (hoveredNode) {
-              const cardRect = cardElement.getBoundingClientRect();
-              const cX = cardRect.left + cardRect.width / 2;
-              const cY = cardRect.top + cardRect.height / 2;
-              const localTouchX = touch.clientX - cX;
-              const localTouchY = touch.clientY - cY;
-              
-              let side: 'top' | 'right' | 'bottom' | 'left' = 'left';
-              if (Math.abs(localTouchX / cardRect.width) > Math.abs(localTouchY / cardRect.height)) {
-                side = localTouchX > 0 ? 'right' : 'left';
-              } else {
-                side = localTouchY > 0 ? 'bottom' : 'top';
-              }
-              setHoveredSide(side);
-            }
+        // Robust coordinate-based node and side detection for connecting arrows
+        let foundNodeId: string | null = null;
+        let foundSide: 'top' | 'right' | 'bottom' | 'left' | null = null;
+
+        for (const n of nodes) {
+          if (n.id === activeConnector.nodeId) continue;
+
+          let w = 210;
+          let h = 110;
+          if (n.isWorkflowRectangle) {
+            w = n.width || 170;
+            h = n.height || 70;
+          } else if (n.isContainer) {
+            w = n.width || 520;
+            h = n.height || 400;
           } else {
-            setHoveredNodeId(null);
-            setHoveredSide(null);
+            w = n.width || 210;
+            h = n.height || 110;
           }
-        } else {
-          setHoveredNodeId(null);
-          setHoveredSide(null);
+
+          // 30px boundary snap margin for cozy magnetic connections
+          const snapMargin = 30;
+          const left = n.x - w / 2 - snapMargin;
+          const right = n.x + w / 2 + snapMargin;
+          const top = n.y - h / 2 - snapMargin;
+          const bottom = n.y + h / 2 + snapMargin;
+
+          if (canvasX >= left && canvasX <= right && canvasY >= top && canvasY <= bottom) {
+            foundNodeId = n.id;
+            const dx = canvasX - n.x;
+            const dy = canvasY - n.y;
+            if (Math.abs(dx / w) > Math.abs(dy / h)) {
+              foundSide = dx > 0 ? 'right' : 'left';
+            } else {
+              foundSide = dy > 0 ? 'bottom' : 'top';
+            }
+            break;
+          }
         }
+
+        setHoveredNodeId(foundNodeId);
+        setHoveredSide(foundSide);
       }
       e.preventDefault();
       return;
