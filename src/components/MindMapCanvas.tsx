@@ -246,6 +246,7 @@ export default function MindMapCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [expandedCardSubtasks, setExpandedCardSubtasks] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -2798,6 +2799,7 @@ export default function MindMapCanvas({
     
     // Deselect selected node when clicking on an empty space
     onSelectNode(null);
+    setSelectedConnectionId(null);
 
     setIsPanning(true);
     setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
@@ -3035,7 +3037,7 @@ export default function MindMapCanvas({
       const newX = Math.round(nodeOffsetStart.x + deltaX);
       const newY = Math.round(nodeOffsetStart.y + deltaY);
 
-      if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+      if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) {
         setHasDraggedNode(true);
         didDragRef.current = true;
       }
@@ -3250,9 +3252,6 @@ export default function MindMapCanvas({
     }
 
     setDraggingNodeId(null);
-    if (hasDraggedNode) {
-      onSelectNode(null);
-    }
     setHasDraggedNode(false);
     
     // Defer resetting didDragRef to let onClick handlers process the value first
@@ -3345,6 +3344,7 @@ export default function MindMapCanvas({
 
     // Otherwise pan canvas
     onSelectNode(null);
+    setSelectedConnectionId(null);
     setIsPanning(true);
     setPanStart({ x: touch.clientX - panX, y: touch.clientY - panY });
   };
@@ -3652,7 +3652,7 @@ export default function MindMapCanvas({
       const newX = Math.round(nodeOffsetStart.x + deltaX);
       const newY = Math.round(nodeOffsetStart.y + deltaY);
 
-      if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+      if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) {
         setHasDraggedNode(true);
         didDragRef.current = true;
       }
@@ -3906,9 +3906,6 @@ export default function MindMapCanvas({
         if (navigator.vibrate) {
           try { navigator.vibrate([40, 40]); } catch (err) {}
         }
-      } else if (hasDraggedNode) {
-        // Only deselect if they actually moved and dragged the node
-        onSelectNode(null);
       }
       setIsPanning(false);
       setDraggingNodeId(null);
@@ -4890,7 +4887,8 @@ export default function MindMapCanvas({
               else if (conn.toSide === 'left') x2 -= w2 / 2;
 
               const pathColor = node.color || '#6366f1'; // Indigo flowchart color
-              const isSelected = selectedNodeId === node.id || selectedNodeId === target.id;
+              const isLineClicked = selectedConnectionId === `${node.id}-${conn.id}`;
+              const isSelected = selectedNodeId === node.id || selectedNodeId === target.id || isLineClicked;
               
               // Compute dynamic bend midpoint
               const defaultMid = getOrthogonalMidpoint(x1, y1, conn.fromSide, x2, y2, conn.toSide);
@@ -4914,6 +4912,19 @@ export default function MindMapCanvas({
                     />
                   )}
 
+                  {/* Invisible thicker path to make clicking the line easy */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={20}
+                    className="cursor-pointer pointer-events-auto"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedConnectionId(`${node.id}-${conn.id}`);
+                    }}
+                  />
+
                   {/* Visual path line */}
                   <path
                     d={pathD}
@@ -4921,7 +4932,11 @@ export default function MindMapCanvas({
                     stroke={pathColor}
                     strokeWidth={isSelected ? 3.5 : 2.5}
                     markerEnd="url(#flow-arrow)"
-                    className="transition-all duration-150"
+                    className="transition-all duration-150 cursor-pointer pointer-events-auto"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedConnectionId(`${node.id}-${conn.id}`);
+                    }}
                   />
 
                   {/* Pull-to-bend drag handle */}
@@ -4937,6 +4952,7 @@ export default function MindMapCanvas({
                     onMouseDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
+                      setSelectedConnectionId(`${node.id}-${conn.id}`);
                       setLocalNodes(incomingNodes); // Pre-sync state to prevent jump
                       setDraggingConn({
                         nodeId: node.id,
@@ -4951,6 +4967,7 @@ export default function MindMapCanvas({
                       const touch = e.touches[0];
                       e.stopPropagation();
                       e.preventDefault();
+                      setSelectedConnectionId(`${node.id}-${conn.id}`);
                       setLocalNodes(incomingNodes); // Pre-sync state to prevent jump
                       setDraggingConn({
                         nodeId: node.id,
@@ -4993,21 +5010,24 @@ export default function MindMapCanvas({
                       />
                       
                       {/* Delete connection button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const updatedConns = node.workflowConnections?.filter(c => c.id !== conn.id) || [];
-                          onUpdateNode({
-                            ...node,
-                            workflowConnections: updatedConns
-                          });
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="w-4 h-4 flex items-center justify-center rounded-full bg-rose-500 hover:bg-rose-600 text-white shadow-xs hover:scale-110 transition-transform cursor-pointer shrink-0"
-                        title="Удалить соединение"
-                      >
-                        <X className="w-2.5 h-2.5 stroke-[3]" />
-                      </button>
+                      {isLineClicked && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const updatedConns = node.workflowConnections?.filter(c => c.id !== conn.id) || [];
+                            onUpdateNode({
+                              ...node,
+                              workflowConnections: updatedConns
+                            });
+                            setSelectedConnectionId(null);
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className="w-4 h-4 flex items-center justify-center rounded-full bg-rose-500 hover:bg-rose-600 text-white shadow-xs hover:scale-110 transition-transform cursor-pointer shrink-0"
+                          title="Удалить соединение"
+                        >
+                          <X className="w-2.5 h-2.5 stroke-[3]" />
+                        </button>
+                      )}
                     </div>
                   </foreignObject>
                 </g>
@@ -5157,7 +5177,14 @@ export default function MindMapCanvas({
                           ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
                           : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
                 } flex flex-col`}
-                onMouseDown={(e) => startDragNode(e, node)}
+                onMouseDown={(e) => {
+                  const target = e.target as HTMLElement;
+                  if (target.tagName === 'INPUT' || target.closest('button')) return;
+                  if (editingNodeId) {
+                    (document.activeElement as HTMLElement)?.blur();
+                  }
+                  startDragNode(e, node);
+                }}
                 onClick={(e) => {
                   if (hasDraggedNode || didDragRef.current) return;
                   e.stopPropagation();
@@ -5183,6 +5210,11 @@ export default function MindMapCanvas({
                     setEditingNodeId(node.id);
                   }}
                   onMouseDown={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (target.tagName === 'INPUT' || target.closest('button')) return;
+                    if (editingNodeId) {
+                      (document.activeElement as HTMLElement)?.blur();
+                    }
                     startDragNode(e, node);
                   }}
                 >
@@ -5811,6 +5843,9 @@ export default function MindMapCanvas({
                   onMouseDown={(e) => {
                     const target = e.target as HTMLElement;
                     if (target.tagName === 'INPUT' || target.closest('button')) return;
+                    if (editingNodeId) {
+                      (document.activeElement as HTMLElement)?.blur();
+                    }
                     startDragNode(e, node);
                   }}
                   onClick={(e) => {
@@ -5835,7 +5870,7 @@ export default function MindMapCanvas({
                   }`}
                 >
                   {/* Title and Completed State inside workflow step */}
-                  <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center select-text">
+                  <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center select-none">
                     {editingNodeId === node.id ? (
                       <input
                         type="text"
@@ -6070,7 +6105,14 @@ export default function MindMapCanvas({
                           ? 'bg-white dark:bg-slate-900 border-indigo-650 dark:border-indigo-400 ring-4 ring-indigo-100 dark:ring-indigo-950/40 shadow-lg' 
                           : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:hover:border-slate-655 shadow-sm'
               } ${node.completed ? 'opacity-85' : isNodeOverdue(node, nodes) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5 animate-pulse' : ''}`}
-              onMouseDown={(e) => startDragNode(e, node)}
+              onMouseDown={(e) => {
+                const target = e.target as HTMLElement;
+                if (target.tagName === 'INPUT' || target.closest('button')) return;
+                if (editingNodeId) {
+                  (document.activeElement as HTMLElement)?.blur();
+                }
+                startDragNode(e, node);
+              }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 setEditingNodeId(node.id);
