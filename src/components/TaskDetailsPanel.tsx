@@ -3078,7 +3078,7 @@ export default function TaskDetailsPanel({
 
       {/* Dangerous/Root operations */}
       {!isCentralRootNode && activeTab === 'details' ? (
-        <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/60 space-y-2">
+        <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/60 flex items-stretch gap-2">
           {/* Archive / Restore Button */}
           <button
             onClick={() => {
@@ -3088,14 +3088,14 @@ export default function TaskDetailsPanel({
               });
               onClose();
             }}
-            className={`w-full flex items-center justify-center gap-2 py-2 border text-xs font-semibold rounded-lg transition-all duration-300 cursor-pointer ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-1 border text-xs font-semibold rounded-lg transition-all duration-300 cursor-pointer ${
               node.archived
                 ? "border-amber-200 dark:border-amber-950/40 text-amber-700 dark:text-amber-400 bg-amber-50/30 hover:bg-amber-100/50 dark:bg-amber-950/10 dark:hover:bg-amber-950/20"
                 : "border-indigo-200 dark:border-indigo-950/40 text-indigo-600 dark:text-indigo-400 bg-indigo-50/30 hover:bg-indigo-100/50 dark:bg-indigo-950/10 dark:hover:bg-indigo-950/20"
             }`}
           >
-            <Archive className="w-3.5 h-3.5" />
-            {node.archived ? "Восстановить из архива" : "Архивировать задачу и подзадачи"}
+            <Archive className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">{node.archived ? "Восстановить" : "В архив"}</span>
           </button>
 
           {/* Delete Button */}
@@ -3110,16 +3110,18 @@ export default function TaskDetailsPanel({
                 setTimeout(() => setConfirmDelete(false), 4000);
               }
             }}
-            className={`w-full flex items-center justify-center gap-2 py-2 border text-xs font-semibold rounded-lg transition-all duration-300 cursor-pointer ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-1 border text-xs font-semibold rounded-lg transition-all duration-300 cursor-pointer ${
               confirmDelete
                 ? "bg-rose-600 border-rose-600 text-white font-bold animate-pulse scale-[1.02]"
                 : "border-rose-250 dark:border-rose-950 text-rose-600 bg-rose-50/50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40"
             }`}
           >
-            <Trash2 className="w-3.5 h-3.5" /> 
-            {confirmDelete 
-              ? (node.isContainer ? 'Вы уверены? Нажмите ещё раз!' : 'Вы уверены? Нажмите ещё раз!') 
-              : (node.isContainer ? 'Удалить контейнер и задачи внутри' : 'Удалить текущую задачу/ветвь')}
+            <Trash2 className="w-3.5 h-3.5 shrink-0" /> 
+            <span className="truncate">
+              {confirmDelete 
+                ? 'Уверены?' 
+                : (node.isContainer ? 'Удалить вложенное' : 'Удалить текущую')}
+            </span>
           </button>
         </div>
       ) : (

@@ -133,6 +133,20 @@ export default function KanbanView({
     localStorage.setItem('task_mindmap_categories_expanded', String(isCategoriesExpanded));
   }, [isCategoriesExpanded]);
 
+  const [isFiltersCollapsed, setIsFiltersCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_kanban_filters_collapsed');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return true;
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('task_mindmap_kanban_filters_collapsed', String(isFiltersCollapsed));
+    } catch {}
+  }, [isFiltersCollapsed]);
+
   const activeCategory = tagCategories.find(c => c.id === selectedCategoryId) || tagCategories[0];
 
   // If there's an active project but our selectedCategory is null and categories just loaded/exist:
@@ -769,211 +783,218 @@ export default function KanbanView({
       {/* Category selector panel */}
       <div 
         id="kanban-categories-bar" 
-        className="bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-900 px-3 py-2 md:px-6 md:py-3.5 select-none"
+        className="bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-900 select-none transition-all duration-200"
       >
-        <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-x-6 gap-y-2 md:gap-y-3.5">
-          {/* Container Selection Row */}
-          <div className="flex flex-row items-center justify-between sm:justify-start gap-2.5 pt-0.5 pb-2 md:pb-0 border-b border-slate-200/40 dark:border-slate-800/20 sm:border-none w-full lg:w-auto">
-            <span className="text-[9.5px] md:text-[10px] font-black text-slate-550 dark:text-slate-400 uppercase tracking-widest shrink-0 flex items-center gap-1.5">
-              <KanbanIcon className="w-3.5 h-3.5 text-indigo-505 dark:text-indigo-400" />
-              КОНТЕЙНЕР:
+        {/* Compact Summary Header Row - Always visible, extremely thin and space-saving */}
+        <div className="flex items-center justify-between px-3 py-1 md:px-5 md:py-1.5 border-b border-slate-200/30 dark:border-slate-800/20 bg-white/60 dark:bg-slate-900/30">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold text-slate-600 dark:text-slate-350 flex-1 min-w-0 pr-2">
+            <span className="flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/30 text-[#4f46e5] dark:text-indigo-400 px-1.5 py-0.5 rounded-md border border-indigo-100/30 font-black tracking-wide uppercase text-[9px] shrink-0">
+              <KanbanIcon className="w-2.5 h-2.5" />
+              КАНБАН
             </span>
-            <div className="relative flex-1 sm:flex-initial min-w-[140px] max-w-[240px] animate-fade-in">
-              <select
-                id="kanban-container-filter-select"
-                value={selectedContainerFilterId}
-                onChange={(e) => setSelectedContainerFilterId(e.target.value)}
-                className="w-full appearance-none bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-705 text-slate-705 dark:text-slate-200 text-[11px] md:text-xs font-bold rounded-xl px-2.5 py-1 md:px-3.5 md:py-1.5 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-505 focus:border-[#4f46e5] transition-all"
-              >
-                <option value="all">
-                  Все задачи ({nodes.filter(n => !n.isContainer && !n.archived).length})
-                </option>
-                <option value="no-container">
-                  Без контейнера ({nodes.filter(n => !n.isContainer && !n.archived && !isInsideAnyContainer(n)).length})
-                </option>
-                {allContainers.map(container => {
-                  const count = nodes.filter(n => !n.isContainer && !n.archived && getTaskContainerId(n) === container.id).length;
-                  return (
-                    <option key={container.id} value={container.id}>
-                      📦 {container.text} ({count})
-                    </option>
-                  );
-                })}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400 dark:text-slate-500">
-                <ChevronDown className="w-3.5 h-3.5" />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 md:pb-0 border-b border-slate-200/40 dark:border-slate-800/20 sm:border-none w-full lg:w-auto">
-            <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto scrollbar-none w-full sm:flex-wrap py-0.5">
-              <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest hidden sm:inline-block shrink-0">ГРУППИРОВКА KANBAN:</span>
-              <div className="flex items-center gap-0.5 bg-slate-200/60 dark:bg-slate-900/60 p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-850 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setGroupBy('category')}
-                  className={`px-2 py-1 md:px-3.5 md:py-1 border text-[10px] md:text-[11px] font-black rounded-md md:rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                    groupBy === 'category' 
-                      ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
-                      : 'bg-transparent border-transparent text-slate-505 hover:text-slate-805 dark:hover:text-slate-350'
-                  }`}
-                >
-                  По категориям
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGroupBy('priority')}
-                  className={`px-2 py-1 md:px-3.5 md:py-1 border text-[10px] md:text-[11px] font-black rounded-md md:rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                    groupBy === 'priority' 
-                      ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
-                      : 'bg-transparent border-transparent text-slate-550 hover:text-slate-805 dark:hover:text-slate-350'
-                  }`}
-                >
-                  По приоритетам
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGroupBy('container')}
-                  className={`px-2 py-1 md:px-3.5 md:py-1 border text-[10px] md:text-[11px] font-black rounded-md md:rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                    groupBy === 'container' 
-                      ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(0,0,0,0.06)]' 
-                      : 'bg-transparent border-transparent text-slate-550 hover:text-slate-805 dark:hover:text-slate-350'
-                  }`}
-                >
-                  По контейнерам
-                </button>
-              </div>
-
-              {/* Global toggle for completed tasks */}
-              <button
-                type="button"
-                onClick={() => {
-                  const newVal = !collapseCompleted;
-                  setCollapseCompleted(newVal);
-                  // Apply new state across all columns
-                  const updated: Record<string, boolean> = {};
-                  columns.forEach(col => {
-                    updated[col.id] = newVal;
-                  });
-                  setCollapsedColumns(updated);
-                }}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 md:px-3 md:py-1 text-[10px] md:text-[11px] font-black rounded-lg border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  collapseCompleted 
-                    ? 'bg-indigo-50/75 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-900/40 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
-                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-855 text-slate-600 dark:text-slate-300 hover:bg-slate-50/50 dark:hover:bg-slate-850'
-                }`}
-                title={collapseCompleted ? "Развернуть выполненные задачи во всех колонках" : "Свернуть выполненные задачи во всех колонках"}
-              >
-                <CheckCircle2 className={`w-3.5 h-3.5 ${collapseCompleted ? 'text-indigo-505 dark:text-indigo-400' : 'text-slate-400'}`} />
-                <span>{collapseCompleted ? 'Выполненные: Свёрнуты' : 'Свернуть все'}</span>
-              </button>
-
-              {/* Subtasks show/hide filter toggle */}
-              <button
-                type="button"
-                onClick={() => setShowSubtasks(!showSubtasks)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 md:px-3 md:py-1 text-[10px] md:text-[11px] font-black rounded-lg border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  showSubtasks 
-                    ? 'bg-emerald-50/75 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-600 dark:text-emerald-400 shadow-sm' 
-                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-850 text-slate-605 dark:text-slate-350 hover:bg-slate-50/50 dark:hover:bg-slate-850'
-                }`}
-                title={showSubtasks ? "Скрыть дочерние подзадачи во всех колонках" : "Показать дочерние подзадачи во всех колонках"}
-              >
-                <div className={`w-3 h-3 rounded border flex items-center justify-center transition-all ${
-                  showSubtasks 
-                    ? 'border-emerald-500 bg-emerald-500 text-white' 
-                    : 'border-slate-300 dark:border-slate-700'
-                }`}>
-                  {showSubtasks && (
-                    <svg className="w-2 h-2 text-white stroke-[3.5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </div>
-                <span>Подзадачи</span>
-              </button>
-            </div>
-          </div>
-
-          {groupBy === 'category' && tagCategories.length > 0 && (
-            <div className="flex flex-col lg:flex-row lg:items-center gap-2 w-full lg:w-auto mt-1 md:mt-0">
-              {/* Mobile Header Toggle, visible on mobile, hidden on tablet/desktop */}
-              <div className="flex md:hidden items-center justify-between">
-                <button 
-                  type="button"
-                  onClick={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
-                  className="flex items-center gap-1.5 cursor-pointer py-0.5 text-left focus:outline-none"
-                >
-                  <span className="text-[9.5px] font-black text-slate-450 dark:text-slate-500 uppercase tracking-widest">
-                    КАТЕГОРИЯ:
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10.5px]">
+              <span className="text-slate-500 dark:text-slate-400">Группа:</span>
+              <span className="text-[#4f46e5] dark:text-indigo-400 font-extrabold px-1 py-0.2 text-[10px] rounded bg-indigo-50/40 dark:bg-indigo-950/20 shrink-0 border border-indigo-100/10">
+                {groupBy === 'category' ? 'Категории' : groupBy === 'priority' ? 'Приоритеты' : 'Контейнеры'}
+              </span>
+              <span className="text-slate-300 dark:text-slate-700/60">|</span>
+              <span className="text-slate-500 dark:text-slate-400">Внутри:</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-extrabold px-1 py-0.2 text-[10px] rounded bg-emerald-50/40 dark:bg-emerald-950/20 truncate max-w-[100px] inline-block align-bottom shrink-0 border border-emerald-100/10">
+                {selectedContainerFilterId === 'all' 
+                  ? 'Все' 
+                  : selectedContainerFilterId === 'no-container' 
+                    ? 'Без контейнера' 
+                    : allContainers.find(c => c.id === selectedContainerFilterId)?.text || 'Загрузка'}
+              </span>
+              {groupBy === 'category' && activeCategory && (
+                <>
+                  <span className="text-slate-300 dark:text-slate-700/60">|</span>
+                  <span className="inline-flex items-center gap-1 px-1 py-0.2 text-[10px] rounded font-extrabold text-[#4f46e5] dark:text-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20 shrink-0 border border-indigo-100/10">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeCategory.color }} />
+                    <span className="truncate max-w-[70px]">{activeCategory.name}</span>
                   </span>
-                  {activeCategory && (
-                    <span className="inline-flex items-center gap-1 py-0.5 px-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700/60 text-[10.5px] font-bold text-slate-705 dark:text-slate-200">
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse-subtle" style={{ backgroundColor: activeCategory.color }} />
-                      <span>{activeCategory.name}</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
+            className="flex items-center gap-1 px-2.5 py-0.5 text-[10.5px] font-black hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer transition-colors border border-slate-200/50 dark:border-slate-800/85 text-slate-705 dark:text-slate-300 whitespace-nowrap shrink-0"
+          >
+            <span>{isFiltersCollapsed ? 'Фильтры' : 'Свернуть'}</span>
+            <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isFiltersCollapsed ? '' : 'rotate-180'}`} />
+          </button>
+        </div>
+
+        {/* Collapsible advanced filter controls with nice expand/collapse animation */}
+        <AnimatePresence initial={false}>
+          {!isFiltersCollapsed && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="flex flex-col gap-1.5 p-2 md:p-3 border-b border-indigo-100/10 dark:border-indigo-950/10 bg-slate-50/30 dark:bg-slate-950/20">
+                {/* Clean side-by-side flex layout to save max vertical space */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  
+                  {/* Container Selector as an elegant dropdown */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 tracking-wider uppercase shrink-0">
+                      Контейнер:
                     </span>
-                  )}
-                  <ChevronDown 
-                    className={`w-3 h-3 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${
-                      isCategoriesExpanded ? 'rotate-185' : ''
-                    }`} 
-                  />
-                </button>
-              </div>
+                    <div className="relative">
+                      <select
+                        id="kanban-container-filter-select"
+                        value={selectedContainerFilterId}
+                        onChange={(e) => setSelectedContainerFilterId(e.target.value)}
+                        className="appearance-none bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[10.5px] font-extrabold rounded-lg pl-2 pr-6 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-505 transition-all"
+                      >
+                        <option value="all">📁 Все ({nodes.filter(n => !n.isContainer && !n.archived).length})</option>
+                        <option value="no-container">📦 Без контейнера ({nodes.filter(n => !n.isContainer && !n.archived && !isInsideAnyContainer(n)).length})</option>
+                        {allContainers.map(container => {
+                          const count = nodes.filter(n => !n.isContainer && !n.archived && getTaskContainerId(n) === container.id).length;
+                          return (
+                            <option key={container.id} value={container.id}>
+                              📦 {container.text || 'Без названия'} ({count})
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1.5 text-slate-400 dark:text-slate-500">
+                        <ChevronDown className="w-3 h-3" />
+                      </div>
+                    </div>
+                  </div>
 
-              {/* Categories container: always visible on desktop, conditionally collapsed/expanded with animation on mobile */}
-              <div className={`${isCategoriesExpanded ? 'flex' : 'hidden md:flex'} mt-1 lg:mt-0 flex-row items-center gap-2 overflow-x-auto scrollbar-none py-1 w-full`}>
-                <span className="hidden md:inline text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest shrink-0">
-                  КАТЕГОРИЯ:
-                </span>
-                
-                <div className="flex flex-row items-center gap-2 overflow-x-auto py-0.5 scrollbar-none w-full md:w-auto">
-                  {tagCategories.map(cat => {
-                    const isSelected = cat.id === selectedCategoryId;
-                    
-                    // Count cards belonging to this category overall
-                    const count = nodes.filter(n => {
-                      if (!n.tags) return false;
-                      return n.tags.some(t => cat.tags?.includes(t));
-                    }).length;
-
-                    return (
+                  {/* Grouping Selectors Segmented Control */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 tracking-wider uppercase shrink-0">
+                      Группировка:
+                    </span>
+                    <div className="flex items-center gap-0.5 bg-slate-200/50 dark:bg-slate-900/50 p-0.5 rounded-lg border border-slate-250 dark:border-slate-800/60 shrink-0">
                       <button
-                        key={cat.id}
-                        id={`kanban-cat-tab-${cat.id}`}
-                        onClick={() => {
-                          setSelectedCategoryId(cat.id);
-                          // Automatically collapse picker on mobile/tablet after selection
-                          if (window.innerWidth < 768) {
-                            setIsCategoriesExpanded(false);
-                          }
-                        }}
-                        className={`px-3 py-1.5 rounded-xl border text-[11px] font-black flex items-center gap-2 cursor-pointer transition-all duration-200 shrink-0 ${
-                          isSelected 
-                            ? 'bg-white dark:bg-slate-900 border-[#4f46e5]/85 dark:border-indigo-500 text-[#4f46e5] dark:text-indigo-300 ring-2 ring-indigo-500/10 shadow-[0_4px_15px_rgba(79,70,229,0.06)]'
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-705 hover:bg-slate-50/60 dark:hover:bg-slate-850'
+                        type="button"
+                        onClick={() => setGroupBy('category')}
+                        className={`px-1.5 py-0.5 border text-[10px] font-black rounded transition-all cursor-pointer whitespace-nowrap ${
+                          groupBy === 'category' 
+                            ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
+                            : 'bg-transparent border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
                         }`}
                       >
-                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                        <span>{cat.name}</span>
-                        <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-550 dark:text-slate-450">
-                          {count}
-                        </span>
+                        Категории
                       </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
+                      <button
+                        type="button"
+                        onClick={() => setGroupBy('priority')}
+                        className={`px-1.5 py-0.5 border text-[10px] font-black rounded transition-all cursor-pointer whitespace-nowrap ${
+                          groupBy === 'priority' 
+                            ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
+                            : 'bg-transparent border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                        }`}
+                      >
+                        Приоритеты
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGroupBy('container')}
+                        className={`px-1.5 py-0.5 border text-[10px] font-black rounded transition-all cursor-pointer whitespace-nowrap ${
+                          groupBy === 'container' 
+                            ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
+                            : 'bg-transparent border-transparent text-slate-500 hover:text-[#4f46e5]/85 dark:hover:text-indigo-305'
+                        }`}
+                      >
+                        Контейнеры
+                      </button>
+                    </div>
+                  </div>
 
-          {groupBy === 'category' && tagCategories.length === 0 && (
-            <div className="text-center py-2 text-[10.5px] text-slate-500 dark:text-slate-450 font-medium lg:py-0 lg:ml-auto">
-              Нет категорий. Вы всегда можете переключиться на вид по приоритетам выше!
-            </div>
+                  {/* Fast Checkboxes Toggles on the right side */}
+                  <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0 md:ml-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newVal = !collapseCompleted;
+                        setCollapseCompleted(newVal);
+                        const updated: Record<string, boolean> = {};
+                        columns.forEach(col => {
+                          updated[col.id] = newVal;
+                        });
+                        setCollapsedColumns(updated);
+                      }}
+                      className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-black rounded border cursor-pointer transition-all ${
+                        collapseCompleted 
+                          ? 'bg-indigo-50/70 dark:bg-indigo-950/10 border-indigo-200/40 text-[#4f46e5] dark:text-indigo-400' 
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-550 dark:text-slate-300'
+                      }`}
+                    >
+                      <CheckCircle2 className={`w-3 h-3 ${collapseCompleted ? 'text-[#4f46e5] dark:text-indigo-400' : 'text-slate-400'}`} />
+                      <span>{collapseCompleted ? 'Развёрнуты' : 'Свернуть все'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowSubtasks(!showSubtasks)}
+                      className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-black rounded border cursor-pointer transition-all ${
+                        showSubtasks 
+                          ? 'bg-emerald-50/60 dark:bg-emerald-950/10 border-emerald-200/40 text-emerald-605 dark:text-emerald-400 shadow-sm' 
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-550 dark:text-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className={`w-2 h-2 rounded border flex items-center justify-center text-[6px] text-white ${
+                        showSubtasks ? 'border-emerald-500 bg-emerald-500' : 'border-slate-305 dark:border-slate-700'
+                      }`}>
+                        {showSubtasks && '✓'}
+                      </div>
+                      <span>Подзадачи</span>
+                    </button>
+                  </div>
+
+                </div>
+
+                {/* Categories selection row */}
+                {groupBy === 'category' && tagCategories.length > 0 && (
+                  <div className="flex items-center gap-1.5 border-t border-slate-150 dark:border-slate-800/40 pt-1 px-0.5 mt-0.5 w-full">
+                    <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 tracking-wider uppercase shrink-0">
+                      Категория:
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-none w-full">
+                      {tagCategories.map(cat => {
+                        const isSelected = cat.id === selectedCategoryId;
+                        const count = nodes.filter(n => {
+                          if (!n.tags) return false;
+                          return n.tags.some(t => cat.tags?.includes(t));
+                        }).length;
+
+                        return (
+                          <button
+                            key={cat.id}
+                            id={`kanban-cat-tab-${cat.id}`}
+                            onClick={() => setSelectedCategoryId(cat.id)}
+                            className={`px-1.5 py-0.5 text-[10px] font-extrabold flex items-center gap-1.5 cursor-pointer transition-all duration-150 shrink-0 rounded border ${
+                              isSelected 
+                                ? 'bg-white dark:bg-slate-900 border-[#4f46e5] text-[#4f46e5] dark:text-indigo-400 ring-1 ring-indigo-500/10'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 hover:bg-slate-50/50'
+                            }`}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                            <span>{cat.name}</span>
+                            <span className="text-[9px] font-black px-1.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-450">
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
       </div>
 
       {/* Pillars Columns Area */}
@@ -981,7 +1002,7 @@ export default function KanbanView({
         id="kanban-columns-container" 
         className="flex-1 overflow-x-auto min-h-0 bg-slate-50/10 dark:bg-slate-950/5 p-3 md:p-6"
       >
-        <div className="flex gap-5 h-full items-start pb-2">
+        <div className="flex gap-5 h-full items-stretch pb-2">
           {columns.map(col => {
             const isAddActive = activeAddInColumn === col.id;
             const isDraggedOver = draggedOverColumn === col.id;
@@ -995,7 +1016,7 @@ export default function KanbanView({
                 onDragOver={(e) => handleDragOver(e, col.id)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, col.id)}
-                className={`w-72 sm:w-80 shrink-0 rounded-2xl border p-4 flex flex-col max-h-full transition-all duration-250 scrollbar-thin ${
+                className={`w-72 sm:w-80 shrink-0 rounded-2xl border p-4 flex flex-col h-full transition-all duration-250 scrollbar-thin ${
                   isOverdueCont
                     ? 'border-rose-350 dark:border-rose-850 bg-rose-50/10 dark:bg-rose-950/5 ring-2 ring-rose-500/10 shadow-[0_10px_25px_rgba(244,63,94,0.04)]'
                     : isDraggedOver 
@@ -1020,7 +1041,7 @@ export default function KanbanView({
                 {/* Vertical list of cards */}
                 <div 
                   id={`kanban-column-cards-${col.id}`}
-                  className="flex-1 overflow-y-auto space-y-2.5 pr-1 min-h-[50px] scrollbar-thin max-h-[calc(100vh-23rem)]"
+                  className="flex-1 overflow-y-auto space-y-2.5 pr-1 min-h-[50px] scrollbar-thin"
                 >
                   {(() => {
                     const sortedItems = [...col.items].sort((a, b) => {
@@ -1139,6 +1160,17 @@ export default function KanbanView({
                       onClick={() => {
                         setActiveAddInColumn(col.id);
                         setNewTaskNameInColumn('');
+                        // Scroll to the bottom of the column cards container so the form and its buttons are visible
+                        setTimeout(() => {
+                          const cardsContainer = document.getElementById(`kanban-column-cards-${col.id}`);
+                          if (cardsContainer) {
+                            cardsContainer.scrollTop = cardsContainer.scrollHeight;
+                          }
+                          const inputEl = document.getElementById(`kanban-add-input-${col.id}`);
+                          if (inputEl) {
+                            inputEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                          }
+                        }, 100);
                       }}
                       className="w-full py-2 bg-slate-100/40 hover:bg-white dark:bg-slate-900/20 dark:hover:bg-slate-900 border border-dashed border-slate-200 hover:border-slate-350 dark:border-slate-800 dark:hover:border-slate-700 hover:shadow-[0_2px_8px_rgba(0,0,0,0.03)] rounded-xl text-[11px] font-extrabold text-slate-550 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     >

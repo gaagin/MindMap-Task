@@ -678,182 +678,256 @@ export default function MindMapCanvas({
               </div>
             ) : (
               [...containerChildren].sort((a, b) => a.y - b.y).map(child => (
-                <div 
-                  key={child.id} 
-                  draggable={true}
-                  onDragStart={(e) => {
-                    e.stopPropagation();
-                    e.dataTransfer.setData('text/plain', child.id);
-                    setNestedDragNodeId(child.id);
-                  }}
-                  onDragEnd={() => setNestedDragNodeId(null)}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
-                    if (draggedId && draggedId !== child.id) {
-                      handleContainerChildDrop(draggedId, child.id);
-                    }
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectNode(child.id);
-                  }}
-                  className="flex items-center justify-between gap-2 p-1.5 sm:p-2 rounded-xl border border-slate-105 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/60 shadow-xs hover:border-indigo-400/50 dark:hover:border-indigo-900/50 group/item cursor-pointer text-slate-800 dark:text-slate-250 select-none transition-all hover:bg-white dark:hover:bg-slate-900 duration-150"
-                >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <button 
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
-                        onSelectNode(child.id);
-                        onToggleNodeCompleted(child.id); 
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      data-drag-ignore
-                      className="text-slate-400 hover:text-indigo-650 dark:hover:text-amber-500 transition-colors cursor-pointer shrink-0"
-                    >
-                      {child.completed ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                      ) : activePomodoroNodeId === child.id ? (
-                        <span className="relative flex items-center justify-center w-4 h-4 shrink-0 inline-block">
-                          <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-450 opacity-75"></span>
-                          <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
-                        </span>
-                      ) : (
-                        <Circle className="w-4 h-4 text-slate-300 dark:text-slate-650 hover:text-indigo-500" />
-                      )}
-                    </button>
-                    <input 
-                      type="text"
-                      className={`flex-1 bg-transparent border-0 focus:ring-0 p-1 py-0 rounded hover:bg-slate-100/30 dark:hover:bg-slate-800/35 text-slate-800 dark:text-slate-100 font-extrabold focus:outline-none focus:bg-slate-100 dark:focus:bg-slate-850 truncate min-w-[60px] shrink ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${
-                        child.completed ? 'line-through text-slate-420 dark:text-slate-500 font-normal' : ''
-                      }`}
-                      value={child.text}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectNode(child.id);
-                      }}
-                      onChange={(e) => {
-                        onUpdateNode({ ...child, text: e.target.value });
-                      }}
-                      onKeyDown={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    />
-                    {child.externalLink && (
-                      <a
-                        href={child.externalLink.startsWith('http') ? child.externalLink : `https://${child.externalLink}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="inline-flex items-center justify-center p-1 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                        title={`Открыть внешнюю ссылку: ${child.externalLink}`}
-                      >
-                        <LinkIcon className="w-3.5 h-3.5 text-indigo-505" />
-                      </a>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center gap-1.5 shrink-0 opacity-75 group-hover/item:opacity-100 transition-opacity">
-                    {/* Pomodoro Timer Badge */}
-                    {child.pomodoroTotalTime ? (
-                      <span className="text-[8.5px] font-bold text-rose-600 dark:text-rose-400 font-mono shrink-0 flex items-center gap-0.5 bg-rose-500/5 px-1.5 py-0.5 rounded border border-rose-500/10" title="Фокусировка Pomodoro">
-                        🍅 {Math.round(child.pomodoroTotalTime / 60)}м
-                      </span>
-                    ) : null}
-
-                    {/* Progressive cyclic button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectNode(child.id);
-                        const curr = child.progress || 0;
-                        const nextProg = curr >= 100 ? 0 : curr + 25;
-                        onUpdateNode({ ...child, progress: nextProg, completed: nextProg === 100 ? true : child.completed });
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      className="text-[8.5px] font-mono font-black border border-slate-250 dark:border-slate-800 px-1.5 py-0.5 rounded-lg bg-white dark:bg-slate-950 text-slate-500 hover:text-indigo-650 dark:hover:text-indigo-400 cursor-pointer min-w-[34px] text-center transition-colors"
-                      title="Прогресс (клик для циклической смены)"
-                    >
-                      {child.progress || 0}%
-                    </button>
-
-                    {/* Cyclic Priority Badging */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectNode(child.id);
-                        const cycle: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
-                        const nextP = cycle[(cycle.indexOf(child.priority) + 1) % cycle.length];
-                        onUpdateNode({ ...child, priority: nextP as Priority });
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      className={`px-1.5 py-0.5 rounded-lg text-[8.5px] font-extrabold h-5.5 cursor-pointer flex items-center transition-all border ${getPriorityClass(child.priority)}`}
-                      title="Приоритет (клик для циклической смены)"
-                    >
-                      {getPriorityText(child.priority)}
-                    </button>
-
-                    {/* Interactive Due Date Calendar Picker */}
-                    <div className="flex items-center gap-0.5 bg-white dark:bg-slate-950 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-650" onClick={(e) => e.stopPropagation()}>
-                      <Calendar className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                      <input 
-                        type="date"
-                        value={child.dueDate || ''}
-                        onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
-                        onKeyDown={(e) => e.stopPropagation()}
-                        onChange={(e) => {
-                          onUpdateNode({ ...child, dueDate: e.target.value });
+                <div key={child.id} className="flex flex-col gap-1 w-full shrink-0">
+                  <div 
+                    draggable={true}
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      e.dataTransfer.setData('text/plain', child.id);
+                      setNestedDragNodeId(child.id);
+                    }}
+                    onDragEnd={() => setNestedDragNodeId(null)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const draggedId = e.dataTransfer.getData('text/plain') || nestedDragNodeId;
+                      if (draggedId && draggedId !== child.id) {
+                        handleContainerChildDrop(draggedId, child.id);
+                      }
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectNode(child.id);
+                    }}
+                    className={`flex items-center justify-between gap-2 p-1.5 sm:p-2 rounded-xl border ${
+                      selectedNodeId === child.id 
+                        ? 'border-indigo-500 shadow-md ring-2 ring-indigo-500/15 bg-white dark:bg-slate-900' 
+                        : 'border-slate-105 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/60'
+                    } group/item cursor-pointer text-slate-800 dark:text-slate-250 select-none transition-all hover:bg-white dark:hover:bg-slate-900 duration-155`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          onSelectNode(child.id);
+                          onToggleNodeCompleted(child.id); 
                         }}
-                        className="text-[8.5px] p-0 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-600 dark:text-slate-300 max-w-[76px] font-mono leading-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Tag badge items list */}
-                    {child.tags && child.tags.length > 0 && (
-                      <div className="flex gap-0.5 shrink-0 max-w-[80px] overflow-hidden truncate">
-                        {child.tags.slice(0, 1).map(t => {
-                          const matchedCategory = tagCategories.find(cat => cat.tags && cat.tags.includes(t));
-                          const color = matchedCategory?.color || '#a1a1aa';
-                          return (
-                            <span 
-                              key={t} 
-                              className="text-[7.5px] px-1 py-0.2 font-bold rounded"
-                              style={{ backgroundColor: color + '15', color: color, border: `1px solid ${color}20` }}
-                            >
-                              #{t}
-                            </span>
-                          );
-                        })}
-                        {child.tags.length > 1 && (
-                          <span className="text-[7.5px] text-slate-400 font-bold" title={child.tags.join(', ')}>+{child.tags.length - 1}</span>
+                        onMouseDown={(e) => e.stopPropagation()}
+                        data-drag-ignore
+                        className="text-slate-400 hover:text-indigo-650 dark:hover:text-amber-500 transition-colors cursor-pointer shrink-0"
+                      >
+                        {child.completed ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        ) : activePomodoroNodeId === child.id ? (
+                          <span className="relative flex items-center justify-center w-4 h-4 shrink-0 inline-block">
+                            <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-450 opacity-75"></span>
+                            <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
+                          </span>
+                        ) : (
+                          <Circle className="w-4 h-4 text-slate-300 dark:text-slate-650 hover:text-indigo-500" />
                         )}
-                      </div>
-                    )}
+                      </button>
+                      <input 
+                        type="text"
+                        className={`flex-1 bg-transparent border-0 focus:ring-0 p-1 py-0 rounded hover:bg-slate-100/30 dark:hover:bg-slate-800/35 text-slate-800 dark:text-slate-100 font-extrabold focus:outline-none focus:bg-slate-100 dark:focus:bg-slate-850 truncate min-w-[60px] shrink ${isFullScreen ? 'text-xs' : 'text-[10px]'} ${
+                          child.completed ? 'line-through text-slate-420 dark:text-slate-500 font-normal' : ''
+                        }`}
+                        value={child.text}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNode(child.id);
+                        }}
+                        onChange={(e) => {
+                          onUpdateNode({ ...child, text: e.target.value });
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      />
+                      {child.externalLink && (
+                        <a
+                          href={child.externalLink.startsWith('http') ? child.externalLink : `https://${child.externalLink}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className="inline-flex items-center justify-center p-1 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                          title={`Открыть внешнюю ссылку: ${child.externalLink}`}
+                        >
+                          <LinkIcon className="w-3.5 h-3.5 text-indigo-505" />
+                        </a>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center gap-1.5 shrink-0 opacity-75 group-hover/item:opacity-100 transition-opacity">
+                      {/* Pomodoro Timer Badge */}
+                      {child.pomodoroTotalTime ? (
+                        <span className="text-[8.5px] font-bold text-rose-600 dark:text-rose-400 font-mono shrink-0 flex items-center gap-0.5 bg-rose-500/5 px-1.5 py-0.5 rounded border border-rose-500/10" title="Фокусировка Pomodoro">
+                          🍅 {Math.round(child.pomodoroTotalTime / 60)}м
+                        </span>
+                      ) : null}
 
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setNotesModalNodeId(child.id); }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      data-drag-ignore
-                      className="p-1 rounded text-slate-400 hover:text-indigo-650 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                      title="Описание / Заметки"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDeleteNode(child.id); }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      data-drag-ignore
-                      className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                      title="Удалить"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                      {/* Progressive cyclic button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNode(child.id);
+                          const curr = child.progress || 0;
+                          const nextProg = curr >= 100 ? 0 : curr + 25;
+                          onUpdateNode({ ...child, progress: nextProg, completed: nextProg === 100 ? true : child.completed });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="text-[8.5px] font-mono font-black border border-slate-250 dark:border-slate-800 px-1.5 py-0.5 rounded-lg bg-white dark:bg-slate-950 text-slate-500 hover:text-indigo-650 dark:hover:text-indigo-400 cursor-pointer min-w-[34px] text-center transition-colors"
+                        title="Прогресс (клик для циклической смены)"
+                      >
+                        {child.progress || 0}%
+                      </button>
+
+                      {/* Cyclic Priority Badging */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNode(child.id);
+                          const cycle: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
+                          const nextP = cycle[(cycle.indexOf(child.priority) + 1) % cycle.length];
+                          onUpdateNode({ ...child, priority: nextP as Priority });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className={`px-1.5 py-0.5 rounded-lg text-[8.5px] font-extrabold h-5.5 cursor-pointer flex items-center transition-all border ${getPriorityClass(child.priority)}`}
+                        title="Приоритет (клик для циклической смены)"
+                      >
+                        {getPriorityText(child.priority)}
+                      </button>
+
+                      {/* Interactive Due Date Calendar Picker */}
+                      <div className="flex items-center gap-0.5 bg-white dark:bg-slate-950 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-655" onClick={(e) => e.stopPropagation()}>
+                        <Calendar className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                        <input 
+                          type="date"
+                          value={child.dueDate || ''}
+                          onClick={(e) => { e.stopPropagation(); onSelectNode(child.id); }}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            onUpdateNode({ ...child, dueDate: e.target.value });
+                          }}
+                          className="text-[8.5px] p-0 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-600 dark:text-slate-300 max-w-[76px] font-mono leading-none cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Tag badge items list */}
+                      {child.tags && child.tags.length > 0 && (
+                        <div className="flex gap-0.5 shrink-0 max-w-[80px] overflow-hidden truncate">
+                          {child.tags.slice(0, 1).map(t => {
+                            const matchedCategory = tagCategories.find(cat => cat.tags && cat.tags.includes(t));
+                            const color = matchedCategory?.color || '#a1a1aa';
+                            return (
+                              <span 
+                                key={t} 
+                                className="text-[7.5px] px-1 py-0.2 font-bold rounded"
+                                style={{ backgroundColor: color + '15', color: color, border: `1px solid ${color}20` }}
+                              >
+                                #{t}
+                              </span>
+                            );
+                          })}
+                          {child.tags.length > 1 && (
+                            <span className="text-[7.5px] text-slate-400 font-bold" title={child.tags.join(', ')}>+{child.tags.length - 1}</span>
+                          )}
+                        </div>
+                      )}
+
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setNotesModalNodeId(child.id); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        data-drag-ignore
+                        className="p-1 rounded text-slate-400 hover:text-indigo-650 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        title="Описание / Заметки"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeleteNode(child.id); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        data-drag-ignore
+                        className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        title="Удалить"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Quick Action buttons for selected list task inside container */}
+                  {selectedNodeId === child.id && (
+                    <div 
+                      data-drag-ignore
+                      onClick={(e) => e.stopPropagation()}
+                      className="self-center flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-[0_8px_25px_-4px_rgba(99,102,241,0.25)] dark:shadow-[0_8px_25px_-4px_rgba(0,0,0,0.6)] z-45 mb-1 animate-fade-in text-[10px]"
+                    >
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddChildNode(child.id);
+                        }}
+                        title="Добавить подзадачу"
+                        className="flex items-center justify-center w-8 h-8 rounded-full text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                      <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800" />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setNotesModalNodeId(child.id);
+                        }}
+                        title="Открыть заметки"
+                        className="flex items-center justify-center w-8 h-8 rounded-full text-emerald-600 dark:text-emerald-450 hover:bg-emerald-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        <FileText className="w-4 h-4" />
+                      </button>
+                      <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800" />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenDrawer();
+                        }}
+                        title="Свойства (во весь экран)"
+                        className="flex items-center justify-center w-8 h-8 rounded-full text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800" />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFileUploadNodeId(child.id);
+                          setTimeout(() => {
+                            if (cardFileInputRef.current) {
+                              cardFileInputRef.current.click();
+                            }
+                          }, 50);
+                        }}
+                        title="Прикрепить файл"
+                        className="flex items-center justify-center w-8 h-8 rounded-full text-purple-650 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        <Paperclip className="w-4 h-4" />
+                      </button>
+                      <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800" />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteNode(child.id);
+                        }}
+                        title="Удалить"
+                        className="flex items-center justify-center w-8 h-8 rounded-full text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))
             )}
@@ -1205,6 +1279,61 @@ export default function MindMapCanvas({
                             {child.completed ? '↩ Отмена' : '✓ Вып.'}
                           </button>
                         </div>
+
+                        {/* Quick action buttons for selected task card inside container Kanban board */}
+                        {selectedNodeId === child.id && (
+                          <div 
+                            data-drag-ignore
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center justify-center gap-1.5 p-1.5 mt-2 bg-slate-50 dark:bg-slate-850 border border-slate-200/50 dark:border-slate-800 rounded-xl transition-all w-full select-none"
+                          >
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onAddChildNode(child.id);
+                              }}
+                              title="Добавить подзадачу"
+                              className="flex items-center justify-center w-8 h-8 rounded-full text-indigo-650 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setNotesModalNodeId(child.id);
+                              }}
+                              title="Изучить заметки"
+                              className="flex items-center justify-center w-8 h-8 rounded-full text-emerald-600 dark:text-emerald-450 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFileUploadNodeId(child.id);
+                                setTimeout(() => {
+                                  if (cardFileInputRef.current) {
+                                    cardFileInputRef.current.click();
+                                  }
+                                }, 50);
+                              }}
+                              title="Прикрепить файл"
+                              className="flex items-center justify-center w-8 h-8 rounded-full text-purple-600 dark:text-purple-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
+                              <Paperclip className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteNode(child.id);
+                              }}
+                              title="Стереть"
+                              className="flex items-center justify-center w-8 h-8 rounded-full text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -4245,89 +4374,85 @@ export default function MindMapCanvas({
                 const CurrentIcon = currentViewOption.icon;
 
                 return (
-                  <div className="px-3 py-2.5 flex flex-col gap-2.5 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 animate-in slide-in-from-top-1 duration-150">
-                    {/* Collapsible View Selector Header */}
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between bg-white dark:bg-slate-850 border border-slate-200/60 dark:border-slate-750 p-2 rounded-xl shadow-xs">
-                        <div className="flex items-center gap-2 min-w-0">
+                  <div className="px-3 pb-2.5 pt-1.5 flex flex-col gap-2 bg-white dark:bg-slate-900 animate-in slide-in-from-top-1 duration-150">
+                    <div className="flex items-center gap-2 w-full">
+                      {/* Collapsible View Selector Header */}
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsMobileViewsListExpanded(!isMobileViewsListExpanded);
+                        }}
+                        className="flex-1 flex items-center justify-between h-[38px] bg-slate-50 dark:bg-slate-850 border border-slate-200/60 dark:border-slate-755 px-3 rounded-xl shadow-xs cursor-pointer select-none min-w-0"
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <CurrentIcon className="w-4 h-4 text-indigo-500 shrink-0" />
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-500 leading-none">Вид контейнера</span>
-                            <span className="text-xs font-extrabold text-slate-750 dark:text-slate-200 truncate">{currentViewOption.label}</span>
-                          </div>
+                          <span className="text-xs font-extrabold text-slate-755 dark:text-slate-200 truncate leading-none">{currentViewOption.label}</span>
                         </div>
-                        <button 
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsMobileViewsListExpanded(!isMobileViewsListExpanded);
-                          }}
-                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/45 text-indigo-650 dark:text-indigo-400 font-extrabold text-[10px] rounded-lg border border-indigo-100/50 dark:border-indigo-900/30 transition-all cursor-pointer flex items-center gap-1 shrink-0"
-                        >
-                          <span>Выбрать</span>
-                          {isMobileViewsListExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                        </button>
-                      </div>
+                        {isMobileViewsListExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+                      </button>
 
-                      {/* Expanding list of available views */}
-                      {isMobileViewsListExpanded && (
-                        <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-1 select-none animate-in slide-in-from-top-1 duration-150">
-                          {viewOptions.map(v => {
-                            const active = currentViewModeId === v.id;
-                            const IconComponent = v.icon;
-                            return (
-                              <button
-                                key={v.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setContainerViewMode(focusedContainer.id, v.id as any);
-                                  setIsMobileViewsListExpanded(false);
-                                }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                data-drag-ignore
-                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-bold tracking-tight transition-all duration-150 cursor-pointer whitespace-nowrap border ${
-                                  active 
-                                    ? 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent shadow-xs' 
-                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 border-slate-150 dark:border-slate-700/80'
-                                }`}
-                              >
-                                <IconComponent className={`w-3 h-3 ${active ? 'text-white' : 'text-slate-450 dark:text-slate-400'}`} />
-                                <span>{v.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
+                      <button
+                        onClick={() => {
+                          const x = Math.round(-panX / zoom);
+                          const y = Math.round(-panY / zoom);
+                          onAddFloatingNode(x, y, focusedContainerId, 'Workflow Шаг', { isWorkflowRectangle: true });
+                          setIsFocusStatsMobileExpanded(false);
+                        }}
+                        className="flex items-center justify-center gap-1 px-2.5 h-[38px] rounded-xl text-[10px] uppercase tracking-wider font-extrabold bg-indigo-500 hover:bg-indigo-600 text-white shadow-xs cursor-pointer shrink-0"
+                        title="Добавить шаг workflow"
+                      >
+                        <Network className="w-3.5 h-3.5 text-white" />
+                        <span>+ Шаг</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const x = Math.round(-panX / zoom);
+                          const y = Math.round(-panY / zoom);
+                          onAddFloatingNode(x, y, focusedContainerId);
+                          setIsFocusStatsMobileExpanded(false);
+                        }}
+                        className="flex items-center justify-center gap-1 px-2.5 h-[38px] rounded-xl text-[10px] uppercase tracking-wider font-extrabold bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs cursor-pointer shrink-0"
+                        title="Добавить задачу"
+                      >
+                        <PlusCircle className="w-3.5 h-3.5 text-white" />
+                        <span>+ Задача</span>
+                      </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 mt-1">
-                    <button
-                      onClick={() => {
-                        const x = Math.round(-panX / zoom);
-                        const y = Math.round(-panY / zoom);
-                        onAddFloatingNode(x, y, focusedContainerId, 'Workflow Шаг', { isWorkflowRectangle: true });
-                        setIsFocusStatsMobileExpanded(false);
-                      }}
-                      className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[9px] uppercase tracking-wide font-black bg-indigo-500 hover:bg-indigo-600 text-white shadow-sm cursor-pointer"
-                    >
-                      <Network className="w-3 h-3 text-white" />
-                      <span>+ Шаг Workflow</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        const x = Math.round(-panX / zoom);
-                        const y = Math.round(-panY / zoom);
-                        onAddFloatingNode(x, y, focusedContainerId);
-                        setIsFocusStatsMobileExpanded(false);
-                      }}
-                      className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[9px] uppercase tracking-wide font-black bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm cursor-pointer"
-                    >
-                      <PlusCircle className="w-3 h-3 text-white" />
-                      <span>+ Задача</span>
-                    </button>
+                    {/* Expanding list of available views */}
+                    {isMobileViewsListExpanded && (
+                      <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-1 select-none animate-in slide-in-from-top-1 duration-150 border-t border-slate-150/50 dark:border-slate-800/80 pt-2">
+                        {viewOptions.map(v => {
+                          const active = currentViewModeId === v.id;
+                          const IconComponent = v.icon;
+                          return (
+                            <button
+                              key={v.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setContainerViewMode(focusedContainer.id, v.id as any);
+                                setIsMobileViewsListExpanded(false);
+                              }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              data-drag-ignore
+                              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-bold tracking-tight transition-all duration-150 cursor-pointer whitespace-nowrap border ${
+                                active 
+                                  ? 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent shadow-xs' 
+                                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 border-slate-150 dark:border-slate-700/80'
+                              }`}
+                            >
+                              <IconComponent className={`w-3 h-3 ${active ? 'text-white' : 'text-slate-450 dark:text-slate-400'}`} />
+                              <span>{v.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ); })()}
+                );
+              })()}
             </div>
 
           </div>
@@ -5147,7 +5272,7 @@ export default function MindMapCanvas({
                       className="absolute -bottom-1.5 -right-1.5 w-4 h-4 cursor-nwse-resize z-40 select-none hover:bg-amber-500/40 active:bg-amber-500/60 rounded-full border border-amber-500/20 transition-colors duration-150 flex items-center justify-center p-0.5"
                       title="Изменить размер (снизу-справа)"
                     >
-                      <svg width="6" height="6" viewBox="0 0 6 6" className="text-amber-600 dark:text-amber-400 opacity-60">
+                      <svg width="6" height="6" viewBox="0 0 6 6" className="text-amber-600 dark:text-amber-450 opacity-60">
                         <line x1="6" y1="0" x2="0" y2="6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
                         <line x1="6" y1="3" x2="3" y2="6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
                       </svg>
@@ -5159,6 +5284,102 @@ export default function MindMapCanvas({
                 {hoverTargetId === node.id && (
                   <div className="absolute -top-7 left-1/2 transform -translate-x-1/2 bg-amber-600 text-white px-3 py-1 rounded-full text-[9px] font-bold tracking-wider uppercase animate-bounce shadow-md whitespace-nowrap z-50">
                     Поместить на холст-контейнер
+                  </div>
+                )}
+
+                {/* Container selection quick actions */}
+                {isContainerSelected && draggingNodeId === null && potentialDragNodeIdRef.current === null && (
+                  <div 
+                    data-drag-ignore
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute -bottom-11 left-1/2 flex items-center gap-1.5 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-[0_8px_25px_-4px_rgba(99,102,241,0.25)] dark:shadow-[0_8px_25px_-4px_rgba(0,0,0,0.6)] z-50 pointer-events-auto whitespace-nowrap animate-fade-in"
+                    style={{
+                      transform: `translateX(-50%) scale(${1 / zoom})`,
+                      transformOrigin: 'top center'
+                    }}
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddFloatingNode(node.x, node.y, node.id, 'Новая задача');
+                      }}
+                      title="Добавить задачу внутрь"
+                      className="flex items-center justify-center w-8 h-8 text-amber-600 dark:text-amber-450 hover:bg-amber-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+
+                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdateNode({
+                          ...node,
+                          collapsed: !node.collapsed
+                        });
+                      }}
+                      title={node.collapsed ? "Развернуть контейнер" : "Свернуть контейнер"}
+                      className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      {node.collapsed ? (
+                        <FolderPlus className="w-4 h-4 text-amber-505" />
+                      ) : (
+                        <FolderMinus className="w-4 h-4 text-slate-500" />
+                      )}
+                    </button>
+
+                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFocusedContainerId(node.id);
+                      }}
+                      title="Войти внутрь (Фокусировка)"
+                      className="flex items-center justify-center w-8 h-8 text-indigo-650 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+
+                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setNotesModalNodeId(node.id);
+                      }}
+                      title="Настройки / Описание контейнера"
+                      className="flex items-center justify-center w-8 h-8 text-emerald-600 dark:text-emerald-450 hover:bg-emerald-55 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      <FileText className="w-4 h-4" />
+                    </button>
+
+                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenDrawer();
+                      }}
+                      title="Свойства в Дровере"
+                      className="flex items-center justify-center w-8 h-8 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+
+                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteNode(node.id);
+                      }}
+                      title="Удалить контейнер"
+                      className="flex items-center justify-center w-8 h-8 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 )}
               </div>
@@ -6011,7 +6232,7 @@ export default function MindMapCanvas({
                                             completed: !subtask.completed
                                           });
                                         }}
-                                        className="text-slate-505 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
+                                        className="text-slate-500 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
                                       >
                                         {subtask.completed ? (
                                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
@@ -6044,7 +6265,7 @@ export default function MindMapCanvas({
                   </>
                 ) : (
                   <div className="flex items-center gap-1.5 mt-2 text-[9px] text-slate-400 dark:text-slate-500 font-medium select-none">
-                    <span className="px-1 text-[8px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-550 rounded border border-slate-250 dark:border-slate-750">
+                    <span className="px-1 text-[8px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-555 rounded border border-slate-250 dark:border-slate-750">
                       Свернуто
                     </span>
                     {hasChildren && (
@@ -6060,7 +6281,11 @@ export default function MindMapCanvas({
               {isSelected && draggingNodeId === null && potentialDragNodeIdRef.current === null && (
                 <div 
                   data-drag-ignore
-                  className="absolute -bottom-11 left-1/2 transform -translate-x-1/2 flex items-center gap-1 px-1.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-[0_8px_25px_-4px_rgba(99,102,241,0.25)] dark:shadow-[0_8px_25px_-4px_rgba(0,0,0,0.6)] z-50 pointer-events-auto whitespace-nowrap animate-fade-in"
+                  className="absolute -bottom-11 left-1/2 flex items-center gap-1.5 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-[0_8px_25px_-4px_rgba(99,102,241,0.25)] dark:shadow-[0_8px_25px_-4px_rgba(0,0,0,0.6)] z-50 pointer-events-auto whitespace-nowrap animate-fade-in"
+                  style={{
+                    transform: `translateX(-50%) scale(${1 / zoom})`,
+                    transformOrigin: 'top center'
+                  }}
                 >
                   {/* Button 1: Добавить дочернюю задачу */}
                   <button
@@ -6069,12 +6294,12 @@ export default function MindMapCanvas({
                       onAddChildNode(node.id);
                     }}
                     title="Добавить дочернюю задачу"
-                    className="flex items-center justify-center w-7 h-7 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    className="flex items-center justify-center w-8 h-8 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
 
-                  <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
                   {/* Button 1.2: Свернуть / Развернуть детали карточки */}
                   <button
@@ -6086,7 +6311,7 @@ export default function MindMapCanvas({
                       });
                     }}
                     title={node.isCardCollapsed ? "Развернуть детали карточки" : "Свернуть детали карточки"}
-                    className="flex items-center justify-center w-7 h-7 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                   >
                     {node.isCardCollapsed ? (
                       <FolderPlus className="w-4 h-4 text-indigo-500" />
@@ -6097,7 +6322,7 @@ export default function MindMapCanvas({
 
                   {node.parentId !== null && (
                     <>
-                      <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+                      <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
                       {/* Button 1.5: Отсоединить задачу */}
                       <button
                         onClick={(e) => {
@@ -6105,14 +6330,14 @@ export default function MindMapCanvas({
                           onUpdateNodeParent(node.id, null);
                         }}
                         title="Отсоединить задачу от родительской (сделать свободной)"
-                        className="flex items-center justify-center w-7 h-7 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                        className="flex items-center justify-center w-8 h-8 text-amber-600 dark:text-amber-450 hover:bg-amber-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                       >
-                        <Link2Off className="w-3.5 h-3.5" />
+                        <Link2Off className="w-4 h-4" />
                       </button>
                     </>
                   )}
 
-                  <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
                   {/* Button 2: Заметки */}
                   <button
@@ -6121,12 +6346,12 @@ export default function MindMapCanvas({
                       setNotesModalNodeId(node.id);
                     }}
                     title="Открыть заметки"
-                    className="flex items-center justify-center w-7 h-7 text-emerald-600 dark:text-emerald-450 hover:bg-emerald-55 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    className="flex items-center justify-center w-8 h-8 text-emerald-600 dark:text-emerald-450 hover:bg-emerald-55 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                   >
                     <FileText className="w-4 h-4" />
                   </button>
 
-                  <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
                   {/* Button 2.5: Открыть всю задачу (Eye) */}
                   <button
@@ -6135,12 +6360,12 @@ export default function MindMapCanvas({
                       onOpenDrawer();
                     }}
                     title="Открыть всю задачу"
-                    className="flex items-center justify-center w-7 h-7 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    className="flex items-center justify-center w-8 h-8 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                   >
                     <Eye className="w-4 h-4" />
                   </button>
 
-                  <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
                   {/* Button 3: Добавить файл */}
                   <button
@@ -6154,14 +6379,14 @@ export default function MindMapCanvas({
                       }, 50);
                     }}
                     title="Прикрепить файл"
-                    className="flex items-center justify-center w-7 h-7 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    className="flex items-center justify-center w-8 h-8 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                   >
                     <Paperclip className="w-4 h-4" />
                   </button>
 
                   {!isRoot && (
                     <>
-                      <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+                      <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
                       {/* Button 4: Удалить */}
                       <button
@@ -6170,7 +6395,7 @@ export default function MindMapCanvas({
                           onDeleteNode(node.id);
                         }}
                         title="Удалить ветвь"
-                        className="flex items-center justify-center w-7 h-7 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                        className="flex items-center justify-center w-8 h-8 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

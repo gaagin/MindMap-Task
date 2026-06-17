@@ -564,6 +564,7 @@ export default function App() {
       handleToggleSelectNode(id);
     } else {
       setSelectedNodeId(id);
+      setIsDrawerOpen(true);
     }
   };
 
@@ -2612,7 +2613,7 @@ export default function App() {
       />
 
       {/* Main Workspace Frame */}
-      <main className="flex-1 flex flex-col min-w-0 h-full relative">
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         
         {/* Workspace Top Action Bar Header */}
         <header className={`h-16 border-b flex items-center justify-between px-4 sm:px-6 backdrop-blur-md z-20 transition-colors duration-300 ${
@@ -2834,7 +2835,7 @@ export default function App() {
                 className="p-1.5 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center gap-1 text-xs cursor-pointer focus:outline-none"
               >
                 <Undo2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                <span className="hidden sm:inline">Отмена</span>
+                <span className="inline text-[11px] font-bold">Отмена</span>
               </button>
             )}
 
@@ -3236,7 +3237,7 @@ export default function App() {
         )}
 
         {/* The Mind Map Interactive Canvas Frame. Occupies 100% space! */}
-        <div className="flex-1 w-full h-full relative bg-[#FAFBFD] dark:bg-slate-950/20">
+        <div className="flex-1 w-full min-h-0 relative bg-[#FAFBFD] dark:bg-slate-950/20">
           
           {state.activeProjectId ? (
             viewMode === 'mobile-list' ? (
