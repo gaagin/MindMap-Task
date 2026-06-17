@@ -2338,6 +2338,8 @@ export default function MindMapCanvas({
 
   // Focus mode states for container fullscreen focus
   const [focusedContainerId, setFocusedContainerId] = useState<string | null>(null);
+  const [isFocusStatsMobileExpanded, setIsFocusStatsMobileExpanded] = useState<boolean>(false);
+  const [isMobileViewsListExpanded, setIsMobileViewsListExpanded] = useState<boolean>(false);
 
   // Reset focus mode if the focused container is deleted or project is switched
   useEffect(() => {
@@ -3990,149 +3992,344 @@ export default function MindMapCanvas({
         const progress = calculateProgress(focusedContainerId, nodes) || 0;
         
         return (
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3 border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl flex flex-col md:flex-row items-center gap-4 transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-[98vw] md:max-w-[96vw]">
-            <div className="flex items-center gap-2.5 min-w-0 w-full md:w-auto justify-between md:justify-start">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="relative w-11 h-11 flex items-center justify-center shrink-0">
-                  <svg className="w-full h-full transform -rotate-90 select-none" viewBox="0 0 36 36">
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r="15"
-                      className="text-slate-100 dark:text-slate-800"
-                      strokeWidth="3"
-                      stroke="currentColor"
-                      fill="transparent"
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-[98vw] md:max-w-[96vw] overflow-hidden flex flex-col">
+            
+            {/* Desktop Only Layout */}
+            <div className="hidden md:flex flex-row items-center gap-4 px-5 py-3">
+              <div className="flex items-center gap-2.5 min-w-0 w-full md:w-auto justify-between md:justify-start">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="relative w-11 h-11 flex items-center justify-center shrink-0">
+                    <svg className="w-full h-full transform -rotate-90 select-none" viewBox="0 0 36 36">
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="15"
+                        className="text-slate-100 dark:text-slate-800"
+                        strokeWidth="3"
+                        stroke="currentColor"
+                        fill="transparent"
+                      />
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="15"
+                        className="text-amber-500 dark:text-amber-400 transition-all duration-300"
+                        strokeWidth="3"
+                        strokeDasharray={2 * Math.PI * 15}
+                        strokeDashoffset={2 * Math.PI * 15 * (1 - progress / 100)}
+                        strokeLinecap="round"
+                        stroke="currentColor"
+                        fill="transparent"
+                      />
+                    </svg>
+                    <span className="absolute text-[9.5px] font-black text-slate-800 dark:text-slate-200 font-mono">
+                      {progress}%
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans">Режим фокусировки</div>
+                    <input
+                      type="text"
+                      value={focusedContainer.text}
+                      onChange={(e) => {
+                        onUpdateNode({
+                          ...focusedContainer,
+                          text: e.target.value
+                        });
+                      }}
+                      className="text-sm font-sans font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b border-dashed border-amber-300 dark:border-amber-800 focus:border-amber-500 focus:outline-none focus:ring-0 px-0.5 py-0 min-w-0 max-w-[130px] sm:max-w-[200px]"
+                      placeholder="Имя контейнера"
                     />
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r="15"
-                      className="text-amber-500 dark:text-amber-400 transition-all duration-300"
-                      strokeWidth="3"
-                      strokeDasharray={2 * Math.PI * 15}
-                      strokeDashoffset={2 * Math.PI * 15 * (1 - progress / 100)}
-                      strokeLinecap="round"
-                      stroke="currentColor"
-                      fill="transparent"
-                    />
-                  </svg>
-                  <span className="absolute text-[9.5px] font-black text-slate-800 dark:text-slate-200 font-mono">
-                    {progress}%
-                  </span>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans">Режим фокусировки</div>
-                  <input
-                    type="text"
-                    value={focusedContainer.text}
-                    onChange={(e) => {
-                      onUpdateNode({
-                        ...focusedContainer,
-                        text: e.target.value
-                      });
-                    }}
-                    className="text-sm font-sans font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b border-dashed border-amber-300 dark:border-amber-800 focus:border-amber-500 focus:outline-none focus:ring-0 px-0.5 py-0 min-w-0 max-w-[130px] sm:max-w-[200px]"
-                    placeholder="Имя контейнера"
-                  />
-                </div>
-              </div>
-            </div>
-            
-            <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
-
-            {/* View Selector for Focused Mode */}
-            <div className="flex items-center gap-1 bg-[#f1f5f9] dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200/50 dark:border-slate-850 overflow-x-auto scrollbar-none select-none shrink-0 max-w-full shadow-inner">
-              {[
-                { id: 'canvas', label: 'Холст', icon: Network },
-                { id: 'kanban', label: 'Канбан', icon: Kanban },
-                { id: 'list', label: 'Мобильный', icon: Smartphone },
-                { id: 'calendar', label: 'Календарь', icon: Calendar },
-                { id: 'gantt', label: 'Гант', icon: GanttChart },
-                { id: 'table', label: 'Таблица', icon: Table }
-              ].map(v => {
-                const active = (containerViewModes[focusedContainer.id] || 'canvas') === v.id;
-                const IconComponent = v.icon;
-                return (
-                  <button
-                    key={v.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setContainerViewMode(focusedContainer.id, v.id as any);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    data-drag-ignore
-                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[11px] font-bold tracking-tight transition-all duration-200 cursor-pointer whitespace-nowrap ${
-                      active 
-                        ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-450 border border-slate-100 dark:border-slate-755 shadow-[0_2px_8px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)]' 
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-850 border border-transparent'
-                    }`}
-                  >
-                    <IconComponent className={`w-3.5 h-3.5 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`} />
-                    <span>{v.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            
-            <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
-            
-            <div className="flex items-center gap-3 shrink-0 w-full md:w-auto justify-between md:justify-start">
-              <div className="flex flex-col items-end gap-0.5 select-none text-right">
-                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                  {completedChildren}/{totalChildren} Выполнено
-                </span>
-                <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-amber-500 transition-all duration-300"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => {
-                    const x = Math.round(-panX / zoom);
-                    const y = Math.round(-panY / zoom);
-                    onAddFloatingNode(x, y, focusedContainerId, 'Workflow Шаг', { isWorkflowRectangle: true });
-                  }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wide font-extrabold bg-indigo-500 hover:bg-indigo-600 text-white shadow-md hover:scale-[1.02] transition-all cursor-pointer border border-transparent"
-                  title="Добавить шаг workflow в сфокусированный контейнер"
-                >
-                  <Network className="w-3.5 h-3.5 text-white" />
-                  <span>+ Шаг Workflow</span>
-                </button>
-                <button
-                  onClick={() => {
-                    const x = Math.round(-panX / zoom);
-                    const y = Math.round(-panY / zoom);
-                    onAddFloatingNode(x, y, focusedContainerId);
-                  }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wide font-extrabold bg-emerald-500 hover:bg-emerald-600 text-white shadow-md hover:scale-[1.02] transition-all cursor-pointer border border-transparent"
-                  title="Добавить простую задачу в сфокусированный контейнер"
-                >
-                  <PlusCircle className="w-3.5 h-3.5 text-white" />
-                  <span>+ Задача</span>
-                </button>
               </div>
               
-              <button
-                onClick={() => {
-                  autoFitContainer(focusedContainerId);
-                  const targetZoom = 0.85;
-                  setZoom(targetZoom);
-                  setPanX(-focusedContainer.x * targetZoom);
-                  setPanY(-focusedContainer.y * targetZoom);
-                  onSelectNode(focusedContainer.id);
-                  setFocusedContainerId(null);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg text-[11px] font-extrabold transition-all duration-200 cursor-pointer border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
-              >
-                <Minimize2 className="w-3.5 h-3.5 text-rose-500" />
-                Вернуться
-              </button>
+              <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
+
+              {/* View Selector for Focused Mode */}
+              <div className="flex items-center gap-1 bg-[#f1f5f9] dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200/50 dark:border-slate-850 overflow-x-auto scrollbar-none select-none shrink-0 max-w-full shadow-inner">
+                {[
+                  { id: 'canvas', label: 'Холст', icon: Network },
+                  { id: 'kanban', label: 'Канбан', icon: Kanban },
+                  { id: 'list', label: 'Мобильный', icon: Smartphone },
+                  { id: 'calendar', label: 'Календарь', icon: Calendar },
+                  { id: 'gantt', label: 'Гант', icon: GanttChart },
+                  { id: 'table', label: 'Таблица', icon: Table }
+                ].map(v => {
+                  const active = (containerViewModes[focusedContainer.id] || 'canvas') === v.id;
+                  const IconComponent = v.icon;
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setContainerViewMode(focusedContainer.id, v.id as any);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      data-drag-ignore
+                      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[11px] font-bold tracking-tight transition-all duration-200 cursor-pointer whitespace-nowrap ${
+                        active 
+                          ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-450 border border-slate-100 dark:border-slate-755 shadow-[0_2px_8px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)]' 
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-850 border border-transparent'
+                      }`}
+                    >
+                      <IconComponent className={`w-3.5 h-3.5 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`} />
+                      <span>{v.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              
+              <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
+              
+              <div className="flex items-center gap-3 shrink-0 w-full md:w-auto justify-between md:justify-start">
+                <div className="flex flex-col items-end gap-0.5 select-none text-right">
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                    {completedChildren}/{totalChildren} Выполнено
+                  </span>
+                  <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-amber-500 transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => {
+                      const x = Math.round(-panX / zoom);
+                      const y = Math.round(-panY / zoom);
+                      onAddFloatingNode(x, y, focusedContainerId, 'Workflow Шаг', { isWorkflowRectangle: true });
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wide font-extrabold bg-indigo-500 hover:bg-indigo-600 text-white shadow-md hover:scale-[1.02] transition-all cursor-pointer border border-transparent"
+                    title="Добавить шаг workflow в сфокусированный контейнер"
+                  >
+                    <Network className="w-3.5 h-3.5 text-white" />
+                    <span>+ Шаг Workflow</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const x = Math.round(-panX / zoom);
+                      const y = Math.round(-panY / zoom);
+                      onAddFloatingNode(x, y, focusedContainerId);
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wide font-extrabold bg-emerald-500 hover:bg-emerald-600 text-white shadow-md hover:scale-[1.02] transition-all cursor-pointer border border-transparent"
+                    title="Добавить простую задачу в сфокусированный контейнер"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5 text-white" />
+                    <span>+ Задача</span>
+                  </button>
+                </div>
+                
+                <button
+                  onClick={() => {
+                    autoFitContainer(focusedContainerId);
+                    const targetZoom = 0.85;
+                    setZoom(targetZoom);
+                    setPanX(-focusedContainer.x * targetZoom);
+                    setPanY(-focusedContainer.y * targetZoom);
+                    onSelectNode(focusedContainer.id);
+                    setFocusedContainerId(null);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg text-[11px] font-extrabold transition-all duration-200 cursor-pointer border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
+                >
+                  <Minimize2 className="w-3.5 h-3.5 text-rose-500" />
+                  Вернуться
+                </button>
+              </div>
             </div>
+
+            {/* Mobile Only Collapsible Compact Layout */}
+            <div className="flex md:hidden flex-col select-none">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-amber-200/40 bg-amber-50/5 dark:bg-slate-900/30">
+                <div className="flex items-center gap-2 min-w-0">
+                  {/* Miniature progress bar indicator */}
+                  <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
+                    <svg className="w-full h-full transform -rotate-90 select-none" viewBox="0 0 36 36">
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="15"
+                        className="text-slate-100 dark:text-slate-800"
+                        strokeWidth="3.5"
+                        stroke="currentColor"
+                        fill="transparent"
+                      />
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="15"
+                        className="text-amber-500 transition-all duration-300"
+                        strokeWidth="3.5"
+                        strokeDasharray={2 * Math.PI * 15}
+                        strokeDashoffset={2 * Math.PI * 15 * (1 - progress / 100)}
+                        strokeLinecap="round"
+                        stroke="currentColor"
+                        fill="transparent"
+                      />
+                    </svg>
+                    <span className="absolute text-[8px] font-mono font-black text-slate-700 dark:text-slate-300">{progress}%</span>
+                  </div>
+                  
+                  {/* Container name view */}
+                  <div className="truncate flex flex-col min-w-0">
+                    <span className="text-[8px] uppercase tracking-wider font-extrabold text-amber-600 dark:text-amber-400 leading-none">Фокусировка</span>
+                    <input
+                      type="text"
+                      value={focusedContainer.text}
+                      onChange={(e) => {
+                        onUpdateNode({
+                          ...focusedContainer,
+                          text: e.target.value
+                        });
+                      }}
+                      className="text-xs font-sans font-black text-slate-800 dark:text-slate-100 bg-transparent border-none focus:outline-none focus:ring-0 p-0 leading-tight min-w-0 max-w-[110px]"
+                      placeholder="Имя"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-450 bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">
+                    {completedChildren}/{totalChildren}
+                  </span>
+
+                  {/* Menu switch trigger button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsFocusStatsMobileExpanded(!isFocusStatsMobileExpanded);
+                    }}
+                    className={`p-1.5 rounded-xl border transition-all cursor-pointer ${
+                      isFocusStatsMobileExpanded 
+                        ? 'border-indigo-400 bg-indigo-50/40 text-indigo-600 dark:bg-indigo-950/30' 
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-slate-600 dark:text-slate-305'
+                    }`}
+                  >
+                    <Menu className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Quick Exit back button */}
+                  <button
+                    onClick={() => {
+                      autoFitContainer(focusedContainerId);
+                      const targetZoom = 0.85;
+                      setZoom(targetZoom);
+                      setPanX(-focusedContainer.x * targetZoom);
+                      setPanY(-focusedContainer.y * targetZoom);
+                      onSelectNode(focusedContainer.id);
+                      setFocusedContainerId(null);
+                    }}
+                    className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-rose-505 hover:bg-rose-50 dark:hover:bg-rose-950/20 hover:text-rose-600 transition-colors cursor-pointer"
+                    title="Вернуться назад"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Smoothly expanding accordion of views & actions */}
+              {isFocusStatsMobileExpanded && (() => {
+                const currentViewModeId = containerViewModes[focusedContainer.id] || 'canvas';
+                const viewOptions = [
+                  { id: 'canvas', label: 'Холст', icon: Network },
+                  { id: 'kanban', label: 'Канбан', icon: Kanban },
+                  { id: 'list', label: 'Мобильный', icon: Smartphone },
+                  { id: 'calendar', label: 'Календарь', icon: Calendar },
+                  { id: 'gantt', label: 'Гант', icon: GanttChart },
+                  { id: 'table', label: 'Таблица', icon: Table }
+                ];
+                const currentViewOption = viewOptions.find(o => o.id === currentViewModeId) || viewOptions[0];
+                const CurrentIcon = currentViewOption.icon;
+
+                return (
+                  <div className="px-3 py-2.5 flex flex-col gap-2.5 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 animate-in slide-in-from-top-1 duration-150">
+                    {/* Collapsible View Selector Header */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between bg-white dark:bg-slate-850 border border-slate-200/60 dark:border-slate-750 p-2 rounded-xl shadow-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CurrentIcon className="w-4 h-4 text-indigo-500 shrink-0" />
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-500 leading-none">Вид контейнера</span>
+                            <span className="text-xs font-extrabold text-slate-750 dark:text-slate-200 truncate">{currentViewOption.label}</span>
+                          </div>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsMobileViewsListExpanded(!isMobileViewsListExpanded);
+                          }}
+                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/45 text-indigo-650 dark:text-indigo-400 font-extrabold text-[10px] rounded-lg border border-indigo-100/50 dark:border-indigo-900/30 transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                        >
+                          <span>Выбрать</span>
+                          {isMobileViewsListExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                      </div>
+
+                      {/* Expanding list of available views */}
+                      {isMobileViewsListExpanded && (
+                        <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-1 select-none animate-in slide-in-from-top-1 duration-150">
+                          {viewOptions.map(v => {
+                            const active = currentViewModeId === v.id;
+                            const IconComponent = v.icon;
+                            return (
+                              <button
+                                key={v.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setContainerViewMode(focusedContainer.id, v.id as any);
+                                  setIsMobileViewsListExpanded(false);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                data-drag-ignore
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-bold tracking-tight transition-all duration-150 cursor-pointer whitespace-nowrap border ${
+                                  active 
+                                    ? 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent shadow-xs' 
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 border-slate-150 dark:border-slate-700/80'
+                                }`}
+                              >
+                                <IconComponent className={`w-3 h-3 ${active ? 'text-white' : 'text-slate-450 dark:text-slate-400'}`} />
+                                <span>{v.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                    <button
+                      onClick={() => {
+                        const x = Math.round(-panX / zoom);
+                        const y = Math.round(-panY / zoom);
+                        onAddFloatingNode(x, y, focusedContainerId, 'Workflow Шаг', { isWorkflowRectangle: true });
+                        setIsFocusStatsMobileExpanded(false);
+                      }}
+                      className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[9px] uppercase tracking-wide font-black bg-indigo-500 hover:bg-indigo-600 text-white shadow-sm cursor-pointer"
+                    >
+                      <Network className="w-3 h-3 text-white" />
+                      <span>+ Шаг Workflow</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const x = Math.round(-panX / zoom);
+                        const y = Math.round(-panY / zoom);
+                        onAddFloatingNode(x, y, focusedContainerId);
+                        setIsFocusStatsMobileExpanded(false);
+                      }}
+                      className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[9px] uppercase tracking-wide font-black bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm cursor-pointer"
+                    >
+                      <PlusCircle className="w-3 h-3 text-white" />
+                      <span>+ Задача</span>
+                    </button>
+                  </div>
+                </div>
+              ); })()}
+            </div>
+
           </div>
         );
       })()}
@@ -4176,96 +4373,94 @@ export default function MindMapCanvas({
         </div>
       </div>
 
-      <div className="absolute bottom-4 left-2 right-2 sm:right-auto sm:left-4 z-10 flex flex-wrap items-center justify-center sm:justify-start gap-1 sm:gap-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-1.5 sm:p-2 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md max-w-[calc(100vw-16px)] sm:max-w-none">
-        <button
-          onClick={handleZoomIn}
-          title="Приблизить"
-          className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-        <button
-          onClick={handleZoomOut}
-          title="Отдалить"
-          className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-        <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
-        <button
-          onClick={handleRecenter}
-          title="По центру"
-          className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium cursor-pointer shrink-0"
-        >
-          <Maximize2 className="w-4 h-4" />
-          <span className="hidden sm:inline">Сбросить</span>
-        </button>
+      {!focusedContainerId && (
+        <div className="absolute bottom-4 left-2 right-2 sm:right-auto sm:left-4 z-10 flex flex-wrap items-center justify-center sm:justify-start gap-1 sm:gap-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-1.5 sm:p-2 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md max-w-[calc(100vw-16px)] sm:max-w-none">
+          <button
+            onClick={handleZoomIn}
+            title="Приблизить"
+            className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleZoomOut}
+            title="Отдалить"
+            className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
+          <button
+            onClick={handleRecenter}
+            title="По центру"
+            className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium cursor-pointer shrink-0"
+          >
+            <Maximize2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Сбросить</span>
+          </button>
 
-        <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
-        <button
-          onClick={() => {
-            let cx = 0;
-            let cy = 0;
-            if (containerRef.current) {
-              const rect = containerRef.current.getBoundingClientRect();
-              cx = rect.width / 2;
-              cy = rect.height / 2;
-            }
-            const x = Math.round(-panX / zoom);
-            const y = Math.round(-panY / zoom);
-            onAddFloatingNode(x, y, focusedContainerId);
-          }}
-          title={focusedContainerId ? "Создать новую задачу внутри текущего контейнера" : "Создать независимую плавующую задачу по центру холста (или дважды кликните на пустом месте)"}
-          className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 border-transparent hover:border-emerald-200 dark:hover:border-emerald-900/40 shrink-0"
-        >
-          <PlusCircle className="w-3.5 h-3.5 text-emerald-500" />
-          <span className="hidden sm:inline">{focusedContainerId ? 'Создать задачу' : 'Плавающая задача'}</span>
-          <span className="sm:hidden">{focusedContainerId ? 'Задача' : 'Плавающая'}</span>
-        </button>
+          <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
+          <button
+            onClick={() => {
+              let cx = 0;
+              let cy = 0;
+              if (containerRef.current) {
+                const rect = containerRef.current.getBoundingClientRect();
+                cx = rect.width / 2;
+                cy = rect.height / 2;
+              }
+              const x = Math.round(-panX / zoom);
+              const y = Math.round(-panY / zoom);
+              onAddFloatingNode(x, y, null);
+            }}
+            title="Создать независимую плавующую задачу по центру холста (или дважды кликните на пустом месте)"
+            className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 border-transparent hover:border-emerald-200 dark:hover:border-emerald-900/40 shrink-0"
+          >
+            <PlusCircle className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="hidden sm:inline">Плавающая задача</span>
+            <span className="sm:hidden">Плавающая</span>
+          </button>
 
-        <button
-          onClick={() => {
-            const x = Math.round(-panX / zoom);
-            const y = Math.round(-panY / zoom);
-            onAddFloatingNode(x, y, focusedContainerId, 'Workflow Шаг', { isWorkflowRectangle: true });
-          }}
-          title={focusedContainerId ? "Создать прямоугольник workflow внутри текущего контейнера" : "Создать прямоугольник workflow по центру холста"}
-          className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40 shrink-0"
-        >
-          <Network className="w-3.5 h-3.5 text-indigo-500" />
-          <span className="hidden sm:inline">Прямоугольник Workflow</span>
-          <span className="sm:hidden">Workflow</span>
-        </button>
+          <button
+            onClick={() => {
+              const x = Math.round(-panX / zoom);
+              const y = Math.round(-panY / zoom);
+              onAddFloatingNode(x, y, null, 'Workflow Шаг', { isWorkflowRectangle: true });
+            }}
+            title="Создать прямоугольник workflow по центру холста"
+            className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40 shrink-0"
+          >
+            <Network className="w-3.5 h-3.5 text-indigo-500" />
+            <span className="hidden sm:inline">Прямоугольник Workflow</span>
+            <span className="sm:hidden">Workflow</span>
+          </button>
 
-        <button
-          onClick={startCanvasDictation}
-          title={focusedContainerId ? "Продиктовать название новой задачи внутри текущего контейнера" : "Записать новую задачу на холст голосом"}
-          className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-indigo-600 dark:text-indigo-400 hover:text-indigo-705 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40 shrink-0"
-        >
-          <Mic className="w-3.5 h-3.5 text-indigo-500" />
-          <span className="hidden sm:inline">Продиктовать задачу</span>
-          <span className="sm:hidden">Голос</span>
-        </button>
+          <button
+            onClick={startCanvasDictation}
+            title="Записать новую задачу на холст голосом"
+            className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-indigo-600 dark:text-indigo-400 hover:text-indigo-705 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40 shrink-0"
+          >
+            <Mic className="w-3.5 h-3.5 text-indigo-500" />
+            <span className="hidden sm:inline">Продиктовать задачу</span>
+            <span className="sm:hidden">Голос</span>
+          </button>
 
-        {!focusedContainerId && (
-          <>
-            <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
-            <button
-              onClick={() => {
-                const x = Math.round(-panX / zoom);
-                const y = Math.round(-panY / zoom);
-                onAddContainerNode(x, y);
-              }}
-              title="Создать контейнер. В него можно вкладывать другие задачи для совместного перемещения и свертывания"
-              className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-350 hover:bg-amber-50 dark:hover:bg-amber-950/20 border-transparent hover:border-amber-200 dark:hover:border-amber-900/40 shrink-0"
-            >
-              <span>📦</span>
-              <span className="hidden sm:inline">Создать контейнер</span>
-              <span className="sm:hidden">Контейнер</span>
-            </button>
-          </>
-        )}
-      </div>
+          <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
+          <button
+            onClick={() => {
+              const x = Math.round(-panX / zoom);
+              const y = Math.round(-panY / zoom);
+              onAddContainerNode(x, y);
+            }}
+            title="Создать контейнер. В него можно вкладывать другие задачи для совместного перемещения и свертывания"
+            className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-350 hover:bg-amber-50 dark:hover:bg-amber-950/20 border-transparent hover:border-amber-200 dark:hover:border-amber-900/40 shrink-0"
+          >
+            <span>📦</span>
+            <span className="hidden sm:inline">Создать контейнер</span>
+            <span className="sm:hidden">Контейнер</span>
+          </button>
+        </div>
+      )}
 
       {/* Origin coordinates center dot (0, 0) */}
       <div 
@@ -5405,8 +5600,6 @@ export default function MindMapCanvas({
             ? containerZ + (isSelected ? 5 : 2)
             : (isSelected ? 60 : 5);
             
-          const isMultiSelected = selectedNodeIds.includes(node.id);
-
           return (
             <div
               key={node.id}
@@ -5461,12 +5654,12 @@ export default function MindMapCanvas({
                   : hoverTargetId === node.id
                     ? 'bg-indigo-50/10 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500 scale-[1.03] shadow-[0_0_15px_rgba(99,102,241,0.4)] animate-pulse'
                     : isRoot
-                      ? isSelected || isMultiSelected
+                      ? isSelected
                         ? 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent ring-4 ring-indigo-250 dark:ring-indigo-900 shadow-xl'
                         : 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent shadow-md hover:shadow-lg hover:scale-[1.02]'
                       : priorityViewActive
-                        ? `bg-white dark:bg-slate-900 ${getPriorityCardStyles(node.priority, isSelected || isMultiSelected)}`
-                        : isSelected || isMultiSelected
+                        ? `bg-white dark:bg-slate-900 ${getPriorityCardStyles(node.priority, isSelected)}`
+                        : isSelected
                           ? 'bg-white dark:bg-slate-900 border-indigo-650 dark:border-indigo-400 ring-4 ring-indigo-100 dark:ring-indigo-950/40 shadow-lg' 
                           : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:hover:border-slate-655 shadow-sm'
               } ${node.completed ? 'opacity-85' : isNodeOverdue(node, nodes) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5 animate-pulse' : ''}`}
@@ -5490,23 +5683,6 @@ export default function MindMapCanvas({
               {hoverTargetId === node.id && (
                 <div className="absolute -top-7 left-1/2 transform -translate-x-1/2 bg-indigo-600 text-white px-2.5 py-1 rounded-full text-[9px] font-bold tracking-wider uppercase animate-bounce shadow-md whitespace-nowrap z-50">
                   Сделать родительской
-                </div>
-              )}
-
-              {/* Multi-selection Checkbox Indicator */}
-              {(isMultiSelectMode || selectedNodeIds.length > 0) && (
-                <div className="absolute top-2 right-2 z-40" onClick={(e) => { e.stopPropagation(); onSelectNode(node.id, true); }}>
-                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
-                    isMultiSelected
-                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-md scale-110'
-                      : 'bg-white/80 dark:bg-slate-900/80 border-slate-300 dark:border-slate-700 text-transparent hover:border-indigo-500 hover:scale-110'
-                  }`}>
-                    {isMultiSelected && (
-                      <svg className="w-2.5 h-2.5 stroke-current" viewBox="0 0 24 24" fill="none" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </div>
                 </div>
               )}
 
@@ -6080,7 +6256,7 @@ export default function MindMapCanvas({
 
       {/* Off-canvas Sticky INBOX Container Widget */}
       <div 
-        className={`absolute ${focusedContainerId ? 'top-20 sm:top-4' : 'top-4'} right-4 z-40 pointer-events-auto select-none`}
+        className={`absolute ${focusedContainerId ? 'bottom-20 sm:bottom-auto sm:top-4' : 'top-4'} right-4 z-40 pointer-events-auto select-none`}
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >
@@ -6096,7 +6272,7 @@ export default function MindMapCanvas({
             </span>
           </button>
         ) : (
-          <div className="w-80 max-h-[460px] bg-white dark:bg-slate-900 rounded-2xl border border-slate-205 dark:border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.18)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-[calc(100vw-32px)] sm:w-80 max-h-[320px] sm:max-h-[460px] bg-white dark:bg-slate-900 rounded-2xl border border-slate-205 dark:border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.18)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             {/* INBOX Header */}
             <div className="px-4 py-3 bg-slate-50 dark:bg-slate-850/60 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">

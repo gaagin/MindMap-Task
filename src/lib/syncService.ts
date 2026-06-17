@@ -32,8 +32,22 @@ export function getLocalDeletions(): DeletionRecord[] {
 export function clearLocalDeletions(uploaded: DeletionRecord[]) {
   try {
     const current = getLocalDeletions();
-    const filtered = current.filter(c => !uploaded.some(u => u.id === c.id && u.type === c.type));
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    
+    // In a professional tombstone sync engine, we DO NOT wipe deletions immediately upon upload.
+    // Instead, we keep them as "tombstones" for a retention window (e.g. 30 days) to prevent 
+    // deleted items from reappearing when syncing between devices.
+    // We prune deletions older than 30 days.
+    const filtered = current.filter(item => {
+      try {
+        return new Date(item.deletedAt || 0).getTime() > thirtyDaysAgo;
+      } catch {
+        return true; // Keep invalid formats as a safeguard
+      }
+    });
+    
     localStorage.setItem(DELETIONS_KEY, JSON.stringify(filtered));
+    console.log(`[Sync] Kept ${filtered.length} tombstones for 30-day cross-device preservation (pruned older ones).`);
   } catch (error) {
     console.error('Failed to clear deletions registry:', error);
   }
@@ -286,10 +300,17 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
 
     const cloudDeletions: DeletionRecord[] = cloudData?.deletions || [];
     const localDeletions = getLocalDeletions();
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
     
-    // Merge deletions
+    // Merge deletions and prune older than 30 days
     const mergedDeletions: DeletionRecord[] = [];
     const appendUniqueDeletion = (rec: DeletionRecord) => {
+      try {
+        const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
+        if (deletedAtMs < thirtyDaysAgo) return; // Skip if older than 30 days
+      } catch {
+        // Keep it if parsing fails
+      }
       if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
         mergedDeletions.push(rec);
       }
@@ -731,11 +752,18 @@ export async function syncWithGoogleSheets(
     const sheetTagCats = parseTagCategories(sheetTagCatsRows);
     const sheetDeletions = parseDeletions(sheetDeletionsRows);
 
-    // 2. Build consolidated deletion set (Sheets Deletions + Local deletions)
+    // 2. Build consolidated deletion set (Sheets Deletions + Local deletions) and prune older than 30 days
     const localDeletions = getLocalDeletions();
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const mergedDeletions: DeletionRecord[] = [];
 
     const appendUniqueDeletion = (rec: DeletionRecord) => {
+      try {
+        const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
+        if (deletedAtMs < thirtyDaysAgo) return; // Skip if older than 30 days
+      } catch {
+        // Keep it if parsing fails
+      }
       if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
         mergedDeletions.push(rec);
       }

@@ -328,6 +328,19 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
 
+  // 5. Serialize deletions deterministically to prevent cross-device races
+  const deletions = (wsState.deletions || [])
+    .map(d => ({
+      type: d.type || '',
+      id: d.id || '',
+      deletedAt: d.deletedAt || ''
+    }))
+    .sort((a, b) => {
+      const cmpType = a.type.localeCompare(b.type);
+      if (cmpType !== 0) return cmpType;
+      return a.id.localeCompare(b.id);
+    });
+
   return JSON.stringify({
     folders,
     projects,
@@ -335,7 +348,8 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
     activeProjectId: wsState.activeProjectId || null,
     tagCategories,
     googleSheetsFileId: wsState.googleSheetsFileId || null,
-    taskSheetsSpreadsheetId: wsState.taskSheetsSpreadsheetId || null
+    taskSheetsSpreadsheetId: wsState.taskSheetsSpreadsheetId || null,
+    deletions
   });
 }
 
@@ -833,8 +847,15 @@ export default function App() {
         }
       })();
       const cloudDeletions = cloudData.deletions || [];
+      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
       const mergedDeletions: any[] = [];
       const appendUnique = (rec: any) => {
+        try {
+          const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
+          if (deletedAtMs < thirtyDaysAgo) return; // Prune deletions older than 30 days
+        } catch {
+          // Safeguard
+        }
         if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
           mergedDeletions.push(rec);
         }
@@ -1157,8 +1178,15 @@ export default function App() {
           }
         })();
         const cloudDeletions = cloudData.deletions || [];
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
         const mergedDeletions: any[] = [];
         const appendUnique = (rec: any) => {
+          try {
+            const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
+            if (deletedAtMs < thirtyDaysAgo) return; // Prune deletions older than 30 days
+          } catch {
+            // Safeguard
+          }
           if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
             mergedDeletions.push(rec);
           }
@@ -2810,32 +2838,6 @@ export default function App() {
               </button>
             )}
 
-            {/* Touch & Quick Multiple-Selection Mode Toggle Button */}
-            {state.activeProjectId && (
-              <button
-                id="toolbar-multi-select-btn"
-                type="button"
-                onClick={() => {
-                  const val = !isMultiSelectMode;
-                  setIsMultiSelectMode(val);
-                  if (val) {
-                    // Start selection Mode
-                  } else {
-                    setSelectedNodeIds([]); // Reset selection when turning off
-                  }
-                }}
-                title="Режим выбора нескольких задач (Мульти-выбор)"
-                className={`p-1.5 border rounded-lg flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-all focus:outline-none ${
-                  isMultiSelectMode
-                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
-                    : 'text-slate-600 dark:text-slate-350 bg-slate-55 dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-755'
-                }`}
-              >
-                <span className={`w-2 h-2 rounded-full shrink-0 ${isMultiSelectMode ? 'bg-white animate-ping' : 'bg-slate-300 dark:bg-slate-550'}`} />
-                <span className="hidden sm:inline">Выбор</span>
-              </button>
-            )}
-
             {/* View Mode Switching Tabs */}
             {state.activeProjectId && (
               <>
@@ -3322,8 +3324,8 @@ export default function App() {
                 lastCreatedNodeId={lastCreatedNodeId}
                 onClearLastCreatedNodeId={() => setLastCreatedNodeId(null)}
                 onSelectNode={handleSelectCanvasNode}
-                selectedNodeIds={selectedNodeIds}
-                isMultiSelectMode={isMultiSelectMode}
+                selectedNodeIds={[]}
+                isMultiSelectMode={false}
                 onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
                 onUpdateNodeParent={handleUpdateNodeParent}
                 onAddChildNode={handleAddChildNode}
@@ -3363,183 +3365,7 @@ export default function App() {
 
         </div>
 
-        {/* Bulk Multiple-Selection Actions Control Panel Bar */}
-        {selectedNodeIds.length > 0 && (
-          <div className="fixed bottom-24 left-4 right-4 md:bottom-6 md:left-1/2 md:-translate-x-1/2 z-45 flex flex-col sm:flex-row items-center gap-3 sm:gap-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 p-4 rounded-2xl shadow-2xl max-w-full md:max-w-4xl text-xs select-none animate-in fade-in slide-in-from-bottom-4 duration-205">
-            
-            {/* Left part: Selection counter */}
-            <div className="flex items-center justify-between w-full sm:w-auto gap-3 border-r pr-0 sm:pr-4 border-slate-200 dark:border-slate-800 shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-[10px] font-mono font-extrabold text-indigo-600 dark:text-indigo-405">
-                  {selectedNodeIds.length}
-                </span>
-                <span className="font-extrabold text-slate-800 dark:text-slate-100">выделено</span>
-              </div>
-              <button 
-                onClick={() => setSelectedNodeIds([])}
-                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                title="Сбросить выделение"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            {/* Right part: Bulk Actions */}
-            <div className="flex flex-wrap items-center gap-2.5 w-full justify-center sm:justify-start">
-              
-              {/* Change Completion Status */}
-              <button
-                onClick={() => handleBulkToggleCompleted(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 rounded-xl transition-all cursor-pointer font-bold"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Выполнить</span>
-              </button>
-              
-              <button
-                onClick={() => handleBulkToggleCompleted(false)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-55 hover:bg-slate-100 dark:bg-slate-805 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 rounded-xl transition-all cursor-pointer font-bold"
-              >
-                <span className="w-3.5 h-3.5 rounded-full border border-slate-400 dark:border-slate-500 block shrink-0" />
-                <span>В активные</span>
-              </button>
-
-              {/* Set Priority dropdown/select */}
-              <div className="flex items-center gap-1 bg-slate-55 dark:bg-slate-805 py-1 px-1.5 rounded-xl border border-slate-200/60 dark:border-slate-750 text-[11px]">
-                <span className="text-slate-400 font-bold text-[10px] uppercase pl-1.5">Приоритет:</span>
-                <select
-                  aria-label="Смена приоритета"
-                  onChange={(e) => {
-                    handleBulkChangePriority(e.target.value as Priority);
-                    e.target.value = ""; // Reset
-                  }}
-                  defaultValue=""
-                  className="bg-transparent border-0 text-slate-750 dark:text-slate-200 py-1 px-2.5 font-bold cursor-pointer focus:outline-none focus:ring-0"
-                >
-                  <option value="" disabled className="bg-white dark:bg-slate-900 text-slate-450">Сделать...</option>
-                  <option value="none" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Без приоритета</option>
-                  <option value="low" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Низкий</option>
-                  <option value="medium" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Средний</option>
-                  <option value="high" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Высокий</option>
-                  <option value="urgent" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Критический</option>
-                </select>
-              </div>
-
-              {/* Add Tag Tool */}
-              <form 
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const target = e.target as HTMLFormElement;
-                  const input = target.elements.namedItem('tagInput') as HTMLInputElement;
-                  if (input && input.value.trim()) {
-                    handleBulkAddTag(input.value);
-                    input.value = '';
-                  }
-                }}
-                className="flex items-center bg-slate-55 dark:bg-slate-805 pl-2 pr-1 py-1 rounded-xl border border-slate-200/60 dark:border-slate-750"
-              >
-                <input
-                  type="text"
-                  name="tagInput"
-                  placeholder="Добавить тег..."
-                  className="bg-transparent border-0 text-slate-850 dark:text-slate-100 placeholder-slate-400 max-w-[100px] text-[11px] focus:outline-none focus:ring-0"
-                />
-                <button
-                  type="submit"
-                  className="px-2 py-1 bg-indigo-50 dark:bg-indigo-950 text-indigo-650 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-lg cursor-pointer transition-all font-extrabold text-[10px]"
-                >
-                  +
-                </button>
-              </form>
-
-              {/* Bulk Delete */}
-              <button
-                onClick={handleBulkDelete}
-                className="flex items-center gap-1 py-1.5 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-400 rounded-xl transition-all cursor-pointer font-bold ml-auto sm:ml-2 border border-rose-200/40"
-                title="Удалить все выбранные задачи"
-              >
-                <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                <span>Удалить</span>
-              </button>
-
-            </div>
-          </div>
-        )}
-
-        {/* Single-Selection Floating Quick Actions Control Bar */}
-        {selectedNodeId !== null && !isDrawerOpen && selectedNode && selectedNodeIds.length === 0 && (
-          <div className="fixed bottom-24 left-4 right-4 md:bottom-6 md:left-1/2 md:-translate-x-1/2 z-45 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 p-3 px-4 rounded-2xl shadow-2xl max-w-full md:w-max min-w-[320px] md:max-w-2xl select-none animate-in fade-in slide-in-from-bottom-4 duration-205">
-            
-            {/* Left section: Info/Text */}
-            <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
-              <span className={`w-3 h-3 rounded-full shrink-0 ${selectedNode.completed ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-              <div className="flex flex-col min-w-0">
-                <span className={`text-[10px] font-black tracking-wider uppercase ${selectedNode.completed ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                  {selectedNode.completed ? 'Выполнено' : 'Выбранная задача'}
-                </span>
-                <span className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 truncate max-w-[200px] sm:max-w-[300px]">
-                  {selectedNode.text || '(Без текста)'}
-                </span>
-              </div>
-            </div>
-
-            {/* Right section: Action Buttons */}
-            <div className="flex items-center gap-2.5 shrink-0">
-              {/* Properties Eye Action */}
-              <button
-                onClick={() => setIsDrawerOpen(true)}
-                className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-750 dark:text-indigo-300 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-900 rounded-xl transition-all cursor-pointer font-bold text-[11px] border border-indigo-150 dark:border-indigo-900/30 shadow-xs"
-                title="Открыть свойства и описание (Глаз)"
-              >
-                <Eye className="w-4 h-4 shrink-0" />
-                <span>Открыть свойства</span>
-              </button>
-
-              {/* Complete Toggle Action */}
-              <button
-                onClick={() => {
-                  handleToggleNodeCompleted(selectedNode.id);
-                }}
-                className={`flex items-center gap-1.5 py-1.5 px-3 rounded-xl transition-all cursor-pointer font-bold text-[11px] border ${
-                  selectedNode.completed
-                    ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border-emerald-200/40'
-                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-350 border-slate-200 dark:border-slate-700'
-                }`}
-                title={selectedNode.completed ? 'Снять выполнение' : 'Выполнить задачу'}
-              >
-                <Check className={`w-4 h-4 ${selectedNode.completed ? 'text-emerald-500' : 'text-slate-400'}`} />
-                <span>{selectedNode.completed ? 'Выполнено' : 'Выполнить'}</span>
-              </button>
-
-              {/* Delete Action */}
-              <button
-                onClick={() => {
-                  if (confirm('Вы уверены, что хотите удалить эту задачу?')) {
-                    handleDeleteNode(selectedNode.id);
-                  }
-                }}
-                className="p-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-450 border border-rose-150 dark:border-rose-900/30 rounded-xl transition-all cursor-pointer"
-                title="Удалить задачу"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-
-              <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 mx-1" />
-
-              {/* Close/Deselect Action */}
-              <button
-                onClick={() => {
-                  setSelectedNodeId(null);
-                }}
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 rounded-xl transition-all cursor-pointer"
-                title="Снять выделение"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-          </div>
-        )}
 
         {/* Task Properties slide-out drawer displays only on explicit open clicking Eye button */}
         {isDrawerOpen && selectedNode && (

@@ -465,10 +465,10 @@ export default function KanbanView({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
         transition={{ duration: 0.15 }}
-        className={`group select-none text-left bg-white dark:bg-slate-910 border hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] hover:translate-y-[-1.5px] transition-all duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
+        className={`group select-none text-left bg-white dark:bg-slate-910 border hover:border-slate-300 dark:hover:border-slate-705 rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] hover:translate-y-[-1.5px] transition-all duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
           draggedOverTagCardId === node.id
             ? 'border-emerald-500 dark:border-emerald-400 ring-4 ring-emerald-500/20 shadow-md bg-emerald-50/10 dark:bg-emerald-950/10 scale-[1.01]'
-            : (node.id === selectedNodeId || (selectedNodeIds && selectedNodeIds.includes(node.id))) 
+            : node.id === selectedNodeId 
               ? 'border-[#4f46e5] dark:border-indigo-400 ring-4 ring-indigo-500/15 shadow-md scale-[1.015]' 
               : isNodeOverdue(node, nodes)
                 ? 'border-rose-400 dark:border-rose-900/60 bg-rose-50/5 dark:bg-rose-950/2 shadow-sm'
@@ -477,18 +477,6 @@ export default function KanbanView({
       >
         {/* Completed toggle checkbox and text */}
         <div className="flex items-start gap-3">
-          {onToggleSelectNode && (
-            <input
-              type="checkbox"
-              checked={selectedNodeIds.includes(node.id)}
-              onChange={(e) => {
-                e.stopPropagation();
-                onToggleSelectNode(node.id);
-              }}
-              className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-505 h-3.5 w-3.5 mt-1 cursor-pointer shrink-0 z-10"
-              title="Выбрать задачу"
-            />
-          )}
           <button
             id={`kanban-card-check-${node.id}`}
             type="button"
