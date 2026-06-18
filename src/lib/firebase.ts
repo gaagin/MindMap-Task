@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import { initializeFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -59,6 +59,9 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     if (!credential?.accessToken) {
       throw new Error('Failed to get access token from Firebase Auth');
     }
+    try {
+      localStorage.removeItem('explicit_logout');
+    } catch (e) {}
     setAccessToken(credential.accessToken);
     return { user: result.user, accessToken: credential.accessToken };
   } catch (error) {
@@ -69,11 +72,29 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
   }
 };
 
+export const signInGuest = async (): Promise<User> => {
+  try {
+    const result = await signInAnonymously(auth);
+    try {
+      localStorage.removeItem('explicit_logout');
+    } catch (e) {}
+    return result.user;
+  } catch (error) {
+    console.error('Anonymous guest sign in error:', error);
+    throw error;
+  }
+};
+
 export const getAccessToken = async (): Promise<string | null> => {
   return cachedAccessToken;
 };
 
 export const logout = async () => {
+  try {
+    localStorage.setItem('explicit_logout', 'true');
+  } catch (e) {
+    console.error('[Firebase Auth] Failed to set explicit_logout state:', e);
+  }
   await auth.signOut();
   setAccessToken(null);
 };

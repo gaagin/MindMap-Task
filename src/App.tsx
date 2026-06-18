@@ -54,7 +54,8 @@ import {
   googleSignIn, 
   logout,
   setAccessToken,
-  db
+  db,
+  signInGuest
 } from './lib/firebase';
 import { 
   saveToFirebaseDirectly, 
@@ -794,6 +795,19 @@ export default function App() {
         setCurrentUser(null);
         setGoogleToken(null);
         setSyncStatus(prev => ({ ...prev, firebase: 'idle', sheets: 'idle' }));
+
+        // Automatic anonymous authentication if the user did not explicitly log out
+        try {
+          const explicitLogout = localStorage.getItem('explicit_logout') === 'true';
+          if (!explicitLogout) {
+            console.log('[Auth] Automatic anonymous guest sign in triggered');
+            signInGuest().catch(err => {
+              console.error('[Auth] Failed to automatically sign in guest:', err);
+            });
+          }
+        } catch (e) {
+          console.error('[Auth] Error checking explicit logout state:', e);
+        }
       }
     );
     return () => unsubscribe();

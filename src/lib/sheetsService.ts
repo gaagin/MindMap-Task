@@ -178,6 +178,7 @@ export async function saveStateToGoogleSheets(
     'Заметки/Описание',
     'ID Родителя',
     'Плавающая',
+    'Архивирована',
   ];
 
   const safeCellString = (val: any): any => {
@@ -209,6 +210,7 @@ export async function saveStateToGoogleSheets(
         safeCellString(node.notes || ''),
         node.parentId || '',
         node.isFloating ? 'Да' : 'Нет',
+        node.archived ? 'Да' : 'Нет',
       ]);
     });
   });
