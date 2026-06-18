@@ -709,6 +709,47 @@ export default function App() {
           const newReminders = triggered.filter(r => !prevIds.has(r.nodeId));
           if (newReminders.length > 0) {
             playNotificationChime();
+
+            // Dispatch native system notifications (highly visible on mobile lock-screen & status-bar!)
+            newReminders.forEach((reminder) => {
+              if ('Notification' in window && Notification.permission === 'granted') {
+                const title = 'Напоминание о задаче 🔔';
+                const options = {
+                  body: `Срок: ${reminder.text}`,
+                  icon: '/icon.svg',
+                  badge: '/icon.svg',
+                  vibrate: [200, 100, 250, 100, 300, 150, 400],
+                  tag: reminder.nodeId,
+                  requireInteraction: true // Keep it showing until the user explicitly taps or clears it
+                };
+
+                if ('serviceWorker' in navigator) {
+                  navigator.serviceWorker.ready.then((reg) => {
+                    reg.showNotification(title, options);
+                  }).catch(() => {
+                    try {
+                      new Notification(title, {
+                        body: options.body,
+                        tag: options.tag,
+                        requireInteraction: true
+                      });
+                    } catch (e) {
+                      console.warn('Native notification fallback failed:', e);
+                    }
+                  });
+                } else {
+                  try {
+                    new Notification(title, {
+                      body: options.body,
+                      tag: options.tag,
+                      requireInteraction: true
+                    });
+                  } catch (e) {
+                    console.warn('Native notification failed:', e);
+                  }
+                }
+              }
+            });
           }
           return [...prev, ...newReminders];
         });
@@ -766,6 +807,7 @@ export default function App() {
   // Version Control & Symmetrical Release Updates
   const APP_VERSION = "2.5.0";
   const [showVersionUpdateAlert, setShowVersionUpdateAlert] = useState(false);
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [aiConsoleOpen, setAiConsoleOpen] = useState(false);
 
@@ -780,6 +822,49 @@ export default function App() {
       console.error('Failed to log version update:', e);
     }
   }, []);
+
+  useEffect(() => {
+    if ('Notification' in window) {
+      const perm = Notification.permission;
+      const dismissed = localStorage.getItem('task_mindmap_dismissed_notifications_banner') === 'true';
+      if (perm === 'default' && !dismissed) {
+        const t = setTimeout(() => {
+          setShowNotificationPrompt(true);
+        }, 3000); // 3 seconds delay for polished entry
+        return () => clearTimeout(t);
+      }
+    }
+  }, []);
+
+  const handleRequestNotificationPermission = () => {
+    if ('Notification' in window) {
+      Notification.requestPermission().then((permission) => {
+        setShowNotificationPrompt(false);
+        if (permission === 'granted') {
+          playNotificationChime();
+          const options = {
+            body: 'Вы успешно подписались на системные напоминания о задачах!',
+            icon: '/icon.svg',
+            badge: '/icon.svg',
+            vibrate: [200, 100, 200, 100, 300],
+            tag: 'permission-success'
+          };
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready.then((reg) => {
+              reg.showNotification('Уведомления включены! 🔔', options);
+            });
+          } else {
+            new Notification('Уведомления включены! 🔔', options);
+          }
+        }
+      });
+    }
+  };
+
+  const handleDismissNotificationPrompt = () => {
+    localStorage.setItem('task_mindmap_dismissed_notifications_banner', 'true');
+    setShowNotificationPrompt(false);
+  };
 
   // 1. Firebase Auth listener registration
   useEffect(() => {
@@ -4122,6 +4207,48 @@ export default function App() {
           >
             Понятно, спасибо
           </button>
+        </div>
+      )}
+
+      {/* Floating System Notification Setup Prompt Banner */}
+      {showNotificationPrompt && (
+        <div className="fixed bottom-6 right-6 max-w-sm bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-950/80 p-5 rounded-2xl shadow-[0_12px_45px_-10px_rgba(99,102,241,0.3)] z-[1001] animate-in slide-in-from-bottom duration-300 flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="flex-shrink-0 bg-indigo-50 dark:bg-indigo-950/50 p-1.5 rounded-lg text-indigo-650 dark:text-indigo-400">
+                <Bell className="w-4.5 h-4.5 animate-bounce" />
+              </span>
+              <h4 className="font-extrabold text-sm tracking-tight text-slate-800 dark:text-slate-100">Включить уведомления?</h4>
+            </div>
+            <button 
+              onClick={handleDismissNotificationPrompt}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Закрыть предложение"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="space-y-2">
+            <p className="text-xs text-slate-605 dark:text-slate-350 leading-relaxed">
+              Разрешите системные уведомления, чтобы получать мгновенные напоминания о дедлайнах и важных задачах прямо на вашем телефоне или компьютере, даже когда сайт закрыт!
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={handleDismissNotificationPrompt}
+              className="py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-98"
+            >
+              Позже
+            </button>
+            <button
+              onClick={handleRequestNotificationPermission}
+              className="py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md active:scale-98 cursor-pointer"
+            >
+              Включить
+            </button>
+          </div>
         </div>
       )}
 

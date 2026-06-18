@@ -17,9 +17,11 @@ import {
   AlertCircle,
   Move,
   Sun,
-  Moon
+  Moon,
+  Bell
 } from 'lucide-react';
 import { Folder, Project, TagCategory, WorkspaceState } from '../types';
+import { playNotificationChime } from '../utils';
 import GoogleSheetsSync from './GoogleSheetsSync';
 
 interface SidebarProps {
@@ -78,6 +80,33 @@ export default function Sidebar({
   onToggleDarkMode
 }: SidebarProps) {
   // Folder tree expansion state, loaded and persisted in localStorage
+  const [notificationPermission, setNotificationPermission] = useState<string>(() => {
+    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
+  });
+
+  const requestPermissionInSidebar = () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      Notification.requestPermission().then((perm) => {
+        setNotificationPermission(perm);
+        if (perm === 'granted') {
+          playNotificationChime();
+          const options = {
+            body: 'Уведомления успешно подключены для напоминаний о задачах!',
+            vibrate: [200, 100, 200, 100, 300],
+            tag: 'sidebar-permission-success'
+          };
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready.then((reg) => {
+              reg.showNotification('Уведомления активны! 🔔', options);
+            });
+          } else {
+            new Notification('Уведомления активны! 🔔', options);
+          }
+        }
+      });
+    }
+  };
+
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('task_mindmap_expanded_folders');
@@ -1082,6 +1111,36 @@ export default function Sidebar({
               />
             </label>
           </div>
+
+          {/* Push Notifications Android Smartphone configuration */}
+          {notificationPermission !== 'unsupported' && (
+            <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800/80">
+              {notificationPermission === 'granted' ? (
+                <div className="flex items-center justify-between text-[11px] p-2 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 rounded-xl border border-emerald-100/50 dark:border-emerald-900/30">
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    <Bell className="w-3.5 h-3.5" /> Уведомления включены
+                  </span>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                </div>
+              ) : notificationPermission === 'denied' ? (
+                <div className="flex items-center gap-1.5 text-[10px] p-2 bg-rose-50/50 dark:bg-rose-950/20 text-rose-605 dark:text-rose-450 rounded-xl border border-rose-100/30 dark:border-rose-900/20">
+                  <Bell className="w-3.5 h-3.5 shrink-0" />
+                  <span className="leading-tight">Уведомления заблокированы. Сбросьте настройки в настройках браузера.</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={requestPermissionInSidebar}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white font-extrabold text-xs rounded-xl shadow-md cursor-pointer hover:scale-[1.02] shadow-indigo-150 dark:shadow-none transition-all active:scale-98"
+                >
+                  <Bell className="w-4 h-4 animate-bounce" /> Включить уведомления на телефоне
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Dark mode button has been moved to the sidebar header */}
 

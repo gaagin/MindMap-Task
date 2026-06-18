@@ -7,8 +7,17 @@ const ASSETS_TO_CACHE = [
   '/icon-maskable.svg'
 ];
 
+const isDev = self.location.hostname.includes('localhost') || 
+              self.location.hostname.includes('127.0.0.1') || 
+              self.location.hostname.includes('run.app');
+
 // Install Event
 self.addEventListener('install', (event) => {
+  if (isDev) {
+    console.log('[Service Worker] Running in development environment, skipping assets caching.');
+    self.skipWaiting();
+    return;
+  }
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[Service Worker] Caching App Shell...');
@@ -33,8 +42,13 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event - Stale-While-Revalidate Strategy for general requests, Cache-First for static assets
+// Fetch Event
 self.addEventListener('fetch', (event) => {
+  // Always skip caching in development or preview to prevent out of date files and blank screens
+  if (isDev) {
+    return;
+  }
+
   // Only handle HTTP/HTTPS, skip other schemes like chrome-extension
   if (!event.request.url.startsWith('http')) return;
 
@@ -56,9 +70,7 @@ self.addEventListener('fetch', (event) => {
 
       // Fallback to network
       return fetch(event.request).then((networkResponse) => {
-        // Cache dynamic assets if they are successful static assets
         const url = new URL(event.request.url);
-        // Specifically cache JS, CSS, fonts, and images
         if (
           networkResponse.status === 200 &&
           (url.pathname.includes('/src/') ||
@@ -75,12 +87,30 @@ self.addEventListener('fetch', (event) => {
         }
         return networkResponse;
       }).catch((err) => {
-        // Offline Fallback for html pages
         if (event.request.headers.get('accept')?.includes('text/html')) {
           return caches.match('/');
         }
         throw err;
       });
+    })
+  );
+});
+
+// Notification Click Event
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  // Focus existing open browser windows or open a new one
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow('/');
+      }
     })
   );
 });

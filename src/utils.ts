@@ -306,6 +306,11 @@ export function toggleNodeArchive(nodeId: string, archived: boolean, allNodes: T
 // Function to synthesize a dual-tone pleasant crystal chime for reminder notifications
 export function playNotificationChime(): void {
   try {
+    // Vibrate the phone if supported (highly noticeable on Android!)
+    if ('vibrate' in navigator) {
+      navigator.vibrate([200, 100, 250, 100, 300, 150, 400]);
+    }
+
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
@@ -331,9 +336,24 @@ export function playNotificationChime(): void {
     };
     
     const now = ctx.currentTime;
-    // Harmonious pair: D5 (587.33Hz) strike followed by high A5 (880.00Hz) strike
-    playChimeTone(now, 587.33, 1.2, 0.15);
-    playChimeTone(now + 0.12, 880.00, 1.4, 0.12);
+    // Harmony of bells playing an atmospheric crystal arpeggio - lasts ~5.5s
+    // Step 1: initial soft strike
+    playChimeTone(now, 523.25, 2.0, 0.15); // C5
+    playChimeTone(now + 0.1, 659.25, 2.0, 0.12); // E5
+    playChimeTone(now + 0.2, 783.99, 2.2, 0.15); // G5
+    playChimeTone(now + 0.3, 1046.50, 2.5, 0.18); // C6
+    
+    // Step 2: repeat harmony for a prolonged ring after 1.2 seconds
+    playChimeTone(now + 1.2, 587.33, 2.0, 0.15); // D5
+    playChimeTone(now + 1.3, 739.99, 2.0, 0.12); // F#5
+    playChimeTone(now + 1.4, 880.00, 2.2, 0.15); // A5
+    playChimeTone(now + 1.5, 1174.66, 2.5, 0.18); // D6
+    
+    // Step 3: third final resolution after 2.4 seconds to make the alert lasting and obvious
+    playChimeTone(now + 2.4, 659.25, 2.5, 0.12); // E5
+    playChimeTone(now + 2.5, 783.99, 2.5, 0.15); // G5
+    playChimeTone(now + 2.6, 1046.50, 3.0, 0.18); // C6
+    playChimeTone(now + 2.7, 1318.51, 3.2, 0.15); // E6
   } catch (error) {
     console.warn("Chime playback was blocked or failed:", error);
   }
