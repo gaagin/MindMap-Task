@@ -1109,22 +1109,7 @@ export default function MindMapCanvas({
                     handleNestedKanbanDrop(draggedId, col.id, node.id);
                   }
                 }}
-                onClick={(e) => {
-                  let extraFields: Partial<TaskNode> = {};
-                  if (currentGroupBy === 'status') {
-                    if (col.id === 'todo') extraFields = { completed: false, progress: 0 };
-                    if (col.id === 'progress') extraFields = { completed: false, progress: 50 };
-                    if (col.id === 'done') extraFields = { completed: true, progress: 100 };
-                  } else if (currentGroupBy === 'priority') {
-                    extraFields = { priority: col.id as any };
-                  } else if (currentGroupBy === 'category') {
-                    if (col.id !== 'uncategorized') {
-                      extraFields = { tags: [col.id] };
-                    }
-                  }
-                  onAddFloatingNode(node.x, node.y, node.id, 'Новая подзадача', extraFields);
-                }}
-                className={`flex-1 rounded-xl border ${col.border || ''} ${col.bg || ''} p-1.5 flex flex-col min-h-0 cursor-pointer hover:border-slate-250 dark:hover:border-slate-800 transition-colors ${isFullScreen ? 'min-w-[200px]' : 'min-w-[130px] max-w-[170px]'}`}
+                className={`flex-1 rounded-xl border ${col.border || ''} ${col.bg || ''} p-1.5 flex flex-col min-h-0 cursor-default hover:border-slate-250 dark:hover:border-slate-800 transition-colors ${isFullScreen ? 'min-w-[200px]' : 'min-w-[130px] max-w-[170px]'}`}
                 style={col.style}
               >
                 <div className="flex items-center justify-between mb-1.5 px-0.5 select-none shrink-0 border-b border-slate-100/50 dark:border-slate-800/10 pb-1">
@@ -1134,7 +1119,32 @@ export default function MindMapCanvas({
                   >
                     {col.title}
                   </span>
-                  <span className="text-[8.5px] font-black bg-slate-200/55 dark:bg-slate-800 text-slate-650 dark:text-slate-350 px-1.5 py-0.5 rounded-lg font-mono leading-none">{col.tasks.length}</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        let extraFields: Partial<TaskNode> = {};
+                        if (currentGroupBy === 'status') {
+                          if (col.id === 'todo') extraFields = { completed: false, progress: 0 };
+                          if (col.id === 'progress') extraFields = { completed: false, progress: 50 };
+                          if (col.id === 'done') extraFields = { completed: true, progress: 100 };
+                        } else if (currentGroupBy === 'priority') {
+                          extraFields = { priority: col.id as any };
+                        } else if (currentGroupBy === 'category') {
+                          if (col.id !== 'uncategorized') {
+                            extraFields = { tags: [col.id] };
+                          }
+                        }
+                        onAddFloatingNode(node.x, node.y, node.id, 'Новая подзадача', extraFields);
+                      }}
+                      title="Добавить подзадачу"
+                      className="p-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-655 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all cursor-pointer shadow-xs active:scale-95 shrink-0 flex items-center justify-center pointer-events-auto"
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+                    <span className="text-[8.5px] font-black bg-slate-200/55 dark:bg-slate-800 text-slate-650 dark:text-slate-350 px-1.5 py-0.5 rounded-lg font-mono leading-none">{col.tasks.length}</span>
+                  </div>
                 </div>
                 
                 <div className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar min-h-0 pr-0.5 ${isFullScreen ? 'max-h-[66vh]' : 'max-h-[175px]'}`}>

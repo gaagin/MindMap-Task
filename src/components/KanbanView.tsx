@@ -54,6 +54,20 @@ export default function KanbanView({
     return tagCategories.length === 0 ? 'priority' : 'category';
   });
 
+  const [sortBy, setSortBy] = useState<'default' | 'priority' | 'dueDate'>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_kanban_sort_by');
+      if (saved) return saved as any;
+    } catch {}
+    return 'default';
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('task_mindmap_kanban_sort_by', sortBy);
+    } catch {}
+  }, [sortBy]);
+
   // State to manage whether completed tasks are globally collapsed
   const [collapseCompleted, setCollapseCompleted] = useState<boolean>(() => {
     try {
@@ -818,14 +832,38 @@ export default function KanbanView({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
-            className="flex items-center gap-1 px-2.5 py-0.5 text-[10.5px] font-black hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer transition-colors border border-slate-200/50 dark:border-slate-800/85 text-slate-705 dark:text-slate-300 whitespace-nowrap shrink-0"
-          >
-            <span>{isFiltersCollapsed ? 'Фильтры' : 'Свернуть'}</span>
-            <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isFiltersCollapsed ? '' : 'rotate-180'}`} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0 md:ml-auto">
+            {/* Сортировка */}
+            <div className="flex items-center gap-1.5 bg-slate-100/60 dark:bg-slate-805/50 px-2 py-0.5 rounded-lg border border-slate-200/50 dark:border-slate-850">
+              <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 whitespace-nowrap select-none hidden sm:inline">
+                Сортировка:
+              </span>
+              <div className="relative shrink-0">
+                <select
+                  id="kanban-sort-select"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="appearance-none bg-transparent text-slate-700 dark:text-slate-300 text-[10.5px] font-black pr-5 cursor-pointer focus:outline-none transition-all"
+                >
+                  <option value="default" className="bg-white dark:bg-slate-900">📋 По умолчанию</option>
+                  <option value="priority" className="bg-white dark:bg-slate-900">🔥 По приоритету</option>
+                  <option value="dueDate" className="bg-white dark:bg-slate-900">📅 По дате</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center text-slate-400 dark:text-slate-500">
+                  <ChevronDown className="w-2.5 h-2.5" />
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
+              className="flex items-center gap-1 px-2.5 py-0.5 text-[10.5px] font-black hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer transition-colors border border-slate-200/50 dark:border-slate-800/85 text-slate-705 dark:text-slate-300 whitespace-nowrap shrink-0"
+            >
+              <span>{isFiltersCollapsed ? 'Фильтры' : 'Свернуть'}</span>
+              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isFiltersCollapsed ? '' : 'rotate-180'}`} />
+            </button>
+          </div>
         </div>
 
         {/* Collapsible advanced filter controls with nice expand/collapse animation */}
@@ -1036,6 +1074,29 @@ export default function KanbanView({
                       {col.items.length}
                     </span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeAddInColumn === col.id) {
+                        setActiveAddInColumn(null);
+                      } else {
+                        setActiveAddInColumn(col.id);
+                        setNewTaskNameInColumn('');
+                        // Scroll to input after it renders
+                        setTimeout(() => {
+                          const inputEl = document.getElementById(`kanban-add-input-${col.id}`);
+                          if (inputEl) {
+                            inputEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            inputEl.focus();
+                          }
+                        }, 100);
+                      }
+                    }}
+                    title="Добавить задачу"
+                    className="p-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-805 dark:hover:bg-slate-755 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-450 transition-all cursor-pointer shadow-xs active:scale-95 shrink-0 flex items-center justify-center"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
                 {/* Vertical list of cards */}
@@ -1045,8 +1106,26 @@ export default function KanbanView({
                 >
                   {(() => {
                     const sortedItems = [...col.items].sort((a, b) => {
+                      // 1. Move completed to bottom
                       if (a.completed && !b.completed) return 1;
                       if (!a.completed && b.completed) return -1;
+
+                      // 2. Sort by chosen sortBy option
+                      if (sortBy === 'priority') {
+                        const priorityWeight = { urgent: 4, high: 3, medium: 2, low: 1, none: 0 };
+                        const weightA = priorityWeight[a.priority || 'none'] ?? 0;
+                        const weightB = priorityWeight[b.priority || 'none'] ?? 0;
+                        if (weightB !== weightA) {
+                          return weightB - weightA; // High priority first
+                        }
+                      } else if (sortBy === 'dueDate') {
+                        const timeA = a.dueDate ? new Date(`${a.dueDate}T${a.dueTime || '23:59:59'}`).getTime() : Infinity;
+                        const timeB = b.dueDate ? new Date(`${b.dueDate}T${b.dueTime || '23:59:59'}`).getTime() : Infinity;
+                        if (timeA !== timeB) {
+                          return timeA - timeB; // Earliest first
+                        }
+                      }
+
                       return 0;
                     });
                     const activeItems = sortedItems.filter(n => !n.completed);
@@ -1153,31 +1232,7 @@ export default function KanbanView({
                         </button>
                       </div>
                     </div>
-                  ) : (
-                    <button
-                      id={`kanban-add-trigger-${col.id}`}
-                      type="button"
-                      onClick={() => {
-                        setActiveAddInColumn(col.id);
-                        setNewTaskNameInColumn('');
-                        // Scroll to the bottom of the column cards container so the form and its buttons are visible
-                        setTimeout(() => {
-                          const cardsContainer = document.getElementById(`kanban-column-cards-${col.id}`);
-                          if (cardsContainer) {
-                            cardsContainer.scrollTop = cardsContainer.scrollHeight;
-                          }
-                          const inputEl = document.getElementById(`kanban-add-input-${col.id}`);
-                          if (inputEl) {
-                            inputEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                          }
-                        }, 100);
-                      }}
-                      className="w-full py-2 bg-slate-100/40 hover:bg-white dark:bg-slate-900/20 dark:hover:bg-slate-900 border border-dashed border-slate-200 hover:border-slate-350 dark:border-slate-800 dark:hover:border-slate-700 hover:shadow-[0_2px_8px_rgba(0,0,0,0.03)] rounded-xl text-[11px] font-extrabold text-slate-550 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Добавить задачу</span>
-                    </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
             );

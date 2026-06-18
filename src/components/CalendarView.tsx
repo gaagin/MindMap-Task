@@ -91,7 +91,20 @@ export default function CalendarView({
   const [newDayTaskText, setNewDayTaskText] = useState('');
   const [activeHourAddInput, setActiveHourAddInput] = useState<string | null>(null); // e.g. '09:00'
   const [newHourTaskText, setNewHourTaskText] = useState('');
-  const [isUnscheduledExpandedMobile, setIsUnscheduledExpandedMobile] = useState(true);
+  const [isUnscheduledExpandedMobile, setIsUnscheduledExpandedMobile] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_calendar_unscheduled_expanded');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return true;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('task_mindmap_calendar_unscheduled_expanded', String(isUnscheduledExpandedMobile));
+    } catch {}
+  }, [isUnscheduledExpandedMobile]);
+
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
 
   // Drag and drop states for moving tasks between calendar days
