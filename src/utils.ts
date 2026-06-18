@@ -360,7 +360,7 @@ export function getPomoStatsForNode(node: TaskNode, allNodes: TaskNode[]) {
     let totalTime = 0;
     let totalSessions = 0;
     for (const n of allNodes) {
-      if (n.id !== node.id && !n.isContainer && isDescendantOrSelf(n.id, node.id, allNodes)) {
+      if (n.id !== node.id && !n.isContainer && !n.isWorkflowRectangle && isDescendantOrSelf(n.id, node.id, allNodes)) {
         totalTime += n.pomodoroTotalTime || 0;
         totalSessions += n.pomodoroSessionsCount || 0;
       }
@@ -395,7 +395,7 @@ export function formatTotalPomoTime(totalSeconds: number): string {
 // Helper to check if a task is overdue (not completed, has dueDate and date or time is in the past)
 // Also checks if any subtask is overdue when allNodes is provided.
 export function isNodeOverdue(node: TaskNode, allNodes?: TaskNode[]): boolean {
-  if (node.isContainer || node.completed || node.archived) return false;
+  if (node.isContainer || node.completed || node.archived || node.isWorkflowRectangle) return false;
 
   const checkSingleOverdue = (targetNode: TaskNode): boolean => {
     if (!targetNode.dueDate) return false;
@@ -428,7 +428,7 @@ export function isNodeOverdue(node: TaskNode, allNodes?: TaskNode[]): boolean {
   // If any subtask (descendant in mind map tree) is overdue
   if (allNodes && allNodes.length > 0) {
     const descendants = getDescendants(node.id, allNodes);
-    return descendants.some(desc => !desc.isContainer && !desc.completed && !desc.archived && checkSingleOverdue(desc));
+    return descendants.some(desc => !desc.isContainer && !desc.isWorkflowRectangle && !desc.completed && !desc.archived && checkSingleOverdue(desc));
   }
 
   return false;
@@ -439,6 +439,7 @@ export function isContainerOverdue(containerNode: TaskNode, allNodes: TaskNode[]
   if (!containerNode.isContainer) return false;
   return allNodes.some(n => 
     !n.isContainer && 
+    !n.isWorkflowRectangle &&
     !n.completed &&
     !n.archived &&
     isDescendantOrSelf(n.id, containerNode.id, allNodes) && 

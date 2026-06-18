@@ -194,7 +194,7 @@ export default function TableView({
 
   // Filter tasks
   const rawTasks = useMemo(() => {
-    return nodes.filter(n => !n.isContainer);
+    return nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
   }, [nodes]);
 
   const filteredTasks = useMemo(() => {

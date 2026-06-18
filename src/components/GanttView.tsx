@@ -102,7 +102,7 @@ export default function GanttView({
   }
 
   // Filter tasks belonging to project
-  const tasks = nodes.filter(n => !n.isContainer);
+  const tasks = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
 
   const shiftDays = (count: number) => {
     setBaseDate(prev => {

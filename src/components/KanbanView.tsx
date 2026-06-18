@@ -219,6 +219,7 @@ export default function KanbanView({
   // Filter tasks shown on the board (only keep non-container tasks belonging to the filtered container)
   const filteredNodes = nodes.filter(n => {
     if (n.isContainer) return false;
+    if (n.isWorkflowRectangle) return false;
     if (n.archived && !isArchivedNodeMatchingSearch(n)) return false;
     if (!matchesSubtaskFilter(n)) return false;
     if (selectedContainerFilterId === 'all') return true;
@@ -283,7 +284,7 @@ export default function KanbanView({
     
     // 2. Column for "Without Container" (Без контейнера)
     // A task is NOT in any container if none of its ancestors is a container
-    const tasksWithoutContainer = nodes.filter(n => !n.isContainer && (!n.archived || isArchivedNodeMatchingSearch(n)) && !isInsideAnyContainer(n) && matchesSubtaskFilter(n));
+    const tasksWithoutContainer = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && (!n.archived || isArchivedNodeMatchingSearch(n)) && !isInsideAnyContainer(n) && matchesSubtaskFilter(n));
     columns.push({
       id: 'no-container',
       title: 'Без контейнера',
@@ -294,7 +295,7 @@ export default function KanbanView({
 
     // 3. Columns for each container
     containerNodes.forEach(c => {
-      const items = nodes.filter(n => !n.isContainer && (!n.archived || isArchivedNodeMatchingSearch(n)) && getTaskContainerId(n) === c.id && matchesSubtaskFilter(n));
+      const items = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && (!n.archived || isArchivedNodeMatchingSearch(n)) && getTaskContainerId(n) === c.id && matchesSubtaskFilter(n));
       columns.push({
         id: c.id,
         title: c.text,
@@ -1181,10 +1182,10 @@ export default function KanbanView({
                         onChange={(e) => setSelectedContainerFilterId(e.target.value)}
                         className="appearance-none bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[10.5px] font-extrabold rounded-lg pl-2 pr-6 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-505 transition-all"
                       >
-                        <option value="all">📁 Все ({nodes.filter(n => !n.isContainer && !n.archived).length})</option>
-                        <option value="no-container">📦 Без контейнера ({nodes.filter(n => !n.isContainer && !n.archived && !isInsideAnyContainer(n)).length})</option>
+                        <option value="all">📁 Все ({nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived).length})</option>
+                        <option value="no-container">📦 Без контейнера ({nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived && !isInsideAnyContainer(n)).length})</option>
                         {allContainers.map(container => {
-                          const count = nodes.filter(n => !n.isContainer && !n.archived && getTaskContainerId(n) === container.id).length;
+                          const count = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived && getTaskContainerId(n) === container.id).length;
                           return (
                             <option key={container.id} value={container.id}>
                               📦 {container.text || 'Без названия'} ({count})

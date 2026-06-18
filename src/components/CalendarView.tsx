@@ -232,7 +232,7 @@ export default function CalendarView({
   const startingDayOfWeek = getFirstDayOfMonth(year, month);
 
   // Filter nodes for the current active project
-  const projectTasks = nodes.filter(n => !n.isContainer);
+  const projectTasks = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
 
   // Divide into scheduled and unscheduled
   const scheduledTasks = projectTasks.filter(n => n.dueDate);

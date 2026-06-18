@@ -463,6 +463,7 @@ export default function MobileListView({
     return nodes.filter(n => {
       // Exclude container nodes since we focus on tasks here!
       if (n.isContainer) return false;
+      if (n.isWorkflowRectangle) return false;
 
       // Tab logic
       if (activeTab === 'active' && n.completed) return false;
@@ -540,11 +541,11 @@ export default function MobileListView({
   }, [filteredNodes]);
 
   // Aggregate stats (Tasks, not container nodes)
-  const totalCount = nodes.filter(n => !n.isContainer).length;
-  const completedCount = nodes.filter(n => !n.isContainer && n.completed).length;
+  const totalCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle).length;
+  const completedCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && n.completed).length;
   const activeCount = totalCount - completedCount;
-  const todayCount = nodes.filter(n => !n.isContainer && !n.completed && n.dueDate === todayStr).length;
-  const overdueCount = nodes.filter(n => !n.isContainer && !n.completed && n.dueDate && n.dueDate < todayStr).length;
+  const todayCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.completed && n.dueDate === todayStr).length;
+  const overdueCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.completed && n.dueDate && n.dueDate < todayStr).length;
 
   // Toggle tag selection for quick input
   const handleToggleTagInNewTask = (tag: string) => {
@@ -892,7 +893,7 @@ export default function MobileListView({
                     >
                       <option value="">(Сделать главной задачей — нет родителя)</option>
                       {nodes
-                        .filter((n) => n.id !== node.id && !n.isContainer && !isDescendant(n.id, node.id))
+                        .filter((n) => n.id !== node.id && !n.isContainer && !n.isWorkflowRectangle && !isDescendant(n.id, node.id))
                         .map((n) => (
                           <option key={n.id} value={n.id}>
                             {n.text}
