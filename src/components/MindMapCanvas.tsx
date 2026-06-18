@@ -107,6 +107,26 @@ function getFlowchartPath(
   return getCustomWorkflowPath(x1, y1, side1, mid.x, mid.y, x2, y2, side2);
 }
 
+function getDraggingPreviewPath(
+  x1: number, y1: number, side1: string,
+  x2: number, y2: number
+): string {
+  let cp1x = x1;
+  let cp1y = y1;
+  const dist = Math.hypot(x2 - x1, y2 - y1);
+  const flex = Math.min(dist * 0.4, 150);
+
+  if (side1 === 'top') cp1y -= flex;
+  else if (side1 === 'bottom') cp1y += flex;
+  else if (side1 === 'left') cp1x -= flex;
+  else if (side1 === 'right') cp1x += flex;
+
+  const cp2x = x2 - (side1 === 'left' || side1 === 'right' ? (x2 - x1) * 0.2 : 0);
+  const cp2y = y2 - (side1 === 'top' || side1 === 'bottom' ? (y2 - y1) * 0.2 : 0);
+
+  return `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
+}
+
 function getCustomWorkflowPath(
   x1: number, y1: number, side1: string,
   bx: number, by: number,
@@ -2894,11 +2914,11 @@ export default function MindMapCanvas({
         
         const canvasX = (cursorX - centerX - panX) / zoom;
         const canvasY = (cursorY - centerY - panY) / zoom;
-        setMousePos({ x: canvasX, y: canvasY });
 
-        // Robust coordinate-based node and side detection for connecting arrows
-        let foundNodeId: string | null = null;
-        let foundSide: 'top' | 'right' | 'bottom' | 'left' | null = null;
+        // Draw.io style matching and snapping logic:
+        let bestNodeId: string | null = null;
+        let bestSide: 'top' | 'right' | 'bottom' | 'left' | null = null;
+        let minDistance = Infinity;
 
         for (const n of nodes) {
           if (n.id === activeConnector.nodeId) continue;
@@ -2906,28 +2926,78 @@ export default function MindMapCanvas({
           const w = getNodeWidth(n);
           const h = getNodeHeight(n);
 
-          // 30px boundary snap margin for cozy magnetic connections
-          const snapMargin = 30;
-          const left = n.x - w / 2 - snapMargin;
-          const right = n.x + w / 2 + snapMargin;
-          const top = n.y - h / 2 - snapMargin;
-          const bottom = n.y + h / 2 + snapMargin;
+          // 4 anchor points for each target node
+          const anchors = [
+            { side: 'top' as const, x: n.x, y: n.y - h / 2 },
+            { side: 'right' as const, x: n.x + w / 2, y: n.y },
+            { side: 'bottom' as const, x: n.x, y: n.y + h / 2 },
+            { side: 'left' as const, x: n.x - w / 2, y: n.y }
+          ];
 
-          if (canvasX >= left && canvasX <= right && canvasY >= top && canvasY <= bottom) {
-            foundNodeId = n.id;
-            const dx = canvasX - n.x;
-            const dy = canvasY - n.y;
-            if (Math.abs(dx / w) > Math.abs(dy / h)) {
-              foundSide = dx > 0 ? 'right' : 'left';
-            } else {
-              foundSide = dy > 0 ? 'bottom' : 'top';
+          for (const anchor of anchors) {
+            const distance = Math.hypot(canvasX - anchor.x, canvasY - anchor.y);
+            if (distance < minDistance) {
+              minDistance = distance;
+              bestNodeId = n.id;
+              bestSide = anchor.side;
             }
-            break;
+          }
+
+          // If inside the node boundary with a tiny margin, find nearest side
+          const isInsideNode = (
+            canvasX >= n.x - w / 2 - 20 &&
+            canvasX <= n.x + w / 2 + 20 &&
+            canvasY >= n.y - h / 2 - 20 &&
+            canvasY <= n.y + h / 2 + 20
+          );
+
+          if (isInsideNode) {
+            const distToLeft = Math.abs(canvasX - (n.x - w / 2));
+            const distToRight = Math.abs(canvasX - (n.x + w / 2));
+            const distToTop = Math.abs(canvasY - (n.y - h / 2));
+            const distToBottom = Math.abs(canvasY - (n.y + h / 2));
+
+            const minEdgeDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
+            let edgeSide: 'top' | 'right' | 'bottom' | 'left' = 'left';
+            if (minEdgeDist === distToTop) edgeSide = 'top';
+            else if (minEdgeDist === distToRight) edgeSide = 'right';
+            else if (minEdgeDist === distToBottom) edgeSide = 'bottom';
+            else if (minEdgeDist === distToLeft) edgeSide = 'left';
+
+            if (minEdgeDist < minDistance) {
+              minDistance = minEdgeDist;
+              bestNodeId = n.id;
+              bestSide = edgeSide;
+            }
           }
         }
 
-        setHoveredNodeId(foundNodeId);
-        setHoveredSide(foundSide);
+        // Draw.io style snapping threshold (60px)
+        let px = canvasX;
+        let py = canvasY;
+        let finalNodeId: string | null = null;
+        let finalSide: 'top' | 'right' | 'bottom' | 'left' | null = null;
+
+        if (bestNodeId && bestSide && minDistance < 60) {
+          finalNodeId = bestNodeId;
+          finalSide = bestSide;
+          const targetNode = nodes.find(n => n.id === bestNodeId);
+          if (targetNode) {
+            const tw = getNodeWidth(targetNode);
+            const th = getNodeHeight(targetNode);
+            px = targetNode.x;
+            py = targetNode.y;
+            
+            if (bestSide === 'top') py -= th / 2;
+            else if (bestSide === 'right') px += tw / 2;
+            else if (bestSide === 'bottom') py += th / 2;
+            else if (bestSide === 'left') px -= tw / 2;
+          }
+        }
+
+        setMousePos({ x: px, y: py });
+        setHoveredNodeId(finalNodeId);
+        setHoveredSide(finalSide);
       }
       return;
     }
@@ -3431,11 +3501,11 @@ export default function MindMapCanvas({
         
         const canvasX = (cursorX - centerX - panX) / zoom;
         const canvasY = (cursorY - centerY - panY) / zoom;
-        setMousePos({ x: canvasX, y: canvasY });
 
-        // Robust coordinate-based node and side detection for connecting arrows
-        let foundNodeId: string | null = null;
-        let foundSide: 'top' | 'right' | 'bottom' | 'left' | null = null;
+        // Draw.io style matching and snapping logic for touch
+        let bestNodeId: string | null = null;
+        let bestSide: 'top' | 'right' | 'bottom' | 'left' | null = null;
+        let minDistance = Infinity;
 
         for (const n of nodes) {
           if (n.id === activeConnector.nodeId) continue;
@@ -3443,28 +3513,75 @@ export default function MindMapCanvas({
           const w = getNodeWidth(n);
           const h = getNodeHeight(n);
 
-          // 30px boundary snap margin for cozy magnetic connections
-          const snapMargin = 30;
-          const left = n.x - w / 2 - snapMargin;
-          const right = n.x + w / 2 + snapMargin;
-          const top = n.y - h / 2 - snapMargin;
-          const bottom = n.y + h / 2 + snapMargin;
+          const anchors = [
+            { side: 'top' as const, x: n.x, y: n.y - h / 2 },
+            { side: 'right' as const, x: n.x + w / 2, y: n.y },
+            { side: 'bottom' as const, x: n.x, y: n.y + h / 2 },
+            { side: 'left' as const, x: n.x - w / 2, y: n.y }
+          ];
 
-          if (canvasX >= left && canvasX <= right && canvasY >= top && canvasY <= bottom) {
-            foundNodeId = n.id;
-            const dx = canvasX - n.x;
-            const dy = canvasY - n.y;
-            if (Math.abs(dx / w) > Math.abs(dy / h)) {
-              foundSide = dx > 0 ? 'right' : 'left';
-            } else {
-              foundSide = dy > 0 ? 'bottom' : 'top';
+          for (const anchor of anchors) {
+            const distance = Math.hypot(canvasX - anchor.x, canvasY - anchor.y);
+            if (distance < minDistance) {
+              minDistance = distance;
+              bestNodeId = n.id;
+              bestSide = anchor.side;
             }
-            break;
+          }
+
+          const isInsideNode = (
+            canvasX >= n.x - w / 2 - 20 &&
+            canvasX <= n.x + w / 2 + 20 &&
+            canvasY >= n.y - h / 2 - 20 &&
+            canvasY <= n.y + h / 2 + 20
+          );
+
+          if (isInsideNode) {
+            const distToLeft = Math.abs(canvasX - (n.x - w / 2));
+            const distToRight = Math.abs(canvasX - (n.x + w / 2));
+            const distToTop = Math.abs(canvasY - (n.y - h / 2));
+            const distToBottom = Math.abs(canvasY - (n.y + h / 2));
+
+            const minEdgeDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
+            let edgeSide: 'top' | 'right' | 'bottom' | 'left' = 'left';
+            if (minEdgeDist === distToTop) edgeSide = 'top';
+            else if (minEdgeDist === distToRight) edgeSide = 'right';
+            else if (minEdgeDist === distToBottom) edgeSide = 'bottom';
+            else if (minEdgeDist === distToLeft) edgeSide = 'left';
+
+            if (minEdgeDist < minDistance) {
+              minDistance = minEdgeDist;
+              bestNodeId = n.id;
+              bestSide = edgeSide;
+            }
           }
         }
 
-        setHoveredNodeId(foundNodeId);
-        setHoveredSide(foundSide);
+        let px = canvasX;
+        let py = canvasY;
+        let finalNodeId: string | null = null;
+        let finalSide: 'top' | 'right' | 'bottom' | 'left' | null = null;
+
+        if (bestNodeId && bestSide && minDistance < 60) {
+          finalNodeId = bestNodeId;
+          finalSide = bestSide;
+          const targetNode = nodes.find(n => n.id === bestNodeId);
+          if (targetNode) {
+            const tw = getNodeWidth(targetNode);
+            const th = getNodeHeight(targetNode);
+            px = targetNode.x;
+            py = targetNode.y;
+            
+            if (bestSide === 'top') py -= th / 2;
+            else if (bestSide === 'right') px += tw / 2;
+            else if (bestSide === 'bottom') py += th / 2;
+            else if (bestSide === 'left') px -= tw / 2;
+          }
+        }
+
+        setMousePos({ x: px, y: py });
+        setHoveredNodeId(finalNodeId);
+        setHoveredSide(finalSide);
       }
       e.preventDefault();
       return;
@@ -4044,6 +4161,8 @@ export default function MindMapCanvas({
       startY
     });
     setMousePos({ x: startX, y: startY });
+    setHoveredNodeId(null);
+    setHoveredSide(null);
   };
 
   // Start dragging a node from Mouse Down
@@ -4881,7 +5000,7 @@ export default function MindMapCanvas({
               refY="5"
               markerWidth="6"
               markerHeight="6"
-              orient="auto-start-reverse"
+              orient="auto"
             >
               <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="currentColor" />
             </marker>
@@ -4907,23 +5026,32 @@ export default function MindMapCanvas({
               // Calculate end coordinate on target node
               const w2 = getNodeWidth(target);
               const h2 = getNodeHeight(target);
-              let x2 = target.x;
-              let y2 = target.y;
-              if (conn.toSide === 'top') y2 -= h2 / 2;
-              else if (conn.toSide === 'right') x2 += w2 / 2;
-              else if (conn.toSide === 'bottom') y2 += h2 / 2;
-              else if (conn.toSide === 'left') x2 -= w2 / 2;
+              let x2_exact = target.x;
+              let y2_exact = target.y;
+              if (conn.toSide === 'top') y2_exact -= h2 / 2;
+              else if (conn.toSide === 'right') x2_exact += w2 / 2;
+              else if (conn.toSide === 'bottom') y2_exact += h2 / 2;
+              else if (conn.toSide === 'left') x2_exact -= w2 / 2;
 
               const pathColor = node.color || '#6366f1'; // Indigo flowchart color
               const isLineClicked = selectedConnectionId === `${node.id}-${conn.id}`;
               const isSelected = selectedNodeId === node.id || selectedNodeId === target.id || isLineClicked;
               
-              // Compute dynamic bend midpoint
-              const defaultMid = getOrthogonalMidpoint(x1, y1, conn.fromSide, x2, y2, conn.toSide);
+              // Compute dynamic bend midpoint using exact coordinates for precise alignment
+              const defaultMid = getOrthogonalMidpoint(x1, y1, conn.fromSide, x2_exact, y2_exact, conn.toSide);
               const mid = {
                 x: defaultMid.x + (conn.bendOffsetX !== undefined ? conn.bendOffsetX : 0),
                 y: defaultMid.y + (conn.bendOffsetY !== undefined ? conn.bendOffsetY : 0),
               };
+
+              // Apply a tiny offset to prevent the arrowhead from being obscured by the absolute-positioned HTML container card
+              let x2 = x2_exact;
+              let y2 = y2_exact;
+              const arrowOffset = 6; // Stop early so the 6px arrowhead tip rests cleanly against the edge
+              if (conn.toSide === 'top') y2 -= arrowOffset;
+              else if (conn.toSide === 'right') x2 += arrowOffset;
+              else if (conn.toSide === 'bottom') y2 += arrowOffset;
+              else if (conn.toSide === 'left') x2 -= arrowOffset;
 
               const pathD = getCustomWorkflowPath(x1, y1, conn.fromSide, mid.x, mid.y, x2, y2, conn.toSide);
 
@@ -5066,14 +5194,24 @@ export default function MindMapCanvas({
           {/* Flowchart Connector Connection Preview Path */}
           {activeConnector && mousePos && (
             <path
-              d={getFlowchartPath(
-                activeConnector.startX,
-                activeConnector.startY,
-                activeConnector.side,
-                mousePos.x,
-                mousePos.y,
-                hoveredSide || getOppositeSide(activeConnector.side)
-              )}
+              d={
+                hoveredNodeId && hoveredSide
+                  ? getFlowchartPath(
+                      activeConnector.startX,
+                      activeConnector.startY,
+                      activeConnector.side,
+                      mousePos.x,
+                      mousePos.y,
+                      hoveredSide
+                    )
+                  : getDraggingPreviewPath(
+                      activeConnector.startX,
+                      activeConnector.startY,
+                      activeConnector.side,
+                      mousePos.x,
+                      mousePos.y
+                    )
+              }
               fill="none"
               stroke="#6366f1"
               strokeWidth={3}
@@ -5844,33 +5982,6 @@ export default function MindMapCanvas({
                     zIndex: cardZIndex,
                     width: `${w}px`,
                     height: `${h}px`
-                  }}
-                  onMouseEnter={() => {
-                    if (activeConnector && activeConnector.nodeId !== node.id) {
-                      setHoveredNodeId(node.id);
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    if (hoveredNodeId === node.id) {
-                      setHoveredNodeId(null);
-                      setHoveredSide(null);
-                    }
-                  }}
-                  onMouseMove={(e) => {
-                    if (activeConnector && activeConnector.nodeId !== node.id) {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const centerX = rect.left + rect.width / 2;
-                      const centerY = rect.top + rect.height / 2;
-                      const localMouseX = e.clientX - centerX;
-                      const localMouseY = e.clientY - centerY;
-                      let side: 'top' | 'right' | 'bottom' | 'left' = 'left';
-                      if (Math.abs(localMouseX / rect.width) > Math.abs(localMouseY / rect.height)) {
-                        side = localMouseX > 0 ? 'right' : 'left';
-                      } else {
-                        side = localMouseY > 0 ? 'bottom' : 'top';
-                      }
-                      setHoveredSide(side);
-                    }
                   }}
                   onMouseDown={(e) => {
                     const target = e.target as HTMLElement;
