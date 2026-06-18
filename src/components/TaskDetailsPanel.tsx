@@ -2115,6 +2115,57 @@ export default function TaskDetailsPanel({
                 className="w-24 px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-mono"
               />
             </div>
+            
+            {/* Быстрый выбор напоминания прямо под датой дедлайна */}
+            {node.dueDate && (
+              <div className="flex items-center gap-2 mt-2 bg-indigo-50/20 dark:bg-slate-900/40 p-2 rounded-xl border border-indigo-100/30 dark:border-slate-800">
+                <Bell className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Напомнить:</span>
+                <select
+                  value={
+                    node.reminderDate && node.reminderMinutesBefore !== undefined
+                      ? String(node.reminderMinutesBefore)
+                      : node.reminderDate
+                      ? 'custom'
+                      : 'none'
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'none') {
+                      onUpdateNode({
+                        ...node,
+                        reminderMinutesBefore: undefined,
+                        reminderDate: undefined,
+                        reminderTime: undefined,
+                        reminderDismissed: undefined
+                      });
+                    } else if (val === 'custom') {
+                      onUpdateNode({
+                        ...node,
+                        reminderMinutesBefore: undefined,
+                        reminderDate: node.reminderDate || node.dueDate,
+                        reminderTime: node.reminderTime || node.dueTime || '12:00',
+                        reminderDismissed: false
+                      });
+                    } else {
+                      handleSetRelativeReminder(Number(val));
+                    }
+                  }}
+                  className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] px-2 py-1 focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-200 font-medium text-slate-700"
+                >
+                  <option value="none">Без напоминания</option>
+                  <option value="0">В момент срока (в срок)</option>
+                  <option value="5">За 5 минут до срока</option>
+                  <option value="10">За 10 минут до срока</option>
+                  <option value="15">За 15 минут до срока</option>
+                  <option value="30">За 30 минут до срока</option>
+                  <option value="60">За 1 час до срока</option>
+                  <option value="120">За 2 часа до срока</option>
+                  <option value="1440">За 1 день до срока</option>
+                  <option value="custom">Своё время...</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Напоминание для задачи */}
@@ -2159,14 +2210,16 @@ export default function TaskDetailsPanel({
             {/* Quick offset selection buttons - only visible when a deadline is set */}
             {node.dueDate && (
               <div className="space-y-1">
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium block">
+                <span className="text-[9px] text-slate-400 dark:text-slate-505 font-medium block">
                   Быстрый выбор:
                 </span>
                 <div className="flex flex-wrap gap-1">
                   {[
                     { label: 'В срок', val: 0 },
                     { label: 'За 5 мин', val: 5 },
+                    { label: 'За 10 мин', val: 10 },
                     { label: 'За 15 мин', val: 15 },
+                    { label: 'За 30 мин', val: 30 },
                     { label: 'За 1 час', val: 60 },
                     { label: 'За 1 день', val: 1440 },
                   ].map((item) => {
@@ -2179,7 +2232,7 @@ export default function TaskDetailsPanel({
                         className={`px-2 py-1 text-[10px] font-medium rounded-lg border transition-all cursor-pointer ${
                           isCurrent
                             ? 'bg-indigo-600 text-white border-indigo-600 font-semibold shadow-xs'
-                            : 'bg-white dark:bg-slate-800 border-slate-205 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300'
+                            : 'bg-white dark:bg-slate-805 border-slate-205 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300'
                         }`}
                       >
                         {item.label}
@@ -2192,7 +2245,7 @@ export default function TaskDetailsPanel({
                     className={`px-2 py-1 text-[10px] font-medium rounded-lg border transition-all cursor-pointer ${
                       node.reminderDate && node.reminderMinutesBefore === undefined
                         ? 'bg-indigo-600 text-white border-indigo-600 font-semibold shadow-xs'
-                        : 'bg-white dark:bg-slate-800 border-slate-205 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300'
+                        : 'bg-white dark:bg-slate-805 border-slate-205 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300'
                     }`}
                   >
                     Своё время

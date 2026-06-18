@@ -15,7 +15,9 @@ import {
   Sparkles,
   Tag,
   Clock,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Bell,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
@@ -741,13 +743,17 @@ export default function KanbanView({
                 }}
                 className={`inline-flex items-center gap-1.5 text-[9.5px] px-2 py-0.5 rounded-lg border font-extrabold shadow-sm hover:scale-[1.03] transition-transform cursor-pointer ${
                   isNodeOverdue(node, nodes)
-                    ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-605 dark:text-rose-400 border-rose-100 dark:border-rose-950/45 animate-pulse'
+                    ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-605 dark:text-rose-400 border-rose-100 dark:border-rose-950/45'
                     : 'bg-white dark:bg-slate-800 text-slate-550 border-slate-200 dark:border-slate-705 hover:bg-slate-50/50 dark:hover:bg-slate-755'
                 }`}
                 title={isNodeOverdue(node, nodes) ? `Просрочен дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Нажмите для изменения на месте)` : `Дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Нажмите для изменения на месте)`}
               >
-                <Clock className={`w-3 h-3 ${isNodeOverdue(node, nodes) ? 'text-rose-550' : 'text-slate-400'}`} />
-                <span>{formatRussianDate(node.dueDate)}{node.dueTime ? ` ${node.dueTime}` : ''}</span>
+                {isNodeOverdue(node, nodes) ? (
+                  <AlertTriangle className="w-3 h-3 text-rose-500 shrink-0 select-none" />
+                ) : (
+                  <Calendar className="w-3 h-3 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                )}
+                <span>{formatRussianDate(node.dueDate)}{node.dueTime ? `, ${node.dueTime}` : ''}</span>
               </button>
             ) : (
               <button
@@ -756,7 +762,7 @@ export default function KanbanView({
                   e.stopPropagation();
                   setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' ? null : { cardId: node.id, type: 'date' });
                 }}
-                className="inline-flex items-center gap-1.5 text-[9.5px] text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 px-2 py-0.5 rounded-lg border border-dashed border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850 hover:scale-[1.03] transition-all select-none cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-[9.5px] text-slate-400 dark:text-slate-500 hover:text-slate-650 dark:hover:text-slate-300 px-2 py-0.5 rounded-lg border border-dashed border-slate-205 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850 hover:scale-[1.03] transition-all select-none cursor-pointer"
                 title="Добавить срок выполнения прямо на месте"
               >
                 <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
@@ -766,7 +772,7 @@ export default function KanbanView({
 
             {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' && (
               <div 
-                className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-2xl shadow-xl p-3 w-56 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-2.5"
+                className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-755 rounded-2xl shadow-xl p-3 w-56 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-2.5"
                 onClick={(e) => e.stopPropagation()}
               >
                 <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider text-left">Срок выполнения:</p>
@@ -777,7 +783,7 @@ export default function KanbanView({
                     type="date"
                     id={`inline-date-${node.id}`}
                     defaultValue={node.dueDate || ''}
-                    className="w-full text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-855 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
 
@@ -787,8 +793,39 @@ export default function KanbanView({
                     type="time"
                     id={`inline-time-${node.id}`}
                     defaultValue={node.dueTime || ''}
-                    className="w-full text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-855 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
+                </div>
+
+                <div className="space-y-1 text-left whitespace-normal">
+                  <div className="flex items-center gap-1">
+                    <Bell className="w-2.5 h-2.5 text-slate-400" />
+                    <label htmlFor={`inline-reminder-${node.id}`} className="text-[9px] font-bold text-slate-500">Напоминание</label>
+                  </div>
+                  <select 
+                    id={`inline-reminder-${node.id}`}
+                    defaultValue={
+                      node.reminderMinutesBefore !== undefined
+                        ? String(node.reminderMinutesBefore)
+                        : node.reminderDate
+                        ? 'custom'
+                        : 'none'
+                    }
+                    className="w-full text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-855 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-750 dark:text-slate-250 font-medium"
+                  >
+                    <option value="none">Без напоминания</option>
+                    <option value="0">В момент срока (в срок)</option>
+                    <option value="5">За 5 минут до срока</option>
+                    <option value="10">За 10 минут до срока</option>
+                    <option value="15">За 15 минут до срока</option>
+                    <option value="30">За 30 минут до срока</option>
+                    <option value="60">За 1 час до срока</option>
+                    <option value="120">За 2 часа до срока</option>
+                    <option value="1440">За 1 день до срока</option>
+                    {node.reminderDate && node.reminderMinutesBefore === undefined && (
+                      <option value="custom" disabled>Другое (задано вручную)</option>
+                    )}
+                  </select>
                 </div>
 
                 <div className="flex gap-1.5 mt-1 border-t border-slate-100 dark:border-slate-800/60 pt-2 shrink-0">
@@ -797,13 +834,50 @@ export default function KanbanView({
                     onClick={() => {
                       const dateInput = document.getElementById(`inline-date-${node.id}`) as HTMLInputElement | null;
                       const timeInput = document.getElementById(`inline-time-${node.id}`) as HTMLInputElement | null;
+                      const reminderInput = document.getElementById(`inline-reminder-${node.id}`) as HTMLSelectElement | null;
                       const dateVal = dateInput?.value || undefined;
                       const timeVal = timeInput?.value || undefined;
+                      const reminderVal = reminderInput?.value || 'none';
                       
+                      let reminderMinutesBefore: number | undefined = undefined;
+                      let reminderDate: string | undefined = undefined;
+                      let reminderTime: string | undefined = undefined;
+                      let reminderDismissed: boolean | undefined = undefined;
+
+                      if (dateVal && reminderVal !== 'none' && reminderVal !== 'custom') {
+                        reminderMinutesBefore = Number(reminderVal);
+                        reminderDismissed = false;
+                        const dueTimeStr = timeVal || '12:00';
+                        try {
+                          const dueDateTime = new Date(`${dateVal}T${dueTimeStr}`);
+                          if (!isNaN(dueDateTime.getTime())) {
+                            const remDateTime = new Date(dueDateTime.getTime() - reminderMinutesBefore * 60000);
+                            const rYear = remDateTime.getFullYear();
+                            const rMonth = String(remDateTime.getMonth() + 1).padStart(2, '0');
+                            const rDate = String(remDateTime.getDate()).padStart(2, '0');
+                            const rHour = String(remDateTime.getHours()).padStart(2, '0');
+                            const rMin = String(remDateTime.getMinutes()).padStart(2, '0');
+                            reminderDate = `${rYear}-${rMonth}-${rDate}`;
+                            reminderTime = `${rHour}:${rMin}`;
+                          }
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      } else if (reminderVal === 'custom') {
+                        reminderMinutesBefore = undefined;
+                        reminderDate = node.reminderDate;
+                        reminderTime = node.reminderTime;
+                        reminderDismissed = node.reminderDismissed;
+                      }
+
                       onUpdateNode({
                         ...node,
                         dueDate: dateVal || undefined,
-                        dueTime: dateVal ? (timeVal || undefined) : undefined
+                        dueTime: dateVal ? (timeVal || undefined) : undefined,
+                        reminderMinutesBefore,
+                        reminderDate,
+                        reminderTime,
+                        reminderDismissed
                       });
                       setActiveInlineMenu(null);
                     }}
@@ -818,11 +892,15 @@ export default function KanbanView({
                         onUpdateNode({
                           ...node,
                           dueDate: undefined,
-                          dueTime: undefined
+                          dueTime: undefined,
+                          reminderMinutesBefore: undefined,
+                          reminderDate: undefined,
+                          reminderTime: undefined,
+                          reminderDismissed: undefined
                         });
                         setActiveInlineMenu(null);
                       }}
-                      className="flex-1 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 text-rose-650 dark:text-rose-400 font-bold text-[10px] transition-all cursor-pointer text-center"
+                      className="flex-grow py-1 rounded-lg bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 text-rose-650 dark:text-rose-400 font-bold text-[10px] transition-all cursor-pointer text-center whitespace-nowrap px-1"
                     >
                       Сбросить
                     </button>
