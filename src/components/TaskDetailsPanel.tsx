@@ -1414,6 +1414,61 @@ export default function TaskDetailsPanel({
           />
         </div>
 
+        {node.isWorkflowRectangle && (
+          <div className="space-y-3 bg-indigo-50/20 dark:bg-slate-800/20 p-3.5 rounded-xl border border-indigo-100/30 dark:border-slate-800">
+            <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">
+              Настройки Workflow Шага
+            </h4>
+            
+            {/* Shape selection */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Форма элемента:
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePropChange('workflowShape', 'rectangle')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                    node.workflowShape !== 'rhomb'
+                      ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 border-indigo-500'
+                      : 'bg-slate-50 dark:bg-slate-850 text-slate-500 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750'
+                  }`}
+                >
+                  Прямоугольник
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePropChange('workflowShape', 'rhomb')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                    node.workflowShape === 'rhomb'
+                      ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 border-amber-500'
+                      : 'bg-slate-50 dark:bg-slate-850 text-slate-500 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-755'
+                  }`}
+                >
+                  Ромб
+                </button>
+              </div>
+            </div>
+
+            {/* Trigger disabled checkbox/switch block */}
+            <label className="flex items-center justify-between cursor-pointer select-none">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Отключить триггер зоны:
+              </span>
+              <div className="relative flex items-center">
+                <input
+                  type="checkbox"
+                  checked={!!node.isZoneTriggerDisabled}
+                  onChange={(e) => handlePropChange('isZoneTriggerDisabled', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-200 dark:bg-slate-800 rounded-full peer peer-checked:bg-rose-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-350 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
+              </div>
+            </label>
+          </div>
+        )}
+
         {/* State / Done badge */}
         {!node.isWorkflowRectangle && (
           <div className="flex items-center justify-between bg-[#FAFBFD]/60 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/50 dark:border-slate-850">

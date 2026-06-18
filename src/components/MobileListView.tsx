@@ -587,7 +587,9 @@ export default function MobileListView({
                 ? 'border-dashed border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/30 ring-2 ring-indigo-500/30 shadow-md'
                 : isSelected 
                   ? 'bg-indigo-55/10 border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900/40' 
-                  : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800'
+                  : node.archived
+                    ? 'bg-amber-50/5 border-dashed border-amber-300 dark:bg-amber-955/2 dark:border-amber-900/40 opacity-60 saturate-60'
+                    : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800'
           } ${node.completed ? 'opacity-70' : ''}`}
         >
           {/* Connector guide line for nested subtasks */}
@@ -693,6 +695,23 @@ export default function MobileListView({
                         <span className={node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal font-sans' : 'font-sans'}>
                           {node.text}
                         </span>
+
+                        {node.archived && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({
+                                ...node,
+                                archived: false
+                              });
+                            }}
+                            className="shrink-0 inline-flex items-center gap-1 text-[8.5px] font-black uppercase text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 px-1.5 py-0.5 rounded border border-amber-500/20 hover:border-amber-500/40 select-none cursor-pointer hover:scale-105 transition-all"
+                            title="Нажмите, чтобы вернуть задачу из архива"
+                          >
+                            📦 Архив (Вернуть)
+                          </button>
+                        )}
 
                         {node.externalLink && (
                           <a

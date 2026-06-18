@@ -32,7 +32,9 @@ import {
   Info,
   FileSpreadsheet,
   Eye,
-  Check
+  Check,
+  Archive,
+  ArchiveRestore
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
@@ -127,6 +129,8 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         pn.isFloating !== nn.isFloating ||
         pn.isContainer !== nn.isContainer ||
         pn.isWorkflowRectangle !== nn.isWorkflowRectangle ||
+        pn.workflowShape !== nn.workflowShape ||
+        pn.isZoneTriggerDisabled !== nn.isZoneTriggerDisabled ||
         pn.width !== nn.width ||
         pn.height !== nn.height ||
         JSON.stringify(pn.files) !== JSON.stringify(nn.files) ||
@@ -298,6 +302,8 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         isFloating: !!n.isFloating,
         isContainer: !!n.isContainer,
         isWorkflowRectangle: !!n.isWorkflowRectangle,
+        workflowShape: n.workflowShape || 'rectangle',
+        isZoneTriggerDisabled: !!n.isZoneTriggerDisabled,
         width: n.width !== undefined ? Math.round(Number(n.width) || 0) : null,
         height: n.height !== undefined ? Math.round(Number(n.height) || 0) : null,
         history: (n.history || []).map(h => ({ id: h.id, text: h.text, notes: h.notes, timestamp: h.timestamp })),
@@ -1709,9 +1715,20 @@ export default function App() {
       if (filterStatus === "archived") {
         return !!node.archived;
       }
+      
+      const isSearching = searchQuery.trim() !== "";
+      if (isSearching && node.archived) {
+        // Find archived nodes in all views EXCEPT 'canvas' and container tasks
+        const parentIsContainer = node.parentId ? activeNodes.find(p => p.id === node.parentId)?.isContainer : false;
+        if (viewMode === 'canvas' || node.isContainer || parentIsContainer) {
+          return false;
+        }
+        return true;
+      }
+      
       return !node.archived;
     });
-  }, [activeNodes, filterStatus]);
+  }, [activeNodes, filterStatus, searchQuery, viewMode]);
 
   // Single node drag updating coordinates with simultaneous movement of all descendant nodes
   const handleUpdateNodeCoordinates = (id: string, x: number, y: number) => {
@@ -2360,6 +2377,38 @@ export default function App() {
     });
   };
 
+  // Update node in an explicit project, useful for reminders across different projects
+  const updateNodeInProject = (projId: string, updatedNode: TaskNode) => {
+    setState(prev => {
+      const currentNodes = prev.nodes[projId] || [];
+      const nodeWithTimeStamp = {
+        ...updatedNode,
+        updatedAt: new Date().toISOString()
+      };
+      
+      let updatedList = currentNodes.map(n => n.id === updatedNode.id ? nodeWithTimeStamp : n);
+      
+      const targetNode = currentNodes.find(n => n.id === updatedNode.id);
+      if (targetNode && targetNode.completed !== updatedNode.completed) {
+        updatedList = toggleNodeAndDescendants(updatedNode.id, updatedNode.completed, updatedList);
+      }
+      
+      if (targetNode && targetNode.archived !== updatedNode.archived) {
+        updatedList = toggleNodeArchive(updatedNode.id, !!updatedNode.archived, updatedList);
+      }
+      
+      const syncedNodes = syncCompletion(updatedList);
+      
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [projId]: syncedNodes
+        }
+      };
+    });
+  };
+
   // ----- SEARCH & HIGHLIGHT -----
   const isNodeMatched = (node: TaskNode): boolean => {
     // 1. Text search (text, tags, notes)
@@ -2377,7 +2426,14 @@ export default function App() {
     if (filterStatus === "archived") {
       if (!node.archived) return false;
     } else {
-      if (node.archived) return false;
+      const isSearching = searchQuery.trim() !== "";
+      if (node.archived) {
+        if (isSearching && viewMode !== 'canvas' && !node.isContainer) {
+          // Allow identifying/finding it in searches for non-canvas, non-container views
+        } else {
+          return false;
+        }
+      }
       if (filterStatus === "completed" && !node.completed) return false;
       if (filterStatus === "active" && node.completed) return false;
     }
@@ -2825,14 +2881,41 @@ export default function App() {
                     {activeNodes
                       .filter(n => searchedIds.includes(n.id))
                       .map(n => (
-                        <button
+                        <div
                           key={n.id}
-                          onClick={() => handleSelectSearchedNode(n.id)}
-                          className="w-full text-left py-1 px-2 hover:bg-indigo-50 dark:hover:bg-indigo-950/45 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center justify-between"
+                          className="w-full text-left py-1.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-lg text-xs font-medium text-slate-705 dark:text-slate-300 flex items-center justify-between gap-1 group/search-item"
                         >
-                          <span className="truncate pr-1">{n.text}</span>
-                          <span className="text-[9px] text-indigo-500 font-mono">#{n.priority}</span>
-                        </button>
+                          <button
+                            onClick={() => handleSelectSearchedNode(n.id)}
+                            className="flex-1 text-left truncate cursor-pointer"
+                          >
+                            <span className="truncate pr-1 block font-semibold">{n.text}</span>
+                            <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400">
+                              <span>#{n.priority || 'none'}</span>
+                              {n.archived && (
+                                <span className="bg-amber-100 dark:bg-amber-950/45 text-amber-705 dark:text-amber-400 px-1 rounded-sm font-black text-[8.5px]">📦 АРХИВ</span>
+                              )}
+                            </div>
+                          </button>
+                          
+                          {n.archived && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateNode({
+                                  ...n,
+                                  archived: false
+                                });
+                              }}
+                              className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-900 border border-amber-200 dark:border-amber-900 text-[9px] text-amber-700 dark:text-amber-400 font-bold transition-all flex items-center gap-0.5 cursor-pointer shrink-0"
+                              title="Вывести из архива"
+                            >
+                              <ArchiveRestore className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+                              <span className="hidden sm:inline">Вывести</span>
+                            </button>
+                          )}
+                        </div>
                       ))}
                   </div>
                 ) : (
@@ -3283,6 +3366,7 @@ export default function App() {
                 onCreateTagCategory={handleCreateTagCategory}
                 selectedNodeIds={selectedNodeIds}
                 onToggleSelectNode={handleToggleSelectNode}
+                searchQuery={searchQuery}
               />
             ) : viewMode === 'calendar' ? (
               <CalendarView
@@ -4030,89 +4114,213 @@ export default function App() {
       {/* ================= ACTIVE REMINDERS FLOATING NOTIFICATIONS OVERLAY ================= */}
       {triggeredReminders.length > 0 && (
         <div className="fixed bottom-6 right-6 z-[9999] max-w-sm w-full space-y-3 animate-fade-in pointer-events-auto">
-          {triggeredReminders.map((reminder) => (
-            <div 
-              key={reminder.nodeId}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-4 flex flex-col gap-3 relative overflow-hidden transition-all duration-300 md:max-w-[360px] select-none"
-            >
-              {/* Highlight left accent entry indicator */}
-              <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-rose-550 dark:bg-rose-500 animate-pulse" />
+          {triggeredReminders.map((reminder) => {
+            const targetList = state.nodes[reminder.projectId] || [];
+            const targetNode = targetList.find(n => n.id === reminder.nodeId);
+            const currentReminderDate = targetNode?.reminderDate || reminder.targetTime.split(' ')[0] || '';
+            const currentReminderTime = targetNode?.reminderTime || reminder.targetTime.split(' ')[1] || '';
 
-              <div className="flex items-start justify-between pl-2">
-                <div className="flex items-center gap-2">
-                  <span className="flex-shrink-0 bg-rose-50 dark:bg-rose-950/40 p-1.5 rounded-xl text-rose-555 dark:text-rose-400">
-                    <BellRing className="w-4.5 h-4.5 animate-bounce" />
+            return (
+              <div 
+                key={reminder.nodeId}
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-4 flex flex-col gap-3 relative overflow-hidden transition-all duration-300 md:max-w-[360px] "
+              >
+                {/* Highlight left accent entry indicator */}
+                <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-rose-550 dark:bg-rose-500 animate-pulse" />
+
+                <div className="flex items-start justify-between pl-2">
+                  <div className="flex items-center gap-2">
+                    <span className="flex-shrink-0 bg-rose-50 dark:bg-rose-950/40 p-1.5 rounded-xl text-rose-555 dark:text-rose-400">
+                      <BellRing className="w-4.5 h-4.5 animate-bounce" />
+                    </span>
+                    <div>
+                      <h4 className="font-extrabold text-xs tracking-tight text-slate-400 dark:text-slate-500 uppercase">Напоминание!</h4>
+                      <p className="text-[9.5px] text-slate-400 dark:text-slate-505 font-mono font-bold">время срабатывания</p>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      if (targetNode) {
+                        updateNodeInProject(reminder.projectId, {
+                          ...targetNode,
+                          reminderDismissed: true
+                        });
+                      }
+                      setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                    }}
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    title="Закрыть напоминание"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="pl-2">
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-100 leading-snug line-clamp-3">
+                    {reminder.text}
+                  </p>
+                </div>
+
+                {/* Edit reminder Date & Time block */}
+                <div className="pl-2 space-y-2 bg-slate-50 dark:bg-slate-950/45 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/80">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                    Поменять дату и время напом.:
                   </span>
-                  <div>
-                    <h4 className="font-extrabold text-xs tracking-tight text-slate-400 dark:text-slate-500 uppercase">Напоминание!</h4>
-                    <p className="text-[9.5px] text-slate-400 dark:text-slate-505 font-mono font-bold">{reminder.targetTime}</p>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <input 
+                      type="date"
+                      value={currentReminderDate}
+                      onChange={(e) => {
+                        const newDate = e.target.value;
+                        if (!newDate || !targetNode) return;
+                        updateNodeInProject(reminder.projectId, {
+                          ...targetNode,
+                          reminderDate: newDate,
+                          reminderDismissed: false
+                        });
+                        const now = new Date();
+                        const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+                        const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+                        const inputDateTime = new Date(`${newDate}T${currentReminderTime}`);
+                        const currentDateTime = new Date(`${todayStr}T${timeStr}`);
+                        if (inputDateTime > currentDateTime) {
+                          setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                        }
+                      }}
+                      className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-705 dark:text-slate-300 rounded-lg p-1 px-2 focus:ring-1 focus:ring-rose-500 cursor-pointer"
+                    />
+
+                    <input 
+                      type="time"
+                      value={currentReminderTime}
+                      onChange={(e) => {
+                        const newTime = e.target.value;
+                        if (!newTime || !targetNode) return;
+                        updateNodeInProject(reminder.projectId, {
+                          ...targetNode,
+                          reminderTime: newTime,
+                          reminderDismissed: false
+                        });
+                        const now = new Date();
+                        const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+                        const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+                        const inputDateTime = new Date(`${currentReminderDate}T${newTime}`);
+                        const currentDateTime = new Date(`${todayStr}T${timeStr}`);
+                        if (inputDateTime > currentDateTime) {
+                          setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                        }
+                      }}
+                      className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-705 dark:text-slate-300 rounded-lg p-1 px-2 focus:ring-1 focus:ring-rose-500 cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Postpone presets */}
+                  <div className="flex items-center gap-1.5 pt-0.5">
+                    <span className="text-[9px] font-semibold text-slate-400">Отложить на:</span>
+                    <button
+                      onClick={() => {
+                        if (!targetNode) return;
+                        try {
+                          const baseTime = new Date(`${currentReminderDate}T${currentReminderTime}`);
+                          const updatedTime = new Date(baseTime.getTime() + 15 * 60 * 1000);
+                          const nextDateStr = updatedTime.getFullYear() + '-' + String(updatedTime.getMonth() + 1).padStart(2, '0') + '-' + String(updatedTime.getDate()).padStart(2, '0');
+                          const nextTimeStr = String(updatedTime.getHours()).padStart(2, '0') + ':' + String(updatedTime.getMinutes()).padStart(2, '0');
+                          updateNodeInProject(reminder.projectId, {
+                            ...targetNode,
+                            reminderDate: nextDateStr,
+                            reminderTime: nextTimeStr,
+                            reminderDismissed: false
+                          });
+                          setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                        } catch (err) { console.error(err); }
+                      }}
+                      className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/25 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-450 text-[9.5px] rounded border border-rose-100 dark:border-rose-900/40 cursor-pointer transition font-bold"
+                    >
+                      +15м
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!targetNode) return;
+                        try {
+                          const baseTime = new Date(`${currentReminderDate}T${currentReminderTime}`);
+                          const updatedTime = new Date(baseTime.getTime() + 60 * 60 * 1000);
+                          const nextDateStr = updatedTime.getFullYear() + '-' + String(updatedTime.getMonth() + 1).padStart(2, '0') + '-' + String(updatedTime.getDate()).padStart(2, '0');
+                          const nextTimeStr = String(updatedTime.getHours()).padStart(2, '0') + ':' + String(updatedTime.getMinutes()).padStart(2, '0');
+                          updateNodeInProject(reminder.projectId, {
+                            ...targetNode,
+                            reminderDate: nextDateStr,
+                            reminderTime: nextTimeStr,
+                            reminderDismissed: false
+                          });
+                          setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                        } catch (err) { console.error(err); }
+                      }}
+                      className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/25 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-450 text-[9.5px] rounded border border-rose-100 dark:border-rose-900/40 cursor-pointer transition font-bold"
+                    >
+                      +1ч
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!targetNode) return;
+                        try {
+                          const baseTime = new Date(`${currentReminderDate}T${currentReminderTime}`);
+                          const updatedTime = new Date(baseTime.getTime() + 24 * 60 * 60 * 1000);
+                          const nextDateStr = updatedTime.getFullYear() + '-' + String(updatedTime.getMonth() + 1).padStart(2, '0') + '-' + String(updatedTime.getDate()).padStart(2, '0');
+                          const nextTimeStr = String(updatedTime.getHours()).padStart(2, '0') + ':' + String(updatedTime.getMinutes()).padStart(2, '0');
+                          updateNodeInProject(reminder.projectId, {
+                            ...targetNode,
+                            reminderDate: nextDateStr,
+                            reminderTime: nextTimeStr,
+                            reminderDismissed: false
+                          });
+                          setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                        } catch (err) { console.error(err); }
+                      }}
+                      className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/25 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-450 text-[9.5px] rounded border border-rose-100 dark:border-rose-900/40 cursor-pointer transition font-bold"
+                    >
+                      +1д
+                    </button>
                   </div>
                 </div>
 
-                <button 
-                  onClick={() => {
-                    // Update task node to be reminderDismissed: true
-                    const targetList = state.nodes[reminder.projectId] || [];
-                    const targetNode = targetList.find(n => n.id === reminder.nodeId);
-                    if (targetNode) {
-                      handleUpdateNode({
-                        ...targetNode,
-                        reminderDismissed: true
-                      });
-                    }
-                    setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
-                  }}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                  title="Закрыть напоминание"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="pl-2 grid grid-cols-2 gap-2 mt-1">
+                  <button
+                    onClick={() => {
+                      // Switch project if different
+                      if (state.activeProjectId !== reminder.projectId) {
+                        setState(prev => ({
+                          ...prev,
+                          activeProjectId: reminder.projectId
+                        }));
+                      }
+                      // Select node and show details
+                      setSelectedNodeId(reminder.nodeId);
+                      setIsDrawerOpen(true);
+                    }}
+                    className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/40 text-indigo-650 dark:text-indigo-400 text-[10.5px] font-bold rounded-xl transition-all text-center cursor-pointer"
+                  >
+                    Открыть задачу
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (targetNode) {
+                        updateNodeInProject(reminder.projectId, {
+                          ...targetNode,
+                          reminderDismissed: true
+                        });
+                      }
+                      setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                    }}
+                    className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white text-[10.5px] font-bold rounded-xl transition-all shadow-md cursor-pointer"
+                  >
+                    Прочитано (ОК)
+                  </button>
+                </div>
               </div>
-
-              <div className="pl-2">
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 leading-snug line-clamp-3">
-                  {reminder.text}
-                </p>
-              </div>
-
-              <div className="pl-2 grid grid-cols-2 gap-2 mt-1">
-                <button
-                  onClick={() => {
-                    // Switch project if different
-                    if (state.activeProjectId !== reminder.projectId) {
-                      setState(prev => ({
-                        ...prev,
-                        activeProjectId: reminder.projectId
-                      }));
-                    }
-                    // Select node and show details
-                    setSelectedNodeId(reminder.nodeId);
-                    setIsDrawerOpen(true);
-                  }}
-                  className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/40 text-indigo-650 dark:text-indigo-400 text-[10.5px] font-bold rounded-xl transition-all text-center cursor-pointer"
-                >
-                  Открыть задачу
-                </button>
-                <button
-                  onClick={() => {
-                    // Update task node to be reminderDismissed: true
-                    const targetList = state.nodes[reminder.projectId] || [];
-                    const targetNode = targetList.find(n => n.id === reminder.nodeId);
-                    if (targetNode) {
-                      handleUpdateNode({
-                        ...targetNode,
-                        reminderDismissed: true
-                      });
-                    }
-                    setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
-                  }}
-                  className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white text-[10.5px] font-bold rounded-xl transition-all shadow-md cursor-pointer"
-                >
-                  Прочитано (ОК)
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

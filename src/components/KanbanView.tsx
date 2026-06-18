@@ -34,6 +34,7 @@ interface KanbanViewProps {
   onCreateTagCategory: (name: string, color: string) => void;
   selectedNodeIds?: string[];
   onToggleSelectNode?: (id: string) => void;
+  searchQuery?: string;
 }
 
 export default function KanbanView({
@@ -49,6 +50,7 @@ export default function KanbanView({
   onCreateTagCategory,
   selectedNodeIds = [],
   onToggleSelectNode,
+  searchQuery = '',
 }: KanbanViewProps) {
   const [groupBy, setGroupBy] = useState<'category' | 'priority' | 'container'>(() => {
     return tagCategories.length === 0 ? 'priority' : 'category';
@@ -127,6 +129,12 @@ export default function KanbanView({
   // Dropdown card move menu state for mobile and responsive accessibility
   const [activeMoveMenuCardId, setActiveMoveMenuCardId] = useState<string | null>(null);
 
+  // Inline edit menus state for spot selection (priority, due dates, tags) without opening props sidebar
+  const [activeInlineMenu, setActiveInlineMenu] = useState<{
+    cardId: string;
+    type: 'priority' | 'date' | 'tag';
+  } | null>(null);
+
   // Drag states for column highlighting
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null);
@@ -173,6 +181,20 @@ export default function KanbanView({
   // Get tags of the active category
   const activeTags = activeCategory?.tags || [];
 
+  const isSearchActive = !!searchQuery?.trim();
+  const isArchivedNodeMatchingSearch = (n: TaskNode): boolean => {
+    if (!n.archived) return true; // not archived
+    if (n.isContainer) return false; // exclude containers
+    if (isSearchActive) {
+      const q = searchQuery.toLowerCase();
+      const textMatches = n.text?.toLowerCase().includes(q);
+      const tagMatches = n.tags?.some(t => t.toLowerCase().includes(q)) || false;
+      const notesMatches = n.notes?.toLowerCase().includes(q) || false;
+      return textMatches || tagMatches || notesMatches;
+    }
+    return false;
+  };
+
   // Container filter states and helper methods
   const [selectedContainerFilterId, setSelectedContainerFilterId] = useState<string>('all');
   const allContainers = nodes.filter(n => n.isContainer && !n.archived);
@@ -197,7 +219,7 @@ export default function KanbanView({
   // Filter tasks shown on the board (only keep non-container tasks belonging to the filtered container)
   const filteredNodes = nodes.filter(n => {
     if (n.isContainer) return false;
-    if (n.archived) return false;
+    if (n.archived && !isArchivedNodeMatchingSearch(n)) return false;
     if (!matchesSubtaskFilter(n)) return false;
     if (selectedContainerFilterId === 'all') return true;
     if (selectedContainerFilterId === 'no-container') {
@@ -261,7 +283,7 @@ export default function KanbanView({
     
     // 2. Column for "Without Container" (Без контейнера)
     // A task is NOT in any container if none of its ancestors is a container
-    const tasksWithoutContainer = nodes.filter(n => !n.isContainer && !n.archived && !isInsideAnyContainer(n) && matchesSubtaskFilter(n));
+    const tasksWithoutContainer = nodes.filter(n => !n.isContainer && (!n.archived || isArchivedNodeMatchingSearch(n)) && !isInsideAnyContainer(n) && matchesSubtaskFilter(n));
     columns.push({
       id: 'no-container',
       title: 'Без контейнера',
@@ -272,7 +294,7 @@ export default function KanbanView({
 
     // 3. Columns for each container
     containerNodes.forEach(c => {
-      const items = nodes.filter(n => !n.isContainer && !n.archived && getTaskContainerId(n) === c.id && matchesSubtaskFilter(n));
+      const items = nodes.filter(n => !n.isContainer && (!n.archived || isArchivedNodeMatchingSearch(n)) && getTaskContainerId(n) === c.id && matchesSubtaskFilter(n));
       columns.push({
         id: c.id,
         title: c.text,
@@ -493,14 +515,24 @@ export default function KanbanView({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
         transition={{ duration: 0.15 }}
-        className={`group select-none text-left bg-white dark:bg-slate-910 border hover:border-slate-300 dark:hover:border-slate-705 rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] hover:translate-y-[-1.5px] transition-all duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
+        className={`group select-none text-left rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] hover:translate-y-[-1.5px] transition-all duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
+          activeInlineMenu?.cardId === node.id || activeMoveMenuCardId === node.id
+            ? 'z-55 ring-2 ring-indigo-500 bg-white dark:bg-slate-900 shadow-xl scale-[1.01]' 
+            : 'z-10'
+        } ${
+          node.archived
+            ? 'bg-amber-50/5 dark:bg-amber-950/2 border-dashed border-amber-300 dark:border-amber-900/40 opacity-60 saturate-60'
+            : 'bg-white dark:bg-slate-910'
+        } ${
           draggedOverTagCardId === node.id
             ? 'border-emerald-500 dark:border-emerald-400 ring-4 ring-emerald-500/20 shadow-md bg-emerald-50/10 dark:bg-emerald-950/10 scale-[1.01]'
             : node.id === selectedNodeId 
               ? 'border-[#4f46e5] dark:border-indigo-400 ring-4 ring-indigo-500/15 shadow-md scale-[1.015]' 
               : isNodeOverdue(node, nodes)
                 ? 'border-rose-400 dark:border-rose-900/60 bg-rose-50/5 dark:bg-rose-950/2 shadow-sm'
-                : 'border-slate-200/80 dark:border-slate-850'
+                : node.archived
+                  ? ''
+                  : 'border-slate-200/80 dark:border-slate-850'
         }`}
       >
         {/* Completed toggle checkbox and text */}
@@ -576,9 +608,36 @@ export default function KanbanView({
 
             {activeMoveMenuCardId === node.id && (
               <div 
-                className="absolute right-0 top-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-xl shadow-lg p-1.5 w-44 z-40 animate-in fade-in zoom-in-95 duration-100"
+                className="absolute right-0 top-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-xl shadow-lg p-1.5 w-44 z-55 animate-in fade-in zoom-in-95 duration-100"
                 onClick={(e) => e.stopPropagation()}
               >
+                <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase px-2 mb-1 tracking-wider text-left">Архив:</p>
+                <div className="px-1 mb-1.5 pb-1 border-b border-slate-100 dark:border-slate-700/60">
+                  {node.archived ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateNode({ ...node, archived: false });
+                        setActiveMoveMenuCardId(null);
+                      }}
+                      className="w-full text-left font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 px-1 py-1 rounded text-[10.5px] flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>📥 Вывести</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateNode({ ...node, archived: true });
+                        setActiveMoveMenuCardId(null);
+                      }}
+                      className="w-full text-left font-semibold text-slate-550 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 px-1 py-1 rounded text-[10.5px] flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>📦 В архив</span>
+                    </button>
+                  )}
+                </div>
+
                 <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase px-2 mb-1 tracking-wider text-left">Переместить:</p>
                 <div className="space-y-0.5">
                   {columns.map(destCol => {
@@ -624,18 +683,242 @@ export default function KanbanView({
 
         {/* Card metadata row (Priority, Due Date, attachments/notes) */}
         <div className="flex flex-wrap items-center gap-2 mt-1">
-          {renderPriorityBadge(node.priority)}
+          {/* Priority spot edit popup */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'priority' ? null : { cardId: node.id, type: 'priority' });
+              }}
+              className="hover:scale-[1.03] transition-transform cursor-pointer block"
+              title="Нажмите, чтобы изменить приоритет на месте"
+            >
+              {renderPriorityBadge(node.priority)}
+            </button>
 
-          {hasDueDate && (
-            <span className={`inline-flex items-center gap-1.5 text-[9.5px] px-2 py-0.5 rounded-lg border font-extrabold shadow-sm ${
-              isNodeOverdue(node, nodes)
-                ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-950/45 animate-pulse'
-                : 'bg-white dark:bg-slate-800 text-slate-550 border-slate-200 dark:border-slate-705'
-            }`} title={isNodeOverdue(node, nodes) ? `Просрочен дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}` : `Дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}`}>
-              <Clock className={`w-3 h-3 ${isNodeOverdue(node, nodes) ? 'text-rose-550' : 'text-slate-400'}`} />
-              <span>{formatRussianDate(node.dueDate)}{node.dueTime ? ` ${node.dueTime}` : ''}</span>
-            </span>
-          )}
+            {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'priority' && (
+              <div 
+                className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-xl shadow-lg p-1.5 w-44 z-40 animate-in fade-in zoom-in-95 duration-100"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase px-2 mb-1 tracking-wider text-left">Приоритет:</p>
+                <div className="space-y-0.5">
+                  {(['urgent', 'high', 'medium', 'low', 'none'] as Priority[]).map((p) => {
+                    const label = p === 'urgent' ? '🔥 Критический' : p === 'high' ? '🟠 Высокий' : p === 'medium' ? '🔵 Средний' : p === 'low' ? '🟢 Низкий' : '⚪ Без приоритета';
+                    const isSelected = node.priority === p || (p === 'none' && !node.priority);
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => {
+                          onUpdateNode({ ...node, priority: p });
+                          setActiveInlineMenu(null);
+                        }}
+                        className={`w-full text-left font-semibold hover:bg-slate-100 dark:hover:bg-slate-705 px-2 py-1 text-[10.5px] rounded flex items-center justify-between cursor-pointer ${
+                          isSelected ? 'text-[#4f46e5] dark:text-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20' : 'text-slate-650 dark:text-slate-300'
+                        }`}
+                      >
+                        <span>{label}</span>
+                        {isSelected && <CheckCircle2 className="w-3 h-3 text-[#4f46e5] dark:text-indigo-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Due date spot edit popup */}
+          <div className="relative">
+            {hasDueDate ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' ? null : { cardId: node.id, type: 'date' });
+                }}
+                className={`inline-flex items-center gap-1.5 text-[9.5px] px-2 py-0.5 rounded-lg border font-extrabold shadow-sm hover:scale-[1.03] transition-transform cursor-pointer ${
+                  isNodeOverdue(node, nodes)
+                    ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-605 dark:text-rose-400 border-rose-100 dark:border-rose-950/45 animate-pulse'
+                    : 'bg-white dark:bg-slate-800 text-slate-550 border-slate-200 dark:border-slate-705 hover:bg-slate-50/50 dark:hover:bg-slate-755'
+                }`}
+                title={isNodeOverdue(node, nodes) ? `Просрочен дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Нажмите для изменения на месте)` : `Дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Нажмите для изменения на месте)`}
+              >
+                <Clock className={`w-3 h-3 ${isNodeOverdue(node, nodes) ? 'text-rose-550' : 'text-slate-400'}`} />
+                <span>{formatRussianDate(node.dueDate)}{node.dueTime ? ` ${node.dueTime}` : ''}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' ? null : { cardId: node.id, type: 'date' });
+                }}
+                className="inline-flex items-center gap-1.5 text-[9.5px] text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 px-2 py-0.5 rounded-lg border border-dashed border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850 hover:scale-[1.03] transition-all select-none cursor-pointer"
+                title="Добавить срок выполнения прямо на месте"
+              >
+                <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                <span>+ Срок</span>
+              </button>
+            )}
+
+            {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' && (
+              <div 
+                className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-2xl shadow-xl p-3 w-56 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-2.5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider text-left">Срок выполнения:</p>
+                
+                <div className="space-y-1 text-left">
+                  <label htmlFor={`inline-date-${node.id}`} className="text-[9px] font-bold text-slate-500">Дата</label>
+                  <input 
+                    type="date"
+                    id={`inline-date-${node.id}`}
+                    defaultValue={node.dueDate || ''}
+                    className="w-full text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="space-y-1 text-left">
+                  <label htmlFor={`inline-time-${node.id}`} className="text-[9px] font-bold text-slate-500">Время</label>
+                  <input 
+                    type="time"
+                    id={`inline-time-${node.id}`}
+                    defaultValue={node.dueTime || ''}
+                    className="w-full text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="flex gap-1.5 mt-1 border-t border-slate-100 dark:border-slate-800/60 pt-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const dateInput = document.getElementById(`inline-date-${node.id}`) as HTMLInputElement | null;
+                      const timeInput = document.getElementById(`inline-time-${node.id}`) as HTMLInputElement | null;
+                      const dateVal = dateInput?.value || undefined;
+                      const timeVal = timeInput?.value || undefined;
+                      
+                      onUpdateNode({
+                        ...node,
+                        dueDate: dateVal || undefined,
+                        dueTime: dateVal ? (timeVal || undefined) : undefined
+                      });
+                      setActiveInlineMenu(null);
+                    }}
+                    className="flex-1 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-[10px] transition-all cursor-pointer text-center"
+                  >
+                    OK
+                  </button>
+                  {node.dueDate && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateNode({
+                          ...node,
+                          dueDate: undefined,
+                          dueTime: undefined
+                        });
+                        setActiveInlineMenu(null);
+                      }}
+                      className="flex-1 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 text-rose-650 dark:text-rose-400 font-bold text-[10px] transition-all cursor-pointer text-center"
+                    >
+                      Сбросить
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setActiveInlineMenu(null)}
+                    className="px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 font-bold text-[10px] transition-all cursor-pointer text-center"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Tags spot edit popup trigger */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'tag' ? null : { cardId: node.id, type: 'tag' });
+              }}
+              className="inline-flex items-center gap-1.5 text-[9.5px] text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 px-2 py-0.5 rounded-lg border border-dashed border-slate-205 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850 hover:scale-[1.03] transition-all cursor-pointer"
+              title="Добавить или изменить теги на месте"
+            >
+              <Tag className="w-3 h-3 text-slate-400 shrink-0" />
+              <span>Теги</span>
+            </button>
+
+            {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'tag' && (
+              <div 
+                className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-2xl shadow-xl p-3 w-64 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider text-left">Теги задачи:</p>
+                  <button 
+                    type="button" 
+                    onClick={() => setActiveInlineMenu(null)}
+                    className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="max-h-48 overflow-y-auto space-y-2.5 my-1 pr-1 border-b border-slate-100 dark:border-slate-800/60 pb-2 text-left">
+                  {tagCategories.length === 0 ? (
+                    <p className="text-[10.5px] text-slate-400 font-medium">Нет созданных категорий или тегов в проекте.</p>
+                  ) : (
+                    tagCategories.map(cat => (
+                      <div key={cat.id} className="space-y-1">
+                        <div className="flex items-center gap-1.5 text-[10px] font-extrabold" style={{ color: cat.color }}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                          <span>{cat.name}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {cat.tags.map(tag => {
+                            const isAssigned = (node.tags || []).includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => {
+                                  const currentTags = node.tags || [];
+                                  const nextTags = isAssigned 
+                                    ? currentTags.filter(t => t !== tag)
+                                    : [...currentTags, tag];
+                                  onUpdateNode({
+                                    ...node,
+                                    tags: nextTags
+                                  });
+                                }}
+                                className={`text-[9.5px] font-bold px-2 py-0.5 rounded-lg border transition-all cursor-pointer ${
+                                  isAssigned 
+                                    ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900 shadow-2xs'
+                                    : 'bg-slate-50 dark:bg-slate-850 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-750 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                }`}
+                              >
+                                #{tag}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1 select-none text-left leading-normal">
+                  <span className="animate-pulse shrink-0">✨</span>
+                  <span>Нажмите для изменения тегов</span>
+                </div>
+              </div>
+            )}
+          </div>
 
           {hasNotes && (
             <span className="inline-flex items-center justify-center w-5 h-5 rounded-lg bg-slate-50/50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 text-slate-400 hover:text-slate-600" title="Есть описание">
@@ -662,11 +945,18 @@ export default function KanbanView({
           const otherTags = (node.tags || []).filter(t => !activeTags.includes(t));
           if (otherTags.length === 0) return null;
           return (
-            <div className="flex flex-wrap gap-1.5 border-t border-slate-100 dark:border-slate-800/40 pt-2.5">
+            <div 
+              className="flex flex-wrap gap-1.5 border-t border-slate-100 dark:border-slate-800/40 pt-2.5 cursor-pointer hover:bg-slate-50/30 dark:hover:bg-slate-850/20 p-1 rounded-lg transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'tag' ? null : { cardId: node.id, type: 'tag' });
+              }}
+              title="Нажмите, чтобы изменить теги задачи"
+            >
               {otherTags.map(t => (
                 <span 
                   key={t} 
-                  className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-505 border border-slate-200/50 dark:border-slate-700/50 shadow-2xs"
+                  className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-505 border border-slate-200/50 dark:border-slate-700/50 shadow-2xs hover:scale-[1.03] transition-transform"
                 >
                   #{t}
                 </span>

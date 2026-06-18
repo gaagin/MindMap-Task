@@ -67,6 +67,8 @@ export interface TaskNode {
   isFloating?: boolean; // Optional flag for independent floating nodes
   isContainer?: boolean; // Optional flag for a container box node
   isWorkflowRectangle?: boolean; // Optional flag for workflow rectangle nodes
+  workflowShape?: 'rectangle' | 'rhomb'; // Optional shape for workflow nodes
+  isZoneTriggerDisabled?: boolean; // Optional flag to disable the outer trigger zone
   workflowConnections?: WorkflowConnection[]; // Optional outgoing workflow connections
   zoneWidth?: number; // Optional outer dashed trigger zone width
   zoneHeight?: number; // Optional outer dashed trigger zone height

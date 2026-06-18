@@ -477,7 +477,7 @@ export default function TableView({
                     onClick={(e) => onSelectNode(task.id, e)}
                     className={`group/row transition-all h-12 text-xs hover:bg-slate-50/55 dark:hover:bg-slate-850/45 cursor-pointer ${
                       isSelected ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : ''
-                    }`}
+                    } ${task.archived ? 'opacity-55 saturate-50 bg-amber-500/[0.02] dark:bg-amber-500/[0.01]' : ''}`}
                   >
                     {/* Done Checklist Checkbox */}
                     <td className="px-4 py-2 text-center border-r border-slate-150 dark:border-slate-850/80">
@@ -527,6 +527,22 @@ export default function TableView({
                             task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
                           }`}
                         />
+                        {task.archived && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({
+                                ...task,
+                                archived: false
+                              });
+                            }}
+                            className="shrink-0 inline-flex items-center gap-1 text-[8.5px] font-black uppercase text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 px-1.5 py-0.5 rounded border border-amber-500/20 hover:border-amber-500/40 select-none cursor-pointer hover:scale-105 transition-all"
+                            title="Нажмите, чтобы вернуть задачу из архива"
+                          >
+                            📦 Архив (Вернуть)
+                          </button>
+                        )}
                         {task.externalLink && (
                           <a
                             href={task.externalLink.startsWith('http') ? task.externalLink : `https://${task.externalLink}`}

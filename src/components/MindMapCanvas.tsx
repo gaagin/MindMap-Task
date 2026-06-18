@@ -35,7 +35,12 @@ import {
   Mic,
   MicOff,
   Link as LinkIcon,
-  Clock
+  Clock,
+  Tag,
+  ToggleLeft,
+  ToggleRight,
+  Square,
+  Hexagon
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue } from '../utils';
@@ -206,6 +211,26 @@ function getOppositeSide(side: 'top' | 'right' | 'bottom' | 'left'): 'top' | 'ri
   }
 }
 
+function getNodeWidth(n: TaskNode): number {
+  if (n.isWorkflowRectangle) {
+    return n.width || (n.workflowShape === 'rhomb' ? 120 : 170);
+  }
+  if (n.isContainer) {
+    return n.width || 520;
+  }
+  return n.width || 210;
+}
+
+function getNodeHeight(n: TaskNode): number {
+  if (n.isWorkflowRectangle) {
+    return n.height || (n.workflowShape === 'rhomb' ? 120 : 70);
+  }
+  if (n.isContainer) {
+    return n.height || 400;
+  }
+  return n.height || 110;
+}
+
 export default function MindMapCanvas({
   nodes: incomingNodes,
   darkMode,
@@ -250,6 +275,10 @@ export default function MindMapCanvas({
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [expandedCardSubtasks, setExpandedCardSubtasks] = useState<Record<string, boolean>>({});
+  const [activeInlineMenu, setActiveInlineMenu] = useState<{
+    cardId: string;
+    type: 'priority' | 'date' | 'tag';
+  } | null>(null);
 
   useEffect(() => {
     if (lastCreatedNodeId) {
@@ -2874,18 +2903,8 @@ export default function MindMapCanvas({
         for (const n of nodes) {
           if (n.id === activeConnector.nodeId) continue;
 
-          let w = 210;
-          let h = 110;
-          if (n.isWorkflowRectangle) {
-            w = n.width || 170;
-            h = n.height || 70;
-          } else if (n.isContainer) {
-            w = n.width || 520;
-            h = n.height || 400;
-          } else {
-            w = n.width || 210;
-            h = n.height || 110;
-          }
+          const w = getNodeWidth(n);
+          const h = getNodeHeight(n);
 
           // 30px boundary snap margin for cozy magnetic connections
           const snapMargin = 30;
@@ -2922,8 +2941,8 @@ export default function MindMapCanvas({
       const deltaY = (e.clientY - resizeStartPos.y) / zoom;
 
       if (node.isWorkflowRectangle) {
-        const w = 170;
-        const h = 70;
+        const w = getNodeWidth(node);
+        const h = getNodeHeight(node);
         const startWidth = resizeStartSize.width;
         const startHeight = resizeStartSize.height;
         const startOffsetX = resizeStartCenter.x;
@@ -3421,18 +3440,8 @@ export default function MindMapCanvas({
         for (const n of nodes) {
           if (n.id === activeConnector.nodeId) continue;
 
-          let w = 210;
-          let h = 110;
-          if (n.isWorkflowRectangle) {
-            w = n.width || 170;
-            h = n.height || 70;
-          } else if (n.isContainer) {
-            w = n.width || 520;
-            h = n.height || 400;
-          } else {
-            w = n.width || 210;
-            h = n.height || 110;
-          }
+          const w = getNodeWidth(n);
+          const h = getNodeHeight(n);
 
           // 30px boundary snap margin for cozy magnetic connections
           const snapMargin = 30;
@@ -3519,8 +3528,8 @@ export default function MindMapCanvas({
       const deltaY = (touch.clientY - resizeStartPos.y) / zoom;
 
       if (node.isWorkflowRectangle) {
-        const w = 170;
-        const h = 70;
+        const w = getNodeWidth(node);
+        const h = getNodeHeight(node);
         const startWidth = resizeStartSize.width;
         const startHeight = resizeStartSize.height;
         const startOffsetX = resizeStartCenter.x;
@@ -3953,10 +3962,10 @@ export default function MindMapCanvas({
     let updatedTags: string[] | null = null;
 
     nodes.forEach(flow => {
-      if (!flow.isWorkflowRectangle) return;
+      if (!flow.isWorkflowRectangle || flow.isZoneTriggerDisabled) return;
 
-      const w = 170;
-      const h = 70;
+      const w = getNodeWidth(flow);
+      const h = getNodeHeight(flow);
       const zoneW = flow.zoneWidth !== undefined ? flow.zoneWidth : (w + 100);
       const zoneH = flow.zoneHeight !== undefined ? flow.zoneHeight : (h + 80);
       const zoneOX = flow.zoneOffsetX || 0;
@@ -4018,8 +4027,8 @@ export default function MindMapCanvas({
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
     
-    const w = node.width || (node.isWorkflowRectangle ? 170 : 210);
-    const h = node.height || (node.isWorkflowRectangle ? 70 : 110);
+    const w = getNodeWidth(node);
+    const h = getNodeHeight(node);
     
     let startX = node.x;
     let startY = node.y;
@@ -4886,8 +4895,8 @@ export default function MindMapCanvas({
               if (!target) return null; // Target node deleted or missing
               
               // Calculate start coordinate on origin node
-              const w1 = node.width || (node.isWorkflowRectangle ? 170 : 210);
-              const h1 = node.height || (node.isWorkflowRectangle ? 70 : 110);
+              const w1 = getNodeWidth(node);
+              const h1 = getNodeHeight(node);
               let x1 = node.x;
               let y1 = node.y;
               if (conn.fromSide === 'top') y1 -= h1 / 2;
@@ -4896,8 +4905,8 @@ export default function MindMapCanvas({
               else if (conn.fromSide === 'left') x1 -= w1 / 2;
 
               // Calculate end coordinate on target node
-              const w2 = target.width || (target.isWorkflowRectangle ? 170 : 210);
-              const h2 = target.height || (target.isWorkflowRectangle ? 70 : 110);
+              const w2 = getNodeWidth(target);
+              const h2 = getNodeHeight(target);
               let x2 = target.x;
               let y2 = target.y;
               if (conn.toSide === 'top') y2 -= h2 / 2;
@@ -5690,8 +5699,8 @@ export default function MindMapCanvas({
             const matches = isNodeMatched(node);
             const isDimmed = isAnyFilterActive && !matches;
 
-            const w = node.width || 170;
-            const h = node.height || 70;
+            const w = getNodeWidth(node);
+            const h = getNodeHeight(node);
 
             const isOpponentHovered = hoveredNodeId === node.id;
 
@@ -5711,7 +5720,7 @@ export default function MindMapCanvas({
 
                   // Check if any dragging node is currently overlapping this zone
                   let isAnyDraggingNodeOverlapping = false;
-                  if (draggingNodeId) {
+                  if (draggingNodeId && !node.isZoneTriggerDisabled) {
                     const draggingNode = nodes.find(n => n.id === draggingNodeId);
                     if (draggingNode && !draggingNode.isWorkflowRectangle && !draggingNode.isContainer) {
                       const cardW = draggingNode.width || 210;
@@ -5742,20 +5751,24 @@ export default function MindMapCanvas({
                         height: `${zoneH}px`
                       }}
                       className={`rounded-2xl border-2 border-dashed transition-all pointer-events-none ${
-                        isAnyDraggingNodeOverlapping
-                          ? 'border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/15 scale-[1.01] shadow-lg ring-4 ring-emerald-500/25'
-                          : isSelected
-                            ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/10 shadow-md'
-                            : 'border-slate-350 dark:border-slate-700 bg-slate-50/5 dark:bg-slate-900/5'
+                        node.isZoneTriggerDisabled
+                          ? 'border-gray-300 dark:border-gray-800 bg-gray-50/5 dark:bg-slate-900/5 opacity-40'
+                          : isAnyDraggingNodeOverlapping
+                            ? 'border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/15 scale-[1.01] shadow-lg ring-4 ring-emerald-500/25'
+                            : isSelected
+                              ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/10 shadow-md'
+                              : 'border-slate-350 dark:border-slate-700 bg-slate-50/5 dark:bg-slate-900/5'
                       }`}
                     >
                       {/* Title label at the top center of the zone */}
                       <div className={`absolute -top-5 left-1/2 transform -translate-x-1/2 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-xs pointer-events-none border select-none transition-all duration-150 whitespace-nowrap ${
-                        isAnyDraggingNodeOverlapping
-                          ? 'bg-emerald-500 text-white border-emerald-600'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                        node.isZoneTriggerDisabled
+                          ? 'bg-gray-105 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-750 dark:text-gray-500'
+                          : isAnyDraggingNodeOverlapping
+                            ? 'bg-emerald-500 text-white border-emerald-600'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
                       }`}>
-                        {isAnyDraggingNodeOverlapping ? `🔗 Авто-тег: ${node.text || 'Шаг_Workflow'}` : 'Зона Триггера'}
+                        {node.isZoneTriggerDisabled ? '⛔ Триггер выключен' : isAnyDraggingNodeOverlapping ? `🔗 Авто-тег: ${node.text || 'Шаг_Workflow'}` : 'Зона Триггера'}
                       </div>
 
                       {/* Resize Handles of trigger zone - visible only when active workflow step is selected */}
@@ -5876,18 +5889,44 @@ export default function MindMapCanvas({
                     e.stopPropagation();
                     setEditingNodeId(node.id);
                   }}
-                  className={`absolute group cursor-grab active:cursor-grabbing rounded-xl border-2 shadow-md transition-[background-color,border-color,box-shadow,transform] duration-150 ${
+                  className={`absolute group cursor-grab active:cursor-grabbing transition-[background-color,border-color,box-shadow,transform] duration-150 ${
                     isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                   } ${
-                    isOpponentHovered
-                      ? 'bg-indigo-50/15 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500/25 scale-[1.025] shadow-lg'
-                      : isSelected
-                        ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-400 ring-4 ring-indigo-120 dark:ring-indigo-950/40 shadow-lg'
-                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
+                    node.workflowShape === 'rhomb'
+                      ? ''
+                      : `rounded-xl border-2 shadow-md ${
+                          isOpponentHovered
+                            ? 'bg-indigo-50/15 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500/25 scale-[1.025] shadow-lg'
+                            : isSelected
+                              ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-400 ring-4 ring-indigo-120 dark:ring-indigo-950/40 shadow-lg'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
+                        }`
                   }`}
                 >
+                  {node.workflowShape === 'rhomb' && (
+                    <div 
+                      className={`absolute inset-0 transition-all ${
+                        isOpponentHovered 
+                          ? 'bg-indigo-500 scale-[1.025] shadow-lg' 
+                          : isSelected 
+                            ? 'bg-indigo-600 dark:bg-indigo-400 shadow-lg' 
+                            : 'bg-slate-200 dark:bg-slate-800 shadow-md'
+                      }`}
+                      style={{
+                        clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+                      }}
+                    >
+                      <div 
+                        className="absolute inset-[2.5px] bg-white dark:bg-slate-900 transition-colors"
+                        style={{
+                          clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+                        }}
+                      />
+                    </div>
+                  )}
+
                   {/* Title and Completed State inside workflow step */}
-                  <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center select-none">
+                  <div className={`w-full h-full flex flex-col items-center justify-center p-3 text-center select-none relative z-10 ${node.workflowShape === 'rhomb' ? 'px-5' : ''}`}>
                     {editingNodeId === node.id ? (
                       <input
                         type="text"
@@ -6017,6 +6056,43 @@ export default function MindMapCanvas({
                       className="flex items-center justify-center w-8 h-8 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                     >
                       <Eye className="w-4 h-4" />
+                    </button>
+
+                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                    {/* Shape Toggle button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const nextShape = node.workflowShape === 'rhomb' ? 'rectangle' : 'rhomb';
+                        onUpdateNode({
+                          ...node,
+                          workflowShape: nextShape
+                        });
+                      }}
+                      title={node.workflowShape === 'rhomb' ? "Сменить форму на Прямоугольник" : "Сменить форму на Ромб"}
+                      className="flex items-center justify-center w-8 h-8 text-indigo-650 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      <Square className={`w-3.5 h-3.5 transition-transform duration-300 ${node.workflowShape === 'rhomb' ? 'rotate-45 text-amber-500' : 'text-slate-500'}`} />
+                    </button>
+
+                    {/* Trigger active/inactive Toggle button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdateNode({
+                          ...node,
+                          isZoneTriggerDisabled: !node.isZoneTriggerDisabled
+                        });
+                      }}
+                      title={node.isZoneTriggerDisabled ? "Включить триггер зоны авто-тегов" : "Выключить триггер зоны авто-тегов"}
+                      className="flex items-center justify-center w-8 h-8 text-indigo-650 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      {node.isZoneTriggerDisabled ? (
+                        <Link2Off className="w-3.5 h-3.5 text-rose-500" />
+                      ) : (
+                        <LinkIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      )}
                     </button>
 
                     <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
@@ -6302,43 +6378,265 @@ export default function MindMapCanvas({
 
                 {!node.isCardCollapsed ? (
                   <>
-                    {/* Priority & Badge Stats Row */}
+                    {/* Priority, Due Date & Tags inline editing triggers */}
                     <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
                       {!isRoot && (
-                        <span className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${pInfo.bg}`}>
-                          <span className={`w-1 h-1 rounded-full ${pInfo.dot}`} />
-                          {pInfo.label}
-                        </span>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'priority' ? null : { cardId: node.id, type: 'priority' });
+                            }}
+                            className="hover:scale-[1.03] transition-transform cursor-pointer block text-left"
+                            title="Изменить приоритет"
+                          >
+                            <span className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${pInfo.bg}`}>
+                              <span className={`w-1 h-1 rounded-full ${pInfo.dot}`} />
+                              {pInfo.label}
+                            </span>
+                          </button>
+                          
+                          {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'priority' && (
+                            <div 
+                              className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-xl shadow-xl p-1.5 w-44 z-100"
+                              onClick={(e) => e.stopPropagation()}
+                              onMouseDown={(e) => e.stopPropagation()}
+                            >
+                              <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase px-2 mb-1 tracking-wider text-left">Приоритет:</p>
+                              <div className="space-y-0.5">
+                                {(['urgent', 'high', 'medium', 'low', 'none'] as Priority[]).map((p) => {
+                                  const label = p === 'urgent' ? '🔥 Критический' : p === 'high' ? '🟠 Высокий' : p === 'medium' ? '🔵 Средний' : p === 'low' ? '🟢 Низкий' : '⚪ Без приоритета';
+                                  const isSelected = node.priority === p || (p === 'none' && !node.priority);
+                                  return (
+                                    <button
+                                      key={p}
+                                      type="button"
+                                      onClick={() => {
+                                        onUpdateNode({ ...node, priority: p });
+                                        setActiveInlineMenu(null);
+                                      }}
+                                      className={`w-full text-left font-semibold hover:bg-slate-100 dark:hover:bg-slate-700 px-2 py-1 text-[10.5px] rounded flex items-center justify-between cursor-pointer ${
+                                        isSelected ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20' : 'text-slate-650 dark:text-slate-300'
+                                      }`}
+                                    >
+                                      <span>{label}</span>
+                                      {isSelected && <CheckCircle2 className="w-3 h-3 text-indigo-650 dark:text-indigo-400" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
 
-                      {node.dueDate && (
-                        <span 
-                          className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${
-                            node.completed
-                              ? isRoot
-                                ? 'bg-indigo-700/50 text-indigo-200 border-indigo-500/30'
-                                : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-505 border-slate-200 dark:border-slate-800'
-                              : isNodeOverdue(node, nodes)
-                                ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-900/60 animate-pulse font-extrabold shadow-[0_0_6px_rgba(244,63,94,0.3)]'
-                                : isRoot
-                                  ? 'bg-indigo-500/20 text-indigo-100 border-indigo-400/30'
-                                  : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-250 dark:border-emerald-900'
-                          }`}
-                          title={
-                            node.completed 
-                              ? `Срок выполнения: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Выполнено)`
-                              : isNodeOverdue(node, nodes)
-                                ? `Внимание! Срок выполнения истек: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}`
-                                : `Срок выполнения: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''}`
-                          }
-                        >
-                          {isNodeOverdue(node, nodes) && !node.completed ? (
-                            <AlertTriangle className="w-2.5 h-2.5 text-rose-500 animate-bounce" />
-                          ) : (
-                            <Calendar className="w-2.5 h-2.5 text-indigo-500 dark:text-indigo-400" />
+                      {/* Due date spot edit popup */}
+                      <div className="relative">
+                        {node.dueDate ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' ? null : { cardId: node.id, type: 'date' });
+                            }}
+                            className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider hover:scale-[1.03] transition-transform cursor-pointer text-left ${
+                              node.completed
+                                ? isRoot
+                                  ? 'bg-indigo-700/50 text-indigo-200 border-indigo-500/30'
+                                  : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-550 border-slate-200 dark:border-slate-800'
+                                : isNodeOverdue(node, nodes)
+                                  ? 'bg-rose-50 dark:bg-rose-955/50 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-900/60 animate-pulse font-extrabold shadow-[0_0_6px_rgba(244,63,94,0.3)]'
+                                  : isRoot
+                                    ? 'bg-indigo-500/20 text-indigo-100 border-indigo-400/30'
+                                    : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-250 dark:border-emerald-900'
+                            }`}
+                            title={
+                              node.completed 
+                                ? `Срок выполнения: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Выполнено. Нажмите для изменения)`
+                                : isNodeOverdue(node, nodes)
+                                  ? `Внимание! Срок выполнения истек: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Нажмите для изменения)`
+                                  : `Срок выполнения: ${formatDisplayDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Нажмите для изменения)`
+                            }
+                          >
+                            {isNodeOverdue(node, nodes) && !node.completed ? (
+                              <AlertTriangle className="w-2.5 h-2.5 text-rose-500 animate-bounce" />
+                            ) : (
+                              <Calendar className="w-2.5 h-2.5 text-indigo-500 dark:text-indigo-400" />
+                            )}
+                            <span>{formatDisplayDate(node.dueDate)}{node.dueTime ? `, ${node.dueTime}` : ''}</span>
+                          </button>
+                        ) : (
+                          !isRoot && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' ? null : { cardId: node.id, type: 'date' });
+                              }}
+                              className="inline-flex items-center gap-1 text-[8px] text-slate-400 dark:text-slate-500 hover:text-slate-605 dark:hover:text-slate-300 px-1.5 py-0.5 rounded border border-dashed border-slate-205 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850 hover:scale-[1.03] transition-all cursor-pointer text-left"
+                              title="Добавить срок выполнения"
+                            >
+                              <Calendar className="w-2.5 h-2.5 text-slate-400" />
+                              <span>+ Срок</span>
+                            </button>
+                          )
+                        )}
+
+                        {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' && (
+                          <div 
+                            className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-755 rounded-2xl shadow-xl p-3 w-56 z-100 flex flex-col gap-2.5"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                          >
+                            <p className="text-[10px] font-black text-slate-450 dark:text-slate-505 uppercase tracking-wider text-left">Срок выполнения:</p>
+                            
+                            <div className="space-y-1 text-left whitespace-normal">
+                              <label htmlFor={`inline-canvas-date-${node.id}`} className="text-[9px] font-bold text-slate-500">Дата</label>
+                              <input 
+                                type="date"
+                                id={`inline-canvas-date-${node.id}`}
+                                defaultValue={node.dueDate || ''}
+                                className="w-full text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-855 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                            </div>
+
+                            <div className="space-y-1 text-left whitespace-normal">
+                              <label htmlFor={`inline-canvas-time-${node.id}`} className="text-[9px] font-bold text-slate-500">Время</label>
+                              <input 
+                                type="time"
+                                id={`inline-canvas-time-${node.id}`}
+                                defaultValue={node.dueTime || ''}
+                                className="w-full text-[11px] px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-855 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                            </div>
+
+                            <div className="flex gap-1.5 mt-1 border-t border-slate-100 dark:border-slate-800/60 pt-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const dateInput = document.getElementById(`inline-canvas-date-${node.id}`) as HTMLInputElement | null;
+                                  const timeInput = document.getElementById(`inline-canvas-time-${node.id}`) as HTMLInputElement | null;
+                                  const dateVal = dateInput?.value || undefined;
+                                  const timeVal = timeInput?.value || undefined;
+                                  
+                                  onUpdateNode({
+                                    ...node,
+                                    dueDate: dateVal || undefined,
+                                    dueTime: dateVal ? (timeVal || undefined) : undefined
+                                  });
+                                  setActiveInlineMenu(null);
+                                }}
+                                className="flex-grow py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-[10px] transition-all cursor-pointer text-center"
+                              >
+                                OK
+                              </button>
+                              {node.dueDate && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateNode({
+                                      ...node,
+                                      dueDate: undefined,
+                                      dueTime: undefined
+                                    });
+                                    setActiveInlineMenu(null);
+                                  }}
+                                  className="flex-grow py-1 rounded-lg bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 text-rose-650 dark:text-rose-400 font-bold text-[10px] transition-all cursor-pointer text-center whitespace-nowrap px-1"
+                                >
+                                  Сбросить
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setActiveInlineMenu(null)}
+                                className="px-1.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 font-bold text-[10px] transition-all cursor-pointer text-center"
+                              >
+                                Отмена
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Tags spot edit popup trigger */}
+                      {!isRoot && (
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'tag' ? null : { cardId: node.id, type: 'tag' });
+                            }}
+                            className="inline-flex items-center gap-1 text-[8px] text-slate-450 dark:text-slate-500 hover:text-indigo-605 dark:hover:text-amber-400 px-1.5 py-0.5 rounded border border-dashed border-slate-205 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850 hover:scale-[1.03] transition-all cursor-pointer text-left"
+                            title="Добавить или изменить теги на месте"
+                          >
+                            <Tag className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                            <span>Теги</span>
+                          </button>
+
+                          {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'tag' && (
+                            <div 
+                              className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-64 z-100 flex flex-col gap-2"
+                              onClick={(e) => e.stopPropagation()}
+                              onMouseDown={(e) => e.stopPropagation()}
+                            >
+                              <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider text-left">Теги задачи:</p>
+                                <button 
+                                  type="button" 
+                                  onClick={() => setActiveInlineMenu(null)}
+                                  className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <div className="max-h-48 overflow-y-auto space-y-2.5 my-1 pr-1 border-b border-slate-100 dark:border-slate-800/60 pb-2 text-left whitespace-normal">
+                                {tagCategories.length === 0 ? (
+                                  <p className="text-[10px] text-slate-450 font-medium leading-relaxed">Нет созданных категорий или тегов в проекте.</p>
+                                ) : (
+                                  tagCategories.map(cat => (
+                                    <div key={cat.id} className="space-y-1">
+                                      <div className="flex items-center gap-1.5 text-[10px] font-extrabold" style={{ color: cat.color }}>
+                                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                                        <span>{cat.name}</span>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1">
+                                        {cat.tags.map(tag_val => {
+                                          const isAssigned = (node.tags || []).includes(tag_val);
+                                          return (
+                                            <button
+                                              key={tag_val}
+                                              type="button"
+                                              onClick={() => {
+                                                const currentTags = node.tags || [];
+                                                const nextTags = isAssigned 
+                                                  ? currentTags.filter(t => t !== tag_val)
+                                                  : [...currentTags, tag_val];
+                                                onUpdateNode({
+                                                  ...node,
+                                                  tags: nextTags
+                                                });
+                                              }}
+                                              className={`text-[9.5px] font-bold px-2 py-0.5 rounded-lg border transition-all cursor-pointer ${
+                                                isAssigned 
+                                                  ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900 shadow-2xs'
+                                                  : 'bg-slate-50 dark:bg-slate-850 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-750 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                              }`}
+                                            >
+                                              #{tag_val}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
                           )}
-                          <span>{formatDisplayDate(node.dueDate)}{node.dueTime ? `, ${node.dueTime}` : ''}</span>
-                        </span>
+                        </div>
                       )}
 
                       {hasNotes && (
