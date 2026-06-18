@@ -105,6 +105,7 @@ export function loadWorkspace(): WorkspaceState {
     try {
       const deletionsJson = localStorage.getItem('milli_deleted_registry') || '[]';
       const deletions = JSON.parse(deletionsJson) || [];
+      state.deletions = deletions; // Ensure deletions list is preserved directly inside active state representation
       if (Array.isArray(deletions) && deletions.length > 0) {
         const isDeleted = (type: string, id: string) => {
           return deletions.some((d: any) => d && d.type === type && d.id === id);

@@ -275,7 +275,8 @@ export function mergeWorkspaceStates(
     activeProjectId: finalActiveProjectId,
     tagCategories: finalTagCats,
     googleSheetsFileId: local.googleSheetsFileId || cloud.googleSheetsFileId,
-    taskSheetsSpreadsheetId: local.taskSheetsSpreadsheetId || cloud.taskSheetsSpreadsheetId
+    taskSheetsSpreadsheetId: local.taskSheetsSpreadsheetId || cloud.taskSheetsSpreadsheetId,
+    deletions: mergedDeletions
   };
 }
 
@@ -994,7 +995,8 @@ export async function syncWithGoogleSheets(
       activeProjectId: finalActiveProjectId,
       tagCategories: finalTagCats,
       googleSheetsFileId: fileId,
-      taskSheetsSpreadsheetId: localState.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || undefined
+      taskSheetsSpreadsheetId: localState.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || undefined,
+      deletions: mergedDeletions
     };
 
     // 8. Write updated lists back to Google Sheets (Overwrite to ensure exact symmetry)

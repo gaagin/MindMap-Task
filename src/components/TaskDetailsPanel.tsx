@@ -37,6 +37,7 @@ import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode } from '../utils';
 import { auth, db } from '../lib/firebase';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
+import GoogleDriveImage from './GoogleDriveImage';
 
 interface TaskDetailsPanelProps {
   node: TaskNode | null;
@@ -204,6 +205,23 @@ export default function TaskDetailsPanel({
         if (!uploadRes.ok) {
           const errText = await uploadRes.text();
           throw new Error(`Не удалось загрузить тело файла: ${errText}`);
+        }
+
+        // Grant public read permission so other devices can read the file anonymously and automatically
+        try {
+          await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${googleToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              role: 'reader',
+              type: 'anyone'
+            })
+          });
+        } catch (permissionErr) {
+          console.warn('[Google Drive Auth] Failed to list file permissions as public for comment image:', permissionErr);
         }
 
         // 4. Retrieve web links
@@ -1085,12 +1103,14 @@ export default function TaskDetailsPanel({
   };
 
   // Upload attachment either to local base64 or directly to Google Drive
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const filesList = e.target.files;
-    if (!filesList || filesList.length === 0) return;
-    
-    setFileError(null);
-    const file = filesList[0];
+  const uploadFile = async (file: File) => {
+    // If it's a pasted image with generic name, rename it to make it look nicer
+    let finalFile = file;
+    if (file.name === 'image.png' || !file.name) {
+      const extension = file.type ? file.type.split('/')[1] || 'png' : 'png';
+      const formattedDate = new Date().toISOString().split('T')[0] + '_' + new Date().toTimeString().split(' ')[0].replace(/:/g, '-');
+      finalFile = new File([file], `Pasted_File_${formattedDate}.${extension}`, { type: file.type });
+    }
 
     if (googleToken) {
       setIsUploadingFile(true);
@@ -1106,8 +1126,8 @@ export default function TaskDetailsPanel({
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            name: file.name,
-            mimeType: file.type || 'application/octet-stream',
+            name: finalFile.name,
+            mimeType: finalFile.type || 'application/octet-stream',
             parents: folderId ? [folderId] : undefined
           })
         });
@@ -1125,14 +1145,31 @@ export default function TaskDetailsPanel({
           method: 'PATCH',
           headers: {
             'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': file.type || 'application/octet-stream'
+            'Content-Type': finalFile.type || 'application/octet-stream'
           },
-          body: file
+          body: finalFile
         });
 
         if (!uploadRes.ok) {
           const errText = await uploadRes.text();
           throw new Error(`Не удалось загрузить тело файла: ${errText}`);
+        }
+
+        // Grant public read permission so other devices can read the file anonymously and automatically
+        try {
+          await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${googleToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              role: 'reader',
+              type: 'anyone'
+            })
+          });
+        } catch (permissionErr) {
+          console.warn('[Google Drive Auth] Failed to list file permissions as public:', permissionErr);
         }
 
         // 4. Retrieve web links
@@ -1151,9 +1188,9 @@ export default function TaskDetailsPanel({
         // 5. Build and save attachment record
         const newAttachment: AttachmentFile = {
           id: generateId(),
-          name: file.name,
-          type: file.type,
-          size: file.size,
+          name: finalFile.name,
+          type: finalFile.type,
+          size: finalFile.size,
           dataUrl: finalData.webViewLink || finalData.webContentLink || '',
           googleDriveId: driveFileId,
           webViewLink: finalData.webViewLink,
@@ -1171,7 +1208,7 @@ export default function TaskDetailsPanel({
     } else {
       // Local Base64 storage
       const MAX_BYTES = 1.5 * 1024 * 1024;
-      if (file.size > MAX_BYTES) {
+      if (finalFile.size > MAX_BYTES) {
         setFileError('Размер файла превышает 1.5 МБ. Пожалуйста, авторизуйте Google Sheets в шапке, чтобы разблокировать неограниченные вложения на Google Диск!');
         return;
       }
@@ -1181,9 +1218,9 @@ export default function TaskDetailsPanel({
         const base64Data = reader.result as string;
         const newAttachment: AttachmentFile = {
           id: generateId(),
-          name: file.name,
-          type: file.type,
-          size: file.size,
+          name: finalFile.name,
+          type: finalFile.type,
+          size: finalFile.size,
           dataUrl: base64Data,
         };
 
@@ -1193,7 +1230,45 @@ export default function TaskDetailsPanel({
       reader.onerror = () => {
         setFileError('Ошибка считывания файла.');
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(finalFile);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const filesList = e.target.files;
+    if (!filesList || filesList.length === 0) return;
+    
+    setFileError(null);
+    await uploadFile(filesList[0]);
+  };
+
+  // Paste handler for the entire aside wrapper
+  const handleAsidePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    // If active tab is chat/comments, don't interfere with comment image input paste
+    if (activeTab === 'chat') return;
+    
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    let hasFile = false;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file') {
+        hasFile = true;
+        break;
+      }
+    }
+
+    if (!hasFile) return; // Let default text pasting work! 
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          await uploadFile(file);
+        }
+      }
     }
   };
 
@@ -1221,7 +1296,10 @@ export default function TaskDetailsPanel({
 
   return (
     <>
-      <aside className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out">
+      <aside 
+        onPaste={handleAsidePaste}
+        className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out"
+      >
       {/* Header */}
       <div className="h-16 px-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 uppercase tracking-wider font-sans flex items-center gap-2">
@@ -1337,26 +1415,28 @@ export default function TaskDetailsPanel({
         </div>
 
         {/* State / Done badge */}
-        <div className="flex items-center justify-between bg-[#FAFBFD]/60 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/50 dark:border-slate-850">
-          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Статус выполнения:</span>
-          <button
-            onClick={() => {
-              const nextCompleted = !node.completed;
-              onUpdateNode({
-                ...node,
-                completed: nextCompleted,
-                progress: nextCompleted ? 100 : 0
-              });
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold select-none cursor-pointer transition-colors ${
-              node.completed 
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900' 
-                : 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900'
-            }`}
-          >
-            {node.completed ? '✓ Выполнено' : '○ В процессе'}
-          </button>
-        </div>
+        {!node.isWorkflowRectangle && (
+          <div className="flex items-center justify-between bg-[#FAFBFD]/60 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/50 dark:border-slate-850">
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Статус выполнения:</span>
+            <button
+              onClick={() => {
+                const nextCompleted = !node.completed;
+                onUpdateNode({
+                  ...node,
+                  completed: nextCompleted,
+                  progress: nextCompleted ? 100 : 0
+                });
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold select-none cursor-pointer transition-colors ${
+                node.completed 
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900' 
+                  : 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900'
+              }`}
+            >
+              {node.completed ? '✓ Выполнено' : '○ В процессе'}
+            </button>
+          </div>
+        )}
 
         {/* Прогресс выполнения */}
         {(() => {
@@ -2777,7 +2857,7 @@ export default function TaskDetailsPanel({
               <>
                 <Paperclip className="w-5 h-5 mx-auto text-slate-400" />
                 <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-1.5">
-                  Нажмите для выбора файла
+                  Нажмите для выбора файла или вставьте из буфера обмена (Ctrl+V)
                 </p>
                 <p className="text-[10px] text-slate-400 mt-1 leading-normal">
                   {googleToken 
@@ -2809,12 +2889,22 @@ export default function TaskDetailsPanel({
                           className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-slate-200/50 dark:border-slate-700 cursor-pointer group shadow-sm hover:scale-105 active:scale-95 transition-all"
                           title="Нажмите для предпросмотра"
                         >
-                          <img 
-                            src={file.googleDriveId ? `https://drive.google.com/thumbnail?id=${file.googleDriveId}&sz=w150` : file.dataUrl} 
-                            alt={file.name} 
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                            referrerPolicy="no-referrer"
-                          />
+                          {file.googleDriveId ? (
+                            <GoogleDriveImage 
+                              driveId={file.googleDriveId}
+                              googleToken={googleToken}
+                              alt={file.name}
+                              sz="w150"
+                              className="w-full h-full"
+                            />
+                          ) : (
+                            <img 
+                              src={file.dataUrl} 
+                              alt={file.name} 
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                              referrerPolicy="no-referrer"
+                            />
+                          )}
                           <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <Eye className="w-3.5 h-3.5 text-white drop-shadow-sm" />
                           </div>
@@ -2946,12 +3036,22 @@ export default function TaskDetailsPanel({
                             className="relative w-32 h-32 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-slate-200/60 dark:border-slate-755 cursor-pointer group/img shadow-2xs hover:scale-[1.02] hover:border-indigo-400/85 transition-all"
                             title="Нажмите для увеличения"
                           >
-                            <img
-                              src={comment.imageGoogleDriveId ? `https://drive.google.com/thumbnail?id=${comment.imageGoogleDriveId}&sz=w300` : comment.imageUrl}
-                              alt="Comment upload"
-                              className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
-                              referrerPolicy="no-referrer"
-                            />
+                            {comment.imageGoogleDriveId ? (
+                              <GoogleDriveImage 
+                                driveId={comment.imageGoogleDriveId}
+                                googleToken={googleToken}
+                                alt="Comment upload"
+                                sz="w300"
+                                className="w-full h-full"
+                              />
+                            ) : (
+                              <img
+                                src={comment.imageUrl}
+                                alt="Comment upload"
+                                className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
+                                referrerPolicy="no-referrer"
+                              />
+                            )}
                             <div className="absolute inset-0 bg-black/15 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
                               <Eye className="w-4 h-4 text-white drop-shadow-sm" />
                             </div>
@@ -3207,12 +3307,24 @@ export default function TaskDetailsPanel({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <img 
-              src={lightboxImage.googleDriveId ? `https://drive.google.com/thumbnail?id=${lightboxImage.googleDriveId}&sz=w1000` : lightboxImage.dataUrl} 
-              alt={lightboxImage.name} 
-              className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10 cursor-grab active:cursor-grabbing"
-              referrerPolicy="no-referrer"
-            />
+            {lightboxImage.googleDriveId ? (
+              <GoogleDriveImage 
+                driveId={lightboxImage.googleDriveId}
+                googleToken={googleToken}
+                alt={lightboxImage.name}
+                sz="w1000"
+                className="max-w-full max-h-[80vh]"
+                imgClassName="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10 cursor-grab active:cursor-grabbing"
+                fallbackUrl={lightboxImage.dataUrl}
+              />
+            ) : (
+              <img 
+                src={lightboxImage.dataUrl} 
+                alt={lightboxImage.name} 
+                className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10 cursor-grab active:cursor-grabbing"
+                referrerPolicy="no-referrer"
+              />
+            )}
           </div>
         </div>
       </div>

@@ -237,7 +237,8 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
     folders,
     projects: updatedProjects,
     nodes,
-    tagCategories: deduplicatedRootCats
+    tagCategories: deduplicatedRootCats,
+    deletions: wsState.deletions || []
   };
 }
 
@@ -375,6 +376,15 @@ export default function App() {
   const hasCheckedUrlParamRef = React.useRef(false);
   const lastStateRef = React.useRef<WorkspaceState | null>(null);
   const isFirstSnapshotRef = React.useRef(true);
+  const [isInitialSyncComplete, setIsInitialSyncComplete] = useState(false);
+
+  // 4-second safety timeout for offline boot
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitialSyncComplete(true);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Intercept all state changes, update modification timestamps automatically, ensuring symmetrical sync compatibility
   const setState = (updater: WorkspaceState | ((prev: WorkspaceState) => WorkspaceState)) => {
@@ -734,6 +744,7 @@ export default function App() {
   // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'
   const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'>('canvas');
   const [isMobileViewSwitcherOpen, setIsMobileViewSwitcherOpen] = useState(false);
+  const [isContainerFocused, setIsContainerFocused] = useState(false);
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
@@ -901,6 +912,9 @@ export default function App() {
       const normalizedCloud = normalizeWorkspaceState(cloudState);
       const isEquivalent = isStateSemanticallyEqual(currentState, normalizedCloud);
       const fromCache = !!snap.metadata?.fromCache;
+      if (!fromCache) {
+        setIsInitialSyncComplete(true);
+      }
 
       if (!isEquivalent) {
         // Only absorb incoming changes if we are not actively typing/syncing locally,
@@ -964,7 +978,7 @@ export default function App() {
     
     // Only save to Firebase if the state actually changed or there are pending unsynced edits.
     // This prevents a stale client session from overwriting newer changes in the cloud on auth load.
-    if (currentUser && (stateChanged || unsyncedEditsCountRef.current > 0)) {
+    if (currentUser && isInitialSyncComplete && (stateChanged || unsyncedEditsCountRef.current > 0)) {
       const currentHash = getSyncHash(state);
       if (currentHash === lastSyncedStateHashRef.current) {
         return; // Already synced! Prevents infinite trigger loops
@@ -985,7 +999,7 @@ export default function App() {
       }, 1500); // 1.5s snapshot rate-limiting debounce
       return () => clearTimeout(timer);
     }
-  }, [state, currentUser]);
+  }, [state, currentUser, isInitialSyncComplete]);
 
   // Symmetrical Google Sheets merge trigger method
   const runSheetsSymmetricalSync = async (token: string, currentWorkspace: WorkspaceState) => {
@@ -1247,15 +1261,15 @@ export default function App() {
 
   // 3. Auto Symmetrical Google Sheets merge on startup / login auth
   useEffect(() => {
-    if (googleToken) {
+    if (googleToken && isInitialSyncComplete) {
       runSheetsSymmetricalSync(googleToken, state);
     }
-  }, [googleToken]);
+  }, [googleToken, isInitialSyncComplete]);
 
   // 4. Background Symmetrical Sheets Sync with 3s fast responsive debounce during continuous editing states
   // Only triggers background auto-sync when there are actual unsynced edits, saving Google API quota limits!
   useEffect(() => {
-    if (googleToken && unsyncedEditsCount > 0) {
+    if (googleToken && isInitialSyncComplete && unsyncedEditsCount > 0) {
       const currentHash = getSyncHash(state);
       if (currentHash === lastSyncedStateHashRef.current) {
         return; // Already synced! Prevents infinite trigger loops
@@ -1267,18 +1281,18 @@ export default function App() {
       }, debounceTime); // Optimized rate-limiting debounce
       return () => clearTimeout(timer);
     }
-  }, [state, googleToken, unsyncedEditsCount]);
+  }, [state, googleToken, unsyncedEditsCount, isInitialSyncComplete]);
 
   // 5. Symmetrical Sheets Sync instantly on window tab switch or pageunload (visibilitychange / pagehide)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && googleToken) {
+      if (document.visibilityState === 'hidden' && googleToken && isInitialSyncComplete) {
         syncWithGoogleSheets(googleToken, state);
       }
     };
 
     const handlePageHide = () => {
-      if (googleToken) {
+      if (googleToken && isInitialSyncComplete) {
         syncWithGoogleSheets(googleToken, state);
       }
     };
@@ -1290,7 +1304,7 @@ export default function App() {
       window.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [googleToken, state]);
+  }, [googleToken, state, isInitialSyncComplete]);
 
   // Synchronize Google Sheets IDs from state to localStorage
   useEffect(() => {
@@ -2616,7 +2630,7 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         
         {/* Workspace Top Action Bar Header */}
-        <header className={`h-16 border-b flex items-center justify-between px-4 sm:px-6 backdrop-blur-md z-20 transition-colors duration-300 ${
+        <header className={`${isContainerFocused ? 'hidden md:flex' : 'flex'} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-20 transition-colors duration-300 ${
           (!currentUser || !googleToken)
             ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-900/40'
             : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800'
@@ -3353,6 +3367,7 @@ export default function App() {
                 filterNotes={filterNotes}
                 searchQuery={searchQuery}
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
+                onContainerFocusChange={setIsContainerFocused}
               />
             )
           ) : (

@@ -78,6 +78,7 @@ interface MindMapCanvasProps {
   tagCategories?: TagCategory[];
   lastCreatedNodeId?: string | null;
   onClearLastCreatedNodeId?: () => void;
+  onContainerFocusChange?: (isFocused: boolean) => void;
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -241,7 +242,8 @@ export default function MindMapCanvas({
   searchQuery = '',
   tagCategories = [],
   lastCreatedNodeId,
-  onClearLastCreatedNodeId
+  onClearLastCreatedNodeId,
+  onContainerFocusChange
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -2478,6 +2480,13 @@ export default function MindMapCanvas({
     }
   }, [nodes, focusedContainerId]);
 
+  // Propagate focus state change up to parent to hide top app header on mobile
+  useEffect(() => {
+    if (onContainerFocusChange) {
+      onContainerFocusChange(!!focusedContainerId);
+    }
+  }, [focusedContainerId, onContainerFocusChange]);
+
   // Keep track of the last active container ID to layer it higher than other containers even after focus is removed
   const [lastActiveContainerId, setLastActiveContainerId] = useState<string | null>(null);
 
@@ -4356,7 +4365,7 @@ export default function MindMapCanvas({
         const progress = calculateProgress(focusedContainerId, nodes) || 0;
         
         return (
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-300 dark:border-amber-900/60 rounded-2xl shadow-xl transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-[98vw] md:max-w-[96vw] overflow-hidden flex flex-col">
+          <div className="absolute top-0 left-0 right-0 md:top-4 md:left-1/2 md:transform md:-translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b md:border border-amber-200 dark:border-amber-900/60 rounded-none md:rounded-2xl shadow-md md:shadow-xl transition-all duration-350 animate-in fade-in slide-in-from-top-4 w-full md:w-[96vw] overflow-hidden flex flex-col">
             
             {/* Desktop Only Layout */}
             <div className="hidden md:flex flex-row items-center gap-4 px-5 py-3">
@@ -5864,9 +5873,7 @@ export default function MindMapCanvas({
                       ? 'bg-indigo-50/15 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500/25 scale-[1.025] shadow-lg'
                       : isSelected
                         ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-400 ring-4 ring-indigo-120 dark:ring-indigo-950/40 shadow-lg'
-                        : node.completed
-                          ? 'bg-emerald-50/10 dark:bg-emerald-950/10 border-emerald-500 shadow-sm'
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
                   }`}
                 >
                   {/* Title and Completed State inside workflow step */}
@@ -5903,14 +5910,9 @@ export default function MindMapCanvas({
                       />
                     ) : (
                       <div className="flex flex-col items-center gap-1.5 min-w-0">
-                        <span className={`text-[11px] font-sans font-bold tracking-wide leading-snug break-words max-w-[145px] ${node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : 'text-slate-800 dark:text-slate-150'}`}>
+                        <span className="text-[11px] font-sans font-bold tracking-wide leading-snug break-words max-w-[145px] text-slate-800 dark:text-slate-150">
                           {node.text || 'Шаг Workflow'}
                         </span>
-                        {node.completed && (
-                          <span className="text-[8px] font-black uppercase text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 dark:bg-emerald-500/5 px-1.5 py-0.5 rounded">
-                            ✔️ Готово
-                          </span>
-                        )}
                       </div>
                     )}
                   </div>
@@ -5919,20 +5921,6 @@ export default function MindMapCanvas({
                   <div className={`absolute top-1 right-1 transition-opacity flex items-center gap-1 z-30 ${
                     isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                   }`}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onUpdateNode({
-                          ...node,
-                          completed: !node.completed
-                        });
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      className={`p-0.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-450 hover:text-emerald-500 shadow-xs cursor-pointer ${node.completed ? 'text-emerald-500 border-emerald-500/35' : ''}`}
-                      title="Выполнено/В работе"
-                    >
-                      <CheckCircle2 className="w-2.5 h-2.5" />
-                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -6010,22 +5998,6 @@ export default function MindMapCanvas({
                       transformOrigin: 'top center'
                     }}
                   >
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onUpdateNode({
-                          ...node,
-                          completed: !node.completed
-                        });
-                      }}
-                      title="Выполнено / В работе"
-                      className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
-                    >
-                      <CheckCircle2 className={`w-4 h-4 ${node.completed ? 'text-emerald-500' : ''}`} />
-                    </button>
-
-                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
-
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -6934,11 +6906,27 @@ export default function MindMapCanvas({
                               text: e.target.value
                             });
                           }}
-                          className={`flex-1 text-xs bg-transparent border-0 focus:ring-0 p-0.5 text-slate-800 dark:text-slate-100 focus:outline-none max-w-[140px] truncate-none hover:bg-slate-50/50 dark:hover:bg-slate-800/50 focus:bg-slate-50 dark:focus:bg-slate-850 px-1 rounded transition-colors ${
+                          className={`flex-1 text-xs bg-transparent border-0 focus:ring-0 p-0.5 text-slate-800 dark:text-slate-100 focus:outline-none max-w-[130px] truncate-none hover:bg-slate-50/50 dark:hover:bg-slate-800/50 focus:bg-slate-50 dark:focus:bg-slate-850 px-1 rounded transition-colors ${
                             task.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
                           }`}
                           placeholder="Имя задачи..."
                         />
+
+                        {/* View / Detail Button */}
+                        <button
+                          onClick={() => {
+                            onSelectNode(task.id);
+                            onOpenDrawer();
+                          }}
+                          title="Просмотреть детали задачи"
+                          className={`p-1 rounded-lg transition-colors cursor-pointer shrink-0 opacity-80 group-hover:opacity-100 ${
+                            selectedNodeId === task.id
+                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+                              : 'text-slate-450 dark:text-slate-500 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/20'
+                          }`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
 
                         {/* Release / Deploy Button */}
                         <button
