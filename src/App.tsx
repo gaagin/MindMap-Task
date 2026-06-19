@@ -1124,15 +1124,21 @@ export default function App() {
         setIsInitialSyncComplete(true);
       }
 
+      const cloudHash = getSyncHash(normalizedCloud);
+      const isCloudSameAsLastSynced = cloudHash === lastSyncedStateHashRef.current;
+
       if (!isEquivalent) {
-        // Only absorb incoming changes if we are not actively typing/syncing locally,
-        // OR if this is the first snapshot load of our session (forces cloud data loading on boot/device switch).
-        if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
+        // If the cloud nodes/projects/folders are identical to what we last successfully synced,
+        // there are no actual new changes in the cloud. It's just lagging behind our local unsynced edits.
+        // We can safely ignore this nodes mismatch.
+        if (isCloudSameAsLastSynced && !isFirstSnapshotRef.current) {
+          console.log('[Sync] Ignoring cloud snapshot because cloud nodes list matches our last successfully synced state.');
+        } else if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
           if (!fromCache) {
             isFirstSnapshotRef.current = false;
           }
           ignoreNextStateChangeRef.current = true;
-          lastSyncedStateHashRef.current = getSyncHash(normalizedCloud); // Update hash to prevent loops
+          lastSyncedStateHashRef.current = cloudHash; // Update hash to prevent loops
           setRawState(normalizedCloud);
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
           setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
@@ -2543,10 +2549,8 @@ export default function App() {
     const pid = state.activeProjectId;
     if (!pid) return;
 
-    // backup before properties update simple helper
-    const currentNodes = state.nodes[pid] || [];
-
     setState(prev => {
+      const currentNodes = prev.nodes[pid] || [];
       const targetNode = currentNodes.find(n => n.id === updatedNode.id);
       
       const nodeWithTimeStamp = {
