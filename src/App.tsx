@@ -500,6 +500,9 @@ export default function App() {
     timeLeft: number;
   } | null>(null);
 
+  const currentUserRef = React.useRef(currentUser);
+  currentUserRef.current = currentUser;
+
   useEffect(() => {
     const checkPomo = () => {
       try {
@@ -507,10 +510,110 @@ export default function App() {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.isRunning) {
+            let remaining = parsed.timeLeft;
             if (parsed.endTime && !parsed.isPaused) {
-              const remaining = Math.max(0, Math.round((parsed.endTime - Date.now()) / 1000));
+              const now = Date.now();
+              remaining = Math.max(0, Math.round((parsed.endTime - now) / 1000));
               parsed.timeLeft = remaining;
             }
+
+            // Check if timer finished (remaining <= 0)
+            if (parsed.endTime && !parsed.isPaused && remaining <= 0) {
+              playNotificationChime();
+
+              if (!parsed.isBreak) {
+                // Completed work session! Record full focus duration
+                if (parsed.nodeId) {
+                  const nodeId = parsed.nodeId;
+                  const durationSaved = parsed.duration;
+
+                  setState(prev => {
+                    const pid = prev.activeProjectId;
+                    if (!pid) return prev;
+
+                    const currentNodes = prev.nodes[pid] || [];
+                    const targetNode = currentNodes.find(n => n.id === nodeId);
+                    if (!targetNode) return prev;
+
+                    const updatedNode = {
+                      ...targetNode,
+                      pomodoroTotalTime: (targetNode.pomodoroTotalTime || 0) + durationSaved,
+                      pomodoroSessionsCount: (targetNode.pomodoroSessionsCount || 0) + 1,
+                      updatedAt: new Date().toISOString()
+                    };
+
+                    const updatedList = currentNodes.map(n => n.id === nodeId ? updatedNode : n);
+                    const syncedNodes = syncCompletion(updatedList);
+                    return {
+                      ...prev,
+                      nodes: {
+                        ...prev.nodes,
+                        [pid]: syncedNodes
+                      }
+                    };
+                  });
+                }
+
+                // Go to 5 min break
+                const breakDur = 300;
+                const nextState = {
+                  ...parsed,
+                  isBreak: true,
+                  duration: breakDur,
+                  endTime: Date.now() + breakDur * 1000,
+                  timeLeft: breakDur
+                };
+                localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextState));
+                setGlobalPomo(nextState);
+
+                // Firestore sync
+                const userObj = currentUserRef.current;
+                if (userObj) {
+                  const userDocRef = doc(db, 'workspaces', userObj.uid);
+                  updateDoc(userDocRef, {
+                    activePomodoro: nextState
+                  }).catch(err => {
+                    console.warn('[Firebase Pomo Sync] Failed to update activePomodoro to break:', err);
+                  });
+                }
+
+                window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+                return;
+              } else {
+                // Completed break. Go to IDLE/RESET state
+                let customMins = 25;
+                try {
+                  const savedCustom = localStorage.getItem('task_mindmap_pomo_custom_minutes');
+                  if (savedCustom) customMins = parseInt(savedCustom, 10);
+                } catch (err) {}
+
+                const nextState = {
+                  ...parsed,
+                  isRunning: false,
+                  isBreak: false,
+                  duration: customMins * 60,
+                  endTime: null,
+                  timeLeft: customMins * 60
+                };
+                localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextState));
+                setGlobalPomo(nextState);
+
+                // Firestore sync
+                const userObj = currentUserRef.current;
+                if (userObj) {
+                  const userDocRef = doc(db, 'workspaces', userObj.uid);
+                  updateDoc(userDocRef, {
+                    activePomodoro: nextState
+                  }).catch(err => {
+                    console.warn('[Firebase Pomo Sync] Failed to clear activePomodoro on break complete:', err);
+                  });
+                }
+
+                window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+                return;
+              }
+            }
+
             setGlobalPomo(parsed);
             return;
           }

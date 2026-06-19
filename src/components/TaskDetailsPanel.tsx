@@ -586,62 +586,15 @@ export default function TaskDetailsPanel({
       const now = Date.now();
       if (pomo.endTime) {
         const remaining = Math.max(0, Math.round((pomo.endTime - now) / 1000));
-        if (remaining <= 0) {
-          clearInterval(interval);
-          playNotificationChime();
-          
-          if (!pomo.isBreak) {
-            // Completed work session! Record full focus duration
-            if (pomo.nodeId) {
-              const targetNode = allNodesRef.current.find(n => n.id === pomo.nodeId);
-              if (targetNode) {
-                onUpdateNodeRef.current({
-                  ...targetNode,
-                  pomodoroTotalTime: (targetNode.pomodoroTotalTime || 0) + pomo.duration,
-                  pomodoroSessionsCount: (targetNode.pomodoroSessionsCount || 0) + 1
-                });
-              }
-            }
-
-            // Go to 5 min break
-            const breakDur = 300;
-            const nextState: PomodoroState = {
-              nodeId: pomo.nodeId,
-              nodeText: pomo.nodeText,
-              isRunning: true,
-              isPaused: false,
-              isBreak: true,
-              duration: breakDur,
-              endTime: Date.now() + breakDur * 1000,
-              timeLeft: breakDur
-            };
-            savePomoState(nextState);
-          } else {
-            // Completed break. Go to IDLE work
-            const nextState: PomodoroState = {
-              nodeId: pomo.nodeId,
-              nodeText: pomo.nodeText,
-              isRunning: false,
-              isPaused: false,
-              isBreak: false,
-              duration: customPomoMinutes * 60,
-              endTime: null,
-              timeLeft: customPomoMinutes * 60
-            };
-            savePomoState(nextState);
-          }
-        } else {
-          setPomo(prev => {
-            const next = { ...prev, timeLeft: remaining };
-            localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(next));
-            return next;
-          });
-        }
+        setPomo(prev => {
+          if (prev.timeLeft === remaining) return prev;
+          return { ...prev, timeLeft: remaining };
+        });
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [pomo.isRunning, pomo.isPaused, pomo.endTime, pomo.isBreak, pomo.nodeId, pomo.nodeText, customPomoMinutes]);
+  }, [pomo.isRunning, pomo.isPaused, pomo.endTime]);
 
   React.useEffect(() => {
     const handleExternalPomoChange = () => {
