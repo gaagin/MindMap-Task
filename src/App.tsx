@@ -3286,18 +3286,7 @@ export default function App() {
               <FileSpreadsheet className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
             </button>
 
-            {/* Gemini AI Console Toggle Button */}
-            <button
-              onClick={() => setAiConsoleOpen(!aiConsoleOpen)}
-              className={`p-1.5 border rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.05] shrink-0 ${
-                aiConsoleOpen
-                  ? 'border-indigo-650 bg-indigo-50/80 dark:bg-indigo-950/45 text-indigo-700 dark:text-indigo-305 ring-2 ring-indigo-550/20 font-semibold'
-                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 font-semibold'
-              }`}
-              title="Открыть панель ИИ-Копилота и Монитора API"
-            >
-              <Sparkles className={`w-4 h-4 ${aiConsoleOpen ? 'animate-pulse' : ''}`} />
-            </button>
+
           </div>
         </header>
 
