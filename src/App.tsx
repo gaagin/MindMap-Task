@@ -1142,7 +1142,7 @@ export default function App() {
         const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
         if (isStaleToken) {
           console.warn('Google Sheets token expired (handled):', errMsg);
-          setSheetsError('Сессия Google Таблиц истекла. Пожалуйста, выйдите и авторизуйтесь заново в меню "Google Таблицы".');
+          setSheetsError('Сессия Google Таблиц завершена. Вы можете мгновенно и автоматически продлить её без выбора аккаунта — нажмите кнопку «Обновить авторизацию Google» ниже.');
           setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
           setAccessToken(null); // Clear stored token from localStorage
         } else {
@@ -1161,7 +1161,7 @@ export default function App() {
       setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
       
       if (isStaleToken) {
-        setSheetsError('Сессия Google Таблиц истекла. Пожалуйста, выйдите и авторизуйтесь заново в меню "Google Таблицы".');
+        setSheetsError('Сессия Google Таблиц завершена. Вы можете мгновенно и автоматически продлить её без выбора аккаунта — нажмите кнопку «Обновить авторизацию Google» ниже.');
         setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
         setAccessToken(null); // Clear stored token from localStorage
       } else {

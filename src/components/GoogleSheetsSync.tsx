@@ -94,7 +94,8 @@ export default function GoogleSheetsSync({
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `response_type=token&` +
       `scope=${encodeURIComponent(scopes)}&` +
-      `state=sheets-sync`;
+      `state=sheets-sync` +
+      `&login_hint=${encodeURIComponent('adibavtomatika@gmail.com')}`;
 
     const popup = window.open(authUrl, 'GoogleSheetsAuth', 'width=600,height=620,left=150,top=100');
 

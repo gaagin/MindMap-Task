@@ -14,6 +14,10 @@ export const googleProvider = new GoogleAuthProvider();
 // Enable Google Drive file access and Google Sheets access
 googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
 googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+// Prioritize user's account and avoid showing "Choose your account" screen
+googleProvider.setCustomParameters({
+  login_hint: 'adibavtomatika@gmail.com'
+});
 
 // Cache the access token in memory and persist in localStorage to survive page refreshes
 let cachedAccessToken: string | null = null;
