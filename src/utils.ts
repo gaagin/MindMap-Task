@@ -467,7 +467,17 @@ export async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit)
       referrer: init?.referrer,
     };
 
-    return window.fetch(proxyUrl, proxyInit);
+    try {
+      const response = await window.fetch(proxyUrl, proxyInit);
+      if (response.status === 404 || response.status === 502 || response.status === 504) {
+        console.warn(`Proxy request to ${proxyUrl} returned status ${response.status}. Falling back to direct client-side fetch to: ${url}`);
+        return await window.fetch(input, init);
+      }
+      return response;
+    } catch (err) {
+      console.warn('Proxy fetch threw an error, falling back directly to Google API:', err);
+      return await window.fetch(input, init);
+    }
   }
 
   return window.fetch(input, init);

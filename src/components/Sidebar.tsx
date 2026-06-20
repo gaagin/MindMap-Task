@@ -621,7 +621,7 @@ export default function Sidebar({
           
           {/* Create inputs at root if open */}
           {showNewProjectInput === 'root' && (
-            <div className="flex gap-1 items-center bg-indigo-50/70 dark:bg-slate-800/70 border border-indigo-150 rounded-lg p-2 mb-2">
+            <div className="flex gap-1 items-center bg-indigo-50/70 dark:bg-slate-800/70 border border-indigo-200 rounded-lg p-2 mb-2">
               <input
                 type="text"
                 placeholder="Название карты..."
@@ -640,7 +640,7 @@ export default function Sidebar({
           )}
 
           {showNewFolderInput === 'root' && (
-            <div className="flex gap-1 items-center bg-teal-50/70 dark:bg-slate-800/70 border border-teal-150 rounded-lg p-2 mb-2">
+            <div className="flex gap-1 items-center bg-teal-50/70 dark:bg-slate-800/70 border border-teal-200 rounded-lg p-2 mb-2">
               <input
                 type="text"
                 placeholder="Название папки..."
@@ -712,7 +712,7 @@ export default function Sidebar({
                   setNewCategoryName('');
                   setNewCategoryColor('#6366f1');
                 }}
-                className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded hover:bg-slate-100 dark:hover:bg-slate-850 transition-colors cursor-pointer"
+                className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 title="Создать категорию тегов"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -746,7 +746,7 @@ export default function Sidebar({
                         setShowNewCategoryInput(false);
                       }
                     }}
-                    className="w-full bg-white dark:bg-slate-700 border border-slate-250 dark:border-slate-650 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none dark:text-slate-100"
+                    className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none dark:text-slate-100"
                     autoFocus
                   />
                 </div>
@@ -770,7 +770,7 @@ export default function Sidebar({
                           e.stopPropagation();
                           setNewCategoryColor(col.hex);
                         }}
-                        className={`w-5 h-5 rounded-full transition-transform cursor-pointer ${newCategoryColor === col.hex ? 'scale-125 ring-2 ring-indigo-505' : 'hover:scale-110'}`}
+                        className={`w-5 h-5 rounded-full transition-transform cursor-pointer ${newCategoryColor === col.hex ? 'scale-125 ring-2 ring-indigo-500' : 'hover:scale-110'}`}
                         style={{ backgroundColor: col.hex }}
                         title={col.name}
                       />
@@ -783,7 +783,7 @@ export default function Sidebar({
                       e.stopPropagation();
                       setShowNewCategoryInput(false);
                     }}
-                    className="px-2 py-1 text-[10px] bg-slate-100 dark:bg-slate-705 border border-slate-200 dark:border-transparent hover:bg-slate-200 rounded text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                    className="px-2 py-1 text-[10px] bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-transparent hover:bg-slate-200 rounded text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
                   >
                     Отмена
                   </button>

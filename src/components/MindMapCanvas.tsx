@@ -7461,8 +7461,8 @@ export default function MindMapCanvas({
             </div>
             
             {/* Help Info Footer */}
-            <div className="bg-slate-50 dark:bg-slate-850 p-2 text-[10px] text-slate-400 dark:text-slate-500 text-center border-t border-slate-150 dark:border-slate-800 select-none leading-relaxed">
-              Нажмите кнопку <span className="font-extrabold text-indigo-600 dark:text-indigo-450">переноса</span>, чтобы отправить задачу в центр карты.
+            <div className="bg-slate-50 dark:bg-slate-800 p-2 text-[10px] text-slate-400 dark:text-slate-500 text-center border-t border-slate-200 dark:border-slate-800 select-none leading-relaxed">
+              Нажмите кнопку <span className="font-extrabold text-indigo-600 dark:text-indigo-400">переноса</span>, чтобы отправить задачу в центр карты.
             </div>
           </div>
         )}
@@ -7490,7 +7490,7 @@ export default function MindMapCanvas({
               className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all"
             >
               {/* Modal Header */}
-              <div className="px-6 py-4 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
+              <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 uppercase tracking-widest font-sans flex items-center gap-2">
                     <FileText className="w-4 h-4 text-indigo-500" /> Заметки и файлы задачи
@@ -7501,7 +7501,7 @@ export default function MindMapCanvas({
                 </div>
                 <button 
                   onClick={() => setNotesModalNodeId(null)}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-705 transition cursor-pointer"
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 transition cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -7541,10 +7541,10 @@ export default function MindMapCanvas({
                     {(['urgent', 'high', 'medium', 'low'] as Priority[]).map((p) => {
                       const isActive = node.priority === p;
                       const label = p === 'urgent' ? 'Крит.' : p === 'high' ? 'Высок.' : p === 'medium' ? 'Средн.' : 'Низк.';
-                      const colorClass = p === 'urgent' ? 'border-rose-350 text-rose-600 bg-rose-50 dark:bg-rose-950/20' : 
-                                         p === 'high' ? 'border-amber-350 text-amber-600 bg-amber-50 dark:bg-amber-950/20' :
-                                         p === 'medium' ? 'border-blue-350 text-blue-600 bg-blue-50 dark:bg-blue-950/20' :
-                                         'border-teal-350 text-teal-600 bg-teal-50 dark:bg-teal-950/20';
+                      const colorClass = p === 'urgent' ? 'border-rose-300 text-rose-600 bg-rose-50 dark:bg-rose-950/20' : 
+                                         p === 'high' ? 'border-amber-300 text-amber-600 bg-amber-50 dark:bg-amber-950/20' :
+                                         p === 'medium' ? 'border-blue-300 text-blue-600 bg-blue-50 dark:bg-blue-950/20' :
+                                         'border-teal-300 text-teal-600 bg-teal-50 dark:bg-teal-950/20';
                       return (
                         <button
                           key={p}
@@ -7609,7 +7609,7 @@ export default function MindMapCanvas({
                   </div>
 
                   {fileError && (
-                    <div className="text-xs text-rose-500 border border-rose-250 bg-rose-50/50 dark:bg-rose-950/20 p-2 rounded-lg animate-pulse">
+                    <div className="text-xs text-rose-500 border border-rose-300 bg-rose-50/50 dark:bg-rose-950/20 p-2 rounded-lg animate-pulse">
                       {fileError}
                     </div>
                   )}
@@ -7622,7 +7622,7 @@ export default function MindMapCanvas({
                         return (
                           <div 
                             key={file.id} 
-                            className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-750 text-xs text-slate-700 dark:text-slate-300 gap-2"
+                            className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 gap-2"
                           >
                             <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
                               {isImg ? (
@@ -7679,7 +7679,7 @@ export default function MindMapCanvas({
               </div>
 
               {/* Modal Footer */}
-              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-150 dark:border-slate-800 flex justify-end">
+              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-800 flex justify-end">
                 <button
                   type="button"
                   onClick={() => setNotesModalNodeId(null)}
@@ -7708,7 +7708,7 @@ export default function MindMapCanvas({
               <h3 className="text-sm font-sans font-extrabold text-slate-800 dark:text-slate-100">
                 Голосовое управление
               </h3>
-              <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-450">
+              <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
                 Создавайте задачи голосом! Вы можете сказать:
                 <br />
                 <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-slate-100 dark:bg-slate-950 px-1 py-0.5 rounded mt-1 inline-block">
@@ -7786,7 +7786,7 @@ export default function MindMapCanvas({
             <div className="flex gap-2 w-full mt-2">
               <button
                 onClick={stopCanvasListening}
-                className="flex-1 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-705 dark:text-slate-400 dark:hover:bg-slate-800 bg-transparent rounded-xl cursor-pointer transition-all border border-slate-200 dark:border-slate-800"
+                className="flex-1 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 bg-transparent rounded-xl cursor-pointer transition-all border border-slate-200 dark:border-slate-800"
               >
                 Отмена
               </button>

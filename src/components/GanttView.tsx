@@ -123,16 +123,16 @@ export default function GanttView({
       case 'urgent': return 'bg-rose-500/10 border-rose-500 hover:bg-rose-500/20';
       case 'high': return 'bg-amber-500/10 border-amber-500 hover:bg-amber-500/20';
       case 'medium': return 'bg-indigo-500/10 border-indigo-500 hover:bg-indigo-500/20';
-      case 'low': return 'bg-slate-500/15 border-slate-450 hover:bg-slate-500/20';
+      case 'low': return 'bg-slate-500/15 border-slate-400 hover:bg-slate-500/20';
       default: return 'bg-slate-100 dark:bg-slate-800/80 border-slate-300 dark:border-slate-700 hover:bg-slate-200';
     }
   };
 
   const getPriorityTextClass = (p: Priority) => {
     switch (p) {
-      case 'urgent': return 'text-rose-600 dark:text-rose-450 font-bold';
-      case 'high': return 'text-amber-600 dark:text-amber-450 font-bold';
-      case 'medium': return 'text-indigo-600 dark:text-indigo-450 font-bold';
+      case 'urgent': return 'text-rose-600 dark:text-rose-400 font-bold';
+      case 'high': return 'text-amber-600 dark:text-amber-400 font-bold';
+      case 'medium': return 'text-indigo-600 dark:text-indigo-400 font-bold';
       default: return 'text-slate-500 dark:text-slate-400';
     }
   };
@@ -222,7 +222,7 @@ export default function GanttView({
     <div id="gantt-chart-workspace" className="flex flex-col w-full h-[calc(100vh-130px)] bg-[#FAFBFD] dark:bg-slate-950/20 font-sans overflow-hidden">
       
       {/* Timeline Controls Toolbar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-150 dark:border-slate-800">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <span className="p-1.5 bg-indigo-50 dark:bg-indigo-950/45 text-indigo-600 dark:text-indigo-400 rounded-lg">
             <Clock className="w-4 h-4" />
@@ -238,12 +238,12 @@ export default function GanttView({
         <div className="flex items-center gap-2">
           <button
             onClick={jumpToToday}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-175 dark:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all cursor-pointer border border-slate-200/60 dark:border-slate-800 px-3"
+            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all cursor-pointer border border-slate-200/60 dark:border-slate-800 px-3"
           >
             К сегодня
           </button>
           
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-0.5 border border-slate-205 dark:border-slate-755">
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-0.5 border border-slate-200 dark:border-slate-700">
             <button
               onClick={() => shiftDays(-7)}
               className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-all cursor-pointer"
@@ -274,8 +274,8 @@ export default function GanttView({
       <div className="flex-1 flex overflow-hidden w-full relative">
         
         {/* Left lists table pane */}
-        <div className="w-64 max-w-xs md:w-80 border-r border-slate-150 dark:border-slate-800 bg-white dark:bg-slate-900/40 flex flex-col shrink-0">
-          <div className="h-10 px-4 flex items-center bg-slate-50/70 dark:bg-slate-900/90 border-b border-slate-150 dark:border-slate-850 shrink-0 font-bold text-[10.5px] uppercase tracking-wider text-slate-400 select-none">
+        <div className="w-64 max-w-xs md:w-80 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 flex flex-col shrink-0">
+          <div className="h-10 px-4 flex items-center bg-slate-50/70 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 shrink-0 font-bold text-[10.5px] uppercase tracking-wider text-slate-400 select-none">
             Название задачи ({tasks.length})
           </div>
           
@@ -283,10 +283,10 @@ export default function GanttView({
           <div 
             ref={leftScrollRef}
             onScroll={handleLeftScroll}
-            className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-850/60 custom-scrollbar pr-0.5 select-none"
+            className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 custom-scrollbar pr-0.5 select-none"
           >
             {activeInlineAddInput && (
-              <div className="p-3 bg-slate-50 dark:bg-slate-850/40 border-b border-indigo-100 dark:border-indigo-950">
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border-b border-indigo-100 dark:border-indigo-950">
                 <input
                   type="text"
                   autoFocus
@@ -297,7 +297,7 @@ export default function GanttView({
                     if (e.key === 'Enter') handleInlineTaskCreate();
                     if (e.key === 'Escape') setActiveInlineAddInput(false);
                   }}
-                  className="w-full text-xs p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-205 dark:border-slate-755 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full text-xs p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
                 <div className="flex gap-1.5 justify-end mt-2">
                   <button
@@ -353,7 +353,7 @@ export default function GanttView({
                         <Circle className="w-3.5 h-3.5 shrink-0" />
                       )}
                     </button>
-                    <span className={`text-xs font-extrabold truncate text-slate-750 dark:text-slate-200 ${
+                    <span className={`text-xs font-extrabold truncate text-slate-700 dark:text-slate-200 ${
                       task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
                     } flex items-center gap-1`}>
                       <span>{task.text}</span>
@@ -363,10 +363,10 @@ export default function GanttView({
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center justify-center p-0.5 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                          className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
                           title={`Открыть внешнюю ссылку: ${task.externalLink}`}
                         >
-                          <LinkIcon className="w-3.5 h-3.5 text-indigo-505" />
+                          <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
                         </a>
                       )}
                       {activePomodoroNodeId === task.id && (
@@ -401,14 +401,14 @@ export default function GanttView({
           <div className="min-w-[1120px] h-full flex flex-col relative">
             
             {/* Timeline Header scale columns */}
-            <div className="h-10 flex border-b border-slate-150 dark:border-slate-800 shrink-0 bg-slate-50 dark:bg-slate-900 relative overflow-y-scroll custom-scrollbar">
+            <div className="h-10 flex border-b border-slate-200 dark:border-slate-800 shrink-0 bg-slate-50 dark:bg-slate-900 relative overflow-y-scroll custom-scrollbar">
               {timelineDays.map((day, i) => {
                 const isFirstDayOffset = i % 7 === 0;
                 
                 return (
                   <div
                     key={day.dateString}
-                    className={`flex-1 flex flex-col items-center justify-center border-r border-slate-150 dark:border-slate-850 h-full select-none ${
+                    className={`flex-1 flex flex-col items-center justify-center border-r border-slate-200 dark:border-slate-800 h-full select-none ${
                       day.isWeekend ? 'bg-slate-100/40 dark:bg-slate-950/15' : ''
                     } ${day.isToday ? 'bg-amber-500/10' : ''}`}
                   >
@@ -418,7 +418,7 @@ export default function GanttView({
                     <span className={`text-[10px] font-extrabold leading-none mt-0.5 ${
                       day.isToday 
                         ? 'bg-amber-500 text-white rounded-md px-1 py-0.5 font-mono' 
-                        : 'text-slate-600 dark:text-slate-450 font-mono'
+                        : 'text-slate-600 dark:text-slate-400 font-mono'
                     }`}>
                       {day.date.getDate()}
                     </span>
@@ -431,7 +431,7 @@ export default function GanttView({
             <div 
               ref={rightScrollRef}
               onScroll={handleRightScroll}
-              className="flex-1 overflow-y-scroll divide-y divide-slate-100 dark:divide-slate-850/60 custom-scrollbar relative"
+              className="flex-1 overflow-y-scroll divide-y divide-slate-100 dark:divide-slate-800/60 custom-scrollbar relative"
             >
               
               {/* Vertical dotted grid guidelines rendering background */}
@@ -439,7 +439,7 @@ export default function GanttView({
                 {timelineDays.map(day => (
                   <div
                     key={`guideline-${day.dateString}`}
-                    className={`flex-1 h-full border-r border-slate-150/40 dark:border-slate-850/40 ${
+                    className={`flex-1 h-full border-r border-slate-200/40 dark:border-slate-800/40 ${
                       day.isWeekend ? 'bg-slate-100/10 dark:bg-slate-950/5' : ''
                     } ${day.isToday ? 'border-r-amber-400/50 bg-amber-500/2' : ''}`}
                   />
@@ -476,7 +476,7 @@ export default function GanttView({
                         >
                           {/* Inner task text bar indicator details */}
                           <div className="flex items-center justify-between gap-1 overflow-hidden w-full px-1">
-                            <span className="text-[10px] font-extrabold truncate text-slate-750 dark:text-slate-200">
+                            <span className="text-[10px] font-extrabold truncate text-slate-700 dark:text-slate-200">
                               {task.text}
                             </span>
                             {task.progress !== undefined && task.progress > 0 && (
@@ -505,7 +505,7 @@ export default function GanttView({
                         ) : (
                           <div 
                             onClick={(e) => onSelectNode(task.id, e)}
-                            className="absolute left-4 h-7 border-2 border-dashed border-slate-201 dark:border-slate-800 bg-transparent text-slate-400 dark:text-slate-500 hover:border-slate-350 dark:hover:border-slate-700 hover:text-slate-650 transition-all py-1 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer z-10 font-bold text-[9.5px]"
+                            className="absolute left-4 h-7 border-2 border-dashed border-slate-200 dark:border-slate-800 bg-transparent text-slate-400 dark:text-slate-500 hover:border-slate-300 dark:hover:border-slate-700 hover:text-slate-600 transition-all py-1 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer z-10 font-bold text-[9.5px]"
                           >
                             <Calendar className="w-3 h-3 text-indigo-500" /> Срок не назначен
                           </div>
@@ -518,7 +518,7 @@ export default function GanttView({
             </div>
             
             {/* Legend guide bar footer */}
-            <div className="h-6 border-t border-slate-150 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-end px-4 gap-4 font-mono text-[9px] text-slate-400 select-none shrink-0 uppercase tracking-widest">
+            <div className="h-6 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-end px-4 gap-4 font-mono text-[9px] text-slate-400 select-none shrink-0 uppercase tracking-widest">
               <span>Сетка: 28 дней</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-rose-500 rounded" /> Срочно</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-amber-500 rounded" /> Высокий</span>

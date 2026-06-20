@@ -400,9 +400,9 @@ export default function EisenhowerMatrixView({
                   initial={{ opacity: 0, scale: 0.95, y: -10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                  className="absolute right-0 top-10 z-50 w-52 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-2xl shadow-xl p-2.5 space-y-2 flex flex-col font-sans"
+                  className="absolute right-0 top-10 z-50 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-2.5 space-y-2 flex flex-col font-sans"
                 >
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-405 dark:text-slate-500 px-2.5 py-1 select-none">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2.5 py-1 select-none">
                     Фильтры завершенности
                   </span>
                   <div className="flex flex-col gap-0.5">
@@ -417,7 +417,7 @@ export default function EisenhowerMatrixView({
                         className={`w-full px-2.5 py-1.5 text-xs font-bold text-left rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
                           filterCompleted === f 
                             ? 'bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400' 
-                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850'
+                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                         }`}
                       >
                         <span>
@@ -493,7 +493,7 @@ export default function EisenhowerMatrixView({
                 onDrop={(e) => handleDrop(e, quad.id)}
                 className={`flex flex-col rounded-[20px] md:rounded-[24px] p-2.5 md:p-4 transition-all h-full bg-white dark:bg-slate-900 ${
                   isOver 
-                    ? `ring-4 ring-offset-0 ring-indigo-505/15 scale-[0.995] shadow-inner`
+                    ? `ring-4 ring-offset-0 ring-indigo-500/15 scale-[0.995] shadow-inner`
                     : `shadow-[0_4px_20px_rgba(0,0,0,0.015)] dark:shadow-none`
                 }`}
               >
@@ -534,7 +534,7 @@ export default function EisenhowerMatrixView({
                             isDraggingTouch
                               ? 'opacity-40 scale-[0.98]'
                               : isSelected 
-                                ? 'bg-indigo-50/30 dark:bg-indigo-950/20 ring-1 ring-indigo-505/15'
+                                ? 'bg-indigo-50/30 dark:bg-indigo-950/20 ring-1 ring-indigo-500/15'
                                 : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
                           }`}
                         >
@@ -562,7 +562,7 @@ export default function EisenhowerMatrixView({
                             </button>
 
                             <div className="flex-1 min-w-0">
-                              <span className={`text-[12.5px] md:text-[13.5px] font-medium text-slate-800 dark:text-slate-150 leading-tight break-words block ${
+                              <span className={`text-[12.5px] md:text-[13.5px] font-medium text-slate-800 dark:text-slate-100 leading-tight break-words block ${
                                 task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-medium' : ''
                               }`}>
                                 {task.text}
@@ -602,40 +602,6 @@ export default function EisenhowerMatrixView({
                             </div>
 
                           </div>
-
-                          {/* Inline Quadrants adjustment when item is selected */}
-                          {isSelected && (
-                            <div className="mt-1 flex items-center justify-between gap-1 border-t border-slate-105/10 dark:border-slate-800 pt-1.5 animate-fadeIn">
-                              <span className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-550 shrink-0 select-none">В квадрант:</span>
-                              <div className="flex gap-1">
-                                {(['q1', 'q2', 'q3', 'q4'] as const).map(qId => {
-                                  const q = quadrants.find(item => item.id === qId)!;
-                                  const isCurrent = (task.priority === q.targetPriority) || (qId === 'q4' && (!task.priority || task.priority === 'none'));
-                                  return (
-                                    <button
-                                      key={qId}
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onUpdateNode({
-                                          ...task,
-                                          priority: q.targetPriority,
-                                          updatedAt: new Date().toISOString()
-                                        });
-                                      }}
-                                      className={`w-5 h-5 text-[9px] font-black flex items-center justify-center rounded-md transition-all cursor-pointer ${
-                                        isCurrent 
-                                          ? 'bg-indigo-600 text-white font-extrabold scale-105' 
-                                          : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500'
-                                      }`}
-                                    >
-                                      {qId === 'q1' ? 'I' : qId === 'q2' ? 'II' : qId === 'q3' ? 'III' : 'IV'}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
 
                         </div>
                       );
@@ -689,7 +655,7 @@ export default function EisenhowerMatrixView({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-slate-950 rounded-[28px] shadow-2xl p-6 w-full max-w-md border border-slate-100 dark:border-slate-850"
+              className="bg-white dark:bg-slate-950 rounded-[28px] shadow-2xl p-6 w-full max-w-md border border-slate-100 dark:border-slate-800"
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
@@ -716,7 +682,7 @@ export default function EisenhowerMatrixView({
                     placeholder="Введите текст..."
                     value={newTasksTitle}
                     onChange={(e) => setNewTasksTitle(e.target.value)}
-                    className="w-full text-xs font-semibold py-2.5 px-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-505 focus:border-indigo-505 text-slate-800 dark:text-slate-100"
+                    className="w-full text-xs font-semibold py-2.5 px-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800 dark:text-slate-100"
                   />
                 </div>
 
@@ -767,7 +733,7 @@ export default function EisenhowerMatrixView({
                     placeholder="Пример: 30"
                     value={newTaskDays}
                     onChange={(e) => setNewTaskDays(e.target.value)}
-                    className="w-full text-xs font-semibold py-2.5 px-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-505 focus:border-indigo-505 text-slate-800 dark:text-slate-100"
+                    className="w-full text-xs font-semibold py-2.5 px-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800 dark:text-slate-100"
                   />
                 </div>
 

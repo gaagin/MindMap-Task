@@ -579,7 +579,7 @@ export default function KanbanView({
                   className="inline-flex items-center justify-center p-0.5 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
                   title={`Открыть внешнюю ссылку: ${node.externalLink}`}
                 >
-                  <LinkIcon className="w-3 h-3 text-indigo-505" />
+                  <LinkIcon className="w-3 h-3 text-indigo-500" />
                 </a>
               )}
               {activePomodoroNodeId === node.id && (
@@ -1203,7 +1203,7 @@ export default function KanbanView({
 
           <div className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0 md:ml-auto">
             {/* Сортировка */}
-            <div className="flex items-center gap-1.5 bg-slate-100/60 dark:bg-slate-805/50 px-2 py-0.5 rounded-lg border border-slate-200/50 dark:border-slate-850">
+            <div className="flex items-center gap-1.5 bg-slate-100/60 dark:bg-slate-800/50 px-2 py-0.5 rounded-lg border border-slate-200/50 dark:border-slate-800">
               <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 whitespace-nowrap select-none hidden sm:inline">
                 Сортировка:
               </span>
@@ -1227,7 +1227,7 @@ export default function KanbanView({
             <button
               type="button"
               onClick={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
-              className="flex items-center gap-1 px-2.5 py-0.5 text-[10.5px] font-black hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer transition-colors border border-slate-200/50 dark:border-slate-800/85 text-slate-705 dark:text-slate-300 whitespace-nowrap shrink-0"
+              className="flex items-center gap-1 px-2.5 py-0.5 text-[10.5px] font-black hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer transition-colors border border-slate-200/50 dark:border-slate-800/85 text-slate-700 dark:text-slate-300 whitespace-nowrap shrink-0"
             >
               <span>{isFiltersCollapsed ? 'Фильтры' : 'Свернуть'}</span>
               <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isFiltersCollapsed ? '' : 'rotate-180'}`} />
@@ -1258,7 +1258,7 @@ export default function KanbanView({
                         id="kanban-container-filter-select"
                         value={selectedContainerFilterId}
                         onChange={(e) => setSelectedContainerFilterId(e.target.value)}
-                        className="appearance-none bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[10.5px] font-extrabold rounded-lg pl-2 pr-6 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-505 transition-all"
+                        className="appearance-none bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[10.5px] font-extrabold rounded-lg pl-2 pr-6 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
                       >
                         <option value="all">📁 Все ({nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived).length})</option>
                         <option value="no-container">📦 Без контейнера ({nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived && !isInsideAnyContainer(n)).length})</option>
@@ -1282,7 +1282,7 @@ export default function KanbanView({
                     <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 tracking-wider uppercase shrink-0">
                       Группировка:
                     </span>
-                    <div className="flex items-center gap-0.5 bg-slate-200/50 dark:bg-slate-900/50 p-0.5 rounded-lg border border-slate-250 dark:border-slate-800/60 shrink-0">
+                    <div className="flex items-center gap-0.5 bg-slate-200/50 dark:bg-slate-900/50 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800/60 shrink-0">
                       <button
                         type="button"
                         onClick={() => setGroupBy('category')}
@@ -1311,7 +1311,7 @@ export default function KanbanView({
                         className={`px-1.5 py-0.5 border text-[10px] font-black rounded transition-all cursor-pointer whitespace-nowrap ${
                           groupBy === 'container' 
                             ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
-                            : 'bg-transparent border-transparent text-slate-500 hover:text-[#4f46e5]/85 dark:hover:text-indigo-305'
+                            : 'bg-transparent border-transparent text-slate-500 hover:text-[#4f46e5]/85 dark:hover:text-indigo-300'
                         }`}
                       >
                         Контейнеры
@@ -1335,7 +1335,7 @@ export default function KanbanView({
                       className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-black rounded border cursor-pointer transition-all ${
                         collapseCompleted 
                           ? 'bg-indigo-50/70 dark:bg-indigo-950/10 border-indigo-200/40 text-[#4f46e5] dark:text-indigo-400' 
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-550 dark:text-slate-300'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-300'
                       }`}
                     >
                       <CheckCircle2 className={`w-3 h-3 ${collapseCompleted ? 'text-[#4f46e5] dark:text-indigo-400' : 'text-slate-400'}`} />
@@ -1348,11 +1348,11 @@ export default function KanbanView({
                       className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-black rounded border cursor-pointer transition-all ${
                         showSubtasks 
                           ? 'bg-emerald-50/60 dark:bg-emerald-950/10 border-emerald-200/40 text-emerald-605 dark:text-emerald-400 shadow-sm' 
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-550 dark:text-slate-300 hover:bg-slate-50'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-300 hover:bg-slate-50'
                       }`}
                     >
                       <div className={`w-2 h-2 rounded border flex items-center justify-center text-[6px] text-white ${
-                        showSubtasks ? 'border-emerald-500 bg-emerald-500' : 'border-slate-305 dark:border-slate-700'
+                        showSubtasks ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 dark:border-slate-700'
                       }`}>
                         {showSubtasks && '✓'}
                       </div>
@@ -1364,7 +1364,7 @@ export default function KanbanView({
 
                 {/* Categories selection row */}
                 {groupBy === 'category' && tagCategories.length > 0 && (
-                  <div className="flex items-center gap-1.5 border-t border-slate-150 dark:border-slate-800/40 pt-1 px-0.5 mt-0.5 w-full">
+                  <div className="flex items-center gap-1.5 border-t border-slate-200 dark:border-slate-800/40 pt-1 px-0.5 mt-0.5 w-full">
                     <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 tracking-wider uppercase shrink-0">
                       Категория:
                     </span>
@@ -1389,7 +1389,7 @@ export default function KanbanView({
                           >
                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
                             <span>{cat.name}</span>
-                            <span className="text-[9px] font-black px-1.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-450">
+                            <span className="text-[9px] font-black px-1.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
                               {count}
                             </span>
                           </button>
@@ -1425,10 +1425,10 @@ export default function KanbanView({
                 onDrop={(e) => handleDrop(e, col.id)}
                 className={`w-72 sm:w-80 shrink-0 rounded-2xl border p-4 flex flex-col h-full transition-all duration-250 scrollbar-thin ${
                   isOverdueCont
-                    ? 'border-rose-350 dark:border-rose-850 bg-rose-50/10 dark:bg-rose-950/5 ring-2 ring-rose-500/10 shadow-[0_10px_25px_rgba(244,63,94,0.04)]'
+                    ? 'border-rose-300 dark:border-rose-800 bg-rose-50/10 dark:bg-rose-950/5 ring-2 ring-rose-500/10 shadow-[0_10px_25px_rgba(244,63,94,0.04)]'
                     : isDraggedOver 
-                      ? 'border-indigo-400 dark:border-indigo-505 bg-indigo-50/10 dark:bg-indigo-950/10 scale-[1.01] ring-2 ring-indigo-500/10 shadow-[0_10px_30px_rgba(99,102,241,0.08)]' 
-                      : 'border-slate-200 dark:border-slate-850 bg-[#f8fafc] dark:bg-slate-905/80 shadow-[0_2px_8px_rgba(15,23,42,0.015),0_1px_3px_rgba(15,23,42,0.01)]'
+                      ? 'border-indigo-400 dark:border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/10 scale-[1.01] ring-2 ring-indigo-500/10 shadow-[0_10px_30px_rgba(99,102,241,0.08)]' 
+                      : 'border-slate-200 dark:border-slate-800 bg-[#f8fafc] dark:bg-slate-900/80 shadow-[0_2px_8px_rgba(15,23,42,0.015),0_1px_3px_rgba(15,23,42,0.01)]'
                 }`}
                 style={{ borderTop: isOverdueCont ? '3px solid #f43f5e' : `3px solid ${col.color}` }}
               >
@@ -1439,7 +1439,7 @@ export default function KanbanView({
                     <h4 className={`text-xs font-extrabold truncate ${isOverdueCont ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-slate-800 dark:text-slate-100'}`} title={col.title}>
                       {isOverdueCont && '⚠️ '}{col.title}
                     </h4>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black font-mono shrink-0 ${isOverdueCont ? 'bg-rose-200/60 dark:bg-rose-900/40 text-rose-700 dark:text-rose-400' : 'bg-slate-200/60 dark:bg-slate-800 text-slate-550 dark:text-slate-400'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black font-mono shrink-0 ${isOverdueCont ? 'bg-rose-200/60 dark:bg-rose-900/40 text-rose-700 dark:text-rose-400' : 'bg-slate-200/60 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
                       {col.items.length}
                     </span>
                   </div>
@@ -1462,7 +1462,7 @@ export default function KanbanView({
                       }
                     }}
                     title="Добавить задачу"
-                    className="p-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-805 dark:hover:bg-slate-755 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-450 transition-all cursor-pointer shadow-xs active:scale-95 shrink-0 flex items-center justify-center"
+                    className="p-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all cursor-pointer shadow-xs active:scale-95 shrink-0 flex items-center justify-center"
                   >
                     <Plus className="w-3.5 h-3.5" />
                   </button>
@@ -1524,7 +1524,7 @@ export default function KanbanView({
                               <span className="flex items-center gap-1.5 pl-0.5">
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 shrink-0" />
                                 <span>Выполненные</span>
-                                <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-slate-200/80 dark:bg-slate-705 font-extrabold shrink-0 text-slate-600 dark:text-slate-350">
+                                <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-slate-200/80 dark:bg-slate-700 font-extrabold shrink-0 text-slate-600 dark:text-slate-350">
                                   {completedItems.length}
                                 </span>
                               </span>
@@ -1547,7 +1547,7 @@ export default function KanbanView({
                         )}
 
                         {col.items.length === 0 && (
-                          <div className="text-center py-6 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-[10.5px] font-bold text-slate-400 dark:text-slate-555 select-none">
+                          <div className="text-center py-6 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-[10.5px] font-bold text-slate-400 dark:text-slate-500 select-none">
                             Перетащите карточки сюда
                           </div>
                         )}
@@ -1576,7 +1576,7 @@ export default function KanbanView({
                             setNewTaskNameInColumn('');
                           }
                         }}
-                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-200"
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-200"
                         autoFocus
                       />
                       <div className="flex justify-end gap-1.5">
@@ -1587,7 +1587,7 @@ export default function KanbanView({
                             setActiveAddInColumn(null);
                             setNewTaskNameInColumn('');
                           }}
-                          className="px-2 py-1 text-[10px] text-slate-600 bg-slate-100 dark:bg-slate-800 rounded hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors cursor-pointer"
+                          className="px-2 py-1 text-[10px] text-slate-600 bg-slate-100 dark:bg-slate-800 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                         >
                           Отмена
                         </button>

@@ -315,7 +315,7 @@ export default function TableView({
 
   const getHeaderClass = (field: SortField) => {
     const isActive = sortField === field;
-    return `relative px-4 py-2 cursor-pointer transition-colors border-r border-slate-200 dark:border-slate-850 ${
+    return `relative px-4 py-2 cursor-pointer transition-colors border-r border-slate-200 dark:border-slate-800 ${
       isActive 
         ? 'bg-indigo-50/40 dark:bg-indigo-950/15 text-indigo-700 dark:text-indigo-400 font-extrabold block-border' 
         : 'hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -333,7 +333,7 @@ export default function TableView({
             placeholder="Создать задачу быстро... (Нажмите Enter)"
             value={newInlineText}
             onChange={(e) => setNewInlineText(e.target.value)}
-            className="w-full text-xs py-2 pl-3 pr-8 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-slate-800 dark:text-slate-100 rounded-xl border border-slate-205 dark:border-slate-755 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all placeholder-slate-450"
+            className="w-full text-xs py-2 pl-3 pr-8 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-slate-800 dark:text-slate-100 rounded-xl border border-slate-200 dark:border-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all placeholder-slate-400"
           />
           <button
             type="submit"
@@ -354,11 +354,11 @@ export default function TableView({
               onChange={(e) => handleSort(e.target.value as SortField)}
               className="bg-transparent border-0 text-slate-700 dark:text-slate-200 text-xs py-1.5 px-2.5 focus:outline-none font-bold cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-750/50"
             >
-              <option value="text" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 font-semibold">По алфавиту / имени</option>
-              <option value="dueDate" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 font-semibold">По дате выполнения</option>
-              <option value="priority" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 font-semibold">По приоритету</option>
-              <option value="progress" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 font-semibold">По прогрессу</option>
-              <option value="completed" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 font-semibold">По статусу</option>
+              <option value="text" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">По алфавиту / имени</option>
+              <option value="dueDate" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">По дате выполнения</option>
+              <option value="priority" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">По приоритету</option>
+              <option value="progress" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">По прогрессу</option>
+              <option value="completed" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">По статусу</option>
             </select>
             <button
               type="button"
@@ -384,7 +384,7 @@ export default function TableView({
               placeholder="Фильтр в таблице..."
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
-              className="w-full text-xs py-2 px-3 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl border border-slate-205 dark:border-slate-755 focus:outline-none focus:ring-1 focus:ring-indigo-550 focus:border-indigo-500"
+              className="w-full text-xs py-2 px-3 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
         </div>
@@ -397,7 +397,7 @@ export default function TableView({
           style={{ width: tableWidth, minWidth: '100%' }}
         >
           
-          <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-150 dark:border-slate-800 h-10 shrink-0 font-extrabold text-[10px] uppercase tracking-wider text-slate-400 sticky top-0 z-20">
+          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800 h-10 shrink-0 font-extrabold text-[10px] uppercase tracking-wider text-slate-400 sticky top-0 z-20">
             <tr>
               <th className={`group ${getHeaderClass('completed')}`} style={{ width: widths.completed }} onClick={() => handleSort('completed')}>
                 <div className="flex items-center gap-1 justify-center">
@@ -447,18 +447,18 @@ export default function TableView({
                 {renderResizer('pomodoro')}
               </th>
 
-              <th className="group relative px-4 py-2 font-extrabold text-[10px] text-slate-400 dark:text-slate-500 text-left border-r border-slate-200 dark:border-slate-850" style={{ width: widths.tags }}>
+              <th className="group relative px-4 py-2 font-extrabold text-[10px] text-slate-400 dark:text-slate-500 text-left border-r border-slate-200 dark:border-slate-800" style={{ width: widths.tags }}>
                 <span>Теги</span>
                 {renderResizer('tags')}
               </th>
-              <th className="group relative px-4 py-2 text-center font-extrabold text-[10px] text-slate-400 dark:text-slate-500 border-r border-slate-200 dark:border-slate-850" style={{ width: widths.options }}>
+              <th className="group relative px-4 py-2 text-center font-extrabold text-[10px] text-slate-400 dark:text-slate-500 border-r border-slate-200 dark:border-slate-800" style={{ width: widths.options }}>
                 <span>Опции</span>
                 {renderResizer('options')}
               </th>
             </tr>
           </thead>
  
-          <tbody className="divide-y divide-slate-150 dark:divide-slate-800">
+          <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
             {sortedTasks.length === 0 ? (
               <tr>
                 <td colSpan={8} className="py-20 text-center text-slate-400 text-xs">
@@ -475,12 +475,12 @@ export default function TableView({
                   <tr
                     key={task.id}
                     onClick={(e) => onSelectNode(task.id, e)}
-                    className={`group/row transition-all h-12 text-xs hover:bg-slate-50/55 dark:hover:bg-slate-850/45 cursor-pointer ${
+                    className={`group/row transition-all h-12 text-xs hover:bg-slate-50/55 dark:hover:bg-slate-800/45 cursor-pointer ${
                       isSelected ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : ''
                     } ${task.archived ? 'opacity-55 saturate-50 bg-amber-500/[0.02] dark:bg-amber-500/[0.01]' : ''}`}
                   >
                     {/* Done Checklist Checkbox */}
-                    <td className="px-4 py-2 text-center border-r border-slate-150 dark:border-slate-850/80">
+                    <td className="px-4 py-2 text-center border-r border-slate-200 dark:border-slate-800/80">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -508,7 +508,7 @@ export default function TableView({
                     </td>
 
                     {/* Inline Rename Text */}
-                    <td className="px-4 py-2 border-r border-slate-150 dark:border-slate-850/80">
+                    <td className="px-4 py-2 border-r border-slate-200 dark:border-slate-800/80">
                       <div className="flex items-center gap-1.5 overflow-hidden w-full">
                         <input
                           type="text"
@@ -523,7 +523,7 @@ export default function TableView({
                               text: e.target.value
                             });
                           }}
-                          className={`w-full bg-transparent border-0 focus:ring-0 p-1 rounded hover:bg-slate-100/50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 font-extrabold focus:outline-none focus:bg-slate-100 dark:focus:bg-slate-850 truncate ${
+                          className={`w-full bg-transparent border-0 focus:ring-0 p-1 rounded hover:bg-slate-100/50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 font-extrabold focus:outline-none focus:bg-slate-100 dark:focus:bg-slate-800 truncate ${
                             task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
                           }`}
                         />
@@ -576,7 +576,7 @@ export default function TableView({
                     </td>
 
                     {/* Cyclic Priority Badging */}
-                    <td className="px-4 py-2 border-r border-slate-150 dark:border-slate-850/80">
+                    <td className="px-4 py-2 border-r border-slate-200 dark:border-slate-800/80">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -591,7 +591,7 @@ export default function TableView({
                     </td>
 
                     {/* Date picker */}
-                    <td className="px-4 py-2 border-r border-slate-150 dark:border-slate-850/80">
+                    <td className="px-4 py-2 border-r border-slate-200 dark:border-slate-800/80">
                       <div className="flex items-center gap-1.5" onClick={() => onSelectNode(task.id)}>
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
                         <input
@@ -609,13 +609,13 @@ export default function TableView({
                               dueTime: !newDueDate ? undefined : task.dueTime
                             });
                           }}
-                          className="text-[11px] bg-slate-55 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-201 dark:border-slate-705 px-1.5 py-0.5 rounded-lg focus:outline-none focus:border-indigo-500 max-w-[110px]"
+                          className="text-[11px] bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded-lg focus:outline-none focus:border-indigo-500 max-w-[110px]"
                         />
                       </div>
                     </td>
 
                     {/* Progress with interactive cycle click / slider */}
-                    <td className="px-4 py-2 border-r border-slate-150 dark:border-slate-850/80">
+                    <td className="px-4 py-2 border-r border-slate-200 dark:border-slate-800/80">
                       <div className="flex items-center gap-2">
                         <input
                           type="range"
@@ -650,7 +650,7 @@ export default function TableView({
                     </td>
 
                     {/* Pomodoro Focus Time */}
-                    <td className="px-4 py-2 border-r border-slate-150 dark:border-slate-850/80">
+                    <td className="px-4 py-2 border-r border-slate-200 dark:border-slate-800/80">
                       <div className="flex items-center gap-1.5 font-mono text-[10.5px]">
                         <span className="text-rose-500 font-bold shrink-0">🍅</span>
                         <span className={task.pomodoroTotalTime ? "font-bold text-slate-700 dark:text-slate-300" : "text-slate-400 dark:text-slate-500 animate-pulse"}>
@@ -666,7 +666,7 @@ export default function TableView({
                     </td>
 
                     {/* Tags block list */}
-                    <td className="px-4 py-2 overflow-hidden truncate border-r border-slate-150 dark:border-slate-850/80">
+                    <td className="px-4 py-2 overflow-hidden truncate border-r border-slate-200 dark:border-slate-800/80">
                       <div className="flex flex-wrap gap-1">
                         {task.tags && task.tags.length > 0 ? (
                           task.tags.map(t => (
@@ -684,7 +684,7 @@ export default function TableView({
                     </td>
 
                     {/* Action button menu list rows */}
-                    <td className="px-4 py-2 text-center select-none border-r border-slate-150 dark:border-slate-850/80" onClick={() => onSelectNode(task.id)}>
+                    <td className="px-4 py-2 text-center select-none border-r border-slate-200 dark:border-slate-800/80" onClick={() => onSelectNode(task.id)}>
                       <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={(e) => {

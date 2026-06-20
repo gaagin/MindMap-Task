@@ -685,7 +685,7 @@ export default function CalendarView({
 
                 {/* 1. Monthly Grid Mode */}
                 {calendarSubMode === 'month' && (
-                  <div className="flex-1 flex flex-col min-h-[480px] lg:min-h-0 relative">
+                  <div className="flex-1 flex flex-col min-h-[720px] lg:min-h-[840px] relative">
                     {/* Integrated weekday headers inside slots themselves, forming hmbee design */}
                     <div className="grid grid-cols-7 border-t border-l border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs h-full flex-1">
                       {calendarSlots.map((slot, sIdx) => {
@@ -728,7 +728,7 @@ export default function CalendarView({
                                 setActiveDayAddInput(slot.dateString);
                                 setNewDayTaskText('');
                               }}
-                              className={`flex flex-col p-1.5 select-none min-h-[80px] sm:min-h-[95px] md:min-h-[110px] h-full flex-1 hover:bg-slate-50/50 dark:hover:bg-slate-850/30 border-b border-r border-[#1E293B] dark:border-slate-800 transition-all cursor-pointer relative ${
+                              className={`flex flex-col p-1.5 select-none min-h-[120px] sm:min-h-[140px] md:min-h-[160px] lg:min-h-[180px] h-full flex-1 hover:bg-slate-50/50 dark:hover:bg-slate-850/30 border-b border-r border-[#1E293B] dark:border-slate-800 transition-all cursor-pointer relative ${
                                 isInactiveMonth ? 'bg-slate-50/30 opacity-40 text-slate-400 dark:bg-slate-900/10' : 'bg-white dark:bg-slate-900'
                               } ${
                                 slot.isToday ? 'bg-blue-50/15 dark:bg-blue-955/20 border-b-2 border-indigo-505' : ''
@@ -754,7 +754,7 @@ export default function CalendarView({
                               </div>
 
                               {/* Cell Content Space */}
-                              <div className="flex-1 flex flex-col gap-0.5 overflow-y-auto max-h-[85px] sm:max-h-[110px] custom-scrollbar pointer-events-auto">
+                              <div className="flex-1 flex flex-col gap-0.5 overflow-y-auto max-h-[120px] sm:max-h-[150px] md:max-h-[180px] lg:max-h-[200px] custom-scrollbar pointer-events-auto">
                                 {dayTasks.map(task => {
                                   return (
                                     <div
@@ -1127,12 +1127,12 @@ export default function CalendarView({
                             if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr);
                             if (e.key === 'Escape') setActiveDayAddInput(null);
                           }}
-                          className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500 font-medium"
+                          className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
                         />
                         <div className="flex gap-1.5 mt-2 justify-end">
                           <button
                             onClick={() => setActiveDayAddInput(null)}
-                            className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-705 px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
+                            className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
                           >
                             Отмена
                           </button>
@@ -1176,13 +1176,13 @@ export default function CalendarView({
                               handleTaskDropToHour(taskId, currentDateStr, hour);
                             }
                           }}
-                          className={`flex items-stretch border-b border-dashed border-slate-100 dark:border-slate-800 min-h-[58px] transition-all duration-150 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-850/20 group/row ${
+                          className={`flex items-stretch border-b border-dashed border-slate-100 dark:border-slate-800 min-h-[58px] transition-all duration-150 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/20 group/row ${
                             isDragOver ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''
                           }`}
                         >
                           {/* Hour column */}
                           <div className="w-16 flex items-center justify-center shrink-0 border-r border-slate-100 dark:border-slate-800 pr-3 text-right">
-                            <span className="font-mono text-xs font-bold text-slate-400 dark:text-slate-505">
+                            <span className="font-mono text-xs font-bold text-slate-400 dark:text-slate-500">
                               {hour}
                             </span>
                           </div>
@@ -1290,7 +1290,7 @@ export default function CalendarView({
                                         setActiveHourAddInput(hour);
                                         setNewHourTaskText('');
                                       }}
-                                      className="p-1 hover:bg-slate-100 dark:hover:bg-slate-850 text-slate-450 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer"
+                                      className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer"
                                       title="Добавить еще задачу"
                                     >
                                       <Plus className="w-3 h-3" />
@@ -1303,7 +1303,7 @@ export default function CalendarView({
                                 return (
                                   <div 
                                     onClick={(e) => e.stopPropagation()}
-                                    className="p-1 px-2.5 bg-slate-50 dark:bg-slate-805 rounded-xl border border-indigo-200 dark:border-indigo-900/45 flex items-center gap-2 max-w-sm flex-1"
+                                    className="p-1 px-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/45 flex items-center gap-2 max-w-sm flex-1"
                                   >
                                     <input
                                       type="text"
@@ -1315,7 +1315,7 @@ export default function CalendarView({
                                         if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr, hour);
                                         if (e.key === 'Escape') setActiveHourAddInput(null);
                                       }}
-                                      className="flex-1 text-xs px-2 py-0.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-505 font-medium"
+                                      className="flex-1 text-xs px-2 py-0.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
                                     />
                                     <button
                                       onClick={() => handleAddDayTaskSubmit(currentDateStr, hour)}
@@ -1325,7 +1325,7 @@ export default function CalendarView({
                                     </button>
                                     <button
                                       onClick={() => setActiveHourAddInput(null)}
-                                      className="text-slate-455 hover:text-slate-600 text-[10px]"
+                                      className="text-slate-400 hover:text-slate-600 text-[10px]"
                                     >
                                       Отмена
                                     </button>
@@ -1334,7 +1334,7 @@ export default function CalendarView({
                               }
 
                               return (
-                                <div className="text-[11px] text-slate-300 dark:text-slate-700 italic group-hover/row:text-indigo-450 transition-colors">
+                                <div className="text-[11px] text-slate-300 dark:text-slate-700 italic group-hover/row:text-indigo-400 transition-colors">
                                   Кликните, чтобы добавить задачу на {hour}
                                 </div>
                               );
@@ -1374,7 +1374,7 @@ export default function CalendarView({
                 {isUnscheduledExpandedMobile ? 'Нажмите, чтобы убрать список' : 'Нажмите, чтобы распределить по датам'}
               </p>
             </div>
-            <span className="bg-indigo-55 dark:bg-indigo-955 text-indigo-600 dark:text-indigo-400 font-mono text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0">
+            <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-mono text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0">
               {unscheduledTasks.length}
             </span>
             {/* Collapse/Expand indicator for both mobile and desktop */}
@@ -1426,7 +1426,7 @@ export default function CalendarView({
               isUnscheduledExpandedMobile ? 'flex-1 flex flex-col animate-fade-in' : 'hidden'
             } ${
               draggedOverUnscheduled 
-                ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20' 
+                ? 'bg-indigo-50/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20' 
                 : 'border border-transparent'
             }`}
           >
@@ -1456,13 +1456,13 @@ export default function CalendarView({
                     touchHasMoved.current = false;
                     setDraggingTaskId(task.id);
                   }}
-                  className={`group border border-slate-150 dark:border-slate-800/80 p-2.5 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-850 rounded-xl shadow-xs transition-all flex flex-col gap-2 cursor-grab active:cursor-grabbing hover:border-slate-300 dark:hover:border-slate-705 ${
+                  className={`group border border-slate-200 dark:border-slate-800/80 p-2.5 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800 rounded-xl shadow-xs transition-all flex flex-col gap-2 cursor-grab active:cursor-grabbing hover:border-slate-300 dark:hover:border-slate-700 ${
                     draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-400' : ''
                   }`}
                 >
                   <div className="flex items-start gap-1.5 justify-between">
                     {/* Title */}
-                    <span className={`text-xs font-semibold text-slate-855 dark:text-slate-200 leading-tight flex-1 flex items-center flex-wrap gap-1 ${
+                    <span className={`text-xs font-semibold text-slate-800 dark:text-slate-200 leading-tight flex-1 flex items-center flex-wrap gap-1 ${
                       task.completed ? 'line-through opacity-55' : ''
                     }`}>
                       <span>{task.text}</span>
@@ -1472,10 +1472,10 @@ export default function CalendarView({
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center justify-center p-0.5 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                          className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
                           title={`Открыть внешнюю ссылку: ${task.externalLink}`}
                         >
-                          <LinkIcon className="w-3 h-3 text-indigo-505" />
+                          <LinkIcon className="w-3 h-3 text-indigo-500" />
                         </a>
                       )}
                       {activePomodoroNodeId === task.id && (
@@ -1495,7 +1495,7 @@ export default function CalendarView({
                         e.stopPropagation();
                         onDeleteNode(task.id);
                       }}
-                      className="opacity-0 group-hover:opacity-100 text-slate-450 hover:text-rose-500 p-0.5 rounded transition-colors cursor-pointer"
+                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 p-0.5 rounded transition-colors cursor-pointer"
                       title="Удалить"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
