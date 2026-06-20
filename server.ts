@@ -6,6 +6,58 @@ import { GoogleGenAI } from '@google/genai';
 const app = express();
 const PORT = 3000;
 
+// Transparent Google API Proxy parser to handle Google Drive and Sheets payloads securely without CORS/Sandboxing limits
+app.all('/api/google-proxy', express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
+  const targetUrl = req.headers['x-target-url'] as string;
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'Missing x-target-url header' });
+  }
+
+  try {
+    const parsedTarget = new URL(targetUrl);
+    if (!parsedTarget.hostname.endsWith('googleapis.com')) {
+      return res.status(403).json({ error: 'Only googleapis.com subdomains are allowed' });
+    }
+  } catch (err) {
+    return res.status(400).json({ error: 'Invalid x-target-url' });
+  }
+
+  const headers: Record<string, string> = {};
+  const headersToForward = ['authorization', 'content-type', 'accept', 'range'];
+  for (const h of headersToForward) {
+    if (req.headers[h]) {
+      headers[h] = req.headers[h] as string;
+    }
+  }
+
+  try {
+    const fetchOptions: RequestInit = {
+      method: req.method,
+      headers: headers,
+    };
+
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Buffer.isBuffer(req.body) && req.body.length > 0) {
+      fetchOptions.body = req.body;
+    }
+
+    const googleRes = await fetch(targetUrl, fetchOptions);
+    
+    // Copy headers from response
+    googleRes.headers.forEach((value, name) => {
+      if (name !== 'transfer-encoding' && name !== 'content-encoding') {
+        res.setHeader(name, value);
+      }
+    });
+
+    res.status(googleRes.status);
+    const buffer = await googleRes.arrayBuffer();
+    res.send(Buffer.from(buffer));
+  } catch (error: any) {
+    console.error('Proxy request to Google failed:', error);
+    res.status(500).json({ error: `Proxy request failed: ${error.message || error}` });
+  }
+});
+
 app.use(express.json());
 
 // Lazy-initialized Gemini-client to avoid crashing if key is missing on startup

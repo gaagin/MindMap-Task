@@ -734,14 +734,20 @@ export default function EisenhowerMatrixView({
                           onClick={() => setNewTaskQuadrant(q.id as any)}
                           className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-bold transition-all text-left cursor-pointer ${
                             isSelected 
-                              ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/20 ring-1 ring-indigo-500/15' 
-                              : 'border-slate-110 dark:border-slate-800 bg-white dark:bg-slate-905 hover:bg-slate-50/50'
+                              ? `${q.circleColor} text-white border-transparent ring-2 ring-indigo-500/20 scale-[1.02] shadow-sm` 
+                              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                           }`}
                         >
-                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black text-white shrink-0 ${q.circleColor}`}>
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 transition-all ${
+                            isSelected 
+                              ? 'bg-white text-slate-900 font-extrabold' 
+                              : `text-white ${q.circleColor}`
+                          }`}>
                             {q.roman}
                           </div>
-                          <span className={`${q.textColor} truncate text-[11px]`}>
+                          <span className={`truncate text-[11px] font-bold transition-colors ${
+                            isSelected ? 'text-white' : q.textColor
+                          }`}>
                             {q.label}
                           </span>
                         </button>

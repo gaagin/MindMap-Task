@@ -1,4 +1,7 @@
 import { WorkspaceState } from '../types';
+import { proxiedFetch } from '../utils';
+
+const fetch = proxiedFetch;
 
 // Endpoints for Google Sheets & Drive REST APIs
 const SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';

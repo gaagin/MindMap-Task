@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
+import { proxiedFetch } from '../utils';
+
+const fetch = proxiedFetch;
 
 interface GoogleDriveImageProps {
   driveId: string;

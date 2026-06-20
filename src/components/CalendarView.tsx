@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -13,7 +13,14 @@ import {
   Sparkles,
   ArrowRight,
   Search,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Filter,
+  PieChart,
+  CreditCard,
+  Mail,
+  ListTodo,
+  TrendingUp,
+  PlusCircle
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
@@ -27,6 +34,7 @@ interface CalendarViewProps {
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask?: (text: string, initialTags: string[], dueDate?: string, dueTime?: string) => void;
+  setViewMode?: (mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower') => void;
 }
 
 const MONTH_NAMES_RU = [
@@ -45,7 +53,8 @@ export default function CalendarView({
   onSelectNode,
   onUpdateNode,
   onDeleteNode,
-  onCreateTask
+  onCreateTask,
+  setViewMode
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(() => new Date());
   
@@ -87,6 +96,9 @@ export default function CalendarView({
     return '';
   };
   const [calendarSubMode, setCalendarSubMode] = useState<'month' | 'week' | 'day'>('month');
+  const [showFilter, setShowFilter] = useState(false);
+  const [calendarSearchQuery, setCalendarSearchQuery] = useState('');
+  
   const [activeDayAddInput, setActiveDayAddInput] = useState<string | null>(null); // ISO string 'YYYY-MM-DD'
   const [newDayTaskText, setNewDayTaskText] = useState('');
   const [activeHourAddInput, setActiveHourAddInput] = useState<string | null>(null); // e.g. '09:00'
@@ -111,6 +123,8 @@ export default function CalendarView({
   const [draggedOverDate, setDraggedOverDate] = useState<string | null>(null);
   const [draggedOverUnscheduled, setDraggedOverUnscheduled] = useState(false);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const touchStartPos = React.useRef<{ x: number; y: number; dateString: string | null } | null>(null);
+  const touchHasMoved = React.useRef<boolean>(false);
 
   // Auto-scrolling when dragging task near the edges of scrollable viewports
   useEffect(() => {
@@ -119,10 +133,98 @@ export default function CalendarView({
     let animationFrameId: number | null = null;
     let lastClientX = 0;
     let lastClientY = 0;
+    let currentHoveredDate: string | null = null;
+    let currentHoveredUnscheduled = false;
 
     const handleDragOver = (e: DragEvent) => {
       lastClientX = e.clientX;
       lastClientY = e.clientY;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      const touch = e.touches[0];
+      lastClientX = touch.clientX;
+      lastClientY = touch.clientY;
+
+      if (touchStartPos.current) {
+        const dx = touch.clientX - touchStartPos.current.x;
+        const dy = touch.clientY - touchStartPos.current.y;
+        if (Math.hypot(dx, dy) > 8) {
+          touchHasMoved.current = true;
+        }
+      }
+
+      const targetElem = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (targetElem) {
+        // 1. Is it dragged over the unscheduled list?
+        const isUnscheduledZone = targetElem.closest('[data-unscheduled-drop-zone="true"]');
+        if (isUnscheduledZone) {
+          if (currentHoveredDate !== null) {
+            currentHoveredDate = null;
+            setDraggedOverDate(null);
+          }
+          if (!currentHoveredUnscheduled) {
+            currentHoveredUnscheduled = true;
+            setDraggedOverUnscheduled(true);
+          }
+        } else {
+          if (currentHoveredUnscheduled) {
+            currentHoveredUnscheduled = false;
+            setDraggedOverUnscheduled(false);
+          }
+
+          // 2. Is it dragged over a calendar day slot?
+          const dayCard = targetElem.closest('[data-date]');
+          const targetDate = dayCard ? dayCard.getAttribute('data-date') : null;
+          if (targetDate !== currentHoveredDate) {
+            currentHoveredDate = targetDate;
+            setDraggedOverDate(targetDate);
+          }
+        }
+      } else {
+        if (currentHoveredDate !== null) {
+          currentHoveredDate = null;
+          setDraggedOverDate(null);
+        }
+        if (currentHoveredUnscheduled) {
+          currentHoveredUnscheduled = false;
+          setDraggedOverUnscheduled(false);
+        }
+      }
+
+      // Restrict document default rubber-band scrolling on touch devices while elements are actively being dragged
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      const targetId = draggingTaskId;
+      const startInfo = touchStartPos.current;
+      const hasMoved = touchHasMoved.current;
+
+      setDraggingTaskId(null);
+      setDraggedOverDate(null);
+      setDraggedOverUnscheduled(false);
+      touchStartPos.current = null;
+      touchHasMoved.current = false;
+
+      if (targetId) {
+        if (!hasMoved) {
+          // If touch didn't move much, treat it as a standard click (select the task)
+          onSelectNode(targetId, e);
+          return;
+        }
+
+        if (currentHoveredUnscheduled) {
+          handleTaskDrop(targetId, null);
+        } else {
+          // Default to start date if dropped off-screen/off-grid to prevent accidental unscheduling
+          const targetDate = currentHoveredDate !== null ? currentHoveredDate : (startInfo ? startInfo.dateString : null);
+          handleTaskDrop(targetId, targetDate);
+        }
+      }
     };
 
     const autoScroll = () => {
@@ -167,7 +269,7 @@ export default function CalendarView({
       };
 
       if (calendarSubMode === 'month') {
-        scrollVertical('calendar-month-scroll-container');
+        scrollVertical('calendar-horizontal-scroll-container');
       } else if (calendarSubMode === 'week') {
         scrollVertical('calendar-week-scroll-container');
       } else if (calendarSubMode === 'day') {
@@ -178,10 +280,17 @@ export default function CalendarView({
     };
 
     window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchEnd);
+    
     animationFrameId = requestAnimationFrame(autoScroll);
 
     return () => {
       window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
       if (animationFrameId !== null) {
         cancelAnimationFrame(animationFrameId);
       }
@@ -446,40 +555,41 @@ export default function CalendarView({
   };
 
   return (
-    <div id="calendar-workspace-view" className="relative w-full h-full bg-[#F8FAFC] dark:bg-slate-950 overflow-hidden font-sans flex flex-col lg:flex-row">
+    <div id="calendar-workspace-view" className="relative w-full h-full bg-[#F8FAFC] dark:bg-slate-950 overflow-hidden font-sans flex flex-col lg:flex-row shadow-inner">
       {/* Calendar Grid Section */}
-      <div className="flex-1 flex flex-col p-3 sm:p-4 md:p-5 overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col p-1.5 sm:p-2 overflow-hidden min-w-0">
         
         {/* The beautiful thick bordered custom container card */}
-        <div className="flex-1 bg-white dark:bg-slate-900 border-[2.5px] border-[#1E293B] dark:border-slate-800 rounded-[24px] p-5 sm:p-6 shadow-xs flex flex-col h-full overflow-hidden">
+        <div className="flex-1 bg-white dark:bg-slate-900 border-[2px] sm:border-[2.5px] border-[#1E293B] dark:border-slate-800 rounded-[16px] sm:rounded-[20px] p-2 sm:p-3 shadow-sm flex flex-col h-full overflow-hidden">
           
           {/* Calendar Navigation and Title Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 mb-4 shrink-0 bg-transparent">
-            <div className="flex items-center gap-3">
-              {/* Calendar Icon wrapper */}
-              <div className="w-12 h-12 rounded-xl border-[2.2px] border-[#1E293B] bg-indigo-50/35 text-[#1E293B] dark:border-slate-750 dark:bg-indigo-950/20 dark:text-slate-350 flex items-center justify-center shrink-0">
-                <Calendar className="w-6 h-6" />
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 mb-1.5 shrink-0 bg-transparent">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg border-[1.5px] border-[#1E293B] bg-indigo-50/35 text-[#1E293B] dark:border-slate-700 dark:bg-indigo-950/20 dark:text-slate-350 flex items-center justify-center shrink-0">
+                <Calendar className="w-4 h-4" />
               </div>
-              <div>
-                <h2 className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#1E293B] dark:text-slate-100 uppercase tracking-tight leading-none font-sans">
-                  {getHeaderTitle()}
-                </h2>
-                <p className="text-xs text-slate-400 dark:text-slate-505 font-bold mt-1.5">
-                  Задачи: <span className="text-[#4F46E5] dark:text-indigo-400 font-extrabold">{scheduledTasks.length}</span>
-                </p>
+              <div className="flex flex-col justify-center">
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  <h2 className="text-sm sm:text-base font-black text-[#1E293B] dark:text-slate-100 uppercase tracking-tight leading-none font-sans">
+                    {getHeaderTitle()}
+                  </h2>
+                  <span className="text-[10px] bg-indigo-50/35 dark:bg-indigo-950/20 text-[#1E293B] dark:text-slate-300 font-bold px-1.5 py-0.5 rounded-md border border-slate-200/50 dark:border-slate-755 leading-none shrink-0">
+                    Событий: <span className="text-[#4F46E5] dark:text-indigo-400 font-extrabold">{scheduledTasks.length}</span>
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3.5 justify-end">
+            <div className="flex flex-wrap items-center gap-1.5 justify-end">
               {/* Switch tabs */}
-              <div className="flex bg-slate-100/95 dark:bg-slate-800/80 rounded-xl p-1 border border-slate-200/60 dark:border-slate-700 shrink-0 select-none">
+              <div className="flex bg-slate-100/95 dark:bg-slate-800/80 rounded-lg p-0.5 border border-slate-200/60 dark:border-slate-705 shrink-0 select-none">
                 <button
                   type="button"
                   onClick={() => setCalendarSubMode('month')}
-                  className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                  className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-all cursor-pointer ${
                     calendarSubMode === 'month'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs border border-slate-205/30'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-405 dark:hover:text-slate-200'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-3xs border border-slate-200/30'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   Месяц
@@ -487,10 +597,10 @@ export default function CalendarView({
                 <button
                   type="button"
                   onClick={() => setCalendarSubMode('week')}
-                  className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                  className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-all cursor-pointer ${
                     calendarSubMode === 'week'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs border border-[0.5px] border-slate-205/30'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-405 dark:hover:text-slate-200'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-3xs border border-slate-200/30'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   Неделя
@@ -498,263 +608,239 @@ export default function CalendarView({
                 <button
                   type="button"
                   onClick={() => setCalendarSubMode('day')}
-                  className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                  className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-all cursor-pointer ${
                     calendarSubMode === 'day'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs border border-[0.5px] border-slate-205/30'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-405 dark:hover:text-slate-200'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-3xs border border-slate-200/30'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   День
                 </button>
               </div>
 
-              {/* Сегодня Button */}
               <button
                 type="button"
                 onClick={setToday}
-                className="px-4 py-1.5 bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-202/90 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-100 border border-slate-200 dark:border-slate-700 text-xs font-black rounded-xl transition-all cursor-pointer shadow-xs active:scale-[0.98]"
+                className="px-2 py-0.5 bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-200/90 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-100 border border-slate-200 dark:border-slate-700 text-[10px] font-black rounded-lg transition-all cursor-pointer shadow-3xs active:scale-[0.98]"
               >
                 Сегодня
               </button>
 
-              {/* Prev / Next handles */}
-              <div className="flex items-center bg-slate-100/90 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 rounded-xl p-0.5">
+              <button
+                type="button"
+                onClick={() => setShowFilter(!showFilter)}
+                className={`px-2 py-0.5 text-[10px] font-black rounded-lg transition-all cursor-pointer flex items-center gap-1 border ${
+                  showFilter 
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-850 dark:text-indigo-405' 
+                    : 'bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-200/90 dark:hover:bg-slate-700 text-slate-705 dark:text-slate-100 border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                <Filter className="w-3 h-3 text-current" />
+                фильтр
+              </button>
+
+              <div className="flex items-center bg-slate-100/90 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 rounded-lg p-0.5">
                 <button
                   type="button"
                   onClick={handlePrev}
-                  className="p-1.5 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 rounded-lg transition-all cursor-pointer"
+                  className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 rounded-md transition-all cursor-pointer"
                   title="Назад"
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
                   onClick={handleNext}
-                  className="p-1.5 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 rounded-lg transition-all cursor-pointer"
+                  className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 rounded-md transition-all cursor-pointer"
                   title="Вперед"
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
           </div>
 
           {/* Separator */}
-          <div className="border-b-[2px] border-slate-200 dark:border-slate-800 mb-4 shrink-0" />
+          <div className="border-b-[1.5px] border-slate-200 dark:border-slate-850 mb-1.5 shrink-0" />
 
-          {/* Scrollable container for mobile */}
-          <div id="calendar-horizontal-scroll-container" className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
-            <div className={`${calendarSubMode === 'day' ? 'w-full' : 'min-w-[1500px] sm:min-w-[1700px] lg:min-w-full'} h-full flex flex-col`}>
+          {/* Dynamic Search / Filtering Input when showFilter is active */}
+          {showFilter && (
+            <div className="w-full max-w-md mx-auto mb-2 animate-fade-in px-2 shrink-0">
+              <input
+                type="text"
+                placeholder="Поиск по задачам..."
+                value={calendarSearchQuery}
+                onChange={(e) => setCalendarSearchQuery(e.target.value)}
+                className="w-full text-xs p-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-gray-100 rounded-lg border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-slate-400 font-medium font-sans shadow-3xs"
+              />
+            </div>
+          )}
+
+          {/* Scrollable Container Window */}
+          <div id="calendar-horizontal-scroll-container" className="flex-1 overflow-auto custom-scrollbar pb-1">
+            <div className={`${calendarSubMode === 'day' ? 'w-full' : 'min-w-[850px] lg:min-w-full'} h-full flex flex-col`}>
               
-              {/* 1. Monthly Grid Mode */}
-              {calendarSubMode === 'month' && (
-                <div className="flex-1 flex flex-col min-h-0 relative">
-                  {/* Weekly Header row */}
-                  <div className="grid grid-cols-7 gap-1.5 md:gap-2.5 mb-1.5 px-0.5 text-center font-bold text-xs text-slate-400 dark:text-slate-505 shrink-0 select-none">
-                    {WEEKDAYS_RU.map(day => (
-                      <div key={day} className="py-0.5 lowercase tracking-wider text-slate-400 dark:text-slate-550 font-bold">{day.toLowerCase()}</div>
-                    ))}
-                  </div>
+              {/* Active Sub Tab Controller */}
+              <>
 
-                  {/* Modern open week-by-week calendar list */}
-                  <div id="calendar-month-scroll-container" className="flex-1 overflow-y-auto max-h-full pr-1 custom-scrollbar space-y-1 pb-2 flex flex-col md:h-full md:min-h-0">
-                    {(() => {
-                      const weeks: typeof calendarSlots[] = [];
-                      for (let i = 0; i < 6; i++) {
-                        weeks.push(calendarSlots.slice(i * 7, (i + 1) * 7));
-                      }
-                      return weeks.map((week, weekIdx) => (
-                        <div key={weekIdx} className="flex-1 flex flex-col min-h-[90px] md:min-h-[145px] space-y-1">
-                          {/* Combined Grid representing the 7 days of this week */}
-                          <div className="flex-1 grid grid-cols-7 gap-1.5 md:gap-2.5 px-0.5">
-                            {week.map((slot, sIdx) => {
-                              const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
-                              const isInactiveMonth = slot.monthOffset !== 0;
-                              const isDragOver = draggedOverDate === slot.dateString;
-                              const maxVisible = 4;
-                              const visibleTasks = dayTasks.slice(0, maxVisible);
-                              const hiddenCount = dayTasks.length - maxVisible;
+                {/* 1. Monthly Grid Mode */}
+                {calendarSubMode === 'month' && (
+                  <div className="flex-1 flex flex-col min-h-[480px] lg:min-h-0 relative">
+                    {/* Integrated weekday headers inside slots themselves, forming hmbee design */}
+                    <div className="grid grid-cols-7 border-t border-l border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs h-full flex-1">
+                      {calendarSlots.map((slot, sIdx) => {
+                        const dayTasks = scheduledTasks.filter(task => {
+                          if (task.dueDate !== slot.dateString) return false;
+                          if (calendarSearchQuery) {
+                            return task.text.toLowerCase().includes(calendarSearchQuery.toLowerCase());
+                          }
+                          return true;
+                        });
+                        const isInactiveMonth = slot.monthOffset !== 0;
+                        const isDragOver = draggedOverDate === slot.dateString;
+                        
+                        // First row appends week labels natively like "25, Пн"
+                        // Consecutive rows render only numbers like "1", "2"
+                          const cellHeaderLabel = sIdx < 7 
+                            ? `${slot.dayNumber}, ${WEEKDAYS_RU[sIdx]}`
+                            : `${slot.dayNumber}`;
 
-                              return (
-                                <div
-                                  key={`${slot.dateString}-${sIdx}`}
-                                  onDragOver={(e) => e.preventDefault()}
-                                  onDragEnter={() => setDraggedOverDate(slot.dateString)}
-                                  onDragLeave={() => {
-                                    if (draggedOverDate === slot.dateString) {
-                                      setDraggedOverDate(null);
-                                    }
-                                  }}
-                                  onDrop={(e) => {
-                                    const taskId = e.dataTransfer.getData('text/plain');
-                                    handleTaskDrop(taskId, slot.dateString);
-                                  }}
-                                  onClick={() => {
-                                    setActiveDayAddInput(slot.dateString);
-                                    setNewDayTaskText('');
-                                  }}
-                                  className={`flex flex-col p-1.5 rounded-xl border transition-all duration-150 relative group cursor-pointer ${
-                                    isInactiveMonth ? 'opacity-45' : ''
-                                  } ${
-                                    isDragOver 
-                                      ? 'bg-indigo-50/40 dark:bg-indigo-950/30 ring-2 ring-indigo-500/30 border-indigo-400' 
-                                      : 'bg-white dark:bg-slate-900 hover:bg-slate-50/50 dark:hover:bg-slate-850/30 text-slate-850 dark:text-slate-100 border-slate-100 dark:border-slate-800'
-                                  }`}
-                                >
-                                  {/* Day Number Header inside Cell */}
-                                  <div className="flex justify-between items-center mb-1.5 shrink-0 select-none">
-                                    {slot.isToday ? (
-                                      <div className="w-5.5 h-5.5 md:w-6.5 md:h-6.5 rounded-full bg-indigo-600 dark:bg-indigo-505 text-white flex items-center justify-center font-extrabold text-[10px] md:text-[11px] shadow-xs">
-                                        {slot.dayNumber}
-                                      </div>
-                                    ) : (
-                                      <span className={`text-[10px] md:text-[11px] font-extrabold font-mono ${
-                                        isInactiveMonth 
-                                          ? 'text-slate-300 dark:text-slate-600' 
-                                          : 'text-slate-700 dark:text-slate-350'
-                                      }`}>
-                                        {slot.dayNumber}
-                                      </span>
-                                    )}
-                                    
-                                    {/* Plus Button inside Cell Header (shows on hover) */}
-                                    <button
+                          return (
+                            <div
+                              key={`${slot.dateString}-${sIdx}`}
+                              data-date={slot.dateString}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDragEnter={() => setDraggedOverDate(slot.dateString)}
+                              onDragLeave={() => {
+                                if (draggedOverDate === slot.dateString) {
+                                  setDraggedOverDate(null);
+                                }
+                              }}
+                              onDrop={(e) => {
+                                const taskId = e.dataTransfer.getData('text/plain');
+                                handleTaskDrop(taskId, slot.dateString);
+                              }}
+                              onClick={(e) => {
+                                const target = e.target as HTMLElement;
+                                if (target.closest('[draggable="true"]') || target.closest('button') || target.closest('.task-item')) {
+                                  return;
+                                }
+                                setActiveDayAddInput(slot.dateString);
+                                setNewDayTaskText('');
+                              }}
+                              className={`flex flex-col p-1.5 select-none min-h-[80px] sm:min-h-[95px] md:min-h-[110px] h-full flex-1 hover:bg-slate-50/50 dark:hover:bg-slate-850/30 border-b border-r border-[#1E293B] dark:border-slate-800 transition-all cursor-pointer relative ${
+                                isInactiveMonth ? 'bg-slate-50/30 opacity-40 text-slate-400 dark:bg-slate-900/10' : 'bg-white dark:bg-slate-900'
+                              } ${
+                                slot.isToday ? 'bg-blue-50/15 dark:bg-blue-955/20 border-b-2 border-indigo-505' : ''
+                              } ${
+                                isDragOver ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''
+                              }`}
+                            >
+                              {/* Cell Header with Label & plus logo */}
+                              <div className="flex justify-between items-center mb-1 shrink-0 select-none">
+                                <span className={`text-[10px] sm:text-[10.5px] font-extrabold ${
+                                  slot.isToday
+                                    ? 'text-blue-600 dark:text-blue-400 underline decoration-2'
+                                    : isInactiveMonth
+                                    ? 'text-slate-300 dark:text-slate-650'
+                                    : 'text-slate-700 dark:text-slate-300'
+                                }`}>
+                                  {cellHeaderLabel}
+                                </span>
+                                
+                                <span className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-indigo-600 rounded text-[9px] font-bold">
+                                  +
+                                </span>
+                              </div>
+
+                              {/* Cell Content Space */}
+                              <div className="flex-1 flex flex-col gap-0.5 overflow-y-auto max-h-[85px] sm:max-h-[110px] custom-scrollbar pointer-events-auto">
+                                {dayTasks.map(task => {
+                                  return (
+                                    <div
+                                      key={task.id}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setActiveDayAddInput(activeDayAddInput === slot.dateString ? null : slot.dateString);
-                                        setNewDayTaskText('');
+                                        onSelectNode(task.id, e);
                                       }}
-                                      className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-slate-100 dark:hover:bg-slate-805/50 text-slate-400 hover:text-indigo-650 dark:text-slate-500 dark:hover:text-indigo-400 rounded transition-all cursor-pointer animate-fade-in"
-                                      title="Создать задачу"
+                                      draggable={true}
+                                      onDragStart={(e) => {
+                                        e.stopPropagation();
+                                        e.dataTransfer.setData('text/plain', task.id);
+                                        setDraggingTaskId(task.id);
+                                      }}
+                                      onDragEnd={(e) => {
+                                        e.stopPropagation();
+                                        setDraggingTaskId(null);
+                                      }}
+                                      onTouchStart={(e) => {
+                                        e.stopPropagation();
+                                        const touch = e.touches[0];
+                                        touchStartPos.current = { x: touch.clientX, y: touch.clientY, dateString: slot.dateString };
+                                        touchHasMoved.current = false;
+                                        setDraggingTaskId(task.id);
+                                      }}
+                                      className={`task-item text-[9.5px] rounded px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all truncate leading-tight flex items-center gap-1 cursor-grab active:cursor-grabbing select-none pointer-events-auto shrink-0 ${
+                                        task.completed ? 'opacity-40 line-through text-slate-400' : 'text-slate-800 dark:text-slate-100'
+                                      } ${
+                                        draggingTaskId === task.id ? 'opacity-30 border-dashed border-indigo-350' : ''
+                                      }`}
+                                      title={task.text}
                                     >
-                                      <Plus className="w-3 h-3" />
+                                      <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
+                                        task.priority === 'urgent' ? 'bg-rose-500' :
+                                        task.priority === 'high' ? 'bg-amber-500' :
+                                        task.priority === 'medium' ? 'bg-indigo-500' : 'bg-slate-400'
+                                      }`}></span>
+                                      <span className="truncate text-[10px] font-semibold">{task.text}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Active Day Add Overlay */}
+                              {activeDayAddInput === slot.dateString && (
+                                <div 
+                                  className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 p-1 flex flex-col justify-between z-10 rounded-lg border border-indigo-500 animate-fade-in"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <input
+                                    type="text"
+                                    autoFocus
+                                    placeholder="Новая задача..."
+                                    value={newDayTaskText}
+                                    onChange={(e) => setNewDayTaskText(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleAddDayTaskSubmit(slot.dateString);
+                                      if (e.key === 'Escape') setActiveDayAddInput(null);
+                                    }}
+                                    className="w-full text-[10px] p-1 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded border border-slate-200 outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
+                                  />
+                                  <div className="flex gap-1 justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveDayAddInput(null)}
+                                      className="px-1.5 py-0.5 bg-slate-250 hover:bg-slate-300 rounded text-[9px] font-bold text-slate-600 cursor-pointer"
+                                    >
+                                      отмена
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddDayTaskSubmit(slot.dateString)}
+                                      className="px-1.5 py-0.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded text-[9px] font-bold cursor-pointer"
+                                    >
+                                      ок
                                     </button>
                                   </div>
-
-                                  {/* Column stack of task pills */}
-                                  <div className="flex-1 flex flex-col gap-0.5 overflow-y-auto max-h-[140px] custom-scrollbar">
-                                    {visibleTasks.map(task => {
-                                      const pillClass = getPillStyles(task);
-                                      const iconPrefix = getTaskIcon(task);
-                                      return (
-                                        <div
-                                          key={task.id}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onSelectNode(task.id, e);
-                                          }}
-                                          draggable={true}
-                                          onDragStart={(e) => {
-                                            e.stopPropagation();
-                                            e.dataTransfer.setData('text/plain', task.id);
-                                            setDraggingTaskId(task.id);
-                                          }}
-                                          onDragEnd={(e) => {
-                                            e.stopPropagation();
-                                            setDraggingTaskId(null);
-                                          }}
-                                          className={`text-[9px] md:text-[10px] py-0.5 md:py-1 px-1 md:px-1.5 rounded-md flex flex-col justify-center border-l-2 md:border-l-4 transition-all hover:scale-[1.015] active:scale-98 cursor-grab active:cursor-grabbing select-none relative pointer-events-auto ${pillClass} ${
-                                            draggingTaskId === task.id ? 'opacity-35 border-dashed border-indigo-400' : ''
-                                          }`}
-                                          title={task.text}
-                                        >
-                                          <div className="flex items-center gap-0.5 min-w-0">
-                                            {iconPrefix && (
-                                              <span className="shrink-0 text-[10px]">{iconPrefix}</span>
-                                            )}
-                                            <span className={`truncate font-bold tracking-tight flex items-center gap-0.5 ${task.completed ? 'line-through opacity-55 text-slate-455 dark:text-slate-550' : ''}`}>
-                                              {task.text}
-                                              {activePomodoroNodeId === task.id && (
-                                                <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
-                                              )}
-                                            </span>
-                                          </div>
-                                          {(task.startTime || task.dueTime) && (
-                                            <span className="text-[8px] opacity-75 font-mono font-bold mt-0.5">
-                                              {task.startTime || task.dueTime}
-                                            </span>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-
-                                    {/* Hidden count badge */}
-                                    {hiddenCount > 0 && (
-                                      <div 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          onSelectNode(dayTasks[maxVisible].id, e);
-                                        }}
-                                        className="text-[8px] md:text-[9px] font-extrabold text-slate-500 dark:text-slate-450 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800/85 py-0.5 rounded-lg text-center cursor-pointer select-none pointer-events-auto"
-                                      >
-                                        +{hiddenCount}
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Inline add task input overlay */}
-                                  {activeDayAddInput === slot.dateString && (
-                                    <div 
-                                      className="absolute inset-0 z-[30] p-1.5 bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-indigo-200 dark:border-indigo-900/50 flex flex-col justify-between"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <input
-                                        type="text"
-                                        autoFocus
-                                        placeholder="Название..."
-                                        value={newDayTaskText}
-                                        onChange={(e) => setNewDayTaskText(e.target.value)}
-                                        onKeyDown={(e) => {
-                                          e.stopPropagation();
-                                          if (e.key === 'Enter') handleAddDayTaskSubmit(slot.dateString);
-                                          if (e.key === 'Escape') setActiveDayAddInput(null);
-                                        }}
-                                        className="w-full text-[10px] p-1 bg-slate-50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 rounded border border-slate-205 focus:outline-none focus:border-indigo-500 font-bold"
-                                      />
-                                      <div className="flex gap-1 mt-1 justify-end animate-fade-in">
-                                        <button
-                                          onClick={() => setActiveDayAddInput(null)}
-                                          className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[8px] font-bold text-slate-655 dark:text-slate-300 cursor-pointer"
-                                        >
-                                          Отмена
-                                        </button>
-                                        <button
-                                          onClick={() => handleAddDayTaskSubmit(slot.dateString)}
-                                          className="bg-indigo-650 hover:bg-indigo-700 text-white px-2 py-0.5 rounded text-[8px] font-bold cursor-pointer"
-                                        >
-                                          Да
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
                                 </div>
-                              );
-                            })}
-                          </div>
-                          
-                          {/* Elegant week divider */}
-                          {weekIdx < 5 && (
-                            <div className="border-b border-slate-150/55 dark:border-slate-800/20 my-1 mx-1 shrink-0" />
-                          )}
-                        </div>
-                      ));
-                    })()}
-                  </div>
-
-                  {/* Floating Action Button (FAB) at the bottom right */}
-                  <button
-                    onClick={() => {
-                      const todayStr = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}-${String(realToday.getDate()).padStart(2, '0')}`;
-                      setActiveDayAddInput(todayStr);
-                      setNewDayTaskText('');
-                    }}
-                    className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 hover:scale-105 active:scale-95 text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-indigo-500/20 transition-all cursor-pointer z-[40]"
-                    title="Добавить задачу на сегодня"
-                  >
-                    <Plus className="w-7 h-7" />
-                  </button>
-                </div>
-              )}
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
 
               {/* 2. Weekly Layout Mode */}
               {calendarSubMode === 'week' && (
@@ -777,7 +863,11 @@ export default function CalendarView({
                           const taskId = e.dataTransfer.getData('text/plain');
                           handleTaskDrop(taskId, slot.dateString);
                         }}
-                        onClick={() => {
+                        onClick={(e) => {
+                          const target = e.target as HTMLElement;
+                          if (target.closest('[draggable="true"]') || target.closest('button') || target.closest('.task-item')) {
+                            return;
+                          }
                           setActiveDayAddInput(slot.dateString);
                           setNewDayTaskText('');
                         }}
@@ -835,7 +925,7 @@ export default function CalendarView({
                                 e.stopPropagation();
                                 setDraggingTaskId(null);
                               }}
-                              className={`group/task border text-[11px] leading-snug p-2 rounded-xl flex items-start gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative ${getPriorityColor(task.priority)} ${
+                              className={`task-item group/task border text-[11px] leading-snug p-2 rounded-xl flex items-start gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative ${getPriorityColor(task.priority)} ${
                                 draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-350' : ''
                               }`}
                             >
@@ -1065,7 +1155,11 @@ export default function CalendarView({
                       return (
                         <div 
                           key={hour}
-                          onClick={() => {
+                          onClick={(e) => {
+                            const target = e.target as HTMLElement;
+                            if (target.closest('[draggable="true"]') || target.closest('button') || target.closest('.task-item')) {
+                              return;
+                            }
                             setActiveHourAddInput(hour);
                             setNewHourTaskText('');
                           }}
@@ -1320,6 +1414,7 @@ export default function CalendarView({
 
           {/* Unscheduled List container */}
           <div 
+            data-unscheduled-drop-zone="true"
             onDragOver={(e) => e.preventDefault()}
             onDragEnter={() => setDraggedOverUnscheduled(true)}
             onDragLeave={() => setDraggedOverUnscheduled(false)}
@@ -1354,6 +1449,13 @@ export default function CalendarView({
                     setDraggingTaskId(task.id);
                   }}
                   onDragEnd={() => setDraggingTaskId(null)}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    const touch = e.touches[0];
+                    touchStartPos.current = { x: touch.clientX, y: touch.clientY, dateString: null };
+                    touchHasMoved.current = false;
+                    setDraggingTaskId(task.id);
+                  }}
                   className={`group border border-slate-150 dark:border-slate-800/80 p-2.5 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-850 rounded-xl shadow-xs transition-all flex flex-col gap-2 cursor-grab active:cursor-grabbing hover:border-slate-300 dark:hover:border-slate-705 ${
                     draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-400' : ''
                   }`}

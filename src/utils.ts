@@ -415,6 +415,64 @@ export function formatTotalPomoTime(totalSeconds: number): string {
   return parts.join(' ');
 }
 
+// Transparent Google API Proxy fetch helper to route request securely via dev/prod server
+export async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  let url = '';
+  if (typeof input === 'string') {
+    url = input;
+  } else if (input instanceof URL) {
+    url = input.toString();
+  } else if (input && typeof input === 'object' && 'url' in input) {
+    url = (input as Request).url;
+  }
+
+  if (url && url.includes('googleapis.com')) {
+    const proxyUrl = '/api/google-proxy';
+    const finalHeaders = new Headers();
+
+    // Port over headers
+    if (init && init.headers) {
+      const initHeaders = new Headers(init.headers);
+      initHeaders.forEach((value, key) => {
+        finalHeaders.set(key, value);
+      });
+    } else if (input && typeof input === 'object' && 'headers' in input) {
+      const inputHeaders = (input as Request).headers;
+      if (inputHeaders && typeof inputHeaders.forEach === 'function') {
+        inputHeaders.forEach((value, key) => {
+          finalHeaders.set(key, value);
+        });
+      }
+    }
+
+    finalHeaders.set('x-target-url', url);
+
+    let body = init?.body;
+    if (!body && input && typeof input === 'object' && 'body' in input) {
+      try {
+        body = await (input as Request).clone().text();
+      } catch (err) {
+        console.warn('Failed to clone request body for proxying', err);
+      }
+    }
+
+    const proxyInit: RequestInit = {
+      method: init?.method || (input && typeof input === 'object' && 'method' in input ? (input as Request).method : 'GET'),
+      headers: finalHeaders,
+      body: body,
+      credentials: init?.credentials,
+      mode: 'cors',
+      cache: init?.cache,
+      redirect: init?.redirect,
+      referrer: init?.referrer,
+    };
+
+    return window.fetch(proxyUrl, proxyInit);
+  }
+
+  return window.fetch(input, init);
+}
+
 // Helper to check if a task is overdue (not completed, has dueDate and date or time is in the past)
 // Also checks if any subtask is overdue when allNodes is provided.
 export function isNodeOverdue(node: TaskNode, allNodes?: TaskNode[]): boolean {

@@ -1,6 +1,9 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport, DeletionRecord } from '../types';
+import { proxiedFetch } from '../utils';
+
+const fetch = proxiedFetch;
 
 const DELETIONS_KEY = 'milli_deleted_registry';
 
