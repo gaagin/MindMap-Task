@@ -1284,11 +1284,18 @@ export default function App() {
         const errMsg = result.error || 'Failed to synchronize. Response state was not successful.';
         
         const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
+        const isNetworkError = errMsg.includes('Failed to fetch') || errMsg.includes('TypeError') || errMsg.includes('NetworkError');
+        
         if (isStaleToken) {
           console.warn('Google Sheets token expired (handled):', errMsg);
           setSheetsError('Сессия Google Таблиц завершена. Вы можете мгновенно и автоматически продлить её без выбора аккаунта — нажмите кнопку «Обновить авторизацию Google» ниже.');
           setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
           setAccessToken(null); // Clear stored token from localStorage
+        } else if (isNetworkError) {
+          console.warn('Google Sheets api network error or CORS blocked (handled):', errMsg);
+          setSheetsError('Bilateral Symmetrical Sync Error: Failed to fetch. Ошибка сетевого соединения с Google (автономный режим или блокировка CORS).');
+          setGoogleToken(null); // Prevent background sync loop error spam on network blocks
+          setAccessToken(null);
         } else {
           console.error('Google Sheets sync failed:', errMsg);
           setSheetsError(errMsg);
@@ -1297,6 +1304,8 @@ export default function App() {
     } catch (e: any) {
       const errMsg = e?.message || String(e);
       const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
+      const isNetworkError = errMsg.includes('Failed to fetch') || errMsg.includes('TypeError') || errMsg.includes('NetworkError');
+      
       if (isStaleToken) {
         console.warn('Google Sheets sync exception (OAuth token expired, handled):', errMsg);
       } else {
@@ -1308,6 +1317,10 @@ export default function App() {
         setSheetsError('Сессия Google Таблиц завершена. Вы можете мгновенно и автоматически продлить её без выбора аккаунта — нажмите кнопку «Обновить авторизацию Google» ниже.');
         setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
         setAccessToken(null); // Clear stored token from localStorage
+      } else if (isNetworkError) {
+        setSheetsError('Bilateral Symmetrical Sync Error: Failed to fetch. Ошибка сетевого соединения с Google (автономный режим или блокировка CORS).');
+        setGoogleToken(null); // Prevent background sync loop error spam on network blocks
+        setAccessToken(null);
       } else {
         setSheetsError(errMsg);
       }

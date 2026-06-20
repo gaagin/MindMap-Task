@@ -5,16 +5,11 @@ import {
   Calendar, 
   Trash2, 
   Circle, 
-  CheckCircle2, 
+  Check,
   Loader2, 
   FileText, 
-  AlertTriangle,
-  Flame,
-  Clock,
-  ArrowRight,
-  Sparkles,
-  Link as LinkIcon,
   HelpCircle,
+  MoreVertical,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
@@ -36,16 +31,14 @@ interface EisenhowerMatrixProps {
 interface QuadrantConfig {
   id: string;
   title: string;
-  subtitle: string;
-  description: string;
-  color: string;
-  borderColor: string;
-  hoverBorderColor: string;
-  bgColor: string;
+  label: string;
+  roman: string;
+  circleColor: string;
   textColor: string;
-  iconBg: string;
+  checkboxColor: string;
+  checkboxColorClass: string;
   priorities: Priority[];
-  targetPriority: Priority; // Priority assigned when dropped here
+  targetPriority: Priority;
 }
 
 export default function EisenhowerMatrixView({
@@ -62,7 +55,6 @@ export default function EisenhowerMatrixView({
   searchQuery = '',
 }: EisenhowerMatrixProps) {
   const [filterCompleted, setFilterCompleted] = useState<'all' | 'active' | 'completed'>('active');
-  const [mobileLayout, setMobileLayout] = useState<'stack' | 'grid2x2'>('stack');
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [draggedOverQuadrant, setDraggedOverQuadrant] = useState<string | null>(null);
   const [touchDrag, setTouchDrag] = useState<{
@@ -77,10 +69,16 @@ export default function EisenhowerMatrixView({
     width: number;
     height: number;
   } | null>(null);
-  const [newInlineInput, setNewInlineInput] = useState<Record<string, string>>({});
   const [showMatrixHelp, setShowMatrixHelp] = useState(false);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
 
-  // Filter out containers and workflow wrappers
+  // Quick-create state via FAB
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newTasksTitle, setNewTasksTitle] = useState('');
+  const [newTaskQuadrant, setNewTaskQuadrant] = useState<'q1' | 'q2' | 'q3' | 'q4'>('q1');
+  const [newTaskDays, setNewTaskDays] = useState('');
+
+  // Filter tasks mapping containers and workflow rectangles out
   const filteredTasks = useMemo(() => {
     return nodes.filter(n => {
       if (n.isContainer || n.isWorkflowRectangle) return false;
@@ -110,61 +108,53 @@ export default function EisenhowerMatrixView({
     });
   }, [nodes, searchQuery, filterCompleted]);
 
-  // Quadrants configuration matching Eisenhower model rules
+  // Quadrants configuration matching Eisenhower model rules and requested design
   const quadrants: QuadrantConfig[] = [
     {
       id: "q1",
       title: "Важно и срочно",
-      subtitle: "Сделай немедленно",
-      description: "Критические задачи, требующие немедленной реакции. Дедлайны, кризисы.",
-      color: "rose",
-      borderColor: "border-rose-400 dark:border-rose-900/40",
-      hoverBorderColor: "hover:border-rose-500 hover:ring-rose-500/20",
-      bgColor: "bg-rose-50/15 dark:bg-rose-955/5",
-      textColor: "text-rose-700 dark:text-rose-400",
-      iconBg: "bg-rose-100/50 dark:bg-rose-900/30",
+      label: "срочно_важно",
+      roman: "I",
+      circleColor: "bg-[#FF4A55]",
+      textColor: "text-[#FF4A55]",
+      checkboxColor: "#FF4A55",
+      checkboxColorClass: "border-[#FF4A55]/30 hover:border-[#FF4A55]/80",
       priorities: ["urgent"],
       targetPriority: "urgent"
     },
     {
       id: "q2",
       title: "Важно, но несрочно",
-      subtitle: "Запланируй время",
-      description: "Стратегические цели, личностный рост, профилактика. Задачи развивают.",
-      color: "amber",
-      borderColor: "border-amber-400 dark:border-amber-900/40",
-      hoverBorderColor: "hover:border-amber-500 hover:ring-amber-500/20",
-      bgColor: "bg-amber-50/15 dark:bg-amber-955/5",
-      textColor: "text-amber-700 dark:text-amber-400",
-      iconBg: "bg-amber-100/50 dark:bg-amber-900/30",
+      label: "несрочно_важно",
+      roman: "II",
+      circleColor: "bg-[#FFB01A]",
+      textColor: "text-[#FFB01A]",
+      checkboxColor: "#FFB01A",
+      checkboxColorClass: "border-[#FFB01A]/30 hover:border-[#FFB01A]/80",
       priorities: ["high"],
       targetPriority: "high"
     },
     {
       id: "q3",
       title: "Срочно, но неважно",
-      subtitle: "Делегируй кому-то",
-      description: "Внезапные звонки, встречи, мелкие хлопоты. Сделать быстро или передать.",
-      color: "blue",
-      borderColor: "border-blue-400 dark:border-blue-900/40",
-      hoverBorderColor: "hover:border-blue-500 hover:ring-blue-500/20",
-      bgColor: "bg-blue-50/15 dark:bg-blue-955/5",
-      textColor: "text-blue-700 dark:text-blue-400",
-      iconBg: "bg-blue-100/50 dark:bg-blue-900/30",
+      label: "срочно_неважно",
+      roman: "III",
+      circleColor: "bg-[#3C76F1]",
+      textColor: "text-[#3C76F1]",
+      checkboxColor: "#3C76F1",
+      checkboxColorClass: "border-[#3C76F1]/30 hover:border-[#3C76F1]/80",
       priorities: ["medium"],
       targetPriority: "medium"
     },
     {
       id: "q4",
       title: "Неважно и несрочно",
-      subtitle: "Удали или отложи",
-      description: "Пожиратели времени, развлечения, мелкая рутина. Минимизировать влияние.",
-      color: "slate",
-      borderColor: "border-slate-300 dark:border-slate-800",
-      hoverBorderColor: "hover:border-slate-450 hover:ring-slate-500/10",
-      bgColor: "bg-slate-50/20 dark:bg-slate-900/5",
-      textColor: "text-slate-600 dark:text-slate-400",
-      iconBg: "bg-slate-100 dark:bg-slate-800",
+      label: "несрочно_неважно",
+      roman: "IV",
+      circleColor: "bg-[#05C48F]",
+      textColor: "text-[#05C48F]",
+      checkboxColor: "#A1A8B3", // Light gray slate border inside screenshot
+      checkboxColorClass: "border-[#CBD5E1] hover:border-[#05C48F]",
       priorities: ["low", "none"],
       targetPriority: "low"
     }
@@ -173,11 +163,9 @@ export default function EisenhowerMatrixView({
   // Group tasks by quadrant priority list
   const getTasksForQuadrant = (quad: QuadrantConfig) => {
     return filteredTasks.filter(task => {
-      // If task has priority that belongs to this quadrant list
       if (task.priority) {
         return quad.priorities.includes(task.priority);
       }
-      // If task has no priority ('none'), it counts as low / none (Quadrant IV)
       return quad.priorities.includes('none');
     });
   };
@@ -217,7 +205,7 @@ export default function EisenhowerMatrixView({
     });
   };
 
-  // Touch drag-and-drop for mobile devices (tap, hold and drag)
+  // Touch drag-and-drop for mobile devices
   const handleTouchStart = (e: React.TouchEvent, taskId: string, text: string) => {
     const touch = e.touches[0];
     const rect = e.currentTarget.getBoundingClientRect();
@@ -236,13 +224,16 @@ export default function EisenhowerMatrixView({
     });
     
     setDraggedCardId(taskId);
+    
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(10);
+    }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!touchDrag) return;
     const touch = e.touches[0];
     
-    // Smooth scrolling prevention when dragging active tasks on mobile/touch interfaces
     if (e.cancelable) {
       e.preventDefault();
     }
@@ -253,7 +244,19 @@ export default function EisenhowerMatrixView({
       currentY: touch.clientY
     } : null);
 
+    const proxyEl = document.querySelector('.touch-drag-proxy') as HTMLElement;
+    let oldDisplay = '';
+    if (proxyEl) {
+      oldDisplay = proxyEl.style.display;
+      proxyEl.style.display = 'none';
+    }
+
     const element = document.elementFromPoint(touch.clientX, touch.clientY);
+
+    if (proxyEl) {
+      proxyEl.style.display = oldDisplay;
+    }
+
     if (element) {
       const quadContainer = element.closest('[data-quadrant-id]');
       if (quadContainer) {
@@ -262,10 +265,7 @@ export default function EisenhowerMatrixView({
           setDraggedOverQuadrant(quadId);
         }
       } else {
-        const isSelfProxy = element.closest('.touch-drag-proxy');
-        if (!isSelfProxy) {
-          setDraggedOverQuadrant(null);
-        }
+        setDraggedOverQuadrant(null);
       }
     }
   };
@@ -286,6 +286,10 @@ export default function EisenhowerMatrixView({
     const targetQuad = quadrants.find(q => q.id === targetQuadrantId);
     if (!targetQuad) return;
 
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(20);
+    }
+
     onUpdateNode({
       ...task,
       priority: targetQuad.targetPriority,
@@ -293,33 +297,48 @@ export default function EisenhowerMatrixView({
     });
   };
 
-  // Quick inline add
-  const handleInlineAdd = (quad: QuadrantConfig, e: React.FormEvent) => {
+  // Quick action submit inside Fabric FAB Modal
+  const handleModalCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const text = newInlineInput[quad.id]?.trim();
+    const text = newTasksTitle.trim();
     if (!text) return;
 
-    if (onCreateTask) {
-      onCreateTask(text, [], quad.targetPriority, null);
-    } else {
-      const fallback: TaskNode = {
-        id: 'node-' + Math.random().toString(36).substring(2, 9),
-        projectId: activeProjectId,
-        text,
-        x: 0,
-        y: 0,
-        parentId: null,
-        priority: quad.targetPriority,
-        tags: [],
-        notes: '',
-        completed: false,
-        files: [],
-        updatedAt: new Date().toISOString()
-      };
-      onUpdateNode(fallback);
+    let calcedDueDate: string | undefined = undefined;
+    if (newTaskDays) {
+      const parsedDays = parseInt(newTaskDays, 10);
+      if (!isNaN(parsedDays) && parsedDays > 0) {
+        const d = new Date();
+        d.setDate(d.getDate() + parsedDays);
+        calcedDueDate = d.toISOString().split('T')[0];
+      }
     }
 
-    setNewInlineInput(prev => ({ ...prev, [quad.id]: '' }));
+    const selectedQuad = quadrants.find(q => q.id === newTaskQuadrant);
+    const targetPriority = selectedQuad ? selectedQuad.targetPriority : 'low';
+
+    const newNodeId = 'node-' + Math.random().toString(36).substring(2, 9);
+    const newTask: TaskNode = {
+      id: newNodeId,
+      projectId: activeProjectId,
+      text,
+      x: 150,
+      y: 150,
+      parentId: null,
+      priority: targetPriority,
+      tags: [],
+      notes: '',
+      completed: false,
+      files: [],
+      dueDate: calcedDueDate,
+      updatedAt: new Date().toISOString()
+    };
+    onUpdateNode(newTask);
+
+    // Clean states
+    setNewTasksTitle('');
+    setNewTaskQuadrant('q1');
+    setNewTaskDays('');
+    setShowCreateModal(false);
   };
 
   const isOverdue = (dateStr?: string) => {
@@ -335,91 +354,97 @@ export default function EisenhowerMatrixView({
     }
   };
 
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return '';
+  // Convert dueDate (YYYY-MM-DD) to remaining/elapsed days ending with "д"
+  const getDaysDisplay = (dateStr?: string) => {
+    if (!dateStr) return null;
     try {
-      const parts = dateStr.split('-');
-      if (parts.length === 3) {
-        return `${parts[2]}.${parts[1]}.${parts[0]}`;
-      }
-      return dateStr;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const due = new Date(dateStr);
+      due.setHours(0, 0, 0, 0);
+      const diffTime = due.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return `${Math.abs(diffDays)}д`;
     } catch {
-      return dateStr;
+      return null;
     }
   };
 
   return (
-    <div id="eisenhower-matrix-container" className="flex flex-col w-full h-full bg-[#FAFBFD] dark:bg-slate-950/20 font-sans overflow-hidden">
+    <div id="eisenhower-matrix-container" className="flex flex-col w-full h-full bg-[#F5F6FC] dark:bg-slate-950/80 font-sans overflow-hidden relative">
       
-      {/* View Header bar */}
-      <div className="flex flex-row items-center justify-between gap-2 py-1 px-3 md:py-1.5 md:px-4 bg-white dark:bg-slate-900 border-b border-slate-150 dark:border-slate-800 shrink-0 min-h-[38px]">
-        <div className="flex items-center gap-1.5">
-          <div className="hidden sm:flex items-center justify-center p-1 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg">
-            <Sparkles className="w-3.5 h-3.5" />
-          </div>
-          <div>
-            <h1 className="text-xs md:text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1 leading-tight">
-              Матрица Эйзенхауэра
-              <button 
-                type="button"
-                onClick={() => setShowMatrixHelp(!showMatrixHelp)}
-                className="text-slate-400 hover:text-indigo-505 cursor-pointer transition-colors selector-matrix-help"
-                title="О методе Эйзенхауэра"
-              >
-                <HelpCircle className="w-3.5 h-3.5" />
-              </button>
-            </h1>
-            <p className="hidden md:block text-[9.5px] text-slate-400 dark:text-slate-500 mt-0.5 font-medium leading-none">
-              Сортировка по важности и срочности. Перетаскивайте задачи для изменения приоритетов.
-            </p>
-          </div>
-        </div>
+      {/* View Header with absolute precision matching the image style */}
+      <div className="flex flex-row items-center justify-between px-6 pt-6 pb-2 shrink-0">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-sans tracking-tight">
+          Матрица Эйзенхауэра
+        </h1>
+        <div className="relative shrink-0 flex items-center gap-1">
+          <button 
+            type="button"
+            onClick={() => setShowFilterMenu(!showFilterMenu)}
+            className="p-1.5 rounded-full text-slate-500 hover:bg-white/80 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            title="Опции фильтрации"
+          >
+            <MoreVertical className="w-6 h-6" />
+          </button>
 
-        {/* Filters and Layout options */}
-        <div className="flex flex-row items-center gap-1.5 shrink-0 self-center">
-          {/* Mobile layout switcher - show only on screens smaller than md */}
-          <div className="flex md:hidden items-center gap-0.5 p-0.5 bg-slate-50 dark:bg-slate-800/80 rounded-lg border border-slate-200/60 dark:border-slate-800 text-[10px] shrink-0">
-            <button
-              type="button"
-              onClick={() => setMobileLayout('stack')}
-              className={`px-1.5 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
-                mobileLayout === 'stack' 
-                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-450 shadow-sm' 
-                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Стек
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileLayout('grid2x2')}
-              className={`px-1.5 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
-                mobileLayout === 'grid2x2' 
-                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-450 shadow-sm' 
-                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-700'
-              }`}
-              title="Таблица 2 на 2"
-            >
-              Сетка
-            </button>
-          </div>
+          {/* Settings / Filter dropdown Menu */}
+          <AnimatePresence>
+            {showFilterMenu && (
+              <>
+                <div 
+                  className="fixed inset-0 z-40 bg-transparent" 
+                  onClick={() => setShowFilterMenu(false)}
+                />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                  className="absolute right-0 top-10 z-50 w-52 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-2xl shadow-xl p-2.5 space-y-2 flex flex-col font-sans"
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-405 dark:text-slate-500 px-2.5 py-1 select-none">
+                    Фильтры завершенности
+                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    {(['all', 'active', 'completed'] as const).map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => {
+                          setFilterCompleted(f);
+                          setShowFilterMenu(false);
+                        }}
+                        className={`w-full px-2.5 py-1.5 text-xs font-bold text-left rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
+                          filterCompleted === f 
+                            ? 'bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400' 
+                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850'
+                        }`}
+                      >
+                        <span>
+                          {f === 'active' ? 'Активные' : f === 'completed' ? 'Выполненные' : 'Все задачи'}
+                        </span>
+                        {filterCompleted === f && <Check className="w-3.5 h-3.5 text-indigo-650 dark:text-indigo-400" />}
+                      </button>
+                    ))}
+                  </div>
 
-          <div className="flex items-center gap-0.5 p-0.5 bg-slate-50 dark:bg-slate-800/80 rounded-lg border border-slate-200/60 dark:border-slate-800 text-[10px] shrink-0">
-            {(['all', 'active', 'completed'] as const).map(f => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFilterCompleted(f)}
-                className={`px-1.5 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
-                  filterCompleted === f 
-                    ? 'bg-white dark:bg-slate-700 text-indigo-650 dark:text-indigo-400 shadow-sm border border-slate-200/40 dark:border-slate-605/30' 
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
-                }`}
-              >
-                {f === 'active' ? 'Актив' : f === 'completed' ? 'Вып' : 'Все'}
-              </button>
-            ))}
-          </div>
+                  <div className="border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMatrixHelp(!showMatrixHelp);
+                        setShowFilterMenu(false);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-xs font-bold text-left text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/10 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <HelpCircle className="w-4 h-4" />
+                      <span>О методе Эйзенхауэра</span>
+                    </button>
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -433,18 +458,18 @@ export default function EisenhowerMatrixView({
             className="bg-indigo-50/40 dark:bg-indigo-950/10 border-b border-indigo-100/30 dark:border-indigo-900/20 p-4 text-xs text-slate-600 dark:text-slate-300 leading-relaxed overflow-hidden shrink-0 font-medium"
           >
             <div className="max-w-4xl mx-auto flex items-start gap-3">
-              <Sparkles className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+              <HelpCircle className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
               <div>
                 <p className="font-extrabold text-slate-800 dark:text-slate-100 mb-1">О Матрице Эйзенхауэра</p>
                 <p className="mb-2">
                   Это один из самых популярных методов тайм-менеджмента, который помогает распределить дела по приоритетам на основе двух критериев: 
-                  <strong className="text-slate-800 dark:text-slate-100">важности</strong> и <strong className="text-slate-800 dark:text-slate-100">срочности</strong>.
+                  <strong> важности</strong> и <strong>срочности</strong>.
                 </p>
                 <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 list-disc pl-4 mt-1 font-semibold">
-                  <li><span className="text-rose-650 dark:text-rose-400 font-extrabold">I. Срочно и важно (Do!)</span> — выполнить самостоятельно как можно скорее.</li>
-                  <li><span className="text-amber-655 dark:text-amber-400 font-extrabold">II. Несрочно, но важно (Schedule)</span> — основа успеха. Самые важные цели, планируйте их.</li>
-                  <li><span className="text-blue-650 dark:text-blue-400 font-extrabold">III. Срочно, но неважно (Delegate)</span> — делегируйте, автоматизируйте или сократите.</li>
-                  <li><span className="text-slate-505 dark:text-slate-400 font-extrabold">IV. Неважно и несрочно (Eliminate)</span> — исключите из списка или отложите.</li>
+                  <li><span className="text-rose-500 font-extrabold">I. Срочно и важно</span> — выполнить самостоятельно как можно скорее.</li>
+                  <li><span className="text-amber-500 font-extrabold">II. Несрочно, но важно</span> — основа успеха. Самые важные цели, планируйте их.</li>
+                  <li><span className="text-blue-500 font-extrabold">III. Срочно, но неважно</span> — делегируйте, автоматизируйте или сократите.</li>
+                  <li><span className="text-emerald-500 font-extrabold">IV. Неважно и несрочно</span> — исключите из списка или отложите.</li>
                 </ul>
               </div>
             </div>
@@ -452,302 +477,193 @@ export default function EisenhowerMatrixView({
         )}
       </AnimatePresence>
 
-      {/* 2x2 Quadrant Grid Canvas Space */}
-      <div className="flex-grow p-1.5 md:p-3 overflow-y-auto custom-scrollbar flex flex-col h-full min-h-0">
-        
-        {/* Main 2x2 Grid with Axis Headers on Larger Screens */}
-        <div className="flex-grow flex flex-col md:grid md:grid-cols-[auto_1fr] md:grid-rows-[auto_1fr] gap-x-4 gap-y-2 h-full min-h-0">
-          
-          {/* Top-Left Corner (Empty for grid alignment) */}
-          <div className="hidden md:block w-8"></div>
-
-          {/* Column Headers (X Axis - Срочность) */}
-          <div className="hidden md:grid grid-cols-2 gap-4 text-center pb-2 select-none">
-            <div className="text-[10px] font-black tracking-widest text-rose-600 dark:text-rose-400 bg-rose-50/20 dark:bg-rose-950/15 py-1.5 px-3 rounded-lg border border-rose-100/30 dark:border-rose-900/10 uppercase">
-              ⚡ СРОЧНО
-            </div>
-            <div className="text-[10px] font-black tracking-widest text-amber-600 dark:text-amber-400 bg-amber-50/20 dark:bg-amber-950/15 py-1.5 px-3 rounded-lg border border-amber-100/30 dark:border-amber-900/10 uppercase">
-              ⏳ НЕ СРОЧНО
-            </div>
-          </div>
-
-          {/* Row Labels (Y Axis - Важность) */}
-          <div className="hidden md:flex flex-col justify-between w-8 select-none py-6">
-            <div className="flex items-center justify-center p-2 rounded-xl border border-indigo-100/20 dark:border-indigo-950/30 bg-indigo-50/10 dark:bg-indigo-950/10 font-black text-[10px] text-indigo-500 tracking-widest uppercase [writing-mode:vertical-lr] rotate-180 h-[45%] text-center">
-              ⭐ ВАЖНО
-            </div>
-            <div className="flex items-center justify-center p-2 rounded-xl border border-dashed border-slate-200/50 dark:border-slate-800/40 bg-slate-50/30 dark:bg-slate-900/20 font-black text-[10px] text-slate-400 dark:text-slate-500 tracking-widest uppercase [writing-mode:vertical-lr] rotate-180 h-[45%] text-center">
-              💤 НЕ ВАЖНО
-            </div>
-          </div>
-
-          {/* 2x2 Cards Grid */}
-          <div className={`grid ${
-            mobileLayout === 'grid2x2' 
-              ? 'grid-cols-2 grid-rows-2 gap-2 md:gap-4' 
-              : 'grid-cols-1 md:grid-cols-2 md:grid-rows-2 gap-4'
-          } h-full relative`}>
-            {quadrants.map(quad => {
-              const quadTasks = getTasksForQuadrant(quad);
-              const isOver = draggedOverQuadrant === quad.id;
-              const isCompact = mobileLayout === 'grid2x2';
-              
-              return (
-                <div
-                  key={quad.id}
-                  data-quadrant-id={quad.id}
-                  onDragOver={(e) => handleDragOver(e, quad.id)}
-                  onDragLeave={() => setDraggedOverQuadrant(null)}
-                  onDrop={(e) => handleDrop(e, quad.id)}
-                  className={`flex flex-col rounded-2xl border-2 p-2 md:p-3 transition-all ${
-                    isCompact 
-                      ? 'h-full min-h-0' 
-                      : 'h-[240px] md:h-full md:min-h-0'
-                  } bg-white dark:bg-slate-900 ${quad.bgColor} ${
-                    isOver 
-                      ? `${quad.borderColor} ring-4 ring-offset-0 ring-indigo-500/15 scale-[0.995] shadow-inner`
-                      : `${quad.borderColor} shadow-[0_2px_8px_rgba(15,23,42,0.01)]`
-                  }`}
-                >
-                  {/* Header inside quadrant card */}
-                  <div className="flex items-start justify-between gap-1 border-b border-slate-100 dark:border-slate-800 pb-1.5 shrink-0">
-                    <div className="min-w-0 flex items-center gap-1.5">
-                      <span className={`inline-flex items-center justify-center text-[9px] md:text-[10px] font-extrabold px-1.5 py-0.5 rounded-md ${quad.textColor} ${quad.iconBg}`}>
-                        {quad.id === 'q1' ? 'I' : quad.id === 'q2' ? 'II' : quad.id === 'q3' ? 'III' : 'IV'}
-                      </span>
-                      <h2 className="text-[10.5px] md:text-[13px] font-extrabold text-slate-800 dark:text-slate-100 truncate">
-                        {isCompact ? quad.title.split(' ')[0] : quad.title}
-                      </h2>
-                    </div>
-                    {/* Task count */}
-                    <span className={`px-1.5 py-0.5 text-[9px] md:text-[10.5px] font-extrabold rounded-full ${quad.textColor} ${quad.iconBg}`}>
-                      {quadTasks.length}
-                    </span>
+      {/* Main 2x2 Clean Quadrant Canvas */}
+      <div className="flex-grow p-2 md:p-3 overflow-y-auto custom-scrollbar flex flex-col h-full min-h-0">
+        <div className="grid grid-cols-2 grid-rows-2 gap-2 md:gap-3 flex-grow h-full relative min-h-[460px]">
+          {quadrants.map(quad => {
+            const quadTasks = getTasksForQuadrant(quad);
+            const isOver = draggedOverQuadrant === quad.id;
+            
+            return (
+              <div
+                key={quad.id}
+                data-quadrant-id={quad.id}
+                onDragOver={(e) => handleDragOver(e, quad.id)}
+                onDragLeave={() => setDraggedOverQuadrant(null)}
+                onDrop={(e) => handleDrop(e, quad.id)}
+                className={`flex flex-col rounded-[20px] md:rounded-[24px] p-2.5 md:p-4 transition-all h-full bg-white dark:bg-slate-900 ${
+                  isOver 
+                    ? `ring-4 ring-offset-0 ring-indigo-505/15 scale-[0.995] shadow-inner`
+                    : `shadow-[0_4px_20px_rgba(0,0,0,0.015)] dark:shadow-none`
+                }`}
+              >
+                {/* Header inside quadrant card */}
+                <div className="flex items-center gap-1.5 mb-2.5 md:mb-3.5 shrink-0 select-none">
+                  <div className={`w-5.5 h-5.5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 ${quad.circleColor}`}>
+                    {quad.roman}
                   </div>
-
-                  {/* Task list box */}
-                  <div className="flex-grow overflow-y-auto py-2 custom-scrollbar space-y-1.5 select-none">
-                    {quadTasks.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center p-2 text-center border border-dashed border-slate-200 dark:border-slate-850 rounded-xl bg-slate-50/10">
-                        <span className="text-slate-300 dark:text-slate-700 text-sm mb-0.5">📥</span>
-                        {!isCompact && <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">Пусто</p>}
-                      </div>
-                    ) : (
-                      quadTasks.map(task => {
-                        const isSelected = selectedNodeId === task.id;
-                        const isTaskOverdue = isOverdue(task.dueDate);
-                        
-                        return (
-                          <div
-                            key={task.id}
-                            draggable="true"
-                            onDragStart={(e) => handleDragStart(e, task.id)}
-                            onTouchStart={(e) => handleTouchStart(e, task.id, task.text)}
-                            onTouchMove={handleTouchMove}
-                            onTouchEnd={handleTouchEnd}
-                            onClick={(e) => onSelectNode(task.id, e)}
-                            className={`p-1.5 md:p-3 rounded-xl border transition-all text-[11px] md:text-xs cursor-grab active:cursor-grabbing relative flex flex-col gap-1.5 ${
-                              isSelected 
-                                ? 'border-indigo-505 bg-indigo-50/10 dark:bg-indigo-950/20 ring-2 ring-indigo-500/15 shadow-sm scale-[1.01]' 
-                                : 'border-slate-150 dark:border-slate-800 bg-white dark:bg-slate-910 hover:shadow-xs'
-                            } ${task.completed ? 'opacity-60 saturate-50' : ''} ${
-                              touchDrag?.taskId === task.id ? 'touch-none opacity-40 select-none' : ''
-                            }`}
-                          >
-                            {isCompact ? (
-                              /* Super Compact Layout: Only the name of the card as requested! */
-                              <div className="flex flex-col w-full min-w-0">
-                                <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                                  <span className={`font-semibold md:font-bold text-slate-800 dark:text-slate-100 truncate flex-grow block ${
-                                    task.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
-                                  }`}>
-                                    {task.text}
-                                  </span>
-                                  {task.completed && (
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                  )}
-                                </div>
-                                {isSelected && (
-                                  <div className="mt-2 flex items-center justify-between gap-1 border-t border-slate-100 dark:border-slate-800 pt-1.5 animate-fadeIn">
-                                    <span className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-550 shrink-0">В квадрант:</span>
-                                    <div className="flex gap-0.5">
-                                      {(['q1', 'q2', 'q3', 'q4'] as const).map(qId => {
-                                        const q = quadrants.find(item => item.id === qId)!;
-                                        const isCurrent = (task.priority === q.targetPriority) || (qId === 'q4' && (!task.priority || task.priority === 'none'));
-                                        return (
-                                          <button
-                                            key={qId}
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              onUpdateNode({
-                                                ...task,
-                                                priority: q.targetPriority,
-                                                updatedAt: new Date().toISOString()
-                                              });
-                                            }}
-                                            className={`w-4 h-4 text-[8px] font-black flex items-center justify-center rounded transition-all cursor-pointer ${
-                                              isCurrent 
-                                                ? 'bg-indigo-600 text-white font-extrabold scale-105' 
-                                                : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500'
-                                            }`}
-                                          >
-                                            {qId === 'q1' ? 'I' : qId === 'q2' ? 'II' : qId === 'q3' ? 'III' : 'IV'}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              /* Full Elegant Layout */
-                              <>
-                                <div className="flex items-start gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onUpdateNode({
-                                        ...task,
-                                        completed: !task.completed,
-                                        updatedAt: new Date().toISOString()
-                                      });
-                                    }}
-                                    className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors shrink-0 mt-0.5 cursor-pointer"
-                                  >
-                                    {task.completed ? (
-                                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                                    ) : activePomodoroNodeId === task.id ? (
-                                      <Loader2 className="w-4 h-4 text-rose-500 animate-spin shrink-0" />
-                                    ) : (
-                                      <Circle className="w-4 h-4" />
-                                    )}
-                                  </button>
-
-                                  <div className="flex-1 min-w-0">
-                                    <p className={`font-bold text-slate-800 dark:text-slate-100 leading-snug break-words ${
-                                      task.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
-                                    }`}>
-                                      {task.text}
-                                    </p>
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onSelectNode(task.id);
-                                    }}
-                                    className="p-1 rounded opacity-60 hover:opacity-100 hover:bg-slate-100 dark:hover:bg-slate-850 text-slate-400 cursor-pointer"
-                                    title="Подробнее"
-                                  >
-                                    <FileText className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-
-                                {/* Sub details */}
-                                {(task.dueDate || (task.tags && task.tags.length > 0) || task.pomodoroTotalTime) && (
-                                  <div className="flex flex-wrap items-center gap-1 pt-1.5 border-t border-slate-100 dark:border-slate-800/40 text-[9px] font-bold">
-                                    {task.dueDate && (
-                                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border ${
-                                        isTaskOverdue && !task.completed
-                                          ? 'bg-rose-50/70 dark:bg-rose-950/20 text-rose-600 border-rose-100 dark:border-rose-900/30 font-black'
-                                          : 'bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-100 dark:border-slate-800'
-                                      }`}>
-                                        <Calendar className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                        <span>{formatDate(task.dueDate)}</span>
-                                      </span>
-                                    )}
-
-                                    {task.pomodoroTotalTime ? (
-                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-rose-100/30 bg-rose-50/10 text-rose-500">
-                                        🍅 {Math.round(task.pomodoroTotalTime / 60)}м
-                                      </span>
-                                    ) : null}
-
-                                    {task.tags && task.tags.slice(0, 2).map(tag => (
-                                      <span key={tag} className="px-1 py-0.5 bg-slate-50 dark:bg-slate-800 text-slate-500 rounded text-[8px]">
-                                        #{tag}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {/* Quick Quadrant Buttons inside standard/full task cards when clicked */}
-                                {isSelected && (
-                                  <div className="mt-2 flex items-center justify-between gap-1 border-t border-slate-100 dark:border-slate-800 pt-1.5 animate-fadeIn">
-                                    <span className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-550 shrink-0 font-sans">В квадрант:</span>
-                                    <div className="flex gap-1">
-                                      {(['q1', 'q2', 'q3', 'q4'] as const).map(qId => {
-                                        const q = quadrants.find(item => item.id === qId)!;
-                                        const isCurrent = (task.priority === q.targetPriority) || (qId === 'q4' && (!task.priority || task.priority === 'none'));
-                                        return (
-                                          <button
-                                            key={qId}
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              onUpdateNode({
-                                                ...task,
-                                                priority: q.targetPriority,
-                                                updatedAt: new Date().toISOString()
-                                              });
-                                            }}
-                                            className={`w-5 h-5 text-[9.5px] font-black flex items-center justify-center rounded transition-all cursor-pointer ${
-                                              isCurrent 
-                                                ? 'bg-indigo-650 dark:bg-indigo-600 text-white font-extrabold scale-105' 
-                                                : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500'
-                                            }`}
-                                          >
-                                            {qId === 'q1' ? 'I' : qId === 'q2' ? 'II' : qId === 'q3' ? 'III' : 'IV'}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  {/* Inline quick-add form */}
-                  <form
-                    onSubmit={(e) => handleInlineAdd(quad, e)}
-                    className="mt-1.5 flex items-center gap-1 shrink-0 pt-1.5 border-t border-slate-100 dark:border-slate-800"
-                  >
-                    <input
-                      type="text"
-                      placeholder={isCompact ? "+" : "Добавить задачу..."}
-                      value={newInlineInput[quad.id] || ''}
-                      onChange={(e) => setNewInlineInput(prev => ({ ...prev, [quad.id]: e.target.value }))}
-                      className="flex-grow text-[10px] md:text-xs py-1 px-2.5 bg-slate-50 dark:bg-slate-800 focus:bg-white rounded-lg border border-slate-200 dark:border-slate-755 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!(newInlineInput[quad.id] || '').trim()}
-                      className="p-1 px-2.5 bg-indigo-50 hover:bg-indigo-600 dark:bg-indigo-950/40 hover:text-white text-indigo-600 dark:text-indigo-455 rounded-lg font-bold text-xs disabled:opacity-40 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </form>
-
+                  <span className={`text-[12px] md:text-[13.5px] font-bold tracking-tight lowercase ${quad.textColor}`}>
+                    {quad.label}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
 
+                {/* Tasks loop inside current quadrant */}
+                <div className="flex-grow overflow-y-auto pr-0.5 space-y-2 md:space-y-2.5 custom-scrollbar">
+                  {quadTasks.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-center py-6 select-none">
+                      <span className="text-slate-400 dark:text-slate-600 text-[13px] md:text-[13.5px] font-semibold font-sans">
+                        Нет задач
+                      </span>
+                    </div>
+                  ) : (
+                    quadTasks.map(task => {
+                      const isSelected = selectedNodeId === task.id;
+                      const taskDays = task.dueDate ? getDaysDisplay(task.dueDate) : null;
+                      const isDraggingTouch = touchDrag?.taskId === task.id;
+                      
+                      return (
+                        <div
+                          key={task.id}
+                          draggable="true"
+                          onDragStart={(e) => handleDragStart(e, task.id)}
+                          onTouchStart={(e) => handleTouchStart(e, task.id, task.text)}
+                          onTouchMove={handleTouchMove}
+                          onTouchEnd={handleTouchEnd}
+                          onClick={(e) => onSelectNode(task.id, e)}
+                          className={`group relative flex flex-col gap-1 py-1 px-0.5 md:px-1.5 rounded-lg md:rounded-xl transition-all cursor-grab active:cursor-grabbing select-none ${
+                            isDraggingTouch
+                              ? 'opacity-40 scale-[0.98]'
+                              : isSelected 
+                                ? 'bg-indigo-50/30 dark:bg-indigo-950/20 ring-1 ring-indigo-505/15'
+                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
+                          }`}
+                        >
+                          <div className="flex items-start gap-1.5 md:gap-2">
+                            {/* Priority-colored checkbox indicator mimicking screenshot */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateNode({
+                                  ...task,
+                                  completed: !task.completed,
+                                  updatedAt: new Date().toISOString()
+                                });
+                              }}
+                              className={`w-5 h-5 rounded-[6px] border-[2.2px] flex items-center justify-center shrink-0 mt-0.5 transition-all cursor-pointer ${
+                                task.completed 
+                                  ? 'bg-emerald-500 border-emerald-500 text-white' 
+                                  : `bg-white dark:bg-slate-800 ${quad.checkboxColorClass}`
+                              }`}
+                              style={{ borderColor: !task.completed ? quad.checkboxColor : undefined }}
+                              title="Отметить как готово"
+                            >
+                              {task.completed && <Check className="w-3.5 h-3.5 stroke-[3px]" />}
+                            </button>
+
+                            <div className="flex-1 min-w-0">
+                              <span className={`text-[12.5px] md:text-[13.5px] font-medium text-slate-800 dark:text-slate-150 leading-tight break-words block ${
+                                task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-medium' : ''
+                              }`}>
+                                {task.text}
+                              </span>
+                              
+                              {taskDays && (
+                                <div className="text-[10px] md:text-[11px] font-bold text-[#FF4A55] mt-0.5 tracking-tight font-sans">
+                                  {taskDays}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Options on hover (desktop only for precision edit) */}
+                            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm rounded-lg p-0.5 transition-opacity duration-150 absolute right-1 -top-1.5 z-10">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectNode(task.id);
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-indigo-650 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                title="Подробное редактирование"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteNode(task.id);
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                title="Удалить задачу"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                          </div>
+
+                          {/* Inline Quadrants adjustment when item is selected */}
+                          {isSelected && (
+                            <div className="mt-1 flex items-center justify-between gap-1 border-t border-slate-105/10 dark:border-slate-800 pt-1.5 animate-fadeIn">
+                              <span className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-550 shrink-0 select-none">В квадрант:</span>
+                              <div className="flex gap-1">
+                                {(['q1', 'q2', 'q3', 'q4'] as const).map(qId => {
+                                  const q = quadrants.find(item => item.id === qId)!;
+                                  const isCurrent = (task.priority === q.targetPriority) || (qId === 'q4' && (!task.priority || task.priority === 'none'));
+                                  return (
+                                    <button
+                                      key={qId}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onUpdateNode({
+                                          ...task,
+                                          priority: q.targetPriority,
+                                          updatedAt: new Date().toISOString()
+                                        });
+                                      }}
+                                      className={`w-5 h-5 text-[9px] font-black flex items-center justify-center rounded-md transition-all cursor-pointer ${
+                                        isCurrent 
+                                          ? 'bg-indigo-600 text-white font-extrabold scale-105' 
+                                          : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500'
+                                      }`}
+                                    >
+                                      {qId === 'q1' ? 'I' : qId === 'q2' ? 'II' : qId === 'q3' ? 'III' : 'IV'}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+              </div>
+            );
+          })}
+
+          {/* Floating task creation button (FAB) at bottom-right mimic screenshot layout */}
+          <button
+            type="button"
+            id="fab-create-task"
+            onClick={() => setShowCreateModal(true)}
+            className="absolute bottom-4 right-4 w-12 h-12 md:w-14 md:h-14 rounded-full bg-[#3C76F1] text-white flex items-center justify-center shadow-[0_4px_16px_rgba(60,118,241,0.4)] hover:bg-[#2563EB] active:scale-95 transition-all z-20 cursor-pointer"
+            title="Добавить задачу"
+          >
+            <Plus className="w-7 h-7 md:w-8 md:h-8 stroke-[2.5]" />
+          </button>
         </div>
       </div>
 
-      {/* Floating Touch Drag Proxy Card */}
+      {/* Touch drag proxy illustration */}
       {touchDrag && (
         <div
-          className="touch-drag-proxy fixed pointer-events-none z-[9999] opacity-90 scale-[1.03] shadow-2xl rounded-xl border-2 border-indigo-505 bg-white dark:bg-slate-900 p-2.5 flex flex-col justify-center text-slate-800 dark:text-slate-100 font-sans"
+          className="touch-drag-proxy fixed pointer-events-none z-[9999] opacity-90 scale-[1.03] shadow-2xl rounded-xl border-2 border-indigo-500 bg-white dark:bg-slate-900 p-2.5 flex flex-col justify-center text-slate-800 dark:text-slate-100 font-sans"
           style={{
             left: `${touchDrag.currentX - touchDrag.offsetX}px`,
             top: `${touchDrag.currentY - touchDrag.offsetY}px`,
@@ -757,12 +673,119 @@ export default function EisenhowerMatrixView({
         >
           <div className="flex items-center gap-2">
             <span className="w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-700 shrink-0" />
-            <span className="font-bold text-[11px] md:text-xs truncate max-w-full">
+            <span className="font-bold text-[12px] md:text-xs truncate max-w-full">
               {touchDrag.text}
             </span>
           </div>
         </div>
       )}
+
+      {/* Task Quick-Creation Modal Sheet */}
+      <AnimatePresence>
+        {showCreateModal && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999] p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white dark:bg-slate-950 rounded-[28px] shadow-2xl p-6 w-full max-w-md border border-slate-100 dark:border-slate-850"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
+                  Добавление задачи
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition-colors cursor-pointer animate-none"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleModalCreateSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5">
+                    Название задачи
+                  </label>
+                  <input
+                    type="text"
+                    autoFocus
+                    required
+                    placeholder="Введите текст..."
+                    value={newTasksTitle}
+                    onChange={(e) => setNewTasksTitle(e.target.value)}
+                    className="w-full text-xs font-semibold py-2.5 px-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-505 focus:border-indigo-505 text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5">
+                    Куда поместить
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {quadrants.map(q => {
+                      const isSelected = newTaskQuadrant === q.id;
+                      return (
+                        <button
+                          key={q.id}
+                          type="button"
+                          onClick={() => setNewTaskQuadrant(q.id as any)}
+                          className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-bold transition-all text-left cursor-pointer ${
+                            isSelected 
+                              ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/20 ring-1 ring-indigo-500/15' 
+                              : 'border-slate-110 dark:border-slate-800 bg-white dark:bg-slate-905 hover:bg-slate-50/50'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black text-white shrink-0 ${q.circleColor}`}>
+                            {q.roman}
+                          </div>
+                          <span className={`${q.textColor} truncate text-[11px]`}>
+                            {q.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5">
+                    Срок завершения (через сколько дней)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="999"
+                    placeholder="Пример: 30"
+                    value={newTaskDays}
+                    onChange={(e) => setNewTaskDays(e.target.value)}
+                    className="w-full text-xs font-semibold py-2.5 px-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-505 focus:border-indigo-505 text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4.5 py-2 text-xs font-bold text-white bg-[#3C76F1] hover:bg-[#2563EB] rounded-xl transition-colors shadow-sm cursor-pointer"
+                  >
+                    Создать задачу
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
