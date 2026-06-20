@@ -57,9 +57,12 @@ export function loadWorkspace(): WorkspaceState {
     }
     
     // Safety fallback in case fields are missing
-    if (!state.folders) state.folders = [];
-    if (!state.projects) state.projects = [];
-    if (!state.nodes) state.nodes = {};
+    if (!state || typeof state !== 'object') {
+      return createDemoWorkspace();
+    }
+    if (!Array.isArray(state.folders)) state.folders = [];
+    if (!Array.isArray(state.projects)) state.projects = [];
+    if (!state.nodes || typeof state.nodes !== 'object') state.nodes = {};
 
     // Remove old demo folders/projects/nodes from previous storage sessions
     state.folders = state.folders.filter(f => f.id !== 'f-work' && f.id !== 'f-sub-goals' && f.id !== 'f-personal');

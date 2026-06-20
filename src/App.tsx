@@ -34,7 +34,10 @@ import {
   Eye,
   Check,
   Archive,
-  ArchiveRestore
+  ArchiveRestore,
+  ChevronLeft,
+  Clock,
+  LayoutGrid
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
@@ -46,6 +49,7 @@ import MobileListView from './components/MobileListView';
 import CalendarView from './components/CalendarView';
 import GanttView from './components/GanttView';
 import TableView from './components/TableView';
+import EisenhowerMatrixView from './components/EisenhowerMatrixView';
 import GeminiAiConsole from './components/GeminiAiConsole';
 
 // Import Google Sheets & Firebase Auth systems
@@ -171,80 +175,97 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
  * This guarantees categories and tags do not disappear when restoring snapshots from Firestore or Google Sheets.
  */
 function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
-  if (!wsState) return wsState;
-
-  const folders = wsState.folders || [];
-  const projects = wsState.projects || [];
-  const nodes = wsState.nodes || {};
-  let tagCategories = wsState.tagCategories || [];
-
-  // If root tagCategories are empty but projects have them, extract them
-  if (tagCategories.length === 0) {
-    const projectCats = projects.flatMap(p => p.tagCategories || []);
-    const seen = new Set<string>();
-    tagCategories = projectCats.filter(cat => {
-      if (seen.has(cat.id)) return false;
-      seen.add(cat.id);
-      return true;
-    });
+  if (!wsState || typeof wsState !== 'object') {
+    return wsState;
   }
 
-  // Find if there is any project specifically named "ADIB" (case-insensitive)
-  const hasAdibProject = projects.some(p => p.name.toLowerCase().includes('adib'));
+  try {
+    const folders = Array.isArray(wsState.folders) ? wsState.folders.filter(Boolean) : [];
+    const projects = Array.isArray(wsState.projects) ? wsState.projects.filter(p => p && typeof p === 'object') : [];
+    const nodes = wsState.nodes && typeof wsState.nodes === 'object' ? wsState.nodes : {};
+    let tagCategories = Array.isArray(wsState.tagCategories) ? wsState.tagCategories.filter(cat => cat && cat.id) : [];
 
-  // Hydrate empty projects, and keep tag categories separate
-  const updatedProjects = projects.map(p => {
-    // If project-specific categories are completely empty/missing but global exists,
-    // initialize them from global categories so that we don't lose anything (deep copied)
-    let pCats = p.tagCategories;
-    if (!pCats || pCats.length === 0) {
-      if (tagCategories && tagCategories.length > 0) {
-        pCats = JSON.parse(JSON.stringify(tagCategories));
-      } else {
-        pCats = [];
-      }
+    // If root tagCategories are empty but projects have them, extract them
+    if (tagCategories.length === 0) {
+      const projectCats = projects.flatMap(p => Array.isArray(p.tagCategories) ? p.tagCategories : []);
+      const seen = new Set<string>();
+      tagCategories = projectCats.filter(cat => {
+        if (!cat || !cat.id) return false;
+        if (seen.has(cat.id)) return false;
+        seen.add(cat.id);
+        return true;
+      });
     }
 
-    // Smart heuristic: if we have an ADIB project, and the current project is NOT ADIB,
-    // we filter out categories whose tags are not used in this project.
-    // This cleans up foreign categories from non-ADIB projects.
-    const isAdib = p.name.toLowerCase().includes('adib');
-    if (hasAdibProject && !isAdib) {
-      const pNodes = nodes[p.id] || [];
-      const usedTags = new Set<string>();
-      pNodes.forEach(n => {
-        if (n.tags) {
-          n.tags.forEach(t => usedTags.add(t));
+    // Find if there is any project specifically named "ADIB" (case-insensitive)
+    const hasAdibProject = projects.some(p => p && typeof p.name === 'string' && p.name.toLowerCase().includes('adib'));
+
+    // Hydrate empty projects, and keep tag categories separate
+    const updatedProjects = projects.map(p => {
+      if (!p) return p;
+      // If project-specific categories are completely empty/missing but global exists,
+      // initialize them from global categories so that we don't lose anything (deep copied)
+      let pCats = Array.isArray(p.tagCategories) ? p.tagCategories.filter(Boolean) : [];
+      if (pCats.length === 0) {
+        if (tagCategories && tagCategories.length > 0) {
+          try {
+            pCats = JSON.parse(JSON.stringify(tagCategories));
+          } catch (e) {
+            pCats = [];
+          }
+        } else {
+          pCats = [];
         }
-      });
-      pCats = pCats.filter(cat => {
-        return (cat.tags || []).some(t => usedTags.has(t));
-      });
-    }
+      }
+
+      // Smart heuristic: if we have an ADIB project, and the current project is NOT ADIB,
+      // we filter out categories whose tags are not used in this project.
+      // This cleans up foreign categories from non-ADIB projects.
+      const isAdib = typeof p.name === 'string' && p.name.toLowerCase().includes('adib');
+      if (hasAdibProject && !isAdib && p.id) {
+        const pNodes = Array.isArray(nodes[p.id]) ? nodes[p.id]! : [];
+        const usedTags = new Set<string>();
+        pNodes.forEach(n => {
+          if (n && Array.isArray(n.tags)) {
+            n.tags.forEach(t => {
+              if (t) usedTags.add(t);
+            });
+          }
+        });
+        pCats = pCats.filter(cat => {
+          if (!cat) return false;
+          return Array.isArray(cat.tags) && cat.tags.some(t => usedTags.has(t));
+        });
+      }
+
+      return {
+        ...p,
+        tagCategories: pCats
+      };
+    });
+
+    // Re-flatten to root categories to maintain absolute synchronization
+    const finalRootCats = updatedProjects.flatMap(p => p && Array.isArray(p.tagCategories) ? p.tagCategories : []);
+    const seenIds = new Set<string>();
+    const deduplicatedRootCats = finalRootCats.filter(cat => {
+      if (!cat || !cat.id) return false;
+      if (seenIds.has(cat.id)) return false;
+      seenIds.add(cat.id);
+      return true;
+    });
 
     return {
-      ...p,
-      tagCategories: pCats
+      ...wsState,
+      folders,
+      projects: updatedProjects,
+      nodes,
+      tagCategories: deduplicatedRootCats,
+      deletions: Array.isArray(wsState.deletions) ? wsState.deletions : []
     };
-  });
-
-  // Re-flatten to root categories to maintain absolute synchronization
-  const finalRootCats = updatedProjects.flatMap(p => p.tagCategories || []);
-  const seenIds = new Set<string>();
-  const deduplicatedRootCats = finalRootCats.filter(cat => {
-    if (seenIds.has(cat.id)) return false;
-    seenIds.add(cat.id);
-    return true;
-  });
-
-  return {
-    ...wsState,
-    folders,
-    projects: updatedProjects,
-    nodes,
-    tagCategories: deduplicatedRootCats,
-    deletions: wsState.deletions || []
-  };
+  } catch (err) {
+    console.error('Failed to normalize workspace state, returning loaded state unmodified:', err);
+    return wsState;
+  }
 }
 
 function getSyncHash(wsState: WorkspaceState | null | undefined): string {
@@ -774,6 +795,20 @@ export default function App() {
     text: string;
     targetTime: string;
   }[]>([]);
+  const [activeReminderIndex, setActiveReminderIndex] = useState(0);
+  const [showCustomSnooze, setShowCustomSnooze] = useState(false);
+
+  // Auto-clamp active reminder index when items get dismissed
+  useEffect(() => {
+    if (activeReminderIndex >= triggeredReminders.length) {
+      setActiveReminderIndex(Math.max(0, triggeredReminders.length - 1));
+    }
+  }, [triggeredReminders.length, activeReminderIndex]);
+
+  // Reset custom snooze view when switching between reminders
+  useEffect(() => {
+    setShowCustomSnooze(false);
+  }, [activeReminderIndex]);
 
   useEffect(() => {
     const checkReminders = () => {
@@ -892,8 +927,8 @@ export default function App() {
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
 
-  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'
-  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table'>('canvas');
+  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'
+  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'>('canvas');
   const [isMobileViewSwitcherOpen, setIsMobileViewSwitcherOpen] = useState(false);
   const [isContainerFocused, setIsContainerFocused] = useState(false);
 
@@ -3231,6 +3266,20 @@ export default function App() {
                     <Table className="w-3.5 h-3.5" />
                     <span>Таблица</span>
                   </button>
+                  <button
+                    id="view-mode-eisenhower-btn"
+                    type="button"
+                    onClick={() => setViewMode('eisenhower')}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                      viewMode === 'eisenhower'
+                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    }`}
+                    title="Матрица Эйзенхауэра"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>Эйзенхауэр</span>
+                  </button>
                 </div>
 
                 {/* Mobile Selector Dropdown: Visible on Mobile Only */}
@@ -3246,6 +3295,7 @@ export default function App() {
                     {viewMode === 'calendar' && <Calendar className="w-3.5 h-3.5" />}
                     {viewMode === 'gantt' && <GanttChart className="w-3.5 h-3.5" />}
                     {viewMode === 'table' && <Table className="w-3.5 h-3.5" />}
+                    {viewMode === 'eisenhower' && <LayoutGrid className="w-3.5 h-3.5" />}
                     
                     <span>
                       {viewMode === 'canvas' && 'Холст'}
@@ -3254,6 +3304,7 @@ export default function App() {
                       {viewMode === 'calendar' && 'Календарь'}
                       {viewMode === 'gantt' && 'Ганнт'}
                       {viewMode === 'table' && 'Таблица'}
+                      {viewMode === 'eisenhower' && 'Эйзенхауэр'}
                     </span>
                     <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMobileViewSwitcherOpen ? 'rotate-180' : ''}`} />
                   </button>
@@ -3325,7 +3376,7 @@ export default function App() {
                             setIsMobileViewSwitcherOpen(false);
                           }}
                           className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
-                            viewMode === 'gantt' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
+                            viewMode === 'gantt' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-955/25' : 'text-slate-700 dark:text-slate-300'
                           }`}
                         >
                           <GanttChart className="w-3.5 h-3.5" />
@@ -3338,11 +3389,24 @@ export default function App() {
                             setIsMobileViewSwitcherOpen(false);
                           }}
                           className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
-                            viewMode === 'table' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
+                            viewMode === 'table' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-955/25' : 'text-slate-700 dark:text-slate-300'
                           }`}
                         >
                           <Table className="w-3.5 h-3.5" />
                           <span>Таблица</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewMode('eisenhower');
+                            setIsMobileViewSwitcherOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                            viewMode === 'eisenhower' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-955/25' : 'text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <LayoutGrid className="w-3.5 h-3.5" />
+                          <span>Эйзенхауэр</span>
                         </button>
                       </div>
                     </>
@@ -3607,6 +3671,20 @@ export default function App() {
                 selectedNodeIds={selectedNodeIds}
                 onToggleSelectNode={handleToggleSelectNode}
                 onToggleSelectAll={handleToggleSelectAll}
+              />
+            ) : viewMode === 'eisenhower' ? (
+              <EisenhowerMatrixView
+                nodes={displayedNodesForViews}
+                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
+                activeProjectId={state.activeProjectId}
+                selectedNodeId={selectedNodeId}
+                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+                onSelectNode={handleSelectNode}
+                onUpdateNode={handleUpdateNode}
+                onDeleteNode={handleDeleteNode}
+                onCreateTask={handleCreateKanbanTask}
+                selectedNodeIds={selectedNodeIds}
+                searchQuery={searchQuery}
               />
             ) : (
               <MindMapCanvas
@@ -4264,117 +4342,133 @@ export default function App() {
         );
       })()}
 
-      {/* Floating Application Update Notification Banner Pop */}
-      {showVersionUpdateAlert && (
-        <div className="fixed bottom-6 right-6 max-w-sm bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-950/80 p-5 rounded-2xl shadow-[0_12px_40px_-10px_rgba(99,102,241,0.25)] z-[1000] animate-in slide-in-from-bottom duration-300 flex flex-col gap-3">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="flex-shrink-0 bg-indigo-50 dark:bg-indigo-950/50 p-1.5 rounded-lg text-indigo-600 dark:text-indigo-400">
-                <Sparkles className="w-4 h-4" />
-              </span>
-              <h4 className="font-extrabold text-sm tracking-tight text-slate-800 dark:text-slate-100">Программа обновлена!</h4>
-            </div>
-            <button 
-              onClick={() => setShowVersionUpdateAlert(false)}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          
-          <div className="space-y-2">
-            <p className="text-xs text-slate-600 dark:text-slate-350 leading-snug">
-              Успешный переход на версию <span className="font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded font-mono text-[10.5px]">v{APP_VERSION}</span>!
-            </p>
-            
-            <div className="text-[11px] text-slate-500 dark:text-slate-450 space-y-1 bg-slate-50 dark:bg-slate-950/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/50">
-              <p className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 mb-1">Что изменилось:</p>
-              <ul className="space-y-1.5 pl-1.5 list-disc list-inside">
-                <li><span className="font-semibold text-slate-700 dark:text-slate-300">Подзадачи:</span> Добавлена новая Кнопка редактирования прямо в список подзадач.</li>
-                <li><span className="font-semibold text-slate-700 dark:text-slate-300">Контейнеры:</span> Восстановлено быстрое удаление без лишних всплывающих окон.</li>
-                <li><span className="font-semibold text-slate-700 dark:text-slate-300">Версионирование:</span> Номер версии ПО выведен на боковую панель.</li>
-              </ul>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setShowVersionUpdateAlert(false)}
-            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md active:scale-98 cursor-pointer"
-          >
-            Понятно, спасибо
-          </button>
-        </div>
-      )}
-
-      {/* Floating System Notification Setup Prompt Banner */}
-      {showNotificationPrompt && (
-        <div className="fixed bottom-6 right-6 max-w-sm bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-950/80 p-5 rounded-2xl shadow-[0_12px_45px_-10px_rgba(99,102,241,0.3)] z-[1001] animate-in slide-in-from-bottom duration-300 flex flex-col gap-3">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="flex-shrink-0 bg-indigo-50 dark:bg-indigo-950/50 p-1.5 rounded-lg text-indigo-650 dark:text-indigo-400">
-                <Bell className="w-4.5 h-4.5 animate-bounce" />
-              </span>
-              <h4 className="font-extrabold text-sm tracking-tight text-slate-800 dark:text-slate-100">Включить уведомления?</h4>
-            </div>
-            <button 
-              onClick={handleDismissNotificationPrompt}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              title="Закрыть предложение"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          
-          <div className="space-y-2">
-            <p className="text-xs text-slate-605 dark:text-slate-350 leading-relaxed">
-              Разрешите системные уведомления, чтобы получать мгновенные напоминания о дедлайнах и важных задачах прямо на вашем телефоне или компьютере, даже когда сайт закрыт!
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              onClick={handleDismissNotificationPrompt}
-              className="py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-98"
-            >
-              Позже
-            </button>
-            <button
-              onClick={handleRequestNotificationPermission}
-              className="py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md active:scale-98 cursor-pointer"
-            >
-              Включить
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ================= ACTIVE REMINDERS FLOATING NOTIFICATIONS OVERLAY ================= */}
-      {triggeredReminders.length > 0 && (
-        <div className="fixed bottom-6 right-6 z-[9999] max-w-sm w-full space-y-3 animate-fade-in pointer-events-auto">
-          {triggeredReminders.map((reminder) => {
-            const targetList = state.nodes[reminder.projectId] || [];
-            const targetNode = targetList.find(n => n.id === reminder.nodeId);
-            const currentReminderDate = targetNode?.reminderDate || reminder.targetTime.split(' ')[0] || '';
-            const currentReminderTime = targetNode?.reminderTime || reminder.targetTime.split(' ')[1] || '';
+      {triggeredReminders.length > 0 && (() => {
+        const reminder = triggeredReminders[activeReminderIndex] || triggeredReminders[0];
+        if (!reminder) return null;
 
-            return (
-              <div 
-                key={reminder.nodeId}
-                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-4 flex flex-col gap-3 relative overflow-hidden transition-all duration-300 md:max-w-[360px] "
-              >
-                {/* Highlight left accent entry indicator */}
-                <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-rose-550 dark:bg-rose-500 animate-pulse" />
+        const targetList = state.nodes[reminder.projectId] || [];
+        const targetNode = targetList.find(n => n.id === reminder.nodeId);
+        const currentReminderDate = targetNode?.reminderDate || reminder.targetTime.split(' ')[0] || '';
+        const currentReminderTime = targetNode?.reminderTime || reminder.targetTime.split(' ')[1] || '';
+        const targetProject = state.projects.find(p => p.id === reminder.projectId);
+        const projectName = targetProject ? targetProject.name : 'Личное';
 
-                <div className="flex items-start justify-between pl-2">
-                  <div className="flex items-center gap-2">
-                    <span className="flex-shrink-0 bg-rose-50 dark:bg-rose-950/40 p-1.5 rounded-xl text-rose-555 dark:text-rose-400">
-                      <BellRing className="w-4.5 h-4.5 animate-bounce" />
+        // Select color based on priority
+        let priorityColor = 'border-slate-400';
+        let priorityBg = 'bg-slate-500';
+        let priorityText = 'Без приоритета';
+        if (targetNode?.priority === 'urgent') {
+          priorityColor = 'border-rose-500';
+          priorityBg = 'bg-rose-500';
+          priorityText = 'Срочно';
+        } else if (targetNode?.priority === 'high') {
+          priorityColor = 'border-orange-500';
+          priorityBg = 'bg-orange-500';
+          priorityText = 'Высокий';
+        } else if (targetNode?.priority === 'medium') {
+          priorityColor = 'border-amber-500';
+          priorityBg = 'bg-amber-500';
+          priorityText = 'Средний';
+        } else if (targetNode?.priority === 'low') {
+          priorityColor = 'border-blue-500';
+          priorityBg = 'bg-blue-500';
+          priorityText = 'Низкий';
+        }
+
+        // Quick snooze helper from CURRENT exact time to guarantee snooze is in future
+        const handleQuickSnooze = (mins: number) => {
+          if (!targetNode) return;
+          try {
+            const baseTime = new Date();
+            const updatedTime = new Date(baseTime.getTime() + mins * 60 * 1000);
+            const nextDateStr = updatedTime.getFullYear() + '-' + String(updatedTime.getMonth() + 1).padStart(2, '0') + '-' + String(updatedTime.getDate()).padStart(2, '0');
+            const nextTimeStr = String(updatedTime.getHours()).padStart(2, '0') + ':' + String(updatedTime.getMinutes()).padStart(2, '0');
+            
+            updateNodeInProject(reminder.projectId, {
+              ...targetNode,
+              reminderDate: nextDateStr,
+              reminderTime: nextTimeStr,
+              reminderDismissed: false
+            });
+            setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+          } catch (err) { console.error(err); }
+        };
+
+        // Snooze all reminders at once by 15 minutes helper
+        const handleSnoozeAll = () => {
+          triggeredReminders.forEach(rem => {
+            const list = state.nodes[rem.projectId] || [];
+            const node = list.find(n => n.id === rem.nodeId);
+            if (node) {
+              const baseTime = new Date();
+              const updatedTime = new Date(baseTime.getTime() + 15 * 60 * 1000);
+              const nextDateStr = updatedTime.getFullYear() + '-' + String(updatedTime.getMonth() + 1).padStart(2, '0') + '-' + String(updatedTime.getDate()).padStart(2, '0');
+              const nextTimeStr = String(updatedTime.getHours()).padStart(2, '0') + ':' + String(updatedTime.getMinutes()).padStart(2, '0');
+              
+              updateNodeInProject(rem.projectId, {
+                ...node,
+                reminderDate: nextDateStr,
+                reminderTime: nextTimeStr,
+                reminderDismissed: false
+              });
+            }
+          });
+          setTriggeredReminders([]);
+        };
+
+        return (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] max-w-[390px] w-[calc(100%-2rem)] px-2 md:px-0 pointer-events-auto animate-in slide-in-from-bottom duration-300">
+            <div className={`bg-white dark:bg-slate-900 border-l-[6px] ${priorityColor} border-t border-r border-b border-slate-200 dark:border-slate-800 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.45)] overflow-hidden flex flex-col gap-3 p-4`}>
+              
+              {/* Header inside the popup */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800/80">
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <span className="flex h-3 w-3 absolute -top-0.5 -right-0.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
                     </span>
-                    <div>
-                      <h4 className="font-extrabold text-xs tracking-tight text-slate-400 dark:text-slate-500 uppercase">Напоминание!</h4>
-                      <p className="text-[9.5px] text-slate-400 dark:text-slate-505 font-mono font-bold">время срабатывания</p>
-                    </div>
+                    <span className="flex-shrink-0 bg-rose-50 dark:bg-rose-950/40 p-1.5 rounded-xl text-rose-600 dark:text-rose-400 block">
+                      <BellRing className="w-4 h-4 animate-bounce" />
+                    </span>
                   </div>
+                  <div>
+                    <h4 className="font-extrabold text-[10px] tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+                      НАПОМИНАНИЕ
+                    </h4>
+                    {triggeredReminders.length > 1 && (
+                      <span className="text-[10px] text-indigo-650 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded">
+                        В очереди: {triggeredReminders.length}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {triggeredReminders.length > 1 && (
+                    <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 p-1 rounded-lg">
+                      <button
+                        disabled={activeReminderIndex === 0}
+                        onClick={() => setActiveReminderIndex(prev => prev - 1)}
+                        className="p-1 rounded hover:bg-slate-250 dark:hover:bg-slate-705 disabled:opacity-30 transition-colors cursor-pointer"
+                        title="Предыдущее"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+                      </button>
+                      <span className="text-[10.5px] font-bold font-mono px-1 select-none text-slate-700 dark:text-slate-300">
+                        {activeReminderIndex + 1}/{triggeredReminders.length}
+                      </span>
+                      <button
+                        disabled={activeReminderIndex === triggeredReminders.length - 1}
+                        onClick={() => setActiveReminderIndex(prev => prev + 1)}
+                        className="p-1 rounded hover:bg-slate-250 dark:hover:bg-slate-705 disabled:opacity-30 transition-colors cursor-pointer"
+                        title="Следующее"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+                      </button>
+                    </div>
+                  )}
 
                   <button 
                     onClick={() => {
@@ -4386,141 +4480,175 @@ export default function App() {
                       }
                       setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
                     }}
-                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    className="text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer animate-pulse"
                     title="Закрыть напоминание"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
+              </div>
 
-                <div className="pl-2">
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-100 leading-snug line-clamp-3">
+              {/* Task Core Info */}
+              <div className="flex items-start gap-3 pl-1 pt-0.5">
+                {/* Complete checkbox button */}
+                <button
+                  onClick={() => {
+                    if (targetNode) {
+                      updateNodeInProject(reminder.projectId, {
+                        ...targetNode,
+                        completed: true,
+                        reminderDismissed: true
+                      });
+                    }
+                    setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                  }}
+                  className="mt-0.5 flex-shrink-0 w-[22px] h-[22px] rounded-full border-2 border-slate-310 dark:border-slate-705 hover:border-emerald-500 dark:hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center justify-center group/check transition-all duration-200 cursor-pointer"
+                  title="Выполнить задачу и закрыть"
+                >
+                  <Check className="w-3.5 h-3.5 text-emerald-500 opacity-0 group-hover/check:opacity-100 transition-opacity" />
+                </button>
+
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-800 dark:text-slate-100 text-[14px] leading-snug break-words">
                     {reminder.text}
                   </p>
-                </div>
+                  
+                  {targetNode?.notes ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-h-[80px] overflow-y-auto bg-slate-50 dark:bg-slate-950/20 p-2 rounded-lg border border-slate-100 dark:border-slate-850/50 font-sans leading-relaxed whitespace-pre-wrap">
+                      {targetNode.notes}
+                    </p>
+                  ) : null}
 
-                {/* Edit reminder Date & Time block */}
-                <div className="pl-2 space-y-2 bg-slate-50 dark:bg-slate-950/45 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/80">
-                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                    Поменять дату и время напом.:
+                  {/* Task Metadata pills */}
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-0.5">
+                    <span className="text-[9.5px] bg-indigo-50 dark:bg-indigo-950/30 text-indigo-650 dark:text-indigo-400 border border-indigo-100/60 dark:border-indigo-900/40 px-2 py-0.5 rounded-full font-bold">
+                      📦 {projectName}
+                    </span>
+                    <span className={`text-[9.5px] px-2 py-0.5 rounded-full font-bold border ${
+                      targetNode?.priority === 'urgent' ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-450 border-rose-200 dark:border-rose-900/50' :
+                      targetNode?.priority === 'high' ? 'bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-450 border-orange-200 dark:border-orange-900/50' :
+                      targetNode?.priority === 'medium' ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-450 border-amber-200 dark:border-amber-900/50' :
+                      targetNode?.priority === 'low' ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-450 border-blue-200 dark:border-blue-900/50' :
+                      'bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}>
+                      ⚡ {priorityText}
+                    </span>
+                    {targetNode?.dueDate && (
+                      <span className="text-[9.5px] bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-100/60 dark:border-rose-900/40 px-2 py-0.5 rounded-full font-bold">
+                        🕒 {targetNode.dueDate} {targetNode.dueTime || ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Snooze Options Panels */}
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-2.5 mt-1 space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                    ОТЛОЖИТЬ НАПОМИНАНИЕ:
                   </span>
-
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <input 
-                      type="date"
-                      value={currentReminderDate}
-                      onChange={(e) => {
-                        const newDate = e.target.value;
-                        if (!newDate || !targetNode) return;
-                        updateNodeInProject(reminder.projectId, {
-                          ...targetNode,
-                          reminderDate: newDate,
-                          reminderDismissed: false
-                        });
-                        const now = new Date();
-                        const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-                        const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-                        const inputDateTime = new Date(`${newDate}T${currentReminderTime}`);
-                        const currentDateTime = new Date(`${todayStr}T${timeStr}`);
-                        if (inputDateTime > currentDateTime) {
-                          setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
-                        }
-                      }}
-                      className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-705 dark:text-slate-300 rounded-lg p-1 px-2 focus:ring-1 focus:ring-rose-500 cursor-pointer"
-                    />
-
-                    <input 
-                      type="time"
-                      value={currentReminderTime}
-                      onChange={(e) => {
-                        const newTime = e.target.value;
-                        if (!newTime || !targetNode) return;
-                        updateNodeInProject(reminder.projectId, {
-                          ...targetNode,
-                          reminderTime: newTime,
-                          reminderDismissed: false
-                        });
-                        const now = new Date();
-                        const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-                        const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-                        const inputDateTime = new Date(`${currentReminderDate}T${newTime}`);
-                        const currentDateTime = new Date(`${todayStr}T${timeStr}`);
-                        if (inputDateTime > currentDateTime) {
-                          setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
-                        }
-                      }}
-                      className="text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-705 dark:text-slate-300 rounded-lg p-1 px-2 focus:ring-1 focus:ring-rose-500 cursor-pointer"
-                    />
-                  </div>
-
-                  {/* Postpone presets */}
-                  <div className="flex items-center gap-1.5 pt-0.5">
-                    <span className="text-[9px] font-semibold text-slate-400">Отложить на:</span>
-                    <button
-                      onClick={() => {
-                        if (!targetNode) return;
-                        try {
-                          const baseTime = new Date(`${currentReminderDate}T${currentReminderTime}`);
-                          const updatedTime = new Date(baseTime.getTime() + 15 * 60 * 1000);
-                          const nextDateStr = updatedTime.getFullYear() + '-' + String(updatedTime.getMonth() + 1).padStart(2, '0') + '-' + String(updatedTime.getDate()).padStart(2, '0');
-                          const nextTimeStr = String(updatedTime.getHours()).padStart(2, '0') + ':' + String(updatedTime.getMinutes()).padStart(2, '0');
-                          updateNodeInProject(reminder.projectId, {
-                            ...targetNode,
-                            reminderDate: nextDateStr,
-                            reminderTime: nextTimeStr,
-                            reminderDismissed: false
-                          });
-                          setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
-                        } catch (err) { console.error(err); }
-                      }}
-                      className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/25 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-450 text-[9.5px] rounded border border-rose-100 dark:border-rose-900/40 cursor-pointer transition font-bold"
-                    >
-                      +15м
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!targetNode) return;
-                        try {
-                          const baseTime = new Date(`${currentReminderDate}T${currentReminderTime}`);
-                          const updatedTime = new Date(baseTime.getTime() + 60 * 60 * 1000);
-                          const nextDateStr = updatedTime.getFullYear() + '-' + String(updatedTime.getMonth() + 1).padStart(2, '0') + '-' + String(updatedTime.getDate()).padStart(2, '0');
-                          const nextTimeStr = String(updatedTime.getHours()).padStart(2, '0') + ':' + String(updatedTime.getMinutes()).padStart(2, '0');
-                          updateNodeInProject(reminder.projectId, {
-                            ...targetNode,
-                            reminderDate: nextDateStr,
-                            reminderTime: nextTimeStr,
-                            reminderDismissed: false
-                          });
-                          setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
-                        } catch (err) { console.error(err); }
-                      }}
-                      className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/25 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-450 text-[9.5px] rounded border border-rose-100 dark:border-rose-900/40 cursor-pointer transition font-bold"
-                    >
-                      +1ч
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!targetNode) return;
-                        try {
-                          const baseTime = new Date(`${currentReminderDate}T${currentReminderTime}`);
-                          const updatedTime = new Date(baseTime.getTime() + 24 * 60 * 60 * 1000);
-                          const nextDateStr = updatedTime.getFullYear() + '-' + String(updatedTime.getMonth() + 1).padStart(2, '0') + '-' + String(updatedTime.getDate()).padStart(2, '0');
-                          const nextTimeStr = String(updatedTime.getHours()).padStart(2, '0') + ':' + String(updatedTime.getMinutes()).padStart(2, '0');
-                          updateNodeInProject(reminder.projectId, {
-                            ...targetNode,
-                            reminderDate: nextDateStr,
-                            reminderTime: nextTimeStr,
-                            reminderDismissed: false
-                          });
-                          setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
-                        } catch (err) { console.error(err); }
-                      }}
-                      className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/25 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-450 text-[9.5px] rounded border border-rose-100 dark:border-rose-900/40 cursor-pointer transition font-bold"
-                    >
-                      +1д
-                    </button>
-                  </div>
+                  
+                  {/* Toggle custom date pickers */}
+                  <button
+                    onClick={() => setShowCustomSnooze(!showCustomSnooze)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                      showCustomSnooze 
+                        ? 'bg-rose-500 text-white shadow-sm' 
+                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-705 dark:text-slate-350'
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>{showCustomSnooze ? 'Быстро' : 'Вручную'}</span>
+                  </button>
                 </div>
+
+                {!showCustomSnooze ? (
+                  /* Standard Quick Snooze presets with comfortable tap-friendly buttons */
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      onClick={() => handleQuickSnooze(15)}
+                      className="px-2 py-2 bg-slate-50 hover:bg-indigo-50 dark:bg-slate-950/30 dark:hover:bg-indigo-950/40 text-slate-700 hover:text-indigo-650 dark:text-slate-300 dark:hover:text-indigo-400 text-[11px] rounded-xl border border-slate-150 dark:border-slate-800/80 cursor-pointer font-bold transition-all active:scale-97"
+                    >
+                      +15 минут
+                    </button>
+                    <button
+                      onClick={() => handleQuickSnooze(30)}
+                      className="px-2 py-2 bg-slate-50 hover:bg-indigo-50 dark:bg-slate-950/30 dark:hover:bg-indigo-950/40 text-slate-700 hover:text-indigo-650 dark:text-slate-300 dark:hover:text-indigo-400 text-[11px] rounded-xl border border-slate-150 dark:border-slate-800/80 cursor-pointer font-bold transition-all active:scale-97"
+                    >
+                      +30 минут
+                    </button>
+                    <button
+                      onClick={() => handleQuickSnooze(60)}
+                      className="px-2 py-2 bg-slate-50 hover:bg-indigo-50 dark:bg-slate-950/30 dark:hover:bg-indigo-950/40 text-slate-700 hover:text-indigo-650 dark:text-slate-300 dark:hover:text-indigo-400 text-[11px] rounded-xl border border-slate-150 dark:border-slate-800/80 cursor-pointer font-bold transition-all active:scale-97"
+                    >
+                      +1 час
+                    </button>
+                    <button
+                      onClick={() => handleQuickSnooze(180)}
+                      className="px-2 py-2 bg-slate-50 hover:bg-indigo-50 dark:bg-slate-950/30 dark:hover:bg-indigo-950/40 text-slate-700 hover:text-indigo-650 dark:text-slate-300 dark:hover:text-indigo-400 text-[11px] rounded-xl border border-slate-150 dark:border-slate-800/80 cursor-pointer font-bold transition-all active:scale-97"
+                    >
+                      +3 часа
+                    </button>
+                    <button
+                      onClick={() => handleQuickSnooze(1440)}
+                      className="px-2 py-2 bg-slate-50 hover:bg-indigo-50 dark:bg-slate-950/30 dark:hover:bg-indigo-950/40 text-slate-700 hover:text-indigo-650 dark:text-slate-300 dark:hover:text-indigo-400 text-[11px] rounded-xl border border-slate-150 dark:border-slate-800/80 cursor-pointer font-bold transition-all active:scale-97 col-span-2 text-center"
+                    >
+                      Отложить на 1 день (24 часа)
+                    </button>
+                  </div>
+                ) : (
+                  /* Custom Snooze date time panel */
+                  <div className="bg-slate-50 dark:bg-slate-950/50 border border-slate-150 dark:border-slate-800 p-2.5 rounded-xl space-y-2.5">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block">ДАТА:</label>
+                        <input 
+                          type="date"
+                          value={currentReminderDate}
+                          onChange={(e) => {
+                            const newDate = e.target.value;
+                            if (!newDate || !targetNode) return;
+                            updateNodeInProject(reminder.projectId, {
+                              ...targetNode,
+                              reminderDate: newDate,
+                              reminderDismissed: false
+                            });
+                          }}
+                          className="w-full text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-705 dark:text-slate-200 rounded-lg p-1.5 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block">ВРЕМЯ:</label>
+                        <input 
+                          type="time"
+                          value={currentReminderTime}
+                          onChange={(e) => {
+                            const newTime = e.target.value;
+                            if (!newTime || !targetNode) return;
+                            updateNodeInProject(reminder.projectId, {
+                              ...targetNode,
+                              reminderTime: newTime,
+                              reminderDismissed: false
+                            });
+                          }}
+                          className="w-full text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-705 dark:text-slate-200 rounded-lg p-1.5 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                    
+                    <button
+                      onClick={() => {
+                        // Dismiss the visual reminder block once custom input is confirmed
+                        setTriggeredReminders(prev => prev.filter(r => r.nodeId !== reminder.nodeId));
+                      }}
+                      className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-sm transition-all active:scale-98 text-center font-mono uppercase"
+                    >
+                      Применить и закрыть
+                    </button>
+                  </div>
+                )}
 
                 <div className="pl-2 grid grid-cols-2 gap-2 mt-1">
                   <button
@@ -4556,10 +4684,10 @@ export default function App() {
                   </button>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
