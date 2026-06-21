@@ -30,6 +30,7 @@ import {
   Upload,
   Download,
   Info,
+  Key,
   FileSpreadsheet,
   Eye,
   Check,
@@ -438,6 +439,29 @@ export default function App() {
   const [forceCloudSyncLoading, setForceCloudSyncLoading] = useState<'upload' | 'download' | null>(null);
   const [forceCloudSyncFeedback, setForceCloudSyncFeedback] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  // Symmetrical Device Sync Room pairing (6-digit / custom name) states
+  const [roomSyncId, setRoomSyncId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('milli_room_sync_id');
+      if (saved && saved.trim()) return saved;
+      const gen = Math.floor(100000 + Math.random() * 900000).toString();
+      localStorage.setItem('milli_room_sync_id', gen);
+      return gen;
+    } catch {
+      return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+  });
+  const [roomSyncAuto, setRoomSyncAuto] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('milli_room_sync_auto') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [roomSyncStatus, setRoomSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle');
+  const [roomSyncFeedback, setRoomSyncFeedback] = useState<string | null>(null);
+  const [syncTab, setSyncTab] = useState<'pairing' | 'firebase'>('pairing');
   const [syncStatus, setSyncStatus] = useState<{
     local: 'saved' | 'saving' | 'error';
     firebase: 'idle' | 'saved' | 'syncing' | 'error';
@@ -1039,6 +1063,169 @@ export default function App() {
   
   const unsyncedEditsCountRef = React.useRef(unsyncedEditsCount);
   unsyncedEditsCountRef.current = unsyncedEditsCount;
+
+  // Zero-auth sync room helper functions & effects
+  const lastRoomStateRef = React.useRef<any>(null);
+
+  const getMergedRoomState = (cloudData: any): WorkspaceState => {
+    let localDeletions: DeletionRecord[] = [];
+    try {
+      const saved = localStorage.getItem('milli_deleted_registry') || '[]';
+      localDeletions = JSON.parse(saved);
+    } catch {}
+
+    const cloudDeletions: DeletionRecord[] = cloudData.deletions || [];
+    
+    const delMap = new Map<string, DeletionRecord>();
+    localDeletions.forEach(d => {
+      if (d && d.id) delMap.set(`${d.type}:${d.id}`, d);
+    });
+    cloudDeletions.forEach(d => {
+      if (d && d.id) {
+        const key = `${d.type}:${d.id}`;
+        const existing = delMap.get(key);
+        if (!existing || new Date(d.deletedAt || 0).getTime() > new Date(existing.deletedAt || 0).getTime()) {
+          delMap.set(key, d);
+        }
+      }
+    });
+    const mergedDeletions = Array.from(delMap.values());
+    try {
+      localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
+    } catch {}
+
+    const isDeleted = (type: string, id: string) => {
+      return mergedDeletions.some(d => d.type === type && d.id === id);
+    };
+
+    const filteredFolders = (cloudData.folders || []).filter((f: any) => !isDeleted('folder', f.id));
+    const filteredProjects = (cloudData.projects || []).filter((p: any) => !isDeleted('project', p.id));
+    const filteredNodes: Record<string, TaskNode[]> = {};
+    Object.keys(cloudData.nodes || {}).forEach(pid => {
+      const list = (cloudData.nodes[pid] || []).filter((n: any) => !isDeleted('node', n.id));
+      if (list.length > 0) {
+        filteredNodes[pid] = list;
+      }
+    });
+    const filteredTagCats = (cloudData.tagCategories || []).filter((tc: any) => !isDeleted('tagCategory', tc.id));
+
+    const cloudState: WorkspaceState = {
+      folders: filteredFolders,
+      projects: filteredProjects,
+      nodes: filteredNodes,
+      activeProjectId: cloudData.activeProjectId || null,
+      tagCategories: filteredTagCats,
+      deletions: mergedDeletions
+    };
+
+    const normalizedCloud = normalizeWorkspaceState(cloudState);
+    return mergeWorkspaceStates(stateRef.current, normalizedCloud, mergedDeletions);
+  };
+
+  const saveStateToSyncRoom = async (roomIdToUse?: string, forceState?: WorkspaceState) => {
+    const id = (roomIdToUse || roomSyncId || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!id) return;
+    setRoomSyncStatus('syncing');
+    setRoomSyncFeedback(null);
+    try {
+      const stateToSave = forceState || stateRef.current;
+      const res = await fetch('/api/sync/room/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: id, state: stateToSave })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Server error saving state');
+      }
+      setRoomSyncStatus('saved');
+      setRoomSyncFeedback(`Данные выгружены в комнату "${id}" (${new Date().toLocaleTimeString()})`);
+      localStorage.setItem('milli_room_sync_id', id);
+    } catch (err: any) {
+      console.error('[Sync Room Save Error]:', err);
+      setRoomSyncStatus('error');
+      setRoomSyncFeedback(`Ошибка выгрузки: ${err?.message || String(err)}`);
+    }
+  };
+
+  const loadStateFromSyncRoom = async (roomIdToUse?: string) => {
+    const id = (roomIdToUse || roomSyncId || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!id) return;
+    setRoomSyncStatus('syncing');
+    setRoomSyncFeedback(null);
+    try {
+      const res = await fetch(`/api/sync/room/load/${id}`);
+      if (res.status === 404) {
+        // If the room doesn't exist yet on the server, we initialize/upload to it!
+        await saveStateToSyncRoom(id);
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Server error loading state');
+      }
+      if (data.state) {
+        const merged = getMergedRoomState(data.state);
+        const mergedHash = getSyncHash(merged);
+        const localHash = getSyncHash(stateRef.current);
+        const cloudHash = getSyncHash(data.state);
+
+        let didUpdate = false;
+        if (mergedHash !== localHash) {
+          ignoreNextStateChangeRef.current = true;
+          setRawState(merged);
+          didUpdate = true;
+        }
+
+        // If after merge, local has items that need to go back to the cloud, push them!
+        if (mergedHash !== cloudHash) {
+          saveStateToSyncRoom(id, merged);
+        } else {
+          setRoomSyncStatus('saved');
+          setRoomSyncFeedback(didUpdate 
+            ? `Данные синхронизированы и объединены с изменениями из комнаты "${id}"!`
+            : `Уже синхронизировано с комнатой "${id}".`
+          );
+        }
+        localStorage.setItem('milli_room_sync_id', id);
+      }
+    } catch (err: any) {
+      console.error('[Sync Room Load Error]:', err);
+      setRoomSyncStatus('error');
+      setRoomSyncFeedback(err?.message || String(err));
+    }
+  };
+
+  // Safe debounce auto-uploader for custom pairing sync-room
+  useEffect(() => {
+    if (!roomSyncAuto || !roomSyncId) return;
+    const isFirstTime = lastRoomStateRef.current === null;
+    const stateChanged = !isFirstTime && state !== lastRoomStateRef.current;
+    lastRoomStateRef.current = state;
+    if (stateChanged) {
+      const id = roomSyncId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      const timer = setTimeout(() => {
+        saveStateToSyncRoom(id, state);
+      }, 2500); // 2.5s debounce for Room Autosave
+      return () => clearTimeout(timer);
+    }
+  }, [state, roomSyncAuto, roomSyncId]);
+
+  // Safe window load and focus automatic merger logic
+  useEffect(() => {
+    if (!roomSyncAuto || !roomSyncId) return;
+    const id = roomSyncId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    
+    // Auto-fetch from room on load
+    loadStateFromSyncRoom(id);
+
+    // Auto-fetch from room on focus/tab activate
+    const handleFocus = () => {
+      loadStateFromSyncRoom(id);
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [roomSyncAuto, roomSyncId]);
 
   // 3. Real-time Firestore snapshot synchronization for instant Desktop-to-Mobile and Mobile-To-Desktop updates
   useEffect(() => {
@@ -3783,7 +3970,7 @@ export default function App() {
             <span className={`text-[9px] font-extrabold uppercase tracking-wider ${globalPomo.isBreak ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-450'}`}>
               {globalPomo.isBreak ? '☕ Фокус окончен / Перерыв' : '🎯 Идет focus'}
             </span>
-            <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[155px] leading-tight flex items-center">
+            <span className="text-[11px] font-bold text-slate-800 dark:text-slate-205 truncate max-w-[155px] leading-tight flex items-center">
               {globalPomo.nodeText || 'Фокусировка'}
             </span>
           </div>
@@ -3822,7 +4009,7 @@ export default function App() {
 
         return (
           <div 
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[999] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[999] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200 font-sans"
             onClick={() => setIsSyncMenuOpen(false)}
           >
             <div 
@@ -3830,7 +4017,7 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
-              <div className="border-b border-slate-200 dark:border-slate-800 px-6 py-4.5 flex items-center justify-between bg-slate-50 dark:bg-slate-900/60">
+              <div className="border-b border-slate-200 dark:border-slate-800 px-6 py-4.5 flex items-center justify-between bg-slate-50 dark:bg-slate-900/60 font-sans">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl shrink-0">
                     <Cloud className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -3840,7 +4027,7 @@ export default function App() {
                       Резервное копирование и дельта-синхронизация
                     </h3>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                      Взаимный обмен изменениями напрямую с вашей личной Google Таблицей
+                      Мгновенный обмен и слияние изменений между вашим ПК и Телефоном
                     </p>
                   </div>
                 </div>
@@ -3853,217 +4040,416 @@ export default function App() {
                 </button>
               </div>
 
+              {/* Modal Tabs Selection */}
+              <div className="flex border-b border-slate-200 dark:border-slate-800 px-6 bg-slate-50/50 dark:bg-slate-900/40 font-sans shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSyncTab('pairing')}
+                  className={`py-3 px-4 font-bold text-xs border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                    syncTab === 'pairing'
+                      ? 'border-indigo-600 dark:text-indigo-400 text-indigo-600 dark:text-indigo-400'
+                      : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Key className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span>1. По коду (РЕКОМЕНДУЕТСЯ)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSyncTab('firebase')}
+                  className={`py-3 px-4 font-bold text-xs border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                    syncTab === 'firebase'
+                      ? 'border-indigo-600 dark:text-indigo-400 text-indigo-600 dark:text-indigo-400'
+                      : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Database className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span>2. Firebase Cloud</span>
+                </button>
+              </div>
+
               {/* Modal Content Scroll */}
               <div className="p-6 overflow-y-auto space-y-5.5 text-xs text-slate-700 dark:text-slate-300">
                 
-                {/* Connection status section */}
-                <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block mb-1">
-                      СТАТУС ПОДКЛЮЧЕНИЯ:
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${
-                        hasSyncOrAuthError 
-                          ? 'bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]' 
-                          : currentUser 
-                            ? 'bg-emerald-500 animate-pulse' 
-                            : 'bg-amber-500 animate-ping'
-                      }`} />
-                      <span className="font-extrabold text-xs text-slate-800 dark:text-slate-150">
-                        {hasSyncOrAuthError ? 'Ошибка синхронизации / авторизации' : currentUser ? 'Авторизован (Облачная синхронизация)' : 'Не авторизован (Локальный буфер)'}
-                      </span>
-                    </div>
-                    
-                    {currentUser && (
-                      <div className="mt-3 flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/50 rounded-lg max-w-xs">
-                        {currentUser.photoURL ? (
-                          <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-slate-200" />
-                        ) : (
-                          <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 font-bold flex items-center justify-center text-[10px] text-indigo-700 dark:text-indigo-400">
-                            {currentUser.email?.[0].toUpperCase() || 'U'}
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <p className="font-bold text-slate-700 dark:text-slate-200 truncate leading-none text-[11px]">{currentUser.displayName || 'Пользователь Google'}</p>
-                          <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">{currentUser.email}</p>
-                          <p className="text-[8.5px] text-indigo-650 dark:text-indigo-400 font-mono leading-none mt-1 select-all" title="Ваш уникальный UID в системе Firebase">
-                            UID: {currentUser.uid}
+                {/* 1. ROOM PAIRING SYNCHRONIZATION TAB */}
+                {syncTab === 'pairing' && (
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    <div className="bg-indigo-50/30 dark:bg-indigo-950/10 border border-indigo-150/70 dark:border-indigo-900/30 p-4.5 rounded-2xl space-y-4">
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg text-indigo-700 dark:text-indigo-300 shrink-0">
+                          <Key className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">
+                            Моментальное объединение баз по синхро-коду
+                          </h4>
+                          <p className="text-[11.5px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                            Самый стабильный и простой способ связать ПК и сотовый телефон под одной базой. Работает напрямую через локальный контейнер и полностью игнорирует ограничения сторонних cookies, CORS, Safari и блокировщиков рекламы.
                           </p>
                         </div>
                       </div>
-                    )}
-                  </div>
 
-                  <div>
-                    {currentUser ? (
-                      showLogoutConfirm ? (
-                        <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-1 duration-150">
-                          <span className="text-[10px] text-rose-500 font-extrabold max-w-[120px] leading-tight">Выйти?</span>
+                      {/* Code Input Form */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4.5 pt-1">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            Ваш Ключ/Код синхронизации:
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={roomSyncId}
+                              onChange={(e) => setRoomSyncId(e.target.value.trim().toUpperCase())}
+                              placeholder="Например: 123456"
+                              className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-805 rounded-xl py-2 px-3 focus:ring-1 focus:ring-indigo-500 focus:outline-none cursor-text text-xs font-bold font-mono tracking-widest text-slate-800 dark:text-slate-100 w-full"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const gen = Math.floor(100000 + Math.random() * 900000).toString();
+                                setRoomSyncId(gen);
+                                localStorage.setItem('milli_room_sync_id', gen);
+                              }}
+                              title="Сгенерировать случайный числовой код"
+                              className="px-3 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-750 rounded-xl text-xs font-bold cursor-pointer transition-colors shrink-0"
+                            >
+                              ⚙️ Случайный
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 leading-snug">
+                            Вы можете использовать сгенерированный код или написать своё кодовое слово (например: <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[9px]">my-tasks-base</code>)
+                          </p>
+                        </div>
+
+                        {/* Background autosave selector */}
+                        <div className="flex flex-col justify-start">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            Фоновая авто-синхронизация:
+                          </label>
+                          <label className="flex items-start gap-2.5 p-2.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/50 rounded-xl cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={roomSyncAuto}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setRoomSyncAuto(checked);
+                                localStorage.setItem('milli_room_sync_auto', String(checked));
+                                if (checked) {
+                                  saveStateToSyncRoom(roomSyncId);
+                                }
+                              }}
+                              className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer mt-0.5"
+                            />
+                            <div className="min-w-0">
+                              <span className="font-bold text-xs text-slate-700 dark:text-slate-200 block leading-tight">
+                                Включить фоновый автообмен
+                              </span>
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-tight mt-0.5">
+                                Будет автоматически выгружать базу в облачный буфер при изменениях, и скачивать обновления при открытии/фокусе приложения на любом из ваших экранов.
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Sync triggers */}
+                      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-indigo-100/50 dark:border-indigo-900/30">
+                        <button
+                          type="button"
+                          disabled={roomSyncStatus === 'syncing'}
+                          onClick={() => saveStateToSyncRoom(roomSyncId)}
+                          className="py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all hover:scale-[1.01] flex items-center justify-center gap-1.5 disabled:opacity-50"
+                        >
+                          {roomSyncStatus === 'syncing' ? 'Сохранение...' : 'Выгрузить в Интернет'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={roomSyncStatus === 'syncing'}
+                          onClick={() => loadStateFromSyncRoom(roomSyncId)}
+                          className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all hover:scale-[1.01] flex items-center justify-center gap-1.5 disabled:opacity-50"
+                        >
+                          {roomSyncStatus === 'syncing' ? 'Загрузка...' : 'Загрузить & Объединить'}
+                        </button>
+                      </div>
+
+                      {/* Room Sync feedback states */}
+                      {roomSyncFeedback && (
+                        <div className={`p-3 rounded-xl text-[11px] font-bold flex items-start gap-2 animate-in fade-in duration-150 ${
+                          roomSyncStatus === 'error'
+                            ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-605 border border-rose-200 dark:border-rose-900'
+                            : 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 border border-emerald-200 dark:border-emerald-900'
+                        }`}>
+                          <Info className={`w-4 h-4 shrink-0 mt-0.5 ${roomSyncStatus === 'error' ? 'text-rose-500' : 'text-emerald-500'}`} />
+                          <span className="leading-snug">{roomSyncFeedback}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Instruction visual layout */}
+                    <div className="bg-slate-50 dark:bg-slate-800/80 p-4.5 rounded-2xl space-y-2.5">
+                      <p className="font-extrabold text-[11px] text-slate-700 dark:text-slate-300 uppercase tracking-widest text-[10px]">💡 Как связать ПК и телефон за 3 шага:</p>
+                      <ol className="list-decimal list-inside space-y-2 text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                        <li>
+                          <span className="font-bold text-slate-700 dark:text-slate-205">Шаг 1 (На ПК):</span> Придумайте кодовое слово или используйте случайный цифровой код в поле выше, и нажмите кнопку <span className="underline font-semibold text-indigo-650 dark:text-indigo-400">Выгрузить в Интернет</span>.
+                        </li>
+                        <li>
+                          <span className="font-bold text-slate-700 dark:text-slate-205">Шаг 2 (На телефоне):</span> Откройте это же приложение на телефоне, также нажмите на кнопку «Синхронизация» вверху. Введите <span className="underline font-semibold">тот же самый код</span>, который вы ввели на ПК.
+                        </li>
+                        <li>
+                          <span className="font-bold text-slate-700 dark:text-slate-205">Шаг 3 (На телефоне):</span> Нажмите кнопку <span className="underline font-semibold text-emerald-650 dark:text-emerald-400">Загрузить & Объединить</span>. Ваши проекты на ПК и смартфоне сольются воедино!
+                        </li>
+                        <li>
+                          <span className="font-bold text-indigo-650 dark:text-indigo-400">PRO-Совет:</span> Включите галочку <span className="font-bold">«Авто-синхронизация»</span> на обоих устройствах. Теперь любые изменения будут подгружаться мгновенно!
+                        </li>
+                      </ol>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. OPTIONAL FIREBASE DB ACCOUNT TAB */}
+                {syncTab === 'firebase' && (
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    {/* Connection status section */}
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <span className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block mb-1">
+                          СТАТУС ПОДКЛЮЧЕНИЯ:
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2.5 h-2.5 rounded-full ${
+                            hasSyncOrAuthError 
+                              ? 'bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]' 
+                              : currentUser 
+                                ? 'bg-emerald-500 animate-pulse' 
+                                : 'bg-amber-500 animate-ping'
+                          }`} />
+                          <span className="font-extrabold text-xs text-slate-800 dark:text-slate-150">
+                            {hasSyncOrAuthError ? 'Ошибка синхронизации / авторизации' : currentUser ? 'Авторизован (Облачная синхронизация)' : 'Не авторизован (Локальный буфер)'}
+                          </span>
+                        </div>
+                        
+                        {currentUser && (
+                          <div className="mt-3 flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/50 rounded-lg max-w-xs">
+                            {currentUser.photoURL ? (
+                              <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-slate-200" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 font-bold flex items-center justify-center text-[10px] text-indigo-700 dark:text-indigo-400">
+                                {currentUser.email?.[0].toUpperCase() || 'U'}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-700 dark:text-slate-200 truncate leading-none text-[11px]">{currentUser.displayName || 'Пользователь Google'}</p>
+                              <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">{currentUser.email}</p>
+                              <p className="text-[8.5px] text-indigo-650 dark:text-indigo-400 font-mono leading-none mt-1 select-all" title="Ваш уникальный UID в системе Firebase">
+                                UID: {currentUser.uid}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        {currentUser ? (
+                          showLogoutConfirm ? (
+                            <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-1 duration-150">
+                              <span className="text-[10px] text-rose-500 font-extrabold max-w-[120px] leading-tight">Выйти?</span>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await logout();
+                                  } catch (e) {
+                                    console.error(e);
+                                  }
+                                  setShowLogoutConfirm(false);
+                                }}
+                                className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors"
+                              >
+                                Да
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowLogoutConfirm(false)}
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                              >
+                                Нет
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowLogoutConfirm(true);
+                              }}
+                              className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all hover:scale-[1.01]"
+                            >
+                              <LogOut className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Выйти</span>
+                            </button>
+                          )
+                        ) : (
                           <button
                             type="button"
                             onClick={async () => {
+                              setAuthError(null);
                               try {
-                                await logout();
-                              } catch (e) {
-                                console.error(e);
+                                const res = await googleSignIn();
+                                if (res) {
+                                  setCurrentUser(res.user);
+                                  setGoogleToken(res.accessToken);
+                                  setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+                                }
+                              } catch (err: any) {
+                                const msg = err?.message || String(err);
+                                console.error("Sign in failed:", err);
+                                if (msg.includes("unauthorized-domain") || (err?.code && err.code.includes("unauthorized-domain"))) {
+                                  setAuthError("unauthorized-domain");
+                                } else {
+                                  setAuthError(msg);
+                                }
                               }
-                              setShowLogoutConfirm(false);
                             }}
-                            className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors"
+                            className="flex items-center gap-2.5 py-2.5 px-4.5 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white text-xs font-bold rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.03] active:scale-[0.98] shadow-md hover:shadow-lg shrink-0 border border-indigo-700 dark:border-indigo-400"
                           >
-                            Да
+                            <svg className="w-3.5 h-3.5 fill-current text-white" viewBox="0 0 24 24">
+                              <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.414 0-6.19-2.77-6.19-6.19 0-3.418 2.776-6.19 6.19-6.19 1.483 0 2.844.52 3.917 1.391l3.056-3.056C19.11 2.8 15.86 1.332 12.24 1.332 6.136 1.332 1.2 6.268 1.2 12.37s4.936 11.04 11.04 11.04c6.264 0 10.8-4.4 10.8-10.74 0-.74-.065-1.3-.18-1.85H12.24z"/>
+                            </svg>
+                            <span>Авторизоваться через Google</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setShowLogoutConfirm(false)}
-                            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded text-[10px] font-bold cursor-pointer transition-colors"
-                          >
-                            Нет
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowLogoutConfirm(true);
-                          }}
-                          className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all hover:scale-[1.01]"
-                        >
-                          <LogOut className="w-3.5 h-3.5 text-slate-400" />
-                          <span>Выйти</span>
-                        </button>
-                      )
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setAuthError(null);
-                          try {
-                            const res = await googleSignIn();
-                            if (res) {
-                              setCurrentUser(res.user);
-                              setGoogleToken(res.accessToken);
-                              setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-                            }
-                          } catch (err: any) {
-                            const msg = err?.message || String(err);
-                            console.error("Sign in failed:", err);
-                            if (msg.includes("unauthorized-domain") || (err?.code && err.code.includes("unauthorized-domain"))) {
-                              setAuthError("unauthorized-domain");
-                            } else {
-                              setAuthError(msg);
-                            }
-                          }
-                        }}
-                        className="flex items-center gap-2.5 py-2.5 px-4.5 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white text-xs font-bold rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.03] active:scale-[0.98] shadow-md hover:shadow-lg shrink-0 border border-indigo-700 dark:border-indigo-400"
-                      >
-                        <svg className="w-3.5 h-3.5 fill-current text-white" viewBox="0 0 24 24">
-                          <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.414 0-6.19-2.77-6.19-6.19 0-3.418 2.776-6.19 6.19-6.19 1.483 0 2.844.52 3.917 1.391l3.056-3.056C19.11 2.8 15.86 1.332 12.24 1.332 6.136 1.332 1.2 6.268 1.2 12.37s4.936 11.04 11.04 11.04c6.264 0 10.8-4.4 10.8-10.74 0-.74-.065-1.3-.18-1.85H12.24z"/>
-                        </svg>
-                        <span>Авторизоваться через Google</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* 
-                  MANUAL FIRESTORE FORCE OVERRIDE BLOCK
-                  Gives users absolute certainty to sync PC and Phone in 1 click
-                */}
-                {currentUser && (
-                  <div className="bg-indigo-50/25 dark:bg-indigo-950/10 border border-indigo-150/80 dark:border-indigo-900/40 p-4.5 rounded-xl space-y-3.5">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1 px-1.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded font-extrabold text-[10px]">
-                        РЕШЕНИЕ СВЯЗИ
-                      </div>
-                      <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-200">
-                        Принудительная синхронизация (ПК ⇄ Телефон)
-                      </h4>
-                    </div>
-
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                      Если автоматический обмен застрял (или вы вошли под одним аккаунтом Google на ПК и телефоне, но изменения с одного девайса не отображаются на другом), воспользуйтесь кнопками <b>принудительного обхода</b>:
-                    </p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* Left: Force Upload (Export) */}
-                      <div className="border border-indigo-100/60 dark:border-indigo-950 bg-white dark:bg-slate-900 p-3 rounded-lg flex flex-col justify-between">
-                        <div>
-                          <div className="font-extrabold text-[11px] text-indigo-750 dark:text-indigo-400 flex items-center gap-1.5">
-                            <Upload className="w-3.5 h-3.5" />
-                            1. С ПК: ВЫГРУЗИТЬ В ОБЛАКО
-                          </div>
-                          <p className="text-[10px] text-slate-550 dark:text-slate-400 mt-1 leading-normal">
-                            Записать текущее состояние экрана в облако. Всё облако заменится вашей картой.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={forceCloudSyncLoading !== null}
-                          onClick={() => forceUploadToCloud(state)}
-                          className="mt-3 w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-550 text-white rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {forceCloudSyncLoading === 'upload' ? (
-                            <>
-                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              <span>Выгрузка...</span>
-                            </>
-                          ) : (
-                            <span>Выгрузить в Облако</span>
-                          )}
-                        </button>
-                      </div>
-
-                      {/* Right: Force Download (Import) */}
-                      <div className="border border-indigo-100/60 dark:border-indigo-950 bg-white dark:bg-slate-900 p-3 rounded-lg flex flex-col justify-between">
-                        <div>
-                          <div className="font-extrabold text-[11px] text-emerald-705 dark:text-emerald-400 flex items-center gap-1.5">
-                            <Download className="w-3.5 h-3.5" />
-                            2. НА ТЕЛЕФОНЕ: ЗАГРУЗИТЬ СЮДА
-                          </div>
-                          <p className="text-[10px] text-slate-550 dark:text-slate-400 mt-1 leading-normal">
-                            Полностью перезаписать экран последними данными из облака (все локальные изменения исчезнут).
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={forceCloudSyncLoading !== null}
-                          onClick={forceDownloadFromCloud}
-                          className="mt-3 w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-550 text-white rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {forceCloudSyncLoading === 'download' ? (
-                            <>
-                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              <span>Загрузка...</span>
-                            </>
-                          ) : (
-                            <span>Загрузить из Облака</span>
-                          )}
-                        </button>
+                        )}
                       </div>
                     </div>
 
-                    {/* Feedback Messages */}
-                    {forceCloudSyncFeedback && (
-                      <div className="bg-white dark:bg-slate-950 border border-indigo-100 dark:border-indigo-900 px-3 py-2.5 rounded-lg text-[11px] font-bold text-indigo-700 dark:text-indigo-400 flex items-start gap-2 animate-in fade-in duration-150">
-                        <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
-                        <span className="leading-snug">{forceCloudSyncFeedback}</span>
+                    {currentUser && (
+                      <div className="bg-indigo-50/25 dark:bg-indigo-950/10 border border-indigo-150/80 dark:border-indigo-900/40 p-4.5 rounded-xl space-y-3.5">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 px-1.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded font-extrabold text-[10px]">
+                            РЕШЕНИЕ СВЯЗИ
+                          </div>
+                          <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-200">
+                            Принудительная синхронизация (ПК ⇄ Телефон)
+                          </h4>
+                        </div>
+
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                          Если автоматический обмен застрял (или вы вошли под одним аккаунтом Google на ПК и телефоне, но изменения с одного девайса не отображаются на другом), воспользуйтесь кнопками <b>принудительного обхода</b>:
+                        </p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* Left: Force Upload (Export) */}
+                          <div className="border border-indigo-100/60 dark:border-indigo-950 bg-white dark:bg-slate-900 p-3 rounded-lg flex flex-col justify-between">
+                            <div>
+                              <div className="font-extrabold text-[11px] text-indigo-750 dark:text-indigo-400 flex items-center gap-1.5">
+                                <Upload className="w-3.5 h-3.5" />
+                                1. С ПК: ВЫГРУЗИТЬ В ОБЛАКО
+                              </div>
+                              <p className="text-[10px] text-slate-550 dark:text-slate-400 mt-1 leading-normal">
+                                Записать текущее состояние экрана в облако. Всё облако заменится вашей картой.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={forceCloudSyncLoading !== null}
+                              onClick={() => forceUploadToCloud(state)}
+                              className="mt-3 w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-550 text-white rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {forceCloudSyncLoading === 'upload' ? (
+                                <>
+                                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                  <span>Выгрузка...</span>
+                                </>
+                              ) : (
+                                <span>Выгрузить в Облако</span>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Right: Force Download (Import) */}
+                          <div className="border border-indigo-100/60 dark:border-indigo-950 bg-white dark:bg-slate-900 p-3 rounded-lg flex flex-col justify-between">
+                            <div>
+                              <div className="font-extrabold text-[11px] text-emerald-705 dark:text-emerald-400 flex items-center gap-1.5">
+                                <Download className="w-3.5 h-3.5" />
+                                2. НА ТЕЛЕФОНЕ: ЗАГРУЗИТЬ СЮДА
+                              </div>
+                              <p className="text-[10px] text-slate-550 dark:text-slate-400 mt-1 leading-normal">
+                                Полностью перезаписать экран последними данными из облака (все локальные изменения исчезнут).
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={forceCloudSyncLoading !== null}
+                              onClick={forceDownloadFromCloud}
+                              className="mt-3 w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-550 text-white rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {forceCloudSyncLoading === 'download' ? (
+                                <>
+                                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                  <span>Загрузка...</span>
+                                </>
+                              ) : (
+                                <span>Загрузить из Облака</span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Feedback Messages */}
+                        {forceCloudSyncFeedback && (
+                          <div className="bg-white dark:bg-slate-950 border border-indigo-100 dark:border-indigo-900 px-3 py-2.5 rounded-lg text-[11px] font-bold text-indigo-700 dark:text-indigo-400 flex items-start gap-2 animate-in fade-in duration-150">
+                            <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                            <span className="leading-snug">{forceCloudSyncFeedback}</span>
+                          </div>
+                        )}
+
+                        {/* Troubleshooting list for separate accounts */}
+                        <div className="bg-slate-100/50 dark:bg-slate-900/40 p-3 rounded-lg space-y-1.5">
+                          <p className="font-extrabold text-[10px] text-slate-600 dark:text-slate-400">⚠️ Диагностический чек-лист:</p>
+                          <ul className="list-disc list-inside space-y-1.5 text-slate-500 dark:text-slate-450 text-[10px] leading-relaxed">
+                            <li>
+                              <span className="font-bold text-slate-700 dark:text-slate-300">Проверьте UID (ID):</span> Сравните строку <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[9px]">UID</code> под вашей почтой на ПК и на Телефоне. Если эти буквы не совпадают — вы авторизованы под разными Google аккаунтами. <b>Они должны быть одинаковыми!</b>
+                            </li>
+                            <li>
+                              <span className="font-bold text-slate-700 dark:text-slate-300">Блокировка Apple/Safari:</span> Мобильные системы очень часто замораживают веб-сокеты и соединение с Firestore при неактивном экране. Просто обновите вкладку на телефоне и нажмите <span className="underline">Загрузить из Облака</span>.
+                            </li>
+                          </ul>
+                        </div>
                       </div>
                     )}
 
-                    {/* Troubleshooting list for separate accounts */}
-                    <div className="bg-slate-100/50 dark:bg-slate-900/40 p-3 rounded-lg space-y-1.5">
-                      <p className="font-extrabold text-[10px] text-slate-600 dark:text-slate-400">⚠️ Диагностический чек-лист:</p>
-                      <ul className="list-disc list-inside space-y-1.5 text-slate-500 dark:text-slate-450 text-[10px] leading-relaxed">
-                        <li>
-                          <span className="font-bold text-slate-700 dark:text-slate-300">Проверьте UID (ID):</span> Сравните строку <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[9px]">UID</code> под вашей почтой на ПК и на Телефоне. Если эти буквы не совпадают — вы авторизованы под разными Google аккаунтами. <b>Они должны быть одинаковыми!</b>
-                        </li>
-                        <li>
-                          <span className="font-bold text-slate-700 dark:text-slate-300">Блокировка Apple/Safari:</span> Мобильные системы очень часто замораживают веб-сокеты и соединение с Firestore при неактивном экране. Просто обновите вкладку на телефоне и нажмите <span className="underline">Загрузить из Облака</span>.
-                        </li>
-                      </ul>
-                    </div>
+                    {/* Unauthorized Domain Error Advice */}
+                    {authError && (
+                      <div className="bg-red-50 dark:bg-rose-950/20 border border-red-200 dark:border-red-900 shadow-sm rounded-xl p-4 text-xs space-y-3">
+                        <div className="flex items-center gap-1.5 text-red-650 dark:text-red-400 font-bold">
+                          <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+                          <span>Ошибка авторизации (Unauthorized Domain)</span>
+                        </div>
+                        
+                        {authError === 'unauthorized-domain' ? (
+                          <div className="space-y-3 text-slate-600 dark:text-slate-350">
+                            <p className="leading-relaxed">
+                              Домен этой страницы не добавлен в список разрешённых для OAuth-авторизации в настройках вашего Firebase-проекта.
+                            </p>
+                            
+                            <div className="bg-white dark:bg-slate-900 border border-red-105 dark:border-red-950 p-3 rounded-lg space-y-1.5">
+                              <p className="font-bold text-slate-700 dark:text-slate-205">Как исправить за 1 минуту:</p>
+                              <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400 text-[11px]">
+                                <li>Перейдите в <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-650 dark:text-indigo-400 underline font-semibold">Консоль Firebase</a>.</li>
+                                <li>Откройте проект <b>"Default Gemini Project"</b>.</li>
+                                <li>Перейдите в раздел <b>Authentication</b> → вкладка <b>Settings</b> → <b>Authorized domains</b> (Разрешенные домены).</li>
+                                <li>Нажмите кнопку <b>Add domain</b> и добавьте этот домен:</li>
+                              </ol>
+                              <div className="mt-2 flex items-center justify-between bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded border border-slate-200 dark:border-slate-800 font-mono text-[10px]">
+                                <span className="select-all truncate">{window.location.hostname}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-red-655 dark:text-red-400 leading-relaxed font-semibold">
+                            {authError}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
@@ -183,6 +184,53 @@ app.post('/api/gemini/clear-logs', (req, res) => {
   queueState.apiLogs = [];
   logEvent('info', 'Консоль логов очищена пользователем.');
   res.json({ success: true });
+});
+
+// ----------------- ZERO-AUTH DEVICE PAIRING SYNC ENDPOINTS -----------------
+const SYNC_DIR = path.join(process.cwd(), 'sync-rooms');
+if (!fs.existsSync(SYNC_DIR)) {
+  fs.mkdirSync(SYNC_DIR, { recursive: true });
+}
+
+// Route to save state to a room (PC exports state to room)
+app.post('/api/sync/room/save', (req, res) => {
+  const { roomId, state } = req.body;
+  if (!roomId || !state) {
+    return res.status(400).json({ error: 'Необходим ID комнаты и данные состояния' });
+  }
+  const cleanRoomId = String(roomId).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  if (!cleanRoomId) {
+    return res.status(400).json({ error: 'Некорректный ID комнаты. Используйте только латиницу и цифры.' });
+  }
+
+  try {
+    const filePath = path.join(SYNC_DIR, `${cleanRoomId}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf8');
+    res.json({ success: true, roomId: cleanRoomId, updatedAt: new Date().toISOString() });
+  } catch (err: any) {
+    console.error('Error saving room state:', err);
+    res.status(500).json({ error: `Ошибка выгрузки в комнату: ${err.message}` });
+  }
+});
+
+// Route to load state from a room (Phone / other device imports state from room)
+app.get('/api/sync/room/load/:roomId', (req, res) => {
+  const { roomId } = req.params;
+  const cleanRoomId = String(roomId).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const filePath = path.join(SYNC_DIR, `${cleanRoomId}.json`);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Комната не найдена. Сначала выгрузите данные на первом устройстве.' });
+  }
+
+  try {
+    const data = fs.readFileSync(filePath, 'utf8');
+    const parsedState = JSON.parse(data);
+    res.json({ state: parsedState });
+  } catch (err: any) {
+    console.error('Error loading room state:', err);
+    res.status(500).json({ error: `Ошибка загрузки из комнаты: ${err.message}` });
+  }
 });
 
 // Main request proxy route
