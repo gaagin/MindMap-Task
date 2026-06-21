@@ -525,7 +525,7 @@ export default function KanbanView({
         } ${
           node.archived
             ? 'bg-amber-50/5 dark:bg-amber-950/2 border-dashed border-amber-300 dark:border-amber-900/40 opacity-60 saturate-60'
-            : 'bg-white dark:bg-slate-910'
+            : 'bg-white dark:bg-slate-900'
         } ${
           draggedOverTagCardId === node.id
             ? 'border-emerald-500 dark:border-emerald-400 ring-4 ring-emerald-500/20 shadow-md bg-emerald-50/10 dark:bg-emerald-950/10 scale-[1.01]'

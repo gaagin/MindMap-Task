@@ -300,6 +300,7 @@ export default function MindMapCanvas({
     cardId: string;
     type: 'priority' | 'date' | 'tag';
   } | null>(null);
+  const [isElementDropdownOpen, setIsElementDropdownOpen] = useState(false);
 
   useEffect(() => {
     if (lastCreatedNodeId) {
@@ -2866,6 +2867,9 @@ export default function MindMapCanvas({
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isButtonOrCardInput(e)) return;
     
+    // Close dropdowns
+    setIsElementDropdownOpen(false);
+
     // Deselect selected node when clicking on an empty space
     onSelectNode(null);
     setSelectedConnectionId(null);
@@ -4908,65 +4912,109 @@ export default function MindMapCanvas({
           </button>
 
           <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
-          <button
-            onClick={() => {
-              let cx = 0;
-              let cy = 0;
-              if (containerRef.current) {
-                const rect = containerRef.current.getBoundingClientRect();
-                cx = rect.width / 2;
-                cy = rect.height / 2;
-              }
-              const x = Math.round(-panX / zoom);
-              const y = Math.round(-panY / zoom);
-              onAddFloatingNode(x, y, null);
-            }}
-            title="Создать независимую плавующую задачу по центру холста (или дважды кликните на пустом месте)"
-            className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-350 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 border-transparent hover:border-emerald-200 dark:hover:border-emerald-900/40 shrink-0"
-          >
-            <PlusCircle className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="hidden sm:inline">Плавающая задача</span>
-            <span className="sm:hidden">Плавающая</span>
-          </button>
+          
+          {/* Elements Selector Dropdown */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsElementDropdownOpen(!isElementDropdownOpen);
+              }}
+              className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border ${
+                isElementDropdownOpen
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40'
+              } shrink-0`}
+              title="Добавить элемент на холст"
+            >
+              <PlusCircle className={`w-3.5 h-3.5 ${isElementDropdownOpen ? 'text-white' : 'text-indigo-505'}`} />
+              <span className="hidden sm:inline">Добавить элемент</span>
+              <span className="sm:hidden">Элемент</span>
+              <ChevronUp className={`w-3.5 h-3.5 transition-transform duration-200 ${isElementDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-          <button
-            onClick={() => {
-              const x = Math.round(-panX / zoom);
-              const y = Math.round(-panY / zoom);
-              onAddFloatingNode(x, y, null, 'Workflow Шаг', { isWorkflowRectangle: true });
-            }}
-            title="Создать прямоугольник workflow по центру холста"
-            className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40 shrink-0"
-          >
-            <Network className="w-3.5 h-3.5 text-indigo-500" />
-            <span className="hidden sm:inline">Прямоугольник Workflow</span>
-            <span className="sm:hidden">Workflow</span>
-          </button>
+            {isElementDropdownOpen && (
+              <div
+                className="absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 sm:left-0 sm:translate-x-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-1.5 w-60 z-50 flex flex-col gap-1 select-text"
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                {/* Floating Node Button */}
+                <button
+                  onClick={() => {
+                    const x = Math.round(-panX / zoom);
+                    const y = Math.round(-panY / zoom);
+                    onAddFloatingNode(x, y, null);
+                    setIsElementDropdownOpen(false);
+                  }}
+                  className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2 rounded-lg flex items-center gap-2.5 transition-colors cursor-pointer group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-emerald-900/20 group-hover:scale-105 transition-transform">
+                    <PlusCircle className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Плавающая задача</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Свободная карточка на холсте</span>
+                  </div>
+                </button>
 
-          <button
-            onClick={startCanvasDictation}
-            title="Записать новую задачу на холст голосом"
-            className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-indigo-600 dark:text-indigo-400 hover:text-indigo-705 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40 shrink-0"
-          >
-            <Mic className="w-3.5 h-3.5 text-indigo-500" />
-            <span className="hidden sm:inline">Продиктовать задачу</span>
-            <span className="sm:hidden">Голос</span>
-          </button>
+                {/* Workflow Rectangle Button */}
+                <button
+                  onClick={() => {
+                    const x = Math.round(-panX / zoom);
+                    const y = Math.round(-panY / zoom);
+                    onAddFloatingNode(x, y, null, 'Workflow Шаг', { isWorkflowRectangle: true });
+                    setIsElementDropdownOpen(false);
+                  }}
+                  className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2 rounded-lg flex items-center gap-2.5 transition-colors cursor-pointer group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform">
+                    <Network className="w-4 h-4 text-indigo-500" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Workflow шаг</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Блок-схема с коннекторами</span>
+                  </div>
+                </button>
 
-          <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
-          <button
-            onClick={() => {
-              const x = Math.round(-panX / zoom);
-              const y = Math.round(-panY / zoom);
-              onAddContainerNode(x, y);
-            }}
-            title="Создать контейнер. В него можно вкладывать другие задачи для совместного перемещения и свертывания"
-            className="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-350 hover:bg-amber-50 dark:hover:bg-amber-950/20 border-transparent hover:border-amber-200 dark:hover:border-amber-900/40 shrink-0"
-          >
-            <span>📦</span>
-            <span className="hidden sm:inline">Создать контейнер</span>
-            <span className="sm:hidden">Контейнер</span>
-          </button>
+                {/* Voice Dictation Button */}
+                <button
+                  onClick={() => {
+                    startCanvasDictation();
+                    setIsElementDropdownOpen(false);
+                  }}
+                  className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2 rounded-lg flex items-center gap-2.5 transition-colors cursor-pointer group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform">
+                    <Mic className="w-4 h-4 text-indigo-500" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Голосовой ввод</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Продиктовать новую задачу</span>
+                  </div>
+                </button>
+
+                {/* Container Button */}
+                <button
+                  onClick={() => {
+                    const x = Math.round(-panX / zoom);
+                    const y = Math.round(-panY / zoom);
+                    onAddContainerNode(x, y);
+                    setIsElementDropdownOpen(false);
+                  }}
+                  className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2 rounded-lg flex items-center gap-2.5 transition-colors cursor-pointer group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center shrink-0 border border-amber-100 dark:border-amber-900/20 group-hover:scale-105 transition-transform text-xs">
+                    📦
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Контейнер задач</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Группировка и свертывание</span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -6511,7 +6559,7 @@ export default function MindMapCanvas({
                           
                           {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'priority' && (
                             <div 
-                              className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-xl shadow-xl p-1.5 w-44 z-100"
+                              className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 rounded-xl shadow-xl p-1.5 w-44 z-100"
                               onClick={(e) => e.stopPropagation()}
                               onMouseDown={(e) => e.stopPropagation()}
                             >
@@ -6586,7 +6634,7 @@ export default function MindMapCanvas({
                                 e.stopPropagation();
                                 setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' ? null : { cardId: node.id, type: 'date' });
                               }}
-                              className="inline-flex items-center gap-1 text-[8px] text-slate-400 dark:text-slate-500 hover:text-slate-605 dark:hover:text-slate-300 px-1.5 py-0.5 rounded border border-dashed border-slate-205 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850 hover:scale-[1.03] transition-all cursor-pointer text-left"
+                              className="inline-flex items-center gap-1 text-[8px] text-slate-400 dark:text-slate-550 hover:text-slate-600 dark:hover:text-slate-300 px-1.5 py-0.5 rounded border border-dashed border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-900 hover:scale-[1.03] transition-all cursor-pointer text-left"
                               title="Добавить срок выполнения"
                             >
                               <Calendar className="w-2.5 h-2.5 text-slate-400" />
@@ -6597,11 +6645,11 @@ export default function MindMapCanvas({
 
                         {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' && (
                           <div 
-                            className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-755 rounded-2xl shadow-xl p-3 w-56 z-100 flex flex-col gap-2.5"
+                            className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-3 w-56 z-100 flex flex-col gap-2.5"
                             onClick={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
                           >
-                            <p className="text-[10px] font-black text-slate-450 dark:text-slate-555 uppercase tracking-wider text-left">Срок выполнения:</p>
+                            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider text-left">Срок выполнения:</p>
                             
                             <div className="space-y-1 text-left whitespace-normal">
                               <label htmlFor={`inline-canvas-date-${node.id}`} className="text-[9px] font-bold text-slate-500">Дата</label>

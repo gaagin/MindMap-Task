@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+@theme {
+  --color-slate-150: #eaedf2;
+  --color-slate-205: #d6dde8;
+  --color-slate-450: #7c8ba1;
+  --color-slate-505: #54637a;
+  --color-slate-555: #556479;
+  --color-slate-605: #475569;
+  --color-slate-650: #3d4b5f;
+  --color-slate-705: #293548;
+  --color-slate-750: #1e2a3c;
+  --color-slate-755: #1a2333;
+  --color-slate-805: #151d2a;
+  --color-slate-850: #121926;
+  --color-slate-855: #0d131f;
+}
+
 @variant dark (&:where(.dark, .dark *));
 
 /* Custom scrollbars */
