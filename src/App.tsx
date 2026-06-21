@@ -37,7 +37,9 @@ import {
   ArchiveRestore,
   ChevronLeft,
   Clock,
-  LayoutGrid
+  LayoutGrid,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
@@ -931,6 +933,19 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'>('canvas');
   const [isMobileViewSwitcherOpen, setIsMobileViewSwitcherOpen] = useState(false);
   const [isContainerFocused, setIsContainerFocused] = useState(false);
+  const [isViewFullScreen, setIsViewFullScreen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsViewFullScreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
@@ -2941,7 +2956,7 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         
         {/* Workspace Top Action Bar Header */}
-        <header className={`${isContainerFocused ? 'hidden md:flex' : 'flex'} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-20 transition-colors duration-300 ${
+        <header className={`${isContainerFocused ? 'hidden md:flex' : 'flex'} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
           (!currentUser || !googleToken)
             ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-900/40'
             : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800'

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Kanban as KanbanIcon, 
   Plus, 
@@ -17,7 +17,9 @@ import {
   Clock,
   Link as LinkIcon,
   Bell,
-  AlertTriangle
+  AlertTriangle,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
@@ -57,6 +59,19 @@ export default function KanbanView({
   const [groupBy, setGroupBy] = useState<'category' | 'priority' | 'container'>(() => {
     return tagCategories.length === 0 ? 'priority' : 'category';
   });
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullScreen) {
+        setIsFullScreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullScreen]);
 
   const [sortBy, setSortBy] = useState<'default' | 'priority' | 'dueDate'>(() => {
     try {
@@ -1161,7 +1176,14 @@ export default function KanbanView({
   };
 
   return (
-    <div id="kanban-view-root" className="flex flex-col h-full w-full select-none">
+    <div 
+      id="kanban-view-root" 
+      className={`flex flex-col select-none bg-white dark:bg-slate-900 transition-all duration-200 ${
+        isFullScreen 
+          ? 'fixed inset-0 z-[150] w-screen h-screen' 
+          : 'h-full w-full'
+      }`}
+    >
       
       {/* Category selector panel */}
       <div 
@@ -1231,6 +1253,21 @@ export default function KanbanView({
             >
               <span>{isFiltersCollapsed ? 'Фильтры' : 'Свернуть'}</span>
               <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isFiltersCollapsed ? '' : 'rotate-180'}`} />
+            </button>
+
+            {/* Toggle Button for Full Screen */}
+            <button
+              type="button"
+              onClick={() => setIsFullScreen(!isFullScreen)}
+              className={`flex items-center gap-1 px-2 py-0.5 text-[10.5px] font-black rounded-md cursor-pointer transition-all border ${
+                isFullScreen 
+                  ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-850 dark:text-amber-400' 
+                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-slate-700 dark:text-slate-300 border-slate-200/50 dark:border-slate-800'
+              }`}
+              title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
+            >
+              {isFullScreen ? <Minimize2 className="w-3 h-3 text-current" /> : <Maximize2 className="w-3 h-3 text-current" />}
+              <span className="hidden sm:inline-block font-black">{isFullScreen ? "Свернуть" : "На весь экран"}</span>
             </button>
           </div>
         </div>

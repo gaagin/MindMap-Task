@@ -13,7 +13,9 @@ import {
   Settings,
   MoreHorizontal,
   Calendar,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
@@ -42,6 +44,40 @@ export default function GanttView({
   onDeleteNode,
   onCreateTask
 }: GanttViewProps) {
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullScreen) {
+        setIsFullScreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullScreen]);
+
+  // Collapsible state for left task list panel (saves state to localStorage)
+  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('gantt_left_panel_collapsed');
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleLeftPanel = () => {
+    setIsLeftPanelCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('gantt_left_panel_collapsed', String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
+
   // Timeline zoom/scale configuration
   // Show 28 days around "Today" to give a highly optimized view density
   const [baseDate, setBaseDate] = useState(() => {
@@ -218,54 +254,101 @@ export default function GanttView({
     setActiveInlineAddInput(false);
   };
 
+  const formatCompactDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}.${parts[1]}.${parts[0].slice(2)}`;
+    }
+    return dateStr;
+  };
+
   return (
-    <div id="gantt-chart-workspace" className="flex flex-col w-full h-[calc(100vh-130px)] bg-[#FAFBFD] dark:bg-slate-950/20 font-sans overflow-hidden">
+    <div 
+      id="gantt-chart-workspace" 
+      className={`flex flex-col bg-[#FAFBFD] dark:bg-slate-900 font-sans overflow-hidden transition-all duration-200 ${
+        isFullScreen 
+          ? 'fixed inset-0 z-[150] w-screen h-screen' 
+          : 'w-full h-[calc(100vh-130px)] dark:bg-slate-950/20'
+      }`}
+    >
       
       {/* Timeline Controls Toolbar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-2">
-          <span className="p-1.5 bg-indigo-50 dark:bg-indigo-950/45 text-indigo-600 dark:text-indigo-400 rounded-lg">
-            <Clock className="w-4 h-4" />
-          </span>
-          <h2 className="text-sm font-extrabold text-slate-800 dark:text-slate-100 uppercase tracking-tight">
-            Линейный график Ганнта (Календарный Срок)
-          </h2>
-          <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-mono font-bold text-slate-500 dark:text-slate-400">
-            {timelineDays[0].dateString} — {timelineDays[27].dateString}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 p-2 px-3 sm:p-2.5 sm:px-4 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0 w-full sm:w-auto">
+          <button
+            onClick={toggleLeftPanel}
+            aria-label={isLeftPanelCollapsed ? "Развернуть список задач" : "Свернуть список задач"}
+            className={`p-1 rounded-lg border transition-all cursor-pointer ${
+              isLeftPanelCollapsed 
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-950/50 dark:border-indigo-800/50 dark:text-indigo-400 font-extrabold' 
+                : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700 dark:text-slate-300'
+            }`}
+            title={isLeftPanelCollapsed ? "Показать список задач" : "Скрыть список задач"}
+          >
+            <AlignLeft className="w-3.5 h-3.5" />
+          </button>
+
+
+
+          <span className="text-[10px] bg-slate-150 dark:bg-slate-800 px-2 py-0.5 rounded-full font-mono font-bold text-slate-500 dark:text-slate-400 shrink-0 whitespace-nowrap">
+            {formatCompactDate(timelineDays[0].dateString)} — {formatCompactDate(timelineDays[27].dateString)}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
           <button
             onClick={jumpToToday}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all cursor-pointer border border-slate-200/60 dark:border-slate-800 px-3"
+            className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-[11px] font-bold transition-all cursor-pointer border border-slate-200/60 dark:border-slate-800"
           >
             К сегодня
           </button>
           
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-0.5 border border-slate-200 dark:border-slate-700">
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-200 dark:border-slate-700">
             <button
               onClick={() => shiftDays(-7)}
-              className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-all cursor-pointer"
+              className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded transition-all cursor-pointer"
               title="-1 неделя"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <span className="text-[10px] px-1 font-extrabold text-slate-400 block sm:hidden">Неделя</span>
+            <span className="text-[10px] px-1 font-bold text-slate-400 block sm:hidden">Неделя</span>
             <button
               onClick={() => shiftDays(7)}
-              className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-all cursor-pointer"
+              className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded transition-all cursor-pointer"
               title="+1 неделя"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
           <button
             onClick={() => setActiveInlineAddInput(true)}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1 shrink-0"
+            className="p-1 px-2.5 sm:px-3 sm:py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] sm:text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1 shrink-0"
           >
             <Plus className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Новая задача</span>
+          </button>
+
+          <button
+            onClick={() => setIsFullScreen(!isFullScreen)}
+            className={`p-1 px-2.5 sm:px-3 sm:py-1 border rounded-lg text-[11px] sm:text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+              isFullScreen
+                ? 'bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400'
+                : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700 dark:text-slate-300'
+            }`}
+            title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
+          >
+            {isFullScreen ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span>Свернуть</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>На весь экран</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -274,129 +357,156 @@ export default function GanttView({
       <div className="flex-1 flex overflow-hidden w-full relative">
         
         {/* Left lists table pane */}
-        <div className="w-64 max-w-xs md:w-80 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 flex flex-col shrink-0">
-          <div className="h-10 px-4 flex items-center bg-slate-50/70 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 shrink-0 font-bold text-[10.5px] uppercase tracking-wider text-slate-400 select-none">
-            Название задачи ({tasks.length})
+        <div 
+          className={`transition-all duration-300 overflow-hidden flex flex-col shrink-0 ${
+            isLeftPanelCollapsed 
+              ? 'w-0 border-r-0' 
+              : 'w-64 max-w-xs md:w-80 border-r border-slate-200 dark:border-slate-800'
+          } bg-white dark:bg-slate-900/40`}
+        >
+          <div className="h-10 px-4 flex items-center justify-between bg-slate-50/70 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 shrink-0 select-none">
+            <span className="font-bold text-[10.5px] uppercase tracking-wider text-slate-400">
+              Название задачи ({tasks.length})
+            </span>
+            <button
+              onClick={toggleLeftPanel}
+              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 rounded transition-colors cursor-pointer"
+              title="Свернуть список задач"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
           </div>
           
           {/* Scrollable Tasks Table Column */}
           <div 
             ref={leftScrollRef}
             onScroll={handleLeftScroll}
-            className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 custom-scrollbar pr-0.5 select-none"
+            className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar select-none"
           >
-            {activeInlineAddInput && (
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border-b border-indigo-100 dark:border-indigo-950">
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Новая задача... (Enter)"
-                  value={newInlineTaskText}
-                  onChange={(e) => setNewInlineTaskText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleInlineTaskCreate();
-                    if (e.key === 'Escape') setActiveInlineAddInput(false);
-                  }}
-                  className="w-full text-xs p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-                <div className="flex gap-1.5 justify-end mt-2">
-                  <button
-                    onClick={() => setActiveInlineAddInput(false)}
-                    className="px-2 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold cursor-pointer"
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    onClick={handleInlineTaskCreate}
-                    className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold cursor-pointer"
-                  >
-                    Создать
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {tasks.length === 0 ? (
-              <div className="py-12 px-4 text-center">
-                <p className="text-xs text-slate-400">Нет доступных задач.</p>
-              </div>
-            ) : (
-              tasks.map(task => (
-                <div
-                  key={task.id}
-                  onClick={(e) => onSelectNode(task.id, e)}
-                  className={`h-11 px-3.5 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors border-l-4 ${
-                    selectedNodeId === task.id 
-                      ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-500' 
-                      : 'border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 overflow-hidden flex-1">
+            <div className="min-w-[280px] sm:min-w-[340px] divide-y divide-slate-100 dark:divide-slate-800/60 pr-0.5">
+              {activeInlineAddInput && (
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border-b border-indigo-100 dark:border-indigo-950">
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Новая задача... (Enter)"
+                    value={newInlineTaskText}
+                    onChange={(e) => setNewInlineTaskText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleInlineTaskCreate();
+                      if (e.key === 'Escape') setActiveInlineAddInput(false);
+                    }}
+                    className="w-full text-xs p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <div className="flex gap-1.5 justify-end mt-2">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onUpdateNode({
-                          ...task,
-                          completed: !task.completed
-                        });
-                      }}
-                      className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-0.5 rounded transition-transform shrink-0"
+                      onClick={() => setActiveInlineAddInput(false)}
+                      className="px-2 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold cursor-pointer"
                     >
-                      {task.completed ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                      ) : activePomodoroNodeId === task.id ? (
-                        <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                          <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                          <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                        </span>
-                      ) : (
-                        <Circle className="w-3.5 h-3.5 shrink-0" />
-                      )}
+                      Отмена
                     </button>
-                    <span className={`text-xs font-extrabold truncate text-slate-700 dark:text-slate-200 ${
-                      task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
-                    } flex items-center gap-1`}>
-                      <span>{task.text}</span>
-                      {task.externalLink && (
-                        <a
-                          href={task.externalLink.startsWith('http') ? task.externalLink : `https://${task.externalLink}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                          title={`Открыть внешнюю ссылку: ${task.externalLink}`}
-                        >
-                          <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
-                        </a>
-                      )}
-                      {activePomodoroNodeId === task.id && (
-                        <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
-                      )}
-                    </span>
-                  </div>
-
-                  {/* Short detail indicators */}
-                  <div className="flex items-center gap-1.5 shrink-0 font-mono text-[9px]">
-                    {task.dueDate && (
-                      <span className="text-slate-400 dark:text-slate-500">
-                        {task.dueDate.substring(8, 10)}.{task.dueDate.substring(5, 7)}
-                      </span>
-                    )}
-                    {task.progress !== undefined && task.progress > 0 && (
-                      <span className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 px-1 rounded-md font-bold">
-                        {task.progress}%
-                      </span>
-                    )}
+                    <button
+                      onClick={handleInlineTaskCreate}
+                      className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold cursor-pointer"
+                    >
+                      Создать
+                    </button>
                   </div>
                 </div>
-              ))
-            )}
+              )}
+
+              {tasks.length === 0 ? (
+                <div className="py-12 px-4 text-center">
+                  <p className="text-xs text-slate-400">Нет доступных задач.</p>
+                </div>
+              ) : (
+                tasks.map(task => (
+                  <div
+                    key={task.id}
+                    onClick={(e) => onSelectNode(task.id, e)}
+                    className={`h-11 px-3.5 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors border-l-4 ${
+                      selectedNodeId === task.id 
+                        ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-500' 
+                        : 'border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 overflow-hidden flex-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUpdateNode({
+                            ...task,
+                            completed: !task.completed
+                          });
+                        }}
+                        className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-0.5 rounded transition-transform shrink-0"
+                      >
+                        {task.completed ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        ) : activePomodoroNodeId === task.id ? (
+                          <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                            <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                          </span>
+                        ) : (
+                          <Circle className="w-3.5 h-3.5 shrink-0" />
+                        )}
+                      </button>
+                      <span className={`text-xs font-extrabold truncate text-slate-700 dark:text-slate-200 ${
+                        task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
+                      } flex items-center gap-1`}>
+                        <span>{task.text}</span>
+                        {task.externalLink && (
+                          <a
+                            href={task.externalLink.startsWith('http') ? task.externalLink : `https://${task.externalLink}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                            title={`Открыть внешнюю ссылку: ${task.externalLink}`}
+                          >
+                            <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
+                          </a>
+                        )}
+                        {activePomodoroNodeId === task.id && (
+                          <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
+                        )}
+                      </span>
+                    </div>
+
+                    {/* Short detail indicators */}
+                    <div className="flex items-center gap-1.5 shrink-0 font-mono text-[9px]">
+                      {task.dueDate && (
+                        <span className="text-slate-400 dark:text-slate-500">
+                          {task.dueDate.substring(8, 10)}.{task.dueDate.substring(5, 7)}
+                        </span>
+                      )}
+                      {task.progress !== undefined && task.progress > 0 && (
+                        <span className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 px-1 rounded-md font-bold">
+                          {task.progress}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
 
         {/* Right timeline scale pane */}
-        <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar bg-slate-100/30 dark:bg-slate-950/20">
+        <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar bg-slate-100/30 dark:bg-slate-950/20 relative">
           
+          {isLeftPanelCollapsed && (
+            <button
+              onClick={toggleLeftPanel}
+              className="absolute left-2 top-1/2 -translate-y-1/2 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 shadow-lg hover:shadow-xl rounded-xl w-8 h-12 flex items-center justify-center z-50 cursor-pointer text-indigo-600 dark:text-indigo-400 transition-all group scale-95 hover:scale-100 animate-pulse-subtle"
+              title="Развернуть список задач"
+            >
+              <ChevronRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          )}
+
           {/* Sizing scale container relative size matching column ranges */}
           <div className="min-w-[1120px] h-full flex flex-col relative">
             

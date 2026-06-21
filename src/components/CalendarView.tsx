@@ -20,7 +20,9 @@ import {
   Mail,
   ListTodo,
   TrendingUp,
-  PlusCircle
+  PlusCircle,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
@@ -57,6 +59,19 @@ export default function CalendarView({
   setViewMode
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullScreen) {
+        setIsFullScreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullScreen]);
   
   const formatTaskTime = (task: TaskNode) => {
     if (task.startTime && task.dueTime) {
@@ -555,7 +570,14 @@ export default function CalendarView({
   };
 
   return (
-    <div id="calendar-workspace-view" className="relative w-full h-full bg-[#F8FAFC] dark:bg-slate-950 overflow-hidden font-sans flex flex-col lg:flex-row shadow-inner">
+    <div 
+      id="calendar-workspace-view" 
+      className={`relative bg-[#F8FAFC] dark:bg-slate-950 overflow-hidden font-sans flex flex-col lg:flex-row shadow-inner transition-all duration-200 ${
+        isFullScreen 
+          ? 'fixed inset-0 z-[150] w-screen h-screen' 
+          : 'w-full h-full'
+      }`}
+    >
       {/* Calendar Grid Section */}
       <div className="flex-1 flex flex-col p-1.5 sm:p-2 overflow-hidden min-w-0">
         
@@ -657,6 +679,21 @@ export default function CalendarView({
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              {/* Full Screen Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setIsFullScreen(!isFullScreen)}
+                className={`px-2 py-1 text-[10px] font-black rounded-lg transition-all cursor-pointer flex items-center gap-1 border ${
+                  isFullScreen 
+                    ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-850 dark:text-amber-400' 
+                    : 'bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-200/90 dark:hover:bg-slate-700 text-[#1E293B] dark:text-slate-100 border-slate-200/60 dark:border-slate-700'
+                }`}
+                title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
+              >
+                {isFullScreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline-block font-bold">{isFullScreen ? 'Свернуть' : 'На весь экран'}</span>
+              </button>
             </div>
           </div>
 

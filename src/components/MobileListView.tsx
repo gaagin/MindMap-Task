@@ -24,7 +24,9 @@ import {
   CheckCircle2, 
   Loader2,
   CalendarCheck,
-  GripVertical
+  GripVertical,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { generateId } from '../utils';
@@ -70,6 +72,19 @@ export default function MobileListView({
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileSearchIndex, setMobileSearchIndex] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullScreen) {
+        setIsFullScreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullScreen]);
 
   // Tags Manager modal state variables
   const [showTagsManager, setShowTagsManager] = useState(false);
@@ -1034,7 +1049,14 @@ export default function MobileListView({
   };
 
   return (
-    <div id="mobile-ticktick-view" className="w-full h-full flex flex-col bg-slate-50 dark:bg-slate-950">
+    <div 
+      id="mobile-ticktick-view" 
+      className={`flex flex-col bg-slate-50 dark:bg-slate-950 transition-all duration-200 ${
+        isFullScreen 
+          ? 'fixed inset-0 z-[150] w-screen h-screen' 
+          : 'w-full h-full'
+      }`}
+    >
       
       {/* Super Compact Mobile-Adapted Dashboard Header */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-2 shrink-0 transition-all">
@@ -1042,9 +1064,21 @@ export default function MobileListView({
           <h2 className="text-xs font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-widest whitespace-nowrap pl-1">
             Задачи
           </h2>
-          <div className="text-[10px] text-slate-400 font-mono flex gap-1.5 pr-1">
+          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 pr-1">
             <span>Актив.: <strong className="font-bold text-slate-700 dark:text-slate-200">{activeCount}</strong></span>
             <span>Проср.: <strong className="font-bold text-rose-500">{overdueCount}</strong></span>
+            <button
+              type="button"
+              onClick={() => setIsFullScreen(!isFullScreen)}
+              className={`p-1 rounded-sm border cursor-pointer select-none transition-all outline-none flex items-center justify-center ${
+                isFullScreen 
+                  ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400' 
+                  : 'bg-slate-50 hover:bg-slate-105 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+              }`}
+              title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
+            >
+              {isFullScreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </button>
           </div>
         </div>
 

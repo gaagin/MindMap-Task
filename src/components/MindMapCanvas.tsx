@@ -292,6 +292,19 @@ export default function MindMapCanvas({
   onContainerFocusChange
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullScreen) {
+        setIsFullScreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullScreen]);
   
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
@@ -4482,7 +4495,11 @@ export default function MindMapCanvas({
   return (
     <div 
       ref={containerRef}
-      className={`relative flex-1 h-full select-none overflow-hidden bg-white dark:bg-slate-950 outline-none transition-all duration-300 ${focusedContainerId ? 'ring-4 ring-amber-500/15 ring-inset shadow-[inset_0_0_80px_rgba(245,158,11,0.05)]' : ''}`}
+      className={`relative select-none overflow-hidden bg-white dark:bg-slate-950 outline-none transition-all duration-300 ${
+        isFullScreen 
+          ? 'fixed inset-0 z-[150] w-screen h-screen' 
+          : 'flex-1 h-full'
+      } ${focusedContainerId ? 'ring-4 ring-amber-500/15 ring-inset shadow-[inset_0_0_80px_rgba(245,158,11,0.05)]' : ''}`}
       style={{
         backgroundImage: `radial-gradient(${darkMode ? '#334155' : '#cbd5e1'} 1.2px, transparent 1.2px)`,
         backgroundSize: '24px 24px',
@@ -4497,6 +4514,21 @@ export default function MindMapCanvas({
       onTouchEnd={handleTouchEnd}
       onDoubleClick={handleDoubleClick}
     >
+      {/* Floating Full Screen Control on Top Right */}
+      <div className="absolute top-4 right-4 z-50">
+        <button
+          onClick={() => setIsFullScreen(!isFullScreen)}
+          className={`p-2.5 rounded-lg border shadow-md transition-all cursor-pointer flex items-center justify-center outline-none ${
+            isFullScreen 
+              ? 'bg-amber-50 dark:bg-amber-950/35 border-amber-200 dark:border-amber-805 text-amber-600 dark:text-amber-400' 
+              : 'bg-white/95 dark:bg-slate-905/95 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80'
+          }`}
+          title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
+        >
+          {isFullScreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+        </button>
+      </div>
+
       {/* Immersive Focused Container Top Stats Bar */}
       {focusedContainerId && (() => {
         const focusedContainer = nodes.find(n => n.id === focusedContainerId);

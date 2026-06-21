@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, 
   X, 
@@ -10,6 +10,8 @@ import {
   FileText, 
   HelpCircle,
   MoreVertical,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
@@ -55,6 +57,19 @@ export default function EisenhowerMatrixView({
   searchQuery = '',
 }: EisenhowerMatrixProps) {
   const [filterCompleted, setFilterCompleted] = useState<'all' | 'active' | 'completed'>('active');
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullScreen) {
+        setIsFullScreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullScreen]);
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [draggedOverQuadrant, setDraggedOverQuadrant] = useState<string | null>(null);
   const [touchDrag, setTouchDrag] = useState<{
@@ -371,81 +386,97 @@ export default function EisenhowerMatrixView({
   };
 
   return (
-    <div id="eisenhower-matrix-container" className="flex flex-col w-full h-full bg-[#F5F6FC] dark:bg-slate-950/80 font-sans overflow-hidden relative">
+    <div 
+      id="eisenhower-matrix-container" 
+      className={`flex flex-col font-sans overflow-hidden relative transition-all duration-200 ${
+        isFullScreen 
+          ? 'fixed inset-0 z-[150] w-screen h-screen bg-[#F5F6FC] dark:bg-[#0B0F19]' 
+          : 'w-full h-full bg-[#F5F6FC] dark:bg-slate-950/80'
+      }`}
+    >
       
-      {/* View Header with absolute precision matching the image style */}
-      <div className="flex flex-row items-center justify-between px-6 pt-6 pb-2 shrink-0">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-sans tracking-tight">
-          Матрица Эйзенхауэра
-        </h1>
-        <div className="relative shrink-0 flex items-center gap-1">
-          <button 
-            type="button"
-            onClick={() => setShowFilterMenu(!showFilterMenu)}
-            className="p-1.5 rounded-full text-slate-500 hover:bg-white/80 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Опции фильтрации"
-          >
-            <MoreVertical className="w-6 h-6" />
-          </button>
+      {/* Floating Settings/Filter button placed absolutely to save vertical layout space for the matrix */}
+      <div className="absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5">
+        {/* Toggle Button for Full Screen */}
+        <button
+          type="button"
+          onClick={() => setIsFullScreen(!isFullScreen)}
+          className={`p-1.5 rounded-full backdrop-blur-xs border transition-all shadow-sm cursor-pointer flex items-center justify-center ${
+            isFullScreen 
+              ? 'text-amber-600 bg-amber-50/90 border-amber-200 dark:bg-amber-950/40 dark:border-amber-855 dark:text-amber-400' 
+              : 'text-slate-500 hover:bg-white/80 dark:hover:bg-slate-800 bg-white/60 dark:bg-slate-900/60 border-slate-200/50 dark:border-slate-800/50'
+          }`}
+          title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
+        >
+          {isFullScreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+        </button>
 
-          {/* Settings / Filter dropdown Menu */}
-          <AnimatePresence>
-            {showFilterMenu && (
-              <>
-                <div 
-                  className="fixed inset-0 z-40 bg-transparent" 
-                  onClick={() => setShowFilterMenu(false)}
-                />
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                  className="absolute right-0 top-10 z-50 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-2.5 space-y-2 flex flex-col font-sans"
-                >
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2.5 py-1 select-none">
-                    Фильтры завершенности
-                  </span>
-                  <div className="flex flex-col gap-0.5">
-                    {(['all', 'active', 'completed'] as const).map(f => (
-                      <button
-                        key={f}
-                        type="button"
-                        onClick={() => {
-                          setFilterCompleted(f);
-                          setShowFilterMenu(false);
-                        }}
-                        className={`w-full px-2.5 py-1.5 text-xs font-bold text-left rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
-                          filterCompleted === f 
-                            ? 'bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400' 
-                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <span>
-                          {f === 'active' ? 'Активные' : f === 'completed' ? 'Выполненные' : 'Все задачи'}
-                        </span>
-                        {filterCompleted === f && <Check className="w-3.5 h-3.5 text-indigo-650 dark:text-indigo-400" />}
-                      </button>
-                    ))}
-                  </div>
+        <button 
+          type="button"
+          onClick={() => setShowFilterMenu(!showFilterMenu)}
+          className="p-1.5 rounded-full text-slate-500 hover:bg-white/80 dark:hover:bg-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xs border border-slate-200/50 dark:border-slate-800/50 transition-colors shadow-sm cursor-pointer flex items-center justify-center"
+          title="Опции фильтрации"
+        >
+          <MoreVertical className="w-5 h-5 flex items-center justify-center" />
+        </button>
 
-                  <div className="border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
+        {/* Settings / Filter dropdown Menu */}
+        <AnimatePresence>
+          {showFilterMenu && (
+            <>
+              <div 
+                className="fixed inset-0 z-40 bg-transparent" 
+                onClick={() => setShowFilterMenu(false)}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                className="absolute right-0 top-9 z-50 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-2.5 space-y-2 flex flex-col font-sans"
+              >
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2.5 py-1 select-none">
+                  Фильтры завершенности
+                </span>
+                <div className="flex flex-col gap-0.5">
+                  {(['all', 'active', 'completed'] as const).map(f => (
                     <button
+                      key={f}
                       type="button"
                       onClick={() => {
-                        setShowMatrixHelp(!showMatrixHelp);
+                        setFilterCompleted(f);
                         setShowFilterMenu(false);
                       }}
-                      className="w-full px-2.5 py-1.5 text-xs font-bold text-left text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/10 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                      className={`w-full px-2.5 py-1.5 text-xs font-bold text-left rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
+                        filterCompleted === f 
+                          ? 'bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400' 
+                          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
                     >
-                      <HelpCircle className="w-4 h-4" />
-                      <span>О методе Эйзенхауэра</span>
+                      <span>
+                        {f === 'active' ? 'Активные' : f === 'completed' ? 'Выполненные' : 'Все задачи'}
+                      </span>
+                      {filterCompleted === f && <Check className="w-3.5 h-3.5 text-indigo-650 dark:text-indigo-400" />}
                     </button>
-                  </div>
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>
-        </div>
+                  ))}
+                </div>
+
+                <div className="border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMatrixHelp(!showMatrixHelp);
+                      setShowFilterMenu(false);
+                    }}
+                    className="w-full px-2.5 py-1.5 text-xs font-bold text-left text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/10 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                    <span>О методе Эйзенхауэра</span>
+                  </button>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Eisenhower Matrix Description Help Panel */}
