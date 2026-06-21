@@ -1166,14 +1166,34 @@ export default function App() {
         if (isCloudSameAsLastSynced && !isFirstSnapshotRef.current) {
           console.log('[Sync] Ignoring cloud snapshot because cloud nodes list matches our last successfully synced state.');
         } else if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
-          if (!fromCache) {
-            isFirstSnapshotRef.current = false;
+          // If the cloud is completely empty/blank, but we have local content, we should NOT overwrite local with empty cloud
+          const isCloudDataVirtuallyEmpty = 
+            normalizedCloud.folders.length === 0 && 
+            normalizedCloud.projects.length === 0 && 
+            Object.keys(normalizedCloud.nodes).length === 0;
+          
+          const isLocalContentPresent = 
+            currentState.folders.length > 0 || 
+            currentState.projects.length > 0 || 
+            Object.keys(currentState.nodes).length > 0;
+
+          if (isCloudDataVirtuallyEmpty && isLocalContentPresent && isFirstSnapshotRef.current) {
+            console.log('[Sync] Cloud is empty but local has data on load/auth transition. Retaining local and scheduling upload.');
+            if (!fromCache) {
+              isFirstSnapshotRef.current = false;
+            }
+            // Trigger local sync uploading
+            setUnsyncedEditsCount(prev => prev + 1);
+          } else {
+            if (!fromCache) {
+              isFirstSnapshotRef.current = false;
+            }
+            ignoreNextStateChangeRef.current = true;
+            lastSyncedStateHashRef.current = cloudHash; // Update hash to prevent loops
+            setRawState(normalizedCloud);
+            setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+            setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
           }
-          ignoreNextStateChangeRef.current = true;
-          lastSyncedStateHashRef.current = cloudHash; // Update hash to prevent loops
-          setRawState(normalizedCloud);
-          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-          setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
         } else {
           // Notion-style silent, automatic real-time merging based on entity timestamps!
           console.log('[Sync] Concurrent changes detected. Performing automatic, professional real-time merge (Notion-style)...');
@@ -1252,6 +1272,107 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [state, currentUser, isInitialSyncComplete]);
+
+  // 4. Force check and download newer database version on window focus or visibility change (fixes mobile background freezing)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let isFetching = false;
+
+    const handleFocus = async () => {
+      if (isFetching) return;
+      isFetching = true;
+      try {
+        const cloudData = await loadFromFirebaseDirectly(currentUser.uid);
+        if (cloudData) {
+          const localDeletions = (() => {
+            try {
+              const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
+              return JSON.parse(listJson) || [];
+            } catch {
+              return [];
+            }
+          })();
+          const cloudDeletions = cloudData.deletions || [];
+          const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+          const mergedDeletions: any[] = [];
+          const appendUnique = (rec: any) => {
+            try {
+              const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
+              if (deletedAtMs < thirtyDaysAgo) return;
+            } catch {}
+            if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
+              mergedDeletions.push(rec);
+            }
+          };
+          (localDeletions || []).forEach(appendUnique);
+          (cloudDeletions || []).forEach(appendUnique);
+
+          const isDeleted = (type: string, id: string) => {
+            return mergedDeletions.some(d => d.type === type && d.id === id);
+          };
+
+          const filteredFolders = (cloudData.folders || []).filter((f: any) => !isDeleted('folder', f.id));
+          const filteredProjects = (cloudData.projects || []).filter((p: any) => !isDeleted('project', p.id));
+          const filteredNodes: Record<string, TaskNode[]> = {};
+          Object.keys(cloudData.nodes || {}).forEach(pid => {
+            const list = (cloudData.nodes[pid] || []).filter((n: any) => !isDeleted('node', n.id));
+            filteredNodes[pid] = list;
+          });
+          const filteredTagCats = (cloudData.tagCategories || []).filter((tc: any) => !isDeleted('tagCategory', tc.id));
+
+          const cloudState: WorkspaceState = {
+            folders: filteredFolders,
+            projects: filteredProjects,
+            nodes: filteredNodes,
+            activeProjectId: cloudData.activeProjectId || null,
+            tagCategories: filteredTagCats,
+            googleSheetsFileId: cloudData.googleSheetsFileId || undefined,
+            taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined,
+            deletions: mergedDeletions
+          };
+
+          const currentState = stateRef.current;
+          const normalizedCloud = normalizeWorkspaceState(cloudState);
+          const isEquivalent = isStateSemanticallyEqual(currentState, normalizedCloud);
+
+          if (!isEquivalent) {
+            console.log('[Focus Sync] Found different state on focus/visibility change. Applying update.');
+            if (unsyncedEditsCountRef.current === 0) {
+              ignoreNextStateChangeRef.current = true;
+              lastSyncedStateHashRef.current = getSyncHash(normalizedCloud);
+              setRawState(normalizedCloud);
+              setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+            } else {
+              // Merge if we edit concurrently
+              const merged = mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions);
+              ignoreNextStateChangeRef.current = true;
+              setRawState(merged);
+              setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Focus Sync] Background sync on focus failed:', err);
+      } finally {
+        isFetching = false;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleFocus();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentUser]);
 
   // Google Sheets integration has been deprecated in favor of high-performance real-time Firebase synchronization.
 

@@ -285,7 +285,13 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
     // Fetch existing cloud doc to merge
     let cloudData: any = null;
     try {
-      const snap = await getDoc(docRef);
+      const getDocTimeoutMs = 8000;
+      const snap = await Promise.race([
+        getDoc(docRef),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('getDoc timeout')), getDocTimeoutMs)
+        )
+      ]);
       if (snap.exists()) {
         cloudData = snap.data();
       }
