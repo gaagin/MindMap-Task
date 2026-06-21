@@ -1157,62 +1157,47 @@ export default function App() {
       }
 
       const cloudHash = getSyncHash(normalizedCloud);
-      const isCloudSameAsLastSynced = cloudHash === lastSyncedStateHashRef.current;
 
       if (!isEquivalent) {
-        // If the cloud nodes/projects/folders are identical to what we last successfully synced,
-        // there are no actual new changes in the cloud. It's just lagging behind our local unsynced edits.
-        // We can safely ignore this nodes mismatch.
-        if (isCloudSameAsLastSynced && !isFirstSnapshotRef.current) {
-          console.log('[Sync] Ignoring cloud snapshot because cloud nodes list matches our last successfully synced state.');
-        } else if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
-          // If the cloud is completely empty/blank, but we have local content, we should NOT overwrite local with empty cloud
-          const isCloudDataVirtuallyEmpty = 
-            normalizedCloud.folders.length === 0 && 
-            normalizedCloud.projects.length === 0 && 
-            Object.keys(normalizedCloud.nodes).length === 0;
-          
-          const isLocalContentPresent = 
-            currentState.folders.length > 0 || 
-            currentState.projects.length > 0 || 
-            Object.keys(currentState.nodes).length > 0;
+        console.log('[Sync] Cloud state is different from local. Performing robust Last-Write-Wins merge values...');
+        
+        // 1. Always perform a professional, safe Last-Write-Wins merge between current local state and incoming cloud state
+        const merged = mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions);
+        
+        if (!fromCache) {
+          isFirstSnapshotRef.current = false;
+        }
+        
+        const mergedHash = getSyncHash(merged);
+        const currentLocalHash = getSyncHash(currentState);
+        
+        // 2. If the merged state contains new/newer updates from the cloud, apply them locally
+        if (mergedHash !== currentLocalHash) {
+          console.log('[Sync] Appending newer updates from the cloud to the local screen...');
+          ignoreNextStateChangeRef.current = true;
+          setRawState(merged);
+        }
 
-          if (isCloudDataVirtuallyEmpty && isLocalContentPresent && isFirstSnapshotRef.current) {
-            console.log('[Sync] Cloud is empty but local has data on load/auth transition. Retaining local and scheduling upload.');
-            if (!fromCache) {
-              isFirstSnapshotRef.current = false;
-            }
-            // Trigger local sync uploading
-            setUnsyncedEditsCount(prev => prev + 1);
-          } else {
-            if (!fromCache) {
-              isFirstSnapshotRef.current = false;
-            }
-            ignoreNextStateChangeRef.current = true;
-            lastSyncedStateHashRef.current = cloudHash; // Update hash to prevent loops
-            setRawState(normalizedCloud);
-            setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-            setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
+        // 3. If the merged state contains newer local changes that are not in the cloud yet, schedule upload
+        if (mergedHash !== cloudHash) {
+          console.log('[Sync] Local has newer unsynced offline edits. Scheduling automatic background upload.');
+          if (unsyncedEditsCountRef.current === 0) {
+            setUnsyncedEditsCount(1);
           }
         } else {
-          // Notion-style silent, automatic real-time merging based on entity timestamps!
-          console.log('[Sync] Concurrent changes detected. Performing automatic, professional real-time merge (Notion-style)...');
-          const merged = mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions);
-          
-          if (!fromCache) {
-            isFirstSnapshotRef.current = false;
-          }
-          ignoreNextStateChangeRef.current = true;
-          
-          // Apply the merged state! The local useEffect will notice state has updated
-          // and automatically push the survivors of the merge back up to Firestore within 1.5s.
-          setRawState(merged);
+          // Both client and cloud are completely in sync to the same state
+          setUnsyncedEditsCount(0);
+          lastSyncedStateHashRef.current = cloudHash;
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         }
       } else {
         if (!fromCache) {
           isFirstSnapshotRef.current = false;
         }
+        // If they are equivalent, ensure client is marked as saved and has 0 unsynced edits count
+        setUnsyncedEditsCount(0);
+        lastSyncedStateHashRef.current = cloudHash;
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
       }
     }, (error) => {
       console.error('[Firebase snapshot listener error]:', error);
