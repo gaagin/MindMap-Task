@@ -42,7 +42,7 @@ import {
   Maximize2,
   Minimize2
 } from 'lucide-react';
-import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
+import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport, DeletionRecord } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
