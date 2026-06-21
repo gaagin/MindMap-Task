@@ -317,21 +317,21 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         startTime: n.startTime || null,
         reminderDate: n.reminderDate || null,
         reminderTime: n.reminderTime || null,
-        reminderMinutesBefore: n.reminderMinutesBefore !== undefined ? n.reminderMinutesBefore : null,
+        reminderMinutesBefore: (n.reminderMinutesBefore !== undefined && n.reminderMinutesBefore !== null) ? n.reminderMinutesBefore : null,
         reminderDismissed: !!n.reminderDismissed,
-        pomodoroTotalTime: n.pomodoroTotalTime !== undefined ? n.pomodoroTotalTime : null,
-        pomodoroSessionsCount: n.pomodoroSessionsCount !== undefined ? n.pomodoroSessionsCount : null,
+        pomodoroTotalTime: (n.pomodoroTotalTime !== undefined && n.pomodoroTotalTime !== null) ? n.pomodoroTotalTime : null,
+        pomodoroSessionsCount: (n.pomodoroSessionsCount !== undefined && n.pomodoroSessionsCount !== null) ? n.pomodoroSessionsCount : null,
         archived: !!n.archived,
         externalLink: n.externalLink || '',
         isCardCollapsed: !!n.isCardCollapsed,
-        progress: n.progress !== undefined ? Math.round(Number(n.progress) || 0) : null,
+        progress: (n.progress !== undefined && n.progress !== null) ? Math.round(Number(n.progress) || 0) : null,
         isFloating: !!n.isFloating,
         isContainer: !!n.isContainer,
         isWorkflowRectangle: !!n.isWorkflowRectangle,
         workflowShape: n.workflowShape || 'rectangle',
         isZoneTriggerDisabled: !!n.isZoneTriggerDisabled,
-        width: n.width !== undefined ? Math.round(Number(n.width) || 0) : null,
-        height: n.height !== undefined ? Math.round(Number(n.height) || 0) : null,
+        width: (n.width !== undefined && n.width !== null) ? Math.round(Number(n.width) || 0) : null,
+        height: (n.height !== undefined && n.height !== null) ? Math.round(Number(n.height) || 0) : null,
         history: (n.history || []).map(h => ({ id: h.id, text: h.text, notes: h.notes, timestamp: h.timestamp })),
         tagCategories: (n.tagCategories || []).map(t => ({ id: t.id, name: t.name, color: t.color, tags: [...(t.tags || [])].sort() })),
         files: (n.files || []).map(f => ({ id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl })),
@@ -342,8 +342,8 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
             fromSide: wc.fromSide,
             toSide: wc.toSide,
             text: wc.text || '',
-            bendOffsetX: wc.bendOffsetX !== undefined ? wc.bendOffsetX : null,
-            bendOffsetY: wc.bendOffsetY !== undefined ? wc.bendOffsetY : null
+            bendOffsetX: (wc.bendOffsetX !== undefined && wc.bendOffsetX !== null) ? wc.bendOffsetX : null,
+            bendOffsetY: (wc.bendOffsetY !== undefined && wc.bendOffsetY !== null) ? wc.bendOffsetY : null
           }))
           .sort((a, b) => a.id.localeCompare(b.id))
       }))

@@ -269,6 +269,8 @@ export function mergeWorkspaceStates(
     nodes: finalNodesMap,
     activeProjectId: finalActiveProjectId,
     tagCategories: finalTagCats,
+    googleSheetsFileId: local.googleSheetsFileId !== undefined ? local.googleSheetsFileId : (cloud.googleSheetsFileId !== undefined ? cloud.googleSheetsFileId : null),
+    taskSheetsSpreadsheetId: local.taskSheetsSpreadsheetId !== undefined ? local.taskSheetsSpreadsheetId : (cloud.taskSheetsSpreadsheetId !== undefined ? cloud.taskSheetsSpreadsheetId : null),
     deletions: mergedDeletions
   };
 }
