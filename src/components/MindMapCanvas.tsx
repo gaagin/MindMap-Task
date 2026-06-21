@@ -7310,7 +7310,9 @@ export default function MindMapCanvas({
 
       {/* Off-canvas Sticky INBOX Container Widget */}
       <div 
-        className={`absolute ${focusedContainerId ? 'bottom-20 sm:bottom-auto sm:top-4' : 'top-4'} right-4 z-40 pointer-events-auto select-none`}
+        className={`absolute ${focusedContainerId ? 'bottom-20 sm:bottom-auto sm:top-4' : 'top-4'} ${
+          isInboxCollapsed ? 'right-16 z-40' : 'right-4 left-4 sm:left-auto sm:right-16 z-[60]'
+        } pointer-events-auto select-none`}
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >
@@ -7326,7 +7328,7 @@ export default function MindMapCanvas({
             </span>
           </button>
         ) : (
-          <div className="w-[calc(100vw-32px)] sm:w-80 max-h-[320px] sm:max-h-[460px] bg-white dark:bg-slate-900 rounded-2xl border border-slate-205 dark:border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.18)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-full sm:w-80 max-h-[320px] sm:max-h-[460px] bg-white dark:bg-slate-900 rounded-2xl border border-slate-205 dark:border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.18)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             {/* INBOX Header */}
             <div className="px-4 py-3 bg-slate-50 dark:bg-slate-850/60 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -7340,7 +7342,7 @@ export default function MindMapCanvas({
               </div>
               <button
                 onClick={() => setIsInboxCollapsed(true)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-850 transition-colors cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 sm:p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-850 transition-colors cursor-pointer flex items-center justify-center min-w-[32px] min-h-[32px]"
                 title="Свернуть Inbox"
               >
                 <ChevronUp className="w-4 h-4" />
