@@ -748,14 +748,16 @@ export default function KanbanView({
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
+        whileHover={{ y: -1.5 }}
         transition={{
           type: "spring",
           stiffness: 320,
           damping: 28,
           opacity: { duration: 0.12 },
-          scale: { duration: 0.12 }
+          scale: { duration: 0.12 },
+          y: { type: "tween", duration: 0.15, ease: "easeOut" }
         }}
-        className={`group select-none text-left rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] hover:translate-y-[-1.5px] transition-all duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
+        className={`group select-none text-left rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] transition-shadow duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
           isDraggingTouch ? 'opacity-40 scale-[0.98]' : ''
         } ${
           activeInlineMenu?.cardId === node.id || activeMoveMenuCardId === node.id
