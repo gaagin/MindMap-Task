@@ -66,7 +66,7 @@ import {
 import { 
   saveToFirebaseDirectly, 
   loadFromFirebaseDirectly, 
-  syncWithGoogleSheets, 
+  mergeWorkspaceStates,
   logDeletion 
 } from './lib/syncService';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
@@ -429,41 +429,21 @@ export default function App() {
     });
   };
 
-  // Google Authentication & Symmetrical Sync statuses
+  // Firebase Authentication & Symmetrical Sync statuses
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
-  const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
   const [forceCloudSyncLoading, setForceCloudSyncLoading] = useState<'upload' | 'download' | null>(null);
   const [forceCloudSyncFeedback, setForceCloudSyncFeedback] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [sheetsError, setSheetsError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{
     local: 'saved' | 'saving' | 'error';
     firebase: 'idle' | 'saved' | 'syncing' | 'error';
-    sheets: 'idle' | 'synced' | 'syncing' | 'error';
     lastSyncedTime?: string;
   }>({
     local: 'saved',
-    firebase: 'idle',
-    sheets: 'idle'
+    firebase: 'idle'
   });
-
-  // Real-time Cloud Conflict resolution & alerts based on user requests
-  const [hasCloudUpdates, setHasCloudUpdates] = useState(false);
-  const [cloudUpdateState, setCloudUpdateState] = useState<WorkspaceState | null>(null);
-
-  const handleApplyCloudState = () => {
-    if (!cloudUpdateState) return;
-    ignoreNextStateChangeRef.current = true;
-    const normalized = normalizeWorkspaceState(cloudUpdateState);
-    lastSyncedStateHashRef.current = getSyncHash(normalized);
-    setRawState(normalized);
-    setUnsyncedEditsCount(0);
-    setHasCloudUpdates(false);
-    setCloudUpdateState(null);
-    setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-  };
 
   const [unsyncedEditsCount, setUnsyncedEditsCount] = useState<number>(() => {
     try {
@@ -1032,7 +1012,7 @@ export default function App() {
         isFirstSnapshotRef.current = true;
         setCurrentUser(null);
         setGoogleToken(null);
-        setSyncStatus(prev => ({ ...prev, firebase: 'idle', sheets: 'idle' }));
+        setSyncStatus(prev => ({ ...prev, firebase: 'idle' }));
 
         // Automatic anonymous authentication if the user did not explicitly log out
         try {
@@ -1192,19 +1172,25 @@ export default function App() {
           setRawState(normalizedCloud);
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
           setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
-          setHasCloudUpdates(false);
-          setCloudUpdateState(null);
         } else {
-          // Force notification to user that another device has fresher updates
-          setHasCloudUpdates(true);
-          setCloudUpdateState(cloudState);
+          // Notion-style silent, automatic real-time merging based on entity timestamps!
+          console.log('[Sync] Concurrent changes detected. Performing automatic, professional real-time merge (Notion-style)...');
+          const merged = mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions);
+          
+          if (!fromCache) {
+            isFirstSnapshotRef.current = false;
+          }
+          ignoreNextStateChangeRef.current = true;
+          
+          // Apply the merged state! The local useEffect will notice state has updated
+          // and automatically push the survivors of the merge back up to Firestore within 1.5s.
+          setRawState(merged);
+          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         }
       } else {
         if (!fromCache) {
           isFirstSnapshotRef.current = false;
         }
-        setHasCloudUpdates(false);
-        setCloudUpdateState(null);
       }
     }, (error) => {
       console.error('[Firebase snapshot listener error]:', error);
@@ -1265,84 +1251,7 @@ export default function App() {
     }
   }, [state, currentUser, isInitialSyncComplete]);
 
-  // Symmetrical Google Sheets merge trigger method
-  const runSheetsSymmetricalSync = async (token: string, currentWorkspace: WorkspaceState) => {
-    if (isSyncingSheets) return;
-    setIsSyncingSheets(true);
-    setSyncStatus(prev => ({ ...prev, sheets: 'syncing' }));
-    setSheetsError(null);
-
-    try {
-      const result = await syncWithGoogleSheets(token, currentWorkspace);
-      if (result.success) {
-        // Correctly set block flag before state reset to prevent trigger loop
-        ignoreNextStateChangeRef.current = true;
-        const normalized = normalizeWorkspaceState(result.state);
-        lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent loop reflection
-        setRawState(normalized);
-        setSyncStatus(prev => ({
-          ...prev,
-          sheets: 'synced',
-          lastSyncedTime: new Date().toLocaleTimeString() + ', ' + new Date().toLocaleDateString()
-        }));
-        
-        if (result.report) {
-          setSyncReport(result.report);
-          localStorage.setItem('milli_last_sync_report', JSON.stringify(result.report));
-        }
-        
-        // Zero out progress tracking on successful symmetrical sheet consolidation
-        setUnsyncedEditsCount(0);
-        setSheetsError(null);
-      } else {
-        setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
-        const errMsg = result.error || 'Failed to synchronize. Response state was not successful.';
-        
-        const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
-        const isNetworkError = errMsg.includes('Failed to fetch') || errMsg.includes('TypeError') || errMsg.includes('NetworkError');
-        
-        if (isStaleToken) {
-          console.warn('Google Sheets token expired (handled):', errMsg);
-          setSheetsError('Сессия Google Таблиц завершена. Вы можете мгновенно и автоматически продлить её без выбора аккаунта — нажмите кнопку «Обновить авторизацию Google» ниже.');
-          setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
-          setAccessToken(null); // Clear stored token from localStorage
-        } else if (isNetworkError) {
-          console.warn('Google Sheets api network error or CORS blocked (handled):', errMsg);
-          setSheetsError('Bilateral Symmetrical Sync Error: Failed to fetch. Ошибка сетевого соединения с Google (автономный режим или блокировка CORS).');
-          setGoogleToken(null); // Prevent background sync loop error spam on network blocks
-          setAccessToken(null);
-        } else {
-          console.error('Google Sheets sync failed:', errMsg);
-          setSheetsError(errMsg);
-        }
-      }
-    } catch (e: any) {
-      const errMsg = e?.message || String(e);
-      const isStaleToken = errMsg.includes('401') || errMsg.includes('UNAUTHENTICATED') || errMsg.toLowerCase().includes('auth');
-      const isNetworkError = errMsg.includes('Failed to fetch') || errMsg.includes('TypeError') || errMsg.includes('NetworkError');
-      
-      if (isStaleToken) {
-        console.warn('Google Sheets sync exception (OAuth token expired, handled):', errMsg);
-      } else {
-        console.error('Error running symmetrical sheets sync:', e);
-      }
-      setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
-      
-      if (isStaleToken) {
-        setSheetsError('Сессия Google Таблиц завершена. Вы можете мгновенно и автоматически продлить её без выбора аккаунта — нажмите кнопку «Обновить авторизацию Google» ниже.');
-        setGoogleToken(null); // Clear the stale token to prevent background sync loop error spam
-        setAccessToken(null); // Clear stored token from localStorage
-      } else if (isNetworkError) {
-        setSheetsError('Bilateral Symmetrical Sync Error: Failed to fetch. Ошибка сетевого соединения с Google (автономный режим или блокировка CORS).');
-        setGoogleToken(null); // Prevent background sync loop error spam on network blocks
-        setAccessToken(null);
-      } else {
-        setSheetsError(errMsg);
-      }
-    } finally {
-      setIsSyncingSheets(false);
-    }
-  };
+  // Google Sheets integration has been deprecated in favor of high-performance real-time Firebase synchronization.
 
   // Close / stop the active Pomodoro session
   const handleClosePomo = () => {
@@ -1403,28 +1312,21 @@ export default function App() {
     }
   };
 
-  // Quick single-button Google Sheets sync handler
-  const handleQuickSheetsSync = async () => {
-    if (isSyncingSheets) return;
-    let token = googleToken;
-    try {
-      if (!token) {
-        const res = await googleSignIn();
-        if (res) {
-          setCurrentUser(res.user);
-          setGoogleToken(res.accessToken);
-          token = res.accessToken;
-        } else {
-          return;
-        }
-      }
-      if (token) {
-        await runSheetsSymmetricalSync(token, state);
-      }
-    } catch (e: any) {
-      console.error('Error in quick sheets sync:', e);
-      setSheetsError(e?.message || String(e));
-      setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
+  // Manual Firebase real-time cloud sync trigger
+  const handleManualCloudSync = async () => {
+    if (!currentUser) return;
+    if (syncStatus.firebase === 'syncing') return;
+    
+    setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+    const res = await saveToFirebaseDirectly(currentUser.uid, state);
+    setSyncStatus(prev => ({
+      ...prev,
+      firebase: res.success ? 'saved' : 'error'
+    }));
+    
+    if (res.success) {
+      lastSyncedStateHashRef.current = getSyncHash(state); // Update hash on successful upload
+      setUnsyncedEditsCount(0);
     }
   };
 
@@ -1522,8 +1424,6 @@ export default function App() {
         lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent reflection loops
         setRawState(normalized);
         setUnsyncedEditsCount(0);
-        setHasCloudUpdates(false);
-        setCloudUpdateState(null);
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         setForceCloudSyncFeedback('Успешно загружено! Данные на этом устройстве полностью заменены версией из вашего облака.');
       } else {
@@ -1536,62 +1436,7 @@ export default function App() {
     }
   };
 
-  // 3. Auto Symmetrical Google Sheets merge on startup / login auth
-  useEffect(() => {
-    if (googleToken && isInitialSyncComplete) {
-      runSheetsSymmetricalSync(googleToken, state);
-    }
-  }, [googleToken, isInitialSyncComplete]);
-
-  // 4. Background Symmetrical Sheets Sync with 3s fast responsive debounce during continuous editing states
-  // Only triggers background auto-sync when there are actual unsynced edits, saving Google API quota limits!
-  useEffect(() => {
-    if (googleToken && isInitialSyncComplete && unsyncedEditsCount > 0) {
-      const currentHash = getSyncHash(state);
-      if (currentHash === lastSyncedStateHashRef.current) {
-        return; // Already synced! Prevents infinite trigger loops
-      }
-
-      const debounceTime = 3000; // Fast responsive 3s debounce after user stops editing the mind map
-      const timer = setTimeout(() => {
-        runSheetsSymmetricalSync(googleToken, state);
-      }, debounceTime); // Optimized rate-limiting debounce
-      return () => clearTimeout(timer);
-    }
-  }, [state, googleToken, unsyncedEditsCount, isInitialSyncComplete]);
-
-  // 5. Symmetrical Sheets Sync instantly on window tab switch or pageunload (visibilitychange / pagehide)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && googleToken && isInitialSyncComplete) {
-        syncWithGoogleSheets(googleToken, state);
-      }
-    };
-
-    const handlePageHide = () => {
-      if (googleToken && isInitialSyncComplete) {
-        syncWithGoogleSheets(googleToken, state);
-      }
-    };
-
-    window.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('pagehide', handlePageHide);
-
-    return () => {
-      window.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('pagehide', handlePageHide);
-    };
-  }, [googleToken, state, isInitialSyncComplete]);
-
-  // Synchronize Google Sheets IDs from state to localStorage
-  useEffect(() => {
-    if (state.googleSheetsFileId) {
-      localStorage.setItem('google_sheets_sync_file_id', state.googleSheetsFileId);
-    }
-    if (state.taskSheetsSpreadsheetId) {
-      localStorage.setItem('task_sheets_spreadsheet_id', state.taskSheetsSpreadsheetId);
-    }
-  }, [state.googleSheetsFileId, state.taskSheetsSpreadsheetId]);
+  // 3. Auto-sync effects for Firebase are fully covered in our main saving and snapshot listeners above.
 
   // Handle media/dark mode class on body element
   useEffect(() => {
@@ -2917,8 +2762,7 @@ export default function App() {
 
   const selectedNode = activeNodes.find(n => n.id === selectedNodeId) || null;
 
-  const isNetworkFailure = sheetsError?.includes('Failed to fetch') || sheetsError?.includes('NetworkError');
-  const hasSyncOrAuthError = !!authError || (!!sheetsError && !isNetworkFailure) || (syncStatus.sheets === 'error' && !isNetworkFailure) || syncStatus.local === 'error';
+  const hasSyncOrAuthError = !!authError || syncStatus.firebase === 'error' || syncStatus.local === 'error';
 
   return (
     <div className="flex h-screen h-[100dvh] overflow-hidden text-slate-900 bg-white dark:bg-slate-950 dark:text-slate-100 font-sans transition-colors duration-150">
@@ -3450,8 +3294,8 @@ export default function App() {
               type="button"
               onClick={() => setIsSyncMenuOpen(true)}
               className={`flex items-center gap-1.5 py-1.5 px-3 border rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:scale-[1.01] shrink-0 ${
-                isSyncingSheets || syncStatus.firebase === 'syncing'
-                  ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
+                syncStatus.firebase === 'syncing'
+                  ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-955/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
                   : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
               }`}
               title="Открыть панель резервного копирования и синхронизации"
@@ -3467,24 +3311,22 @@ export default function App() {
               )}
             </button>
 
-            {/* Quick Symmetrical Sheets Sync Button (Icon Only, No Words) */}
-            <button
-              id="milli-quick-sheets-sync-btn"
-              type="button"
-              onClick={handleQuickSheetsSync}
-              className={`p-1.5 border rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.05] shrink-0 ${
-                isSyncingSheets
-                  ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse animate-duration-1000'
-                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-emerald-600 dark:text-emerald-400'
-              }`}
-              title={
-                googleToken 
-                  ? "Быстрая синхронизация с Google Sheets" 
-                  : "Войти и синхронизировать с Google Sheets"
-              }
-            >
-              <FileSpreadsheet className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-            </button>
+            {/* Quick Symmetrical Cloud Sync Button */}
+            {currentUser && (
+              <button
+                id="milli-quick-cloud-sync-btn"
+                type="button"
+                onClick={handleManualCloudSync}
+                className={`p-1.5 border rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.05] shrink-0 ${
+                  syncStatus.firebase === 'syncing'
+                    ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-emerald-600 dark:text-emerald-400'
+                }`}
+                title="Мгновенная синхронизация со всеми устройствами"
+              >
+                <RefreshCw className={`w-4 h-4 ${syncStatus.firebase === 'syncing' ? 'animate-spin' : ''}`} />
+              </button>
+            )}
 
 
           </div>
@@ -4141,15 +3983,6 @@ export default function App() {
                           </ol>
                           <div className="mt-2 flex items-center justify-between bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded border border-slate-200 dark:border-slate-800 font-mono text-[10px]">
                             <span className="select-all truncate">{window.location.hostname}</span>
-                            <button 
-                              onClick={() => {
-                                navigator.clipboard.writeText(window.location.hostname);
-                                alert('Скопировано!');
-                              }}
-                              className="text-indigo-600 dark:text-indigo-455 hover:underline cursor-pointer ml-1 text-[9px] font-bold"
-                            >
-                              Копировать
-                            </button>
                           </div>
                         </div>
                       </div>
@@ -4161,250 +3994,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Symmetrical Sync explainer section */}
-                <div className="bg-indigo-50/45 dark:bg-indigo-950/15 border border-indigo-100/50 dark:border-indigo-900/35 p-4 rounded-xl space-y-2">
-                  <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 leading-none">
-                    <Layers className="w-3.5 h-3.5 text-indigo-500" />
-                    Как работает дельта-синхронизация?
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1.5 text-slate-550 dark:text-slate-400 leading-relaxed font-normal text-[11px]">
-                    <li>
-                      <span className="font-semibold text-slate-700 dark:text-slate-350">Импортируются и экспортируются все данные</span>: папки, проекты, задачи и категории тегов на основе точных временных меток изменений.
-                    </li>
-                    <li>
-                      <span className="font-semibold text-slate-700 dark:text-slate-350">Двусторонний обмен</span>: любые новые элементы или корректировки (включая изменения на смартфонах или ПК) будут синхронизированы в обе стороны.
-                    </li>
-                    <li>
-                      <span className="font-semibold text-slate-700 dark:text-slate-350">Безопасное удаление</span>: ветви, задачи или категории, удаленные вами локально, автоматически списываются из облака при сеансе связи.
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Bento Cards Metrics */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-50/80 dark:bg-slate-850 border border-slate-200/50 dark:border-slate-855 p-4 rounded-xl flex flex-col items-center justify-center text-center">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                      ВСЕГО ОПЕРАЦИЙ В ПРИЛОЖЕНИИ
-                    </span>
-                    <span className="text-3xl font-extrabold text-indigo-650 dark:text-indigo-400 font-mono">
-                      {totalItemsCount}
-                    </span>
-                    <span className="text-[9px] text-slate-400 mt-1">
-                      общая емкость структуры
-                    </span>
-                  </div>
-
-                  <div className="bg-slate-50/80 dark:bg-slate-850 border border-slate-200/50 dark:border-slate-855 p-4 rounded-xl flex flex-col items-center justify-center text-center">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                      ИЗМЕНЕНИЙ В ОЧЕРЕДИ
-                    </span>
-                    <span className="text-3xl font-extrabold text-amber-500 font-mono">
-                      {unsyncedEditsCount + getQueuedDeletionsCount()}
-                    </span>
-                    <span className="text-[9px] text-slate-400 mt-1">
-                      редактирований: {unsyncedEditsCount}, удаления: {getQueuedDeletionsCount()}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Large Sync trigger button */}
-                <div className="flex flex-col items-center gap-3 py-4 border-y border-slate-100 dark:border-slate-800">
-                  {googleToken ? (
-                    <button
-                      type="button"
-                      disabled={isSyncingSheets}
-                      onClick={() => runSheetsSymmetricalSync(googleToken, state)}
-                      className="w-full max-w-md bg-emerald-400 hover:bg-emerald-500 disabled:bg-emerald-400/55 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-slate-900 font-extrabold text-xs tracking-wider uppercase py-3.5 px-6 rounded-xl border border-emerald-400 dark:border-emerald-500 cursor-pointer shadow-md transition-all hover:scale-[1.015] flex items-center justify-center gap-2"
-                    >
-                      <RefreshCw className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-                      <span>СИНХРОНИЗИРОВАТЬ С GOOGLE SHEETS</span>
-                    </button>
-                  ) : (
-                    <div className="w-full max-w-md text-center p-3 border border-dashed border-slate-205 dark:border-slate-800 text-slate-400 rounded-xl bg-slate-50/30 italic">
-                      Авторизуйтесь, чтобы запустить слияние с Google Sheets
-                    </div>
-                  )}
-
-                  {syncStatus.sheets === 'synced' && syncStatus.lastSyncedTime && (
-                    <div className="text-[10px] text-slate-455 dark:text-slate-400 italic">
-                      Последняя синхронизация: {syncStatus.lastSyncedTime}
-                    </div>
-                  )}
-
-                  {isSyncingSheets && (
-                    <div className="text-[10px] text-indigo-505 font-bold animate-pulse">
-                      Слияние изменений структуры дерева... Пожалуйста, подождите.
-                    </div>
-                  )}
-
-                  {syncStatus.sheets === 'error' && (
-                    isNetworkFailure ? (
-                      <div className="w-full max-w-md bg-blue-50/70 dark:bg-slate-900/60 border border-blue-200 dark:border-slate-800 shadow-sm rounded-xl p-4 text-xs text-slate-700 dark:text-slate-350 space-y-2 mt-2">
-                        <div className="flex items-center gap-2 text-blue-600 dark:text-indigo-400 font-bold">
-                          <Info className="w-4 h-4 shrink-0" />
-                          <span>Google Sheets синхронизация приостановлена</span>
-                        </div>
-                        <p className="leading-relaxed text-slate-600 dark:text-slate-400">
-                          Браузер ограничил сетевой запрос к API или вы работаете офлайн. Все ваши изменения надежно сохранены в локальном буфере и будут безопасно объединены с вашим облаком, как только возобновится подключение.
-                        </p>
-                        <div className="pt-2 flex items-center gap-2 justify-between">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSheetsError(null);
-                              setSyncStatus(prev => ({ ...prev, sheets: 'idle' }));
-                            }}
-                            className="text-xs font-semibold px-3 py-1 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all"
-                          >
-                            Скрыть уведомление
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleQuickSheetsSync}
-                            className="text-xs font-semibold text-white px-3 py-1 bg-indigo-600 hover:bg-indigo-700 rounded-lg cursor-pointer transition-all"
-                          >
-                            Повторить попытку
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-full max-w-md bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 shadow-sm rounded-xl p-4 text-xs text-slate-700 dark:text-slate-300 space-y-2.5 mt-2">
-                      <div className="flex items-center gap-2 text-rose-600 dark:text-rose-450 font-bold">
-                        <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500 animate-bounce" />
-                        <span>Ошибка дельта-синхронизации (Google Sheets)</span>
-                      </div>
-                      
-                      <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded border border-rose-100 dark:border-rose-900 font-mono text-[10px] text-rose-700 dark:text-rose-300 select-all overflow-x-auto whitespace-pre-wrap">
-                        {sheetsError || 'Bilateral Symmetrical Sync Error: Failed to fetch'}
-                      </div>
-
-                      {sheetsError && (sheetsError.includes('401') || sheetsError.toUpperCase().includes('UNAUTHENTICATED')) && (
-                        <div className="pt-1.5 pb-1">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                setSheetsError(null);
-                                setSyncStatus(prev => ({ ...prev, sheets: 'syncing' }));
-                                const res = await googleSignIn();
-                                if (res) {
-                                  setCurrentUser(res.user);
-                                  setGoogleToken(res.accessToken);
-                                  // Changing googleToken will auto-trigger sync inside useEffect
-                                } else {
-                                  setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
-                                  setSheetsError('Не удалось войти.');
-                                }
-                              } catch (err: any) {
-                                setSyncStatus(prev => ({ ...prev, sheets: 'error' }));
-                                setSheetsError(err?.message || String(err));
-                              }
-                            }}
-                            className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer transition-all shadow-md active:scale-[0.98]"
-                          >
-                            <span>Обновить авторизацию Google</span>
-                          </button>
-                        </div>
-                      )}
-
-                      <div className="text-[10.5px] space-y-2 text-slate-600 dark:text-slate-400 leading-relaxed font-normal">
-                        <p className="font-bold text-slate-700 dark:text-slate-300">💡 Как это исправить:</p>
-                        <ul className="list-decimal list-inside space-y-1.5 pl-1 leading-snug">
-                          <li>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">Истекшее время авторизации</span>: 
-                            Ваша сессия и Google-токен настроены на длительное действие до одного дня (24 часов). Если сессия завершилась, просто нажмите кнопку <b>"Выйти"</b> в окне "Статус подключения" выше, а затем повторно нажмите <b>"Авторизоваться через Google"</b> для полного обновления.
-                          </li>
-                          <li>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">Отключены Google API</span>: 
-                            В консоли Google Cloud / Firebase проекта должны быть включены <b>Google Sheets API</b> и <b>Google Drive API</b>. Без этого запросы со стороны браузера отклоняются с ошибкой CORS.
-                          </li>
-                          <li>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">Блокировщики скриптов</span>: 
-                            Ваш браузер или плагин (uBlock, AdBlock, Brave Shield) может блокировать сторонние запросы к доменам <i>googleapi</i>. Попробуйте отключить их для этого сайта.
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-                  )
-                  )}
-                </div>
-
-                {/* Sync Report detail lists */}
-                <div className="space-y-3.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                    ОТЧЕТ ПО СИНХРОНИЗАЦИИ ИЗМЕНЕНИЙ:
-                  </span>
-
-                  {syncReport ? (
-                    <div className="space-y-4">
-                      {/* Summary row */}
-                      <div className="grid grid-cols-4 gap-2 bg-slate-50/50 dark:bg-slate-950/25 p-3 rounded-xl border border-slate-150 dark:border-slate-850 text-center text-xs font-mono font-bold">
-                        <div>
-                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Выгружено</span>
-                          <span className="text-emerald-550 dark:text-emerald-400">{syncReport.uploadedCount}</span>
-                        </div>
-                        <div>
-                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Закачано</span>
-                          <span className="text-indigo-600 dark:text-indigo-400">{syncReport.downloadedCount}</span>
-                        </div>
-                        <div>
-                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Удалено в обл.</span>
-                          <span className="text-rose-600 dark:text-rose-450">{syncReport.deletedTableCount}</span>
-                        </div>
-                        <div>
-                          <span className="block text-[8px] text-slate-400 font-sans uppercase">Удалено лок.</span>
-                          <span className="text-amber-600 dark:text-amber-500">{syncReport.deletedLocallyCount}</span>
-                        </div>
-                      </div>
-
-                      {/* Detailed rows */}
-                      <div className="border border-slate-150 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
-                        <div className="px-3.5 py-1.5 bg-slate-50 dark:bg-slate-850 font-bold text-slate-400 uppercase tracking-wider text-[8px]">
-                          ДЕТАЛИЗАЦИЯ ИЗМЕНЕНИЙ:
-                        </div>
-                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-650 dark:text-slate-350">Папки (Folders):</span>
-                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.foldersAdded} доб. / {syncReport.foldersUpdated} обн.</span>
-                        </div>
-                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-650 dark:text-slate-350">Проекты (Projects):</span>
-                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.projectsAdded} доб. / {syncReport.projectsUpdated} обн.</span>
-                        </div>
-                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-650 dark:text-slate-350">Задачи / Ветки (Nodes):</span>
-                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.nodesAdded} доб. / {syncReport.nodesUpdated} обн.</span>
-                        </div>
-                        <div className="px-4 py-2 flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-650 dark:text-slate-350">Категории тегов (Tag Categories):</span>
-                          <span className="font-mono text-slate-400 dark:text-slate-450">{syncReport.tagCategoriesAdded} r. / {syncReport.tagCategoriesUpdated} o.</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-6 border border-dashed border-slate-155 dark:border-slate-800 rounded-xl text-slate-400 italic bg-slate-50/20">
-                      Выполните первую синхронизацию, чтобы сформировать отчет по изменениям.
-                    </div>
-                  )}
-                </div>
-
               </div>
-
-              {/* Modal Footer (direct sheet link) */}
-              {localStorage.getItem('google_sheets_sync_file_id') && (
-                <div className="border-t border-slate-150 dark:border-slate-850 p-4.5 bg-slate-50 dark:bg-slate-900/60 flex items-center shrink-0">
-                  <a
-                    href={`https://docs.google.com/spreadsheets/d/${localStorage.getItem('google_sheets_sync_file_id')}/edit`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-indigo-655 dark:text-indigo-400 hover:underline font-bold text-[11px]"
-                  >
-                    <svg className="w-4 h-4 fill-current text-emerald-500 shrink-0" viewBox="0 0 24 24">
-                      <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3.5 14h-7V7h7v10z"/>
-                    </svg>
-                    <span>Открыть личную таблицу MindMap_Sync_Workbook ↗</span>
-                  </a>
-                </div>
-              )}
             </div>
           </div>
         );
