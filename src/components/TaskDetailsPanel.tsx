@@ -351,24 +351,20 @@ export default function TaskDetailsPanel({
     setLinkSearchQuery('');
   };
 
-  const renderNotesWithLinks = (notesText: string) => {
-    if (!notesText) {
-      return (
-        <span className="text-slate-400 dark:text-slate-500 italic text-xs block py-2">
-          Заметки пусты. Перейдите во вкладку «Редактор» для добавления.
-        </span>
-      );
-    }
+  const parseInlineContent = (text: string): React.ReactNode[] => {
+    if (!text) return [];
 
-    const pattern = /(\[([^\]]+)\]\(task:([a-zA-Z0-9\-]+)\)|\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]|task:\/\/([a-zA-Z0-9\-]+))/g;
+    const pattern = /(\[([^\]]+)\]\(task:([a-zA-Z0-9\-]+)\)|\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]|task:\/\/([a-zA-Z0-9\-]+)|\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g;
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
     let match;
 
-    while ((match = pattern.exec(notesText)) !== null) {
+    while ((match = pattern.exec(text)) !== null) {
       if (match.index > lastIndex) {
-        parts.push(notesText.substring(lastIndex, match.index));
+        parts.push(text.substring(lastIndex, match.index));
       }
+
+      const matchedStr = match[0];
 
       if (match[3]) {
         // [Label](task:ID)
@@ -377,7 +373,7 @@ export default function TaskDetailsPanel({
         const targetNode = allNodes.find(n => n.id === targetId);
         parts.push(
           <button
-            key={match.index}
+            key={`task-${match.index}`}
             type="button"
             onClick={() => onSelectNode?.(targetId)}
             className="inline-flex items-center gap-1 mx-0.5 px-2 py-0.5 bg-indigo-50 hover:bg-indigo-150 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold rounded text-[11px] align-middle border border-indigo-100 dark:border-indigo-900/50 transition-all cursor-pointer"
@@ -403,7 +399,7 @@ export default function TaskDetailsPanel({
         if (targetId) {
           parts.push(
             <button
-              key={match.index}
+              key={`wiki-${match.index}`}
               type="button"
               onClick={() => onSelectNode?.(targetId)}
               className="inline-flex items-center gap-1 mx-0.5 px-2 py-0.5 bg-indigo-50 hover:bg-indigo-150 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold rounded text-[11px] align-middle border border-indigo-100 dark:border-indigo-900/50 transition-all cursor-pointer"
@@ -414,7 +410,11 @@ export default function TaskDetailsPanel({
             </button>
           );
         } else {
-          parts.push(<span key={match.index} className="text-slate-400 dark:text-slate-500 font-mono text-[11px]">[[{nameOrLabel}]]</span>);
+          parts.push(
+            <span key={`wiki-span-${match.index}`} className="text-slate-400 dark:text-slate-500 font-mono text-[11px]">
+              [[{nameOrLabel}]]
+            </span>
+          );
         }
       } else if (match[6]) {
         // task://ID
@@ -422,7 +422,7 @@ export default function TaskDetailsPanel({
         const targetNode = allNodes.find(n => n.id === targetId);
         parts.push(
           <button
-            key={match.index}
+            key={`task-ref-${match.index}`}
             type="button"
             onClick={() => onSelectNode?.(targetId)}
             className="inline-flex items-center gap-1 mx-0.5 px-2 py-0.5 bg-indigo-50 hover:bg-indigo-150 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold rounded text-[11px] align-middle border border-indigo-100 dark:border-indigo-900/50 transition-all cursor-pointer"
@@ -432,29 +432,151 @@ export default function TaskDetailsPanel({
             {targetNode?.text || `Задача ${targetId.substring(0, 6)}`}
           </button>
         );
+      } else if (matchedStr.startsWith('**') && matchedStr.endsWith('**')) {
+        // Bold
+        const boldContent = matchedStr.slice(2, -2);
+        parts.push(
+          <strong key={`bold-${match.index}`} className="font-extrabold text-slate-900 dark:text-white">
+            {boldContent}
+          </strong>
+        );
+      } else if (matchedStr.startsWith('*') && matchedStr.endsWith('*')) {
+        // Italic
+        const italicContent = matchedStr.slice(1, -1);
+        parts.push(
+          <em key={`italic-${match.index}`} className="italic text-slate-800 dark:text-slate-200">
+            {italicContent}
+          </em>
+        );
+      } else if (matchedStr.startsWith('`') && matchedStr.endsWith('`')) {
+        // Inline Code
+        const codeContent = matchedStr.slice(1, -1);
+        parts.push(
+          <code key={`code-${match.index}`} className="px-1.5 py-0.5 bg-slate-105 dark:bg-slate-950/60 rounded font-mono text-[11px] font-semibold text-pink-600 dark:text-pink-400 border border-slate-200/50 dark:border-slate-800/40">
+            {codeContent}
+          </code>
+        );
+      } else if (matchedStr.startsWith('[') && matchedStr.includes('](')) {
+        // External link [label](url)
+        const labelMatch = matchedStr.match(/\[(.*?)\]/);
+        const urlMatch = matchedStr.match(/\((https?:\/\/.*?)\)/);
+        if (labelMatch && urlMatch) {
+          const label = labelMatch[1];
+          const url = urlMatch[1];
+          parts.push(
+            <a
+              key={`link-${match.index}`}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-0.5 font-semibold"
+            >
+              {label}
+            </a>
+          );
+        } else {
+          parts.push(matchedStr);
+        }
+      } else {
+        parts.push(matchedStr);
       }
 
       lastIndex = pattern.lastIndex;
     }
 
-    if (lastIndex < notesText.length) {
-      parts.push(notesText.substring(lastIndex));
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+
+    return parts;
+  };
+
+  const renderMarkdownLine = (line: string, lineKey: string) => {
+    // Check headers
+    if (line.startsWith('### ')) {
+      return (
+        <h3 key={lineKey} className="text-xs font-bold text-slate-800 dark:text-slate-100 mt-2.5 mb-1 tracking-tight">
+          {parseInlineContent(line.slice(4))}
+        </h3>
+      );
+    }
+    if (line.startsWith('## ')) {
+      return (
+        <h2 key={lineKey} className="text-sm font-bold text-slate-850 dark:text-slate-100 mt-3 mb-1.5 tracking-tight">
+          {parseInlineContent(line.slice(3))}
+        </h2>
+      );
+    }
+    if (line.startsWith('# ')) {
+      return (
+        <h1 key={lineKey} className="text-base font-extrabold text-slate-900 dark:text-slate-50 mt-4 mb-2 tracking-tight border-b border-slate-100 dark:border-slate-800/50 pb-0.5">
+          {parseInlineContent(line.slice(2))}
+        </h1>
+      );
+    }
+
+    // Check blockquote
+    if (line.startsWith('> ')) {
+      return (
+        <blockquote key={lineKey} className="border-l-4 border-indigo-400 dark:border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/10 pl-3 py-1 pr-1 italic my-2 rounded-r text-slate-600 dark:text-slate-400">
+          {parseInlineContent(line.slice(2))}
+        </blockquote>
+      );
+    }
+
+    // Check bullet list items
+    const bulletMatch = line.match(/^(\s*)([-*•])\s+(.*)/);
+    if (bulletMatch) {
+      const indent = bulletMatch[1].length;
+      const content = bulletMatch[3];
+      return (
+        <div key={lineKey} className="flex items-start gap-2 my-1" style={{ paddingLeft: `${indent * 8 + 4}px` }}>
+          <span className="text-indigo-500 font-extrabold select-none">•</span>
+          <div className="flex-1 text-slate-700 dark:text-slate-300 leading-relaxed">{parseInlineContent(content)}</div>
+        </div>
+      );
+    }
+
+    // Check ordered list items
+    const orderedMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/);
+    if (orderedMatch) {
+      const indent = orderedMatch[1].length;
+      const num = orderedMatch[2];
+      const content = orderedMatch[3];
+      return (
+        <div key={lineKey} className="flex items-start gap-2 my-1" style={{ paddingLeft: `${indent * 8 + 4}px` }}>
+          <span className="text-indigo-500/80 font-bold font-mono select-none text-[10px] pt-[2px]">{num}.</span>
+          <div className="flex-1 text-slate-700 dark:text-slate-300 leading-relaxed">{parseInlineContent(content)}</div>
+        </div>
+      );
+    }
+
+    // Fallback to regular line/paragraph
+    if (!line.trim()) {
+      return <div key={lineKey} className="h-2" />;
     }
 
     return (
-      <div className="whitespace-pre-wrap leading-relaxed text-xs text-slate-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-950/30 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 min-h-[100px]">
-        {parts.map((part, idx) => {
-          if (typeof part === 'string') {
-            const lines = part.split('\n');
-            return lines.map((line, lIdx) => (
-              <React.Fragment key={`${idx}-${lIdx}`}>
-                {line}
-                {lIdx < lines.length - 1 && <br />}
-              </React.Fragment>
-            ));
-          }
-          return part;
-        })}
+      <p key={lineKey} className="my-1 text-slate-700 dark:text-slate-300 leading-relaxed">
+        {parseInlineContent(line)}
+      </p>
+    );
+  };
+
+  const renderNotesWithLinks = (notesText: string) => {
+    if (!notesText) {
+      return (
+        <span className="text-slate-400 dark:text-slate-500 italic text-xs block py-2">
+          Заметки пусты. Перейдите во вкладку «Редактор» для добавления.
+        </span>
+      );
+    }
+
+    const lines = notesText.split('\n');
+
+    return (
+      <div className="text-xs text-slate-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-950/30 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 min-h-[100px] flex flex-col gap-1">
+        {lines.map((line, idx) => renderMarkdownLine(line, `line-${idx}`))}
       </div>
     );
   };

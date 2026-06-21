@@ -4907,14 +4907,6 @@ export default function MindMapCanvas({
       })()}
       {/* Floating Canvas UI Controls */}
       <div className={`absolute ${focusedContainerId ? 'top-20 sm:top-4' : 'top-4'} left-4 z-10 flex gap-2`}>
-        <button
-          onClick={onOpenSidebar}
-          title="Открыть боковую панель"
-          className="lg:hidden p-2.5 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 rounded-lg shadow-md hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
-
         <div className="hidden lg:flex items-center gap-1 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm">
           <span className="text-xs font-mono font-medium text-slate-500 dark:text-slate-400">
             Перемещение: ЛКМ / Жест. Масштаб:

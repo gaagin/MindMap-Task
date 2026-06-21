@@ -1201,10 +1201,6 @@ export default function KanbanView({
         {/* Compact Summary Header Row - Always visible, extremely thin and space-saving */}
         <div className="flex items-center justify-between px-2.5 py-0.5 md:px-4 md:py-1 border-b border-slate-200/30 dark:border-slate-800/20 bg-white/60 dark:bg-slate-900/30">
           <div className="flex flex-nowrap items-center gap-x-1.5 text-[10.5px] font-bold text-slate-600 dark:text-slate-350 flex-1 min-w-0 pr-1.5 overflow-x-auto scrollbar-none">
-            <span className="flex items-center gap-0.5 bg-indigo-50 dark:bg-indigo-950/30 text-[#4f46e5] dark:text-indigo-400 px-1 py-0.2 rounded border border-indigo-100/30 font-black tracking-wide uppercase text-[8.5px] shrink-0">
-              <KanbanIcon className="w-2.5 h-2.5" />
-              КАНБАН
-            </span>
             <div className="flex flex-nowrap items-center gap-x-1 text-[9.5px] shrink-0">
               <span className="text-slate-500 dark:text-slate-400">Группа:</span>
               <span className="text-[#4f46e5] dark:text-indigo-400 font-extrabold px-1 py-0.2 text-[9px] rounded bg-indigo-50/40 dark:bg-indigo-950/20 shrink-0 border border-indigo-100/10">
