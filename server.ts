@@ -59,7 +59,7 @@ app.all('/api/google-proxy', express.raw({ type: '*/*', limit: '50mb' }), async 
   }
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // Lazy-initialized Gemini-client to avoid crashing if key is missing on startup
 let aiClient: GoogleGenAI | null = null;

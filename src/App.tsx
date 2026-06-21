@@ -1134,9 +1134,21 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomId: id, state: stateToSave })
       });
-      const data = await res.json();
+      
+      let data: any = {};
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const textStr = await res.text();
+        if (!res.ok) {
+          throw new Error(`Ошибка сервера (${res.status}): ${textStr.substring(0, 120)}`);
+        }
+        data = { error: textStr || 'Неверный формат ответа от сервера' };
+      }
+
       if (!res.ok) {
-        throw new Error(data.error || 'Server error saving state');
+        throw new Error(data.error || `Ошибка сервера (${res.status})`);
       }
       setRoomSyncStatus('saved');
       setRoomSyncFeedback(`Данные выгружены в комнату "${id}" (${new Date().toLocaleTimeString()})`);
@@ -1160,9 +1172,21 @@ export default function App() {
         await saveStateToSyncRoom(id);
         return;
       }
-      const data = await res.json();
+      
+      let data: any = {};
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const textStr = await res.text();
+        if (!res.ok) {
+          throw new Error(`Ошибка сервера (${res.status}): ${textStr.substring(0, 120)}`);
+        }
+        throw new Error('Некорректный формат ответа (ожидался JSON)');
+      }
+
       if (!res.ok) {
-        throw new Error(data.error || 'Server error loading state');
+        throw new Error(data.error || `Ошибка сервера (${res.status})`);
       }
       if (data.state) {
         const merged = getMergedRoomState(data.state);
