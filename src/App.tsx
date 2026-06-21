@@ -292,7 +292,9 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
     .sort((a, b) => a.id.localeCompare(b.id));
 
   // 3. Serialize nodes deterministically
-  const sortedProjectIds = Object.keys(wsState.nodes || {}).sort();
+  const sortedProjectIds = Object.keys(wsState.nodes || {})
+    .filter(pid => (wsState.nodes[pid] || []).length > 0)
+    .sort();
   const nodes: any[] = [];
   for (const pid of sortedProjectIds) {
     const projectNodes = (wsState.nodes[pid] || [])

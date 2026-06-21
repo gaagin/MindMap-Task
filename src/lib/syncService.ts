@@ -324,6 +324,8 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
       nodes: cloudData?.nodes || {},
       activeProjectId: cloudData?.activeProjectId || null,
       tagCategories: cloudData?.tagCategories || [],
+      googleSheetsFileId: cloudData?.googleSheetsFileId || undefined,
+      taskSheetsSpreadsheetId: cloudData?.taskSheetsSpreadsheetId || undefined,
     };
 
     const mergedState = cloudData
@@ -351,6 +353,8 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
       }, {} as Record<string, TaskNode[]>),
       activeProjectId: mergedState.activeProjectId,
       tagCategories: (mergedState.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
+      googleSheetsFileId: mergedState.googleSheetsFileId || null,
+      taskSheetsSpreadsheetId: mergedState.taskSheetsSpreadsheetId || null,
       activePomodoro,
       deletions: mergedDeletions,
       updatedAt: new Date().toISOString()
