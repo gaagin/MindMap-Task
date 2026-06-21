@@ -434,7 +434,10 @@ export async function loadFromFirebaseDirectly(userId: string): Promise<Workspac
     if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
       handleFirestoreError(error, OperationType.GET, `workspaces/${userId}`);
     }
-    if (error?.message && error.message.includes('Превышено время ожидания')) {
+    const errMsg = String(error?.message || '');
+    if (errMsg.includes('offline') || error?.code === 'unavailable' || error?.code === 'failed-precondition') {
+      console.warn('Firebase snapshot load bypassed: web client is currently offline.', errMsg);
+    } else if (error?.message && error.message.includes('Превышено время ожидания')) {
       console.warn('Firebase snapshot load timeout:', error.message);
     } else {
       console.error('Firebase snapshot load error:', error);

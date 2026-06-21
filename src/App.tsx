@@ -1410,8 +1410,13 @@ export default function App() {
         lastSyncedStateHashRef.current = cloudHash;
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
       }
-    }, (error) => {
-      console.error('[Firebase snapshot listener error]:', error);
+    }, (error: any) => {
+      const errMsg = String(error?.message || '');
+      if (errMsg.includes('offline') || error?.code === 'unavailable' || error?.code === 'failed-precondition') {
+        console.warn('[Firebase snapshot listener]: Web client is currently offline.', errMsg);
+      } else {
+        console.error('[Firebase snapshot listener error]:', error);
+      }
     });
 
     return () => unsubscribe();
