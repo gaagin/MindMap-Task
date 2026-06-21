@@ -166,6 +166,57 @@ export default function KanbanView({
   // Track which task card has a tag hovered over it during drag and drop
   const [draggedOverTagCardId, setDraggedOverTagCardId] = useState<string | null>(null);
 
+  // Touch drag state
+  const [touchDrag, setTouchDrag] = useState<{
+    taskId: string;
+    text: string;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    offsetX: number;
+    offsetY: number;
+    width: number;
+    height: number;
+  } | null>(null);
+
+  const [isTouchDraggingActive, setIsTouchDraggingActive] = useState<boolean>(false);
+  const touchStartRef = React.useRef<{
+    taskId: string;
+    text: string;
+    startX: number;
+    startY: number;
+    rect: DOMRect;
+  } | null>(null);
+  const touchTimeoutRef = React.useRef<any>(null);
+
+  // Prevent any browser scrolling (horizontal or vertical) while an active touch drag is in progress
+  React.useEffect(() => {
+    if (!touchDrag) return;
+
+    const preventDefaultScroll = (e: TouchEvent) => {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    };
+
+    // Register with passive: false to allow canceling standard browser touch scrolling
+    window.addEventListener('touchmove', preventDefaultScroll, { passive: false });
+    
+    return () => {
+      window.removeEventListener('touchmove', preventDefaultScroll);
+    };
+  }, [touchDrag]);
+
+  // Clean up any pending touch timeouts on unmount
+  React.useEffect(() => {
+    return () => {
+      if (touchTimeoutRef.current) {
+        clearTimeout(touchTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Collapsible state for category select on mobile/tablet screens
   const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(() => {
     try {
@@ -339,9 +390,158 @@ export default function KanbanView({
     e.dataTransfer.effectAllowed = 'move';
   };
 
+  // Touch drag-and-drop for mobile devices (long-press drag & swipe-scroll separation)
+  const handleTouchStart = (e: React.TouchEvent, taskId: string, text: string) => {
+    const touch = e.touches[0];
+    const rect = e.currentTarget.getBoundingClientRect();
+    
+    // Clear any existing timer
+    if (touchTimeoutRef.current) {
+      clearTimeout(touchTimeoutRef.current);
+    }
+    
+    // Preliminary start position coordinates (no reactive state update yet)
+    touchStartRef.current = {
+      taskId,
+      text,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      rect,
+    };
+    
+    setIsTouchDraggingActive(false);
+    
+    // Set a 250ms timeout. If they hold their finger still for 250ms, initiate drag!
+    touchTimeoutRef.current = setTimeout(() => {
+      const startState = touchStartRef.current;
+      if (startState && startState.taskId === taskId) {
+        setTouchDrag({
+          taskId: startState.taskId,
+          text: startState.text,
+          startX: startState.startX,
+          startY: startState.startY,
+          currentX: startState.startX,
+          currentY: startState.startY,
+          offsetX: startState.startX - startState.rect.left,
+          offsetY: startState.startY - startState.rect.top,
+          width: startState.rect.width,
+          height: startState.rect.height,
+        });
+        
+        setDraggedCardId(taskId);
+        setIsTouchDraggingActive(true);
+        
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate(20); // Firm haptic response to confirm "grabbed" mode
+        }
+      }
+    }, 250);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    
+    // If drag mode is NOT officially started yet, check if they are scrolling
+    if (!isTouchDraggingActive) {
+      if (touchStartRef.current) {
+        const dx = Math.abs(touch.clientX - touchStartRef.current.startX);
+        const dy = Math.abs(touch.clientY - touchStartRef.current.startY);
+        
+        // If they swipe more than 8px on any axis, they are scrolling!
+        if (dx > 8 || dy > 8) {
+          // Cancel custom drag and let the standard scroll happen!
+          if (touchTimeoutRef.current) {
+            clearTimeout(touchTimeoutRef.current);
+            touchTimeoutRef.current = null;
+          }
+          touchStartRef.current = null;
+        }
+      }
+      return; // Do not call preventDefault or update drag states
+    }
+    
+    // If drag mode is ACTIVE, prevent browser page scroll
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+
+    if (!touchDrag) return;
+
+    setTouchDrag(prev => prev ? {
+      ...prev,
+      currentX: touch.clientX,
+      currentY: touch.clientY
+    } : null);
+
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+
+    if (element) {
+      const columnContainer = element.closest('[data-column-id]');
+      if (columnContainer) {
+        const colId = columnContainer.getAttribute('data-column-id');
+        if (colId && draggedOverColumn !== colId) {
+          setDraggedOverColumn(colId);
+        }
+      } else {
+        setDraggedOverColumn(null);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    // Clear the active long press timer
+    if (touchTimeoutRef.current) {
+      clearTimeout(touchTimeoutRef.current);
+      touchTimeoutRef.current = null;
+    }
+
+    const startInfo = touchStartRef.current;
+    touchStartRef.current = null;
+
+    if (!isTouchDraggingActive) {
+      // If it never triggered drag state, check if it was a quick tap
+      if (startInfo) {
+        const touch = e.changedTouches[0];
+        if (touch) {
+          const dx = Math.abs(touch.clientX - startInfo.startX);
+          const dy = Math.abs(touch.clientY - startInfo.startY);
+          if (dx < 10 && dy < 10) {
+            onSelectNode(startInfo.taskId);
+          }
+        }
+      }
+      setIsTouchDraggingActive(false);
+      setTouchDrag(null);
+      setDraggedOverColumn(null);
+      setDraggedCardId(null);
+      return;
+    }
+
+    setIsTouchDraggingActive(false);
+
+    const targetColumnId = draggedOverColumn;
+    const taskId = touchDrag ? touchDrag.taskId : null;
+
+    setTouchDrag(null);
+    setDraggedOverColumn(null);
+    setDraggedCardId(null);
+
+    if (!taskId || !targetColumnId) return;
+
+    const node = nodes.find(n => n.id === taskId);
+    if (!node) return;
+
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(15);
+    }
+
+    moveCardToColumn(node, targetColumnId);
+  };
+
   const handleDragOver = (e: React.DragEvent, columnId: string) => {
     e.preventDefault();
-    if (e.dataTransfer.types.includes('application/task-tag')) {
+    const types = e.dataTransfer && e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
+    if (types.includes('application/task-tag')) {
       return;
     }
     if (draggedOverColumn !== columnId) {
@@ -357,12 +557,13 @@ export default function KanbanView({
     e.preventDefault();
     
     // Ignore tag dropped on column background
-    if (e.dataTransfer.types.includes('application/task-tag')) {
+    const types = e.dataTransfer && e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
+    if (types.includes('application/task-tag')) {
       setDraggedOverColumn(null);
       return;
     }
 
-    const cardId = e.dataTransfer.getData('text/plain') || draggedCardId;
+    const cardId = (e.dataTransfer ? e.dataTransfer.getData('text/plain') : '') || draggedCardId;
     setDraggedOverColumn(null);
     setDraggedCardId(null);
 
@@ -495,6 +696,7 @@ export default function KanbanView({
     const linkPattern = /(\[([^\]]+)\]\(task:([a-zA-Z0-9\-]+)\)|\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]|task:\/\/([a-zA-Z0-9\-]+))/;
     const hasTaskLinks = node.notes && linkPattern.test(node.notes);
     const hasDueDate = node.dueDate;
+    const isDraggingTouch = touchDrag?.taskId === node.id;
 
     return (
       <motion.div
@@ -503,14 +705,19 @@ export default function KanbanView({
         draggable="true"
         onDragStart={(e) => handleDragStart(e, node.id)}
         onClick={(e) => onSelectNode(node.id, e)}
+        onTouchStart={(e) => handleTouchStart(e, node.id, node.text)}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes('application/task-tag')) {
-            e.preventDefault();
+          e.preventDefault();
+          const types = e.dataTransfer && e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
+          if (types.includes('application/task-tag')) {
             e.stopPropagation();
           }
         }}
         onDragEnter={(e) => {
-          if (e.dataTransfer.types.includes('application/task-tag')) {
+          const types = e.dataTransfer && e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
+          if (types.includes('application/task-tag')) {
             e.preventDefault();
             e.stopPropagation();
             setDraggedOverTagCardId(node.id);
@@ -522,7 +729,7 @@ export default function KanbanView({
           }
         }}
         onDrop={(e) => {
-          const tag = e.dataTransfer.getData('application/task-tag');
+          const tag = e.dataTransfer ? e.dataTransfer.getData('application/task-tag') : '';
           if (tag) {
             e.preventDefault();
             e.stopPropagation();
@@ -537,11 +744,20 @@ export default function KanbanView({
           }
         }}
         layoutId={`kanban-card-motion-${node.id}`}
+        layout="position"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.15 }}
+        transition={{
+          type: "spring",
+          stiffness: 320,
+          damping: 28,
+          opacity: { duration: 0.12 },
+          scale: { duration: 0.12 }
+        }}
         className={`group select-none text-left rounded-2xl p-4 shadow-[0_2px_8px_rgba(15,23,42,0.01),0_1px_3px_rgba(15,23,42,0.015)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.05),0_2px_6px_rgba(15,23,42,0.03)] hover:translate-y-[-1.5px] transition-all duration-200 cursor-grab active:cursor-grabbing relative flex flex-col gap-3.5 ${
+          isDraggingTouch ? 'opacity-40 scale-[0.98]' : ''
+        } ${
           activeInlineMenu?.cardId === node.id || activeMoveMenuCardId === node.id
             ? 'z-55 ring-2 ring-indigo-500 bg-white dark:bg-slate-900 shadow-xl scale-[1.01]' 
             : 'z-10'
@@ -1461,10 +1677,11 @@ export default function KanbanView({
               <div
                 key={col.id}
                 id={`kanban-column-root-${col.id}`}
+                data-column-id={col.id}
                 onDragOver={(e) => handleDragOver(e, col.id)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, col.id)}
-                className={`w-72 sm:w-80 shrink-0 rounded-2xl border p-4 flex flex-col h-full transition-all duration-250 scrollbar-thin ${
+                className={`w-64 sm:w-72 shrink-0 rounded-2xl border p-4 flex flex-col h-full transition-all duration-250 scrollbar-thin ${
                   isOverdueCont
                     ? 'border-rose-300 dark:border-rose-800 bg-rose-50/10 dark:bg-rose-950/5 ring-2 ring-rose-500/10 shadow-[0_10px_25px_rgba(244,63,94,0.04)]'
                     : isDraggedOver 
@@ -1649,6 +1866,28 @@ export default function KanbanView({
           })}
         </div>
       </div>
+
+      {/* Touch drag proxy illustration */}
+      {touchDrag && (
+        <div
+          className="kanban-touch-drag-proxy fixed pointer-events-none z-[9999] opacity-90 scale-[1.03] shadow-2xl rounded-xl border-2 border-indigo-500 bg-white dark:bg-slate-900 p-2.5 flex flex-col justify-center text-slate-800 dark:text-slate-100 font-sans"
+          style={{
+            left: 0,
+            top: 0,
+            transform: `translate3d(${touchDrag.currentX - touchDrag.offsetX}px, ${touchDrag.currentY - touchDrag.offsetY}px, 0)`,
+            width: `${touchDrag.width}px`,
+            height: `${touchDrag.height}px`,
+            willChange: 'transform',
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-700 shrink-0 bg-indigo-500" />
+            <span className="font-bold text-[12px] md:text-xs truncate max-w-full">
+              {touchDrag.text}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

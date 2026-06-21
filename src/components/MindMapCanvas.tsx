@@ -5379,13 +5379,15 @@ export default function MindMapCanvas({
                   height: isContainerCollapsed ? '100px' : `${node.height || 400}px`,
                 }}
                 onDragOver={(e) => {
-                  if (e.dataTransfer.types.includes('application/task-tag')) {
+                  const types = e.dataTransfer && e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
+                  if (types.includes('application/task-tag')) {
                     e.preventDefault();
                     e.stopPropagation();
                   }
                 }}
                 onDragEnter={(e) => {
-                  if (e.dataTransfer.types.includes('application/task-tag')) {
+                  const types = e.dataTransfer && e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
+                  if (types.includes('application/task-tag')) {
                     e.preventDefault();
                     e.stopPropagation();
                     setDraggedOverTagNodeId(node.id);
@@ -5397,7 +5399,7 @@ export default function MindMapCanvas({
                   }
                 }}
                 onDrop={(e) => {
-                  const tag = e.dataTransfer.getData('application/task-tag');
+                  const tag = e.dataTransfer ? e.dataTransfer.getData('application/task-tag') : '';
                   if (tag) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -6361,13 +6363,15 @@ export default function MindMapCanvas({
                 width: node.width ? `${node.width}px` : '210px',
               }}
               onDragOver={(e) => {
-                if (e.dataTransfer.types.includes('application/task-tag')) {
+                const types = e.dataTransfer && e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
+                if (types.includes('application/task-tag')) {
                   e.preventDefault();
                   e.stopPropagation();
                 }
               }}
               onDragEnter={(e) => {
-                if (e.dataTransfer.types.includes('application/task-tag')) {
+                const types = e.dataTransfer && e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
+                if (types.includes('application/task-tag')) {
                   e.preventDefault();
                   e.stopPropagation();
                   setDraggedOverTagNodeId(node.id);
@@ -6379,7 +6383,7 @@ export default function MindMapCanvas({
                 }
               }}
               onDrop={(e) => {
-                const tag = e.dataTransfer.getData('application/task-tag');
+                const tag = e.dataTransfer ? e.dataTransfer.getData('application/task-tag') : '';
                 if (tag) {
                   e.preventDefault();
                   e.stopPropagation();
