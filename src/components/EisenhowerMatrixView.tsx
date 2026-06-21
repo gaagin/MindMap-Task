@@ -28,6 +28,7 @@ interface EisenhowerMatrixProps {
   onCreateTask?: (text: string, initialTags: string[], priority?: Priority, parentId?: string | null) => void;
   selectedNodeIds?: string[];
   searchQuery?: string;
+  onFullScreenChange?: (isFullScreen: boolean) => void;
 }
 
 interface QuadrantConfig {
@@ -55,9 +56,16 @@ export default function EisenhowerMatrixView({
   onCreateTask,
   selectedNodeIds = [],
   searchQuery = '',
+  onFullScreenChange,
 }: EisenhowerMatrixProps) {
   const [filterCompleted, setFilterCompleted] = useState<'all' | 'active' | 'completed'>('active');
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (onFullScreenChange) {
+      onFullScreenChange(isFullScreen);
+    }
+  }, [isFullScreen, onFullScreenChange]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -289,13 +297,26 @@ export default function EisenhowerMatrixView({
     if (!touchDrag) return;
 
     const targetQuadrantId = draggedOverQuadrant;
+    const taskId = touchDrag.taskId;
+
+    // Detect if this was a simple tap (very minimal touch movement)
+    const dx = Math.abs(touchDrag.currentX - touchDrag.startX);
+    const dy = Math.abs(touchDrag.currentY - touchDrag.startY);
+    const isTap = dx < 10 && dy < 10;
+
     setTouchDrag(null);
     setDraggedOverQuadrant(null);
     setDraggedCardId(null);
 
+    if (isTap) {
+      // Direct touch select to open details panel for the task immediately
+      onSelectNode(taskId);
+      return;
+    }
+
     if (!targetQuadrantId) return;
 
-    const task = nodes.find(n => n.id === touchDrag.taskId);
+    const task = nodes.find(n => n.id === taskId);
     if (!task) return;
 
     const targetQuad = quadrants.find(q => q.id === targetQuadrantId);

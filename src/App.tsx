@@ -2956,7 +2956,7 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         
         {/* Workspace Top Action Bar Header */}
-        <header className={`${isContainerFocused ? 'hidden md:flex' : 'flex'} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
+        <header className={`${isViewFullScreen ? 'hidden' : (isContainerFocused ? 'hidden md:flex' : 'flex')} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
           (!currentUser || !googleToken)
             ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-900/40'
             : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800'
@@ -3639,6 +3639,7 @@ export default function App() {
                 onCreateTagCategory={handleCreateTagCategory}
                 onUpdateTagCategory={handleUpdateTagCategory}
                 onDeleteTagCategory={handleDeleteTagCategory}
+                onFullScreenChange={setIsViewFullScreen}
               />
             ) : viewMode === 'kanban' ? (
               <KanbanView
@@ -3655,6 +3656,7 @@ export default function App() {
                 selectedNodeIds={selectedNodeIds}
                 onToggleSelectNode={handleToggleSelectNode}
                 searchQuery={searchQuery}
+                onFullScreenChange={setIsViewFullScreen}
               />
             ) : viewMode === 'calendar' ? (
               <CalendarView
@@ -3670,6 +3672,7 @@ export default function App() {
                   handleCreateMobileTask(text, initialTags || [], 'none', dueDate, null, dueTime);
                 }}
                 setViewMode={setViewMode}
+                onFullScreenChange={setIsViewFullScreen}
               />
             ) : viewMode === 'gantt' ? (
               <GanttView
@@ -3684,6 +3687,7 @@ export default function App() {
                 onCreateTask={(text, initialTags, dueDate) => {
                   handleCreateMobileTask(text, initialTags || [], 'none', dueDate);
                 }}
+                onFullScreenChange={setIsViewFullScreen}
               />
             ) : viewMode === 'table' ? (
               <TableView
@@ -3701,6 +3705,7 @@ export default function App() {
                 selectedNodeIds={selectedNodeIds}
                 onToggleSelectNode={handleToggleSelectNode}
                 onToggleSelectAll={handleToggleSelectAll}
+                onFullScreenChange={setIsViewFullScreen}
               />
             ) : viewMode === 'eisenhower' ? (
               <EisenhowerMatrixView
@@ -3715,6 +3720,7 @@ export default function App() {
                 onCreateTask={handleCreateKanbanTask}
                 selectedNodeIds={selectedNodeIds}
                 searchQuery={searchQuery}
+                onFullScreenChange={setIsViewFullScreen}
               />
             ) : (
               <MindMapCanvas
@@ -3755,6 +3761,7 @@ export default function App() {
                 searchQuery={searchQuery}
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 onContainerFocusChange={setIsContainerFocused}
+                onFullScreenChange={setIsViewFullScreen}
               />
             )
           ) : (

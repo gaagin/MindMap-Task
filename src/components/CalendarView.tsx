@@ -37,6 +37,7 @@ interface CalendarViewProps {
   onDeleteNode: (id: string) => void;
   onCreateTask?: (text: string, initialTags: string[], dueDate?: string, dueTime?: string) => void;
   setViewMode?: (mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower') => void;
+  onFullScreenChange?: (isFullScreen: boolean) => void;
 }
 
 const MONTH_NAMES_RU = [
@@ -56,10 +57,17 @@ export default function CalendarView({
   onUpdateNode,
   onDeleteNode,
   onCreateTask,
-  setViewMode
+  setViewMode,
+  onFullScreenChange
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (onFullScreenChange) {
+      onFullScreenChange(isFullScreen);
+    }
+  }, [isFullScreen, onFullScreenChange]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

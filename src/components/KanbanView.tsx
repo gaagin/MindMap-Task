@@ -39,6 +39,7 @@ interface KanbanViewProps {
   selectedNodeIds?: string[];
   onToggleSelectNode?: (id: string) => void;
   searchQuery?: string;
+  onFullScreenChange?: (isFullScreen: boolean) => void;
 }
 
 export default function KanbanView({
@@ -55,11 +56,18 @@ export default function KanbanView({
   selectedNodeIds = [],
   onToggleSelectNode,
   searchQuery = '',
+  onFullScreenChange,
 }: KanbanViewProps) {
   const [groupBy, setGroupBy] = useState<'category' | 'priority' | 'container'>(() => {
     return tagCategories.length === 0 ? 'priority' : 'category';
   });
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (onFullScreenChange) {
+      onFullScreenChange(isFullScreen);
+    }
+  }, [isFullScreen, onFullScreenChange]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1191,20 +1199,20 @@ export default function KanbanView({
         className="bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-900 select-none transition-all duration-200"
       >
         {/* Compact Summary Header Row - Always visible, extremely thin and space-saving */}
-        <div className="flex items-center justify-between px-3 py-1 md:px-5 md:py-1.5 border-b border-slate-200/30 dark:border-slate-800/20 bg-white/60 dark:bg-slate-900/30">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold text-slate-600 dark:text-slate-350 flex-1 min-w-0 pr-2">
-            <span className="flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/30 text-[#4f46e5] dark:text-indigo-400 px-1.5 py-0.5 rounded-md border border-indigo-100/30 font-black tracking-wide uppercase text-[9px] shrink-0">
+        <div className="flex items-center justify-between px-2.5 py-0.5 md:px-4 md:py-1 border-b border-slate-200/30 dark:border-slate-800/20 bg-white/60 dark:bg-slate-900/30">
+          <div className="flex flex-nowrap items-center gap-x-1.5 text-[10.5px] font-bold text-slate-600 dark:text-slate-350 flex-1 min-w-0 pr-1.5 overflow-x-auto scrollbar-none">
+            <span className="flex items-center gap-0.5 bg-indigo-50 dark:bg-indigo-950/30 text-[#4f46e5] dark:text-indigo-400 px-1 py-0.2 rounded border border-indigo-100/30 font-black tracking-wide uppercase text-[8.5px] shrink-0">
               <KanbanIcon className="w-2.5 h-2.5" />
               КАНБАН
             </span>
-            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10.5px]">
+            <div className="flex flex-nowrap items-center gap-x-1 text-[9.5px] shrink-0">
               <span className="text-slate-500 dark:text-slate-400">Группа:</span>
-              <span className="text-[#4f46e5] dark:text-indigo-400 font-extrabold px-1 py-0.2 text-[10px] rounded bg-indigo-50/40 dark:bg-indigo-950/20 shrink-0 border border-indigo-100/10">
+              <span className="text-[#4f46e5] dark:text-indigo-400 font-extrabold px-1 py-0.2 text-[9px] rounded bg-indigo-50/40 dark:bg-indigo-950/20 shrink-0 border border-indigo-100/10">
                 {groupBy === 'category' ? 'Категории' : groupBy === 'priority' ? 'Приоритеты' : 'Контейнеры'}
               </span>
-              <span className="text-slate-300 dark:text-slate-700/60">|</span>
+              <span className="text-slate-300 dark:text-slate-700/60 font-normal">|</span>
               <span className="text-slate-500 dark:text-slate-400">Внутри:</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-extrabold px-1 py-0.2 text-[10px] rounded bg-emerald-50/40 dark:bg-emerald-950/20 truncate max-w-[100px] inline-block align-bottom shrink-0 border border-emerald-100/10">
+              <span className="text-emerald-600 dark:text-emerald-400 font-extrabold px-1 py-0.2 text-[9px] rounded bg-emerald-50/40 dark:bg-emerald-950/20 truncate max-w-[80px] inline-block align-bottom shrink-0 border border-emerald-100/10">
                 {selectedContainerFilterId === 'all' 
                   ? 'Все' 
                   : selectedContainerFilterId === 'no-container' 
@@ -1213,20 +1221,20 @@ export default function KanbanView({
               </span>
               {groupBy === 'category' && activeCategory && (
                 <>
-                  <span className="text-slate-300 dark:text-slate-700/60">|</span>
-                  <span className="inline-flex items-center gap-1 px-1 py-0.2 text-[10px] rounded font-extrabold text-[#4f46e5] dark:text-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20 shrink-0 border border-indigo-100/10">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeCategory.color }} />
-                    <span className="truncate max-w-[70px]">{activeCategory.name}</span>
+                  <span className="text-slate-300 dark:text-slate-700/60 font-normal">|</span>
+                  <span className="inline-flex items-center gap-1 px-1 py-0.2 text-[9px] rounded font-extrabold text-[#4f46e5] dark:text-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20 shrink-0 border border-indigo-100/10">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: activeCategory.color }} />
+                    <span className="truncate max-w-[60px]">{activeCategory.name}</span>
                   </span>
                 </>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0 md:ml-auto">
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto select-none">
             {/* Сортировка */}
-            <div className="flex items-center gap-1.5 bg-slate-100/60 dark:bg-slate-800/50 px-2 py-0.5 rounded-lg border border-slate-200/50 dark:border-slate-800">
-              <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 whitespace-nowrap select-none hidden sm:inline">
+            <div className="flex items-center gap-1 bg-slate-100/60 dark:bg-slate-800/50 px-1.5 py-0.2 rounded border border-slate-200/50 dark:border-slate-800">
+              <span className="text-[9.5px] font-black text-slate-500 dark:text-slate-400 whitespace-nowrap select-none hidden sm:inline">
                 Сортировка:
               </span>
               <div className="relative shrink-0">
@@ -1234,7 +1242,7 @@ export default function KanbanView({
                   id="kanban-sort-select"
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as any)}
-                  className="appearance-none bg-transparent text-slate-700 dark:text-slate-300 text-[10.5px] font-black pr-5 cursor-pointer focus:outline-none transition-all"
+                  className="appearance-none bg-transparent text-slate-700 dark:text-slate-300 text-[10px] font-black pr-4 cursor-pointer focus:outline-none transition-all py-0"
                 >
                   <option value="default" className="bg-white dark:bg-slate-900">📋 По умолчанию</option>
                   <option value="priority" className="bg-white dark:bg-slate-900">🔥 По приоритету</option>
@@ -1249,24 +1257,24 @@ export default function KanbanView({
             <button
               type="button"
               onClick={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
-              className="flex items-center gap-1 px-2.5 py-0.5 text-[10.5px] font-black hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer transition-colors border border-slate-200/50 dark:border-slate-800/85 text-slate-700 dark:text-slate-300 whitespace-nowrap shrink-0"
+              className="flex items-center gap-0.5 px-1.5 py-0.2 text-[10px] font-black hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer transition-colors border border-slate-200/50 dark:border-slate-800/85 text-slate-700 dark:text-slate-300 whitespace-nowrap shrink-0"
             >
               <span>{isFiltersCollapsed ? 'Фильтры' : 'Свернуть'}</span>
-              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isFiltersCollapsed ? '' : 'rotate-180'}`} />
+              <ChevronDown className={`w-2.5 h-2.5 transition-transform duration-200 ${isFiltersCollapsed ? '' : 'rotate-180'}`} />
             </button>
 
             {/* Toggle Button for Full Screen */}
             <button
               type="button"
               onClick={() => setIsFullScreen(!isFullScreen)}
-              className={`flex items-center gap-1 px-2 py-0.5 text-[10.5px] font-black rounded-md cursor-pointer transition-all border ${
+              className={`flex items-center gap-0.5 px-1.5 py-0.2 text-[10px] font-black rounded cursor-pointer transition-all border ${
                 isFullScreen 
                   ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-850 dark:text-amber-400' 
                   : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-slate-700 dark:text-slate-300 border-slate-200/50 dark:border-slate-800'
               }`}
               title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
             >
-              {isFullScreen ? <Minimize2 className="w-3 h-3 text-current" /> : <Maximize2 className="w-3 h-3 text-current" />}
+              {isFullScreen ? <Minimize2 className="w-2.5 h-2.5 text-current" /> : <Maximize2 className="w-2.5 h-2.5 text-current" />}
               <span className="hidden sm:inline-block font-black">{isFullScreen ? "Свернуть" : "На весь экран"}</span>
             </button>
           </div>

@@ -85,6 +85,7 @@ interface MindMapCanvasProps {
   lastCreatedNodeId?: string | null;
   onClearLastCreatedNodeId?: () => void;
   onContainerFocusChange?: (isFocused: boolean) => void;
+  onFullScreenChange?: (isFullScreen: boolean) => void;
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -289,10 +290,17 @@ export default function MindMapCanvas({
   tagCategories = [],
   lastCreatedNodeId,
   onClearLastCreatedNodeId,
-  onContainerFocusChange
+  onContainerFocusChange,
+  onFullScreenChange
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (onFullScreenChange) {
+      onFullScreenChange(isFullScreen);
+    }
+  }, [isFullScreen, onFullScreenChange]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

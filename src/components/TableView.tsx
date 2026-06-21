@@ -34,6 +34,7 @@ interface TableViewProps {
   selectedNodeIds: string[];
   onToggleSelectNode: (id: string) => void;
   onToggleSelectAll: (ids: string[]) => void;
+  onFullScreenChange?: (isFullScreen: boolean) => void;
 }
 
 type SortField = 'text' | 'completed' | 'priority' | 'progress' | 'dueDate' | 'pomodoroTotalTime';
@@ -52,6 +53,7 @@ export default function TableView({
   selectedNodeIds = [],
   onToggleSelectNode,
   onToggleSelectAll,
+  onFullScreenChange,
 }: TableViewProps) {
   const [sortField, setSortField] = useState<SortField>('text');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -59,6 +61,12 @@ export default function TableView({
   const [newInlineText, setNewInlineText] = useState('');
   const [isControlsExpanded, setIsControlsExpanded] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (onFullScreenChange) {
+      onFullScreenChange(isFullScreen);
+    }
+  }, [isFullScreen, onFullScreenChange]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -345,7 +353,7 @@ export default function TableView({
       className={`flex flex-col bg-[#FAFBFD] dark:bg-slate-900 font-sans overflow-hidden transition-all duration-200 ${
         isFullScreen 
           ? 'fixed inset-0 z-[150] w-screen h-screen' 
-          : 'w-full h-[calc(100vh-130px)] dark:bg-slate-950/20'
+          : 'w-full h-full dark:bg-slate-950/20'
       }`}
     >
       

@@ -31,6 +31,7 @@ interface GanttViewProps {
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask?: (text: string, initialTags: string[], dueDate?: string) => void;
+  onFullScreenChange?: (isFullScreen: boolean) => void;
 }
 
 export default function GanttView({
@@ -42,9 +43,16 @@ export default function GanttView({
   onSelectNode,
   onUpdateNode,
   onDeleteNode,
-  onCreateTask
+  onCreateTask,
+  onFullScreenChange
 }: GanttViewProps) {
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (onFullScreenChange) {
+      onFullScreenChange(isFullScreen);
+    }
+  }, [isFullScreen, onFullScreenChange]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

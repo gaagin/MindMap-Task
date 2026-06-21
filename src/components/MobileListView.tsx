@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { generateId } from '../utils';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface MobileListViewProps {
   nodes: TaskNode[];
@@ -44,6 +45,7 @@ interface MobileListViewProps {
   onCreateTagCategory?: (name: string, color: string) => void;
   onUpdateTagCategory?: (id: string, name: string, color: string, tags: string[]) => void;
   onDeleteTagCategory?: (id: string) => void;
+  onFullScreenChange?: (isFullScreen: boolean) => void;
 }
 
 interface TaskTreeItem {
@@ -64,6 +66,7 @@ export default function MobileListView({
   onCreateTagCategory,
   onUpdateTagCategory,
   onDeleteTagCategory,
+  onFullScreenChange,
 }: MobileListViewProps) {
   // Inbox / State filters
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed' | 'today' | 'overdue'>('active');
@@ -73,6 +76,12 @@ export default function MobileListView({
   const [mobileSearchIndex, setMobileSearchIndex] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    if (onFullScreenChange) {
+      onFullScreenChange(isFullScreen);
+    }
+  }, [isFullScreen, onFullScreenChange]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -153,6 +162,7 @@ export default function MobileListView({
   const [newTaskPriority, setNewTaskPriority] = useState<Priority>('low');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
   const [newTaskTags, setNewTaskTags] = useState<string[]>([]);
+  const [showQuickOptions, setShowQuickOptions] = useState(false);
   
   // Inline edit state
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -414,6 +424,7 @@ export default function MobileListView({
     setNewTaskPriority('low');
     setNewTaskDueDate('');
     setNewTaskTags([]);
+    setShowQuickOptions(false);
   };
 
   // Quick Subtask Creation handler
@@ -1277,85 +1288,116 @@ export default function MobileListView({
 
       {/* Modern Quick Task Creator - Fixed Mobile Pane at the bottom (TickTick essence!) */}
       <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0 shadow-lg select-none">
-        <form onSubmit={handleAddTaskSubmit} className="space-y-3">
+        <form onSubmit={handleAddTaskSubmit} className="space-y-0.5">
           <div className="flex items-center gap-2">
             <input
               id="mobile-quick-task-text"
               type="text"
               value={newTaskText}
-              onChange={(e) => setNewTaskText(e.target.value)}
+              onChange={(e) => {
+                setNewTaskText(e.target.value);
+                if (e.target.value.trim() && !showQuickOptions) {
+                  setShowQuickOptions(true);
+                }
+              }}
+              onFocus={() => setShowQuickOptions(true)}
               placeholder="Новая главная задача..."
               className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             
             <button
+              type="button"
+              onClick={() => setShowQuickOptions(!showQuickOptions)}
+              className={`p-2.5 rounded-xl transition-all cursor-pointer border shrink-0 flex items-center justify-center ${
+                showQuickOptions 
+                  ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-450' 
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
+              }`}
+              title={showQuickOptions ? "Скрыть настройки" : "Дополнительные параметры"}
+            >
+              <SlidersHorizontal className="w-5 h-5" />
+            </button>
+
+            <button
               id="mobile-quick-task-submit"
               type="submit"
               disabled={!newTaskText.trim()}
-              className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl transition-all shadow-xs cursor-pointer shrink-0"
+              className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl transition-all shadow-xs cursor-pointer shrink-0 flex items-center justify-center"
               title="Добавить"
             >
               <Plus className="w-5 h-5 stroke-[2.5]" />
             </button>
           </div>
 
-          {/* Context Options panel (Priority, Date, Tags selection) */}
-          <div className="flex flex-col gap-2 pt-1 xs:flex-row xs:items-center xs:justify-between">
-            <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-              
-              {/* Priority Select inside input frame */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700 max-w-[130px] shrink-0 min-w-0">
-                <Flag className="w-3.5 h-3.5 text-indigo-505 shrink-0" />
-                <select
-                  id="mobile-quick-priority"
-                  value={newTaskPriority}
-                  onChange={(e) => setNewTaskPriority(e.target.value as Priority)}
-                  className="bg-transparent border-none text-[11px] font-bold text-slate-600 dark:text-slate-350 focus:outline-none cursor-pointer w-full"
-                >
-                  <option value="low">Низкий 🔵</option>
-                  <option value="medium">Средний 🟡</option>
-                  <option value="high">Высокий 🔴</option>
-                  <option value="urgent">Срочно 🔥</option>
-                </select>
-              </div>
+          {/* Context Options panel (Priority, Date, Tags selection) - COLLAPSIBLE via Framer Motion */}
+          <AnimatePresence initial={false}>
+            {showQuickOptions && (
+              <motion.div
+                initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                animate={{ height: "auto", opacity: 1, marginTop: 12 }}
+                exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+                className="overflow-hidden"
+              >
+                <div className="flex flex-col gap-2 pt-1 xs:flex-row xs:items-center xs:justify-between border-t border-slate-100 dark:border-slate-800/60 pt-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                    
+                    {/* Priority Select inside input frame */}
+                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700 max-w-[130px] shrink-0 min-w-0">
+                      <Flag className="w-3.5 h-3.5 text-indigo-505 shrink-0" />
+                      <select
+                        id="mobile-quick-priority"
+                        value={newTaskPriority}
+                        onChange={(e) => setNewTaskPriority(e.target.value as Priority)}
+                        className="bg-transparent border-none text-[11px] font-bold text-slate-600 dark:text-slate-350 focus:outline-none cursor-pointer w-full"
+                      >
+                        <option value="low">Низкий 🔵</option>
+                        <option value="medium">Средний 🟡</option>
+                        <option value="high">Высокий 🔴</option>
+                        <option value="urgent">Срочно 🔥</option>
+                      </select>
+                    </div>
 
-              {/* Date Select inside input frame */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700 shrink-0">
-                <Calendar className="w-3.5 h-3.5 text-emerald-555 shrink-0" />
-                <input
-                  id="mobile-quick-date"
-                  type="date"
-                  value={newTaskDueDate}
-                  onChange={(e) => setNewTaskDueDate(e.target.value)}
-                  className="bg-transparent border-none text-[11px] text-slate-600 dark:text-slate-350 focus:outline-none focus:ring-0 w-[110px]"
-                />
-              </div>
+                    {/* Date Select inside input frame */}
+                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700 shrink-0">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-555 shrink-0" />
+                      <input
+                        id="mobile-quick-date"
+                        type="date"
+                        value={newTaskDueDate}
+                        onChange={(e) => setNewTaskDueDate(e.target.value)}
+                        className="bg-transparent border-none text-[11px] text-slate-600 dark:text-slate-350 focus:outline-none focus:ring-0 w-[110px]"
+                      />
+                    </div>
 
-            </div>
+                  </div>
 
-            {/* Quick tags selection selector */}
-            {tagCategories.length > 0 && (
-              <div className="flex gap-1 max-w-[200px] overflow-x-auto pb-0.5 scrollbar-none select-none">
-                {tagCategories.flatMap(c => c.tags || []).slice(0, 5).map(tag => {
-                  const isSelected = newTaskTags.includes(tag);
-                  return (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => handleToggleTagInNewTask(tag)}
-                      className={`px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap cursor-pointer border transition-all ${
-                        isSelected
-                          ? 'bg-indigo-600 border-transparent text-white'
-                          : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      #{tag}
-                    </button>
-                  );
-                })}
-              </div>
+                  {/* Quick tags selection selector */}
+                  {tagCategories.length > 0 && (
+                    <div className="flex gap-1 max-w-[200px] overflow-x-auto pb-0.5 scrollbar-none select-none">
+                      {tagCategories.flatMap(c => c.tags || []).slice(0, 5).map(tag => {
+                        const isSelected = newTaskTags.includes(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => handleToggleTagInNewTask(tag)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap cursor-pointer border transition-all ${
+                              isSelected
+                                ? 'bg-indigo-600 border-transparent text-white'
+                                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700'
+                            }`}
+                          >
+                            #{tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
             )}
-          </div>
+          </AnimatePresence>
         </form>
       </div>
 
