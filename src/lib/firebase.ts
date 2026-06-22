@@ -1,19 +1,52 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// Configure Firestore with experimentalForceLongPolling for iframe sandboxes
-// and persistentLocalCache for offline-first support and reducing read quota usage (Notion style)
-export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-  useFetchStreams: false,
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-} as any);
+// Detect if we are in an iframe or if IndexedDB/localStorage is blocked/restricted
+const shouldDisablePersistentCache = (): boolean => {
+  if (typeof window === 'undefined') return true;
+  
+  // 1. Check if inside an iframe
+  if (window.self !== window.top) {
+    console.log('[Firebase Settings] Inside iframe environment. Opting for memory-only Firestore cache to avoid sandbox lock hangs.');
+    return true;
+  }
+
+  // 2. Safely probe IndexedDB and localStorage
+  try {
+    if (!window.indexedDB) return true;
+    // Attempt a dummy probe to detect SecurityError or blocking in restricted domains
+    const temp = window.localStorage.getItem('__init_probe__');
+    window.localStorage.setItem('__init_probe__', '1');
+    window.localStorage.removeItem('__init_probe__');
+  } catch (e) {
+    console.warn('[Firebase Settings] Storage/IndexedDB access restricted or throws SecurityError. Opting for memory-only Firestore cache:', e);
+    return true;
+  }
+
+  return false;
+};
+
+const localCacheConfig = shouldDisablePersistentCache()
+  ? memoryLocalCache()
+  : persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    });
+
+// Configure Firestore with persistentLocalCache/memoryLocalCache for offline-first support and reducing read quota usage,
+// and force long polling to bypass iframe/proxy stream network blocks
+export const db = initializeFirestore(
+  app,
+  {
+    experimentalForceLongPolling: true,
+    useFetchStreams: false,
+    localCache: localCacheConfig
+  } as any,
+  (firebaseConfig as any).firestoreDatabaseId || '(default)'
+);
 
 export const auth = getAuth(app);
 

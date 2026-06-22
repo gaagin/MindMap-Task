@@ -404,6 +404,21 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+/**
+ * Executes a promise with a timeout window. Rejects if timeout expires.
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+  let timeoutId: any;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(errorMessage));
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
 // ----------------- DISCIPLINED POINT-LEVEL DELTA WRITES -----------------
 
 /**
@@ -440,13 +455,15 @@ export async function saveToFirebaseDirectly(
     // 1. Fetch current cloud document safely using standard offline-first friendly getDoc with cache fallback
     let cloudDocSnap = null;
     try {
-      cloudDocSnap = await getDoc(docRef);
+      // 15-second timeout to fall back to cache quickly if connection is blocked or hanging
+      cloudDocSnap = await withTimeout(getDoc(docRef), 15000, 'Firestore fetch timed out');
     } catch (e: any) {
       const isOfflineError = !navigator.onLine || 
         String(e?.message || '').toLowerCase().includes('offline') ||
+        String(e?.message || '').toLowerCase().includes('timeout') ||
         e?.code === 'unavailable';
       if (isOfflineError) {
-        console.warn('[Sync] Offline or connection error; attempting to load from local Firestore cache for delta updates...', e);
+        console.warn('[Sync] Offline, timeout, or connection error; attempting to load from local Firestore cache for delta updates...', e);
         try {
           cloudDocSnap = await getDocFromCache(docRef);
           console.log('[Sync] Success loading from local cache for delta computation while offline.');
@@ -477,7 +494,7 @@ export async function saveToFirebaseDirectly(
       };
 
       const sanitized = sanitizeForFirestore(rawPayload);
-      await setDoc(docRef, sanitized);
+      await withTimeout(setDoc(docRef, sanitized), 25000, 'Firestore write/set timed out');
       updateLastSyncedStateCache(state); // Update local memory representation
       console.log('[Sync] Created brand new user workspace root doc with server timestamp.');
       return { success: true };
@@ -563,7 +580,7 @@ export async function saveToFirebaseDirectly(
       deltaMap['updatedAt'] = serverTimestamp();
       
       const sanitizedDelta = sanitizeForFirestore(deltaMap);
-      await updateDoc(docRef, sanitizedDelta);
+      await withTimeout(updateDoc(docRef, sanitizedDelta), 25000, 'Firestore write/update timed out');
       console.log(`[Sync Delta] Successfully updated modified key fields in Firestore:`, Object.keys(deltaMap));
     } else {
       console.log('[Sync Delta] No point changes detected after structural merging.');
@@ -594,10 +611,11 @@ export async function loadFromFirebaseDirectly(userId: string): Promise<Workspac
   let snap;
   try {
     try {
-      snap = await getDoc(docRef);
+      snap = await withTimeout(getDoc(docRef), 15000, 'Firestore fetch timed out');
     } catch (getDocErr: any) {
       const isOfflineError = !navigator.onLine || 
         String(getDocErr?.message || '').toLowerCase().includes('offline') ||
+        String(getDocErr?.message || '').toLowerCase().includes('timeout') ||
         getDocErr?.code === 'unavailable';
       if (isOfflineError) {
         console.warn('[Sync] Offline or connection error detected during direct Firestore load. Attempting to load from local cache...');
@@ -628,6 +646,7 @@ export async function loadFromFirebaseDirectly(userId: string): Promise<Workspac
     
     const isOfflineMode = !navigator.onLine || 
       String(error?.message || '').toLowerCase().includes('offline') ||
+      String(error?.message || '').toLowerCase().includes('timeout') ||
       error?.code === 'unavailable';
       
     if (isOfflineMode) {
