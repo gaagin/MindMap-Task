@@ -481,7 +481,7 @@ export default function App() {
   });
   const [roomSyncStatus, setRoomSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle');
   const [roomSyncFeedback, setRoomSyncFeedback] = useState<string | null>(null);
-  const [syncTab, setSyncTab] = useState<'pairing' | 'firebase'>('pairing');
+  const [syncTab, setSyncTab] = useState<'pairing' | 'firebase'>('firebase');
   const [syncStatus, setSyncStatus] = useState<{
     local: 'saved' | 'saving' | 'error';
     firebase: 'idle' | 'saved' | 'syncing' | 'error';
@@ -1295,33 +1295,12 @@ export default function App() {
 
   // Safe debounce auto-uploader for custom pairing sync-room
   useEffect(() => {
-    if (!roomSyncAuto || !roomSyncId) return;
-    const isFirstTime = lastRoomStateRef.current === null;
-    const stateChanged = !isFirstTime && state !== lastRoomStateRef.current;
-    lastRoomStateRef.current = state;
-    if (stateChanged) {
-      const id = roomSyncId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-      const timer = setTimeout(() => {
-        saveStateToSyncRoom(id, state);
-      }, 2500); // 2.5s debounce for Room Autosave
-      return () => clearTimeout(timer);
-    }
+    return; // Deactivated in favor of exclusive and seamless Google/Firebase Cloud Sync
   }, [state, roomSyncAuto, roomSyncId]);
 
   // Safe window load and focus automatic merger logic
   useEffect(() => {
-    if (!roomSyncAuto || !roomSyncId) return;
-    const id = roomSyncId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    
-    // Auto-fetch from room on load
-    loadStateFromSyncRoom(id);
-
-    // Auto-fetch from room on focus/tab activate
-    const handleFocus = () => {
-      loadStateFromSyncRoom(id);
-    };
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+    return; // Deactivated in favor of exclusive and seamless Google/Firebase Cloud Sync
   }, [roomSyncAuto, roomSyncId]);
 
   // 3. Real-time Firestore snapshot synchronization for instant Desktop-to-Mobile and Mobile-To-Desktop updates
@@ -4150,172 +4129,9 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Modal Tabs Selection */}
-              <div className="flex border-b border-slate-200 dark:border-slate-800 px-6 bg-slate-50/50 dark:bg-slate-900/40 font-sans shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setSyncTab('pairing')}
-                  className={`py-3 px-4 font-bold text-xs border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-                    syncTab === 'pairing'
-                      ? 'border-indigo-600 dark:text-indigo-400 text-indigo-600 dark:text-indigo-400'
-                      : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
-                  }`}
-                >
-                  <Key className="w-4 h-4 text-indigo-500 shrink-0" />
-                  <span>1. По коду (РЕКОМЕНДУЕТСЯ)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSyncTab('firebase')}
-                  className={`py-3 px-4 font-bold text-xs border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-                    syncTab === 'firebase'
-                      ? 'border-indigo-600 dark:text-indigo-400 text-indigo-600 dark:text-indigo-400'
-                      : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
-                  }`}
-                >
-                  <Database className="w-4 h-4 text-indigo-500 shrink-0" />
-                  <span>2. Firebase Cloud</span>
-                </button>
-              </div>
-
               {/* Modal Content Scroll */}
               <div className="p-6 overflow-y-auto space-y-5.5 text-xs text-slate-700 dark:text-slate-300">
                 
-                {/* 1. ROOM PAIRING SYNCHRONIZATION TAB */}
-                {syncTab === 'pairing' && (
-                  <div className="space-y-4 animate-in fade-in duration-200">
-                    <div className="bg-indigo-50/30 dark:bg-indigo-950/10 border border-indigo-150/70 dark:border-indigo-900/30 p-4.5 rounded-2xl space-y-4">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg text-indigo-700 dark:text-indigo-300 shrink-0">
-                          <Key className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">
-                            Моментальное объединение баз по синхро-коду
-                          </h4>
-                          <p className="text-[11.5px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
-                            Самый стабильный и простой способ связать ПК и сотовый телефон под одной базой. Работает напрямую через локальный контейнер и полностью игнорирует ограничения сторонних cookies, CORS, Safari и блокировщиков рекламы.
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Code Input Form */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4.5 pt-1">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            Ваш Ключ/Код синхронизации:
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={roomSyncId}
-                              onChange={(e) => setRoomSyncId(e.target.value.trim().toUpperCase())}
-                              placeholder="Например: 123456"
-                              className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-805 rounded-xl py-2 px-3 focus:ring-1 focus:ring-indigo-500 focus:outline-none cursor-text text-xs font-bold font-mono tracking-widest text-slate-800 dark:text-slate-100 w-full"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const gen = Math.floor(100000 + Math.random() * 900000).toString();
-                                setRoomSyncId(gen);
-                                localStorage.setItem('milli_room_sync_id', gen);
-                              }}
-                              title="Сгенерировать случайный числовой код"
-                              className="px-3 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-750 rounded-xl text-xs font-bold cursor-pointer transition-colors shrink-0"
-                            >
-                              ⚙️ Случайный
-                            </button>
-                          </div>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 leading-snug">
-                            Вы можете использовать сгенерированный код или написать своё кодовое слово (например: <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[9px]">my-tasks-base</code>)
-                          </p>
-                        </div>
-
-                        {/* Background autosave selector */}
-                        <div className="flex flex-col justify-start">
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            Фоновая авто-синхронизация:
-                          </label>
-                          <label className="flex items-start gap-2.5 p-2.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/50 rounded-xl cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={roomSyncAuto}
-                              onChange={(e) => {
-                                const checked = e.target.checked;
-                                setRoomSyncAuto(checked);
-                                localStorage.setItem('milli_room_sync_auto', String(checked));
-                                if (checked) {
-                                  saveStateToSyncRoom(roomSyncId);
-                                }
-                              }}
-                              className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer mt-0.5"
-                            />
-                            <div className="min-w-0">
-                              <span className="font-bold text-xs text-slate-700 dark:text-slate-200 block leading-tight">
-                                Включить фоновый автообмен
-                              </span>
-                              <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-tight mt-0.5">
-                                Будет автоматически выгружать базу в облачный буфер при изменениях, и скачивать обновления при открытии/фокусе приложения на любом из ваших экранов.
-                              </span>
-                            </div>
-                          </label>
-                        </div>
-                      </div>
-
-                      {/* Sync triggers */}
-                      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-indigo-100/50 dark:border-indigo-900/30">
-                        <button
-                          type="button"
-                          disabled={roomSyncStatus === 'syncing'}
-                          onClick={() => saveStateToSyncRoom(roomSyncId)}
-                          className="py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all hover:scale-[1.01] flex items-center justify-center gap-1.5 disabled:opacity-50"
-                        >
-                          {roomSyncStatus === 'syncing' ? 'Сохранение...' : 'Выгрузить в Интернет'}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={roomSyncStatus === 'syncing'}
-                          onClick={() => loadStateFromSyncRoom(roomSyncId)}
-                          className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all hover:scale-[1.01] flex items-center justify-center gap-1.5 disabled:opacity-50"
-                        >
-                          {roomSyncStatus === 'syncing' ? 'Загрузка...' : 'Загрузить & Объединить'}
-                        </button>
-                      </div>
-
-                      {/* Room Sync feedback states */}
-                      {roomSyncFeedback && (
-                        <div className={`p-3 rounded-xl text-[11px] font-bold flex items-start gap-2 animate-in fade-in duration-150 ${
-                          roomSyncStatus === 'error'
-                            ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-605 border border-rose-200 dark:border-rose-900'
-                            : 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 border border-emerald-200 dark:border-emerald-900'
-                        }`}>
-                          <Info className={`w-4 h-4 shrink-0 mt-0.5 ${roomSyncStatus === 'error' ? 'text-rose-500' : 'text-emerald-500'}`} />
-                          <span className="leading-snug">{roomSyncFeedback}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Instruction visual layout */}
-                    <div className="bg-slate-50 dark:bg-slate-800/80 p-4.5 rounded-2xl space-y-2.5">
-                      <p className="font-extrabold text-[11px] text-slate-700 dark:text-slate-300 uppercase tracking-widest text-[10px]">💡 Как связать ПК и телефон за 3 шага:</p>
-                      <ol className="list-decimal list-inside space-y-2 text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-                        <li>
-                          <span className="font-bold text-slate-700 dark:text-slate-205">Шаг 1 (На ПК):</span> Придумайте кодовое слово или используйте случайный цифровой код в поле выше, и нажмите кнопку <span className="underline font-semibold text-indigo-650 dark:text-indigo-400">Выгрузить в Интернет</span>.
-                        </li>
-                        <li>
-                          <span className="font-bold text-slate-700 dark:text-slate-205">Шаг 2 (На телефоне):</span> Откройте это же приложение на телефоне, также нажмите на кнопку «Синхронизация» вверху. Введите <span className="underline font-semibold">тот же самый код</span>, который вы ввели на ПК.
-                        </li>
-                        <li>
-                          <span className="font-bold text-slate-700 dark:text-slate-205">Шаг 3 (На телефоне):</span> Нажмите кнопку <span className="underline font-semibold text-emerald-650 dark:text-emerald-400">Загрузить & Объединить</span>. Ваши проекты на ПК и смартфоне сольются воедино!
-                        </li>
-                        <li>
-                          <span className="font-bold text-indigo-650 dark:text-indigo-400">PRO-Совет:</span> Включите галочку <span className="font-bold">«Авто-синхронизация»</span> на обоих устройствах. Теперь любые изменения будут подгружаться мгновенно!
-                        </li>
-                      </ol>
-                    </div>
-                  </div>
-                )}
-
                 {/* 2. OPTIONAL FIREBASE DB ACCOUNT TAB */}
                 {syncTab === 'firebase' && (
                   <div className="space-y-4 animate-in fade-in duration-200">
@@ -4547,41 +4363,6 @@ export default function App() {
                           </p>
                         )}
                       </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Unauthorized Domain Error Advice */}
-                {authError && (
-                  <div className="bg-red-50 dark:bg-rose-950/20 border border-red-200 dark:border-red-900 shadow-sm rounded-xl p-4 text-xs space-y-3">
-                    <div className="flex items-center gap-1.5 text-red-650 dark:text-red-400 font-bold">
-                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
-                      <span>Ошибка авторизации (Unauthorized Domain)</span>
-                    </div>
-                    
-                    {authError === 'unauthorized-domain' ? (
-                      <div className="space-y-3 text-slate-600 dark:text-slate-350">
-                        <p className="leading-relaxed">
-                          Домен этой страницы не добавлен в список разрешённых для OAuth-авторизации в настройках вашего Firebase-проекта.
-                        </p>
-                        
-                        <div className="bg-white dark:bg-slate-900 border border-red-105 dark:border-red-950 p-3 rounded-lg space-y-1.5">
-                          <p className="font-bold text-slate-700 dark:text-slate-200">Как исправить за 1 минуту:</p>
-                          <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400 text-[11px]">
-                            <li>Перейдите в <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-650 dark:text-indigo-400 underline font-semibold">Консоль Firebase</a>.</li>
-                            <li>Откройте проект <b>"Default Gemini Project"</b>.</li>
-                            <li>Перейдите в раздел <b>Authentication</b> → вкладка <b>Settings</b> → <b>Authorized domains</b> (Разрешенные домены).</li>
-                            <li>Нажмите кнопку <b>Add domain</b> и добавьте этот домен:</li>
-                          </ol>
-                          <div className="mt-2 flex items-center justify-between bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded border border-slate-200 dark:border-slate-800 font-mono text-[10px]">
-                            <span className="select-all truncate">{window.location.hostname}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-red-655 dark:text-red-400 leading-relaxed font-semibold">
-                        {authError}
-                      </p>
                     )}
                   </div>
                 )}
