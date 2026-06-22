@@ -1500,6 +1500,8 @@ export default function App() {
     const stateChanged = !isFirstTime && state !== lastStateRef.current;
     lastStateRef.current = state;
 
+    let isLocalChange = false;
+
     if (isFirstTime) {
       if (isFirstRender.current) {
         isFirstRender.current = false;
@@ -1511,6 +1513,7 @@ export default function App() {
         // Skip incrementing unsynced edits count when the update was caused by Google Sheets sync download/merge or Firestore snapshot
         ignoreNextStateChangeRef.current = false;
       } else {
+        isLocalChange = true;
         setUnsyncedEditsCount(prev => prev + 1);
       }
     } else {
@@ -1519,9 +1522,9 @@ export default function App() {
       }
     }
     
-    // Only save to Firebase if the state actually changed or there are pending unsynced edits.
-    // This prevents a stale client session from overwriting newer changes in the cloud on auth load.
-    if (currentUser && isInitialSyncComplete && (stateChanged || unsyncedEditsCountRef.current > 0)) {
+    // Only save to Firebase if the state actually changed as a local user edit or there are pending unsynced local edits.
+    // This prevents a stale client session or received cloud snapshots from overwriting newer changes in the cloud on load/sync.
+    if (currentUser && isInitialSyncComplete && (isLocalChange || unsyncedEditsCountRef.current > 0)) {
       const currentHash = getSyncHash(state);
       if (currentHash === lastSyncedStateHashRef.current) {
         return; // Already synced! Prevents infinite trigger loops
