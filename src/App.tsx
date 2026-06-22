@@ -1330,7 +1330,16 @@ export default function App() {
 
     const docRef = doc(db, 'workspaces', currentUser.uid);
     const unsubscribe = onSnapshot(docRef, (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        console.log('[Sync] User workspace document does not exist in standard cloud storage yet.');
+        setIsInitialSyncComplete(true);
+        isFirstSnapshotRef.current = false;
+        lastSyncedStateHashRef.current = ''; // Reset cached hash to allow initial local upload
+        // Set unsynced edits count to trigger initial upload of client state to Cloud
+        setUnsyncedEditsCount(prev => Math.max(1, prev));
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        return;
+      }
       const cloudData = snap.data();
       if (!cloudData) return;
 
