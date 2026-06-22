@@ -61,7 +61,9 @@ import {
   googleSignIn, 
   logout,
   db,
-  signInGuest
+  signInGuest,
+  auth,
+  getRedirectResult
 } from './lib/firebase';
 import { 
   saveToFirebaseDirectly, 
@@ -1077,6 +1079,24 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // 1.5 Handle Firebase Authentication Redirect Results on load
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result && result.user) {
+          console.log('[Auth] Google redirect sign-in success:', result.user.email);
+          isFirstSnapshotRef.current = true;
+          setCurrentUser(result.user);
+          setGoogleToken(null);
+          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        }
+      })
+      .catch((err) => {
+        console.error('[Auth] Google redirect sign-in failed:', err);
+        setAuthError(err?.message || String(err));
+      });
+  }, []);
+
   // Keep track of latest state and unsynced counts for real-time listener to avoid resubscription on every character change
   const stateRef = React.useRef(state);
   stateRef.current = state;
@@ -1415,9 +1435,9 @@ export default function App() {
       const normalizedCloud = normalizeWorkspaceState(cloudState);
       const isEquivalent = isStateSemanticallyEqual(currentState, normalizedCloud);
       const fromCache = !!snap.metadata?.fromCache;
-      if (!fromCache) {
-        setIsInitialSyncComplete(true);
-      }
+      
+      // Allow writes immediately upon first snapshot (even if loaded from cache)
+      setIsInitialSyncComplete(true);
 
       const cloudHash = getSyncHash(normalizedCloud);
 
@@ -1427,9 +1447,7 @@ export default function App() {
         // 1. Always perform a professional, safe Last-Write-Wins merge between current local state and incoming cloud state
         const merged = mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions);
         
-        if (!fromCache) {
-          isFirstSnapshotRef.current = false;
-        }
+        isFirstSnapshotRef.current = false;
         
         const mergedHash = getSyncHash(merged);
         const currentLocalHash = getSyncHash(currentState);
@@ -1454,9 +1472,7 @@ export default function App() {
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         }
       } else {
-        if (!fromCache) {
-          isFirstSnapshotRef.current = false;
-        }
+        isFirstSnapshotRef.current = false;
         // If they are equivalent, ensure client is marked as saved and has 0 unsynced edits count
         setUnsyncedEditsCount(0);
         lastSyncedStateHashRef.current = cloudHash;
@@ -3177,7 +3193,7 @@ export default function App() {
         
         {/* Workspace Top Action Bar Header */}
         <header className={`${isViewFullScreen ? 'hidden' : (isContainerFocused ? 'hidden md:flex' : 'flex')} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
-          !currentUser
+          (!currentUser || currentUser.isAnonymous)
             ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-900/40'
             : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800'
         }`}>
@@ -3194,7 +3210,7 @@ export default function App() {
             <div className="min-w-0">
               <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-2">
                 {state.projects.find(p => p.id === state.activeProjectId)?.name || 'Карта задач'}
-                {!currentUser && (
+                {(!currentUser || currentUser.isAnonymous) && (
                   <button
                     type="button"
                     onClick={() => {
@@ -4145,37 +4161,49 @@ export default function App() {
                           <span className={`w-2.5 h-2.5 rounded-full ${
                             hasSyncOrAuthError 
                               ? 'bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]' 
-                              : currentUser 
-                                ? 'bg-emerald-500 animate-pulse' 
-                                : 'bg-amber-500 animate-ping'
+                              : (currentUser && !currentUser.isAnonymous)
+                                ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
+                                : 'bg-amber-500 animate-pulse'
                           }`} />
                           <span className="font-extrabold text-xs text-slate-800 dark:text-slate-150">
-                            {hasSyncOrAuthError ? 'Ошибка синхронизации / авторизации' : currentUser ? 'Авторизован (Облачная синхронизация)' : 'Не авторизован (Локальный буфер)'}
+                            {hasSyncOrAuthError 
+                              ? 'Ошибка синхронизации / авторизации' 
+                              : (currentUser && !currentUser.isAnonymous)
+                                ? 'Авторизован через Google (Облако)' 
+                                : 'Режим Гостя (Локально на этом телефоне/ПК)'}
                           </span>
                         </div>
                         
                         {currentUser && (
-                          <div className="mt-3 flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/50 rounded-lg max-w-xs">
-                            {currentUser.photoURL ? (
-                              <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-slate-200" />
+                          <div className="mt-3">
+                            {currentUser.isAnonymous ? (
+                              <div className="text-[11px] text-amber-600 dark:text-amber-450 font-medium leading-relaxed bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-3 rounded-lg mb-2">
+                                <b>Режим Гостя активен:</b> Ваши задачи сейчас сохраняются только в кэше этого браузера под временным ID (UID). Чтобы задачи появились на других ваших устройствах (телефоне, планшете), <b>войдите через свою Google-почту</b> ниже.
+                              </div>
                             ) : (
-                              <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 font-bold flex items-center justify-center text-[10px] text-indigo-700 dark:text-indigo-400">
-                                {currentUser.email?.[0].toUpperCase() || 'U'}
+                              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/50 rounded-lg max-w-xs">
+                                {currentUser.photoURL ? (
+                                  <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-slate-200" />
+                                ) : (
+                                  <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 font-bold flex items-center justify-center text-[10px] text-indigo-700 dark:text-indigo-400">
+                                    {currentUser.email?.[0].toUpperCase() || 'U'}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-700 dark:text-slate-200 truncate leading-none text-[11px]">{currentUser.displayName || 'Пользователь Google'}</p>
+                                  <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">{currentUser.email}</p>
+                                  <p className="text-[8.5px] text-indigo-650 dark:text-indigo-400 font-mono leading-none mt-1 select-all" title="Ваш уникальный UID в системе Firebase">
+                                    UID: {currentUser.uid}
+                                  </p>
+                                </div>
                               </div>
                             )}
-                            <div className="min-w-0">
-                              <p className="font-bold text-slate-700 dark:text-slate-200 truncate leading-none text-[11px]">{currentUser.displayName || 'Пользователь Google'}</p>
-                              <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">{currentUser.email}</p>
-                              <p className="text-[8.5px] text-indigo-650 dark:text-indigo-400 font-mono leading-none mt-1 select-all" title="Ваш уникальный UID в системе Firebase">
-                                UID: {currentUser.uid}
-                              </p>
-                            </div>
                           </div>
                         )}
                       </div>
 
                       <div>
-                        {currentUser ? (
+                        {currentUser && !currentUser.isAnonymous ? (
                           showLogoutConfirm ? (
                             <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-1 duration-150">
                               <span className="text-[10px] text-rose-500 font-extrabold max-w-[120px] leading-tight">Выйти?</span>

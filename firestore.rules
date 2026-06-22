@@ -19,7 +19,7 @@ service cloud.firestore {
         && data.folders is list
         && data.projects is list
         && data.nodes is map
-        && data.updatedAt is string;
+        && (data.updatedAt is string || data.updatedAt is timestamp);
     }
 
     match /workspaces/{userId} {
