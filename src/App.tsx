@@ -3177,7 +3177,7 @@ export default function App() {
         
         {/* Workspace Top Action Bar Header */}
         <header className={`${isViewFullScreen ? 'hidden' : (isContainerFocused ? 'hidden md:flex' : 'flex')} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
-          (!currentUser || !googleToken)
+          !currentUser
             ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-900/40'
             : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800'
         }`}>
@@ -3194,7 +3194,7 @@ export default function App() {
             <div className="min-w-0">
               <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-2">
                 {state.projects.find(p => p.id === state.activeProjectId)?.name || 'Карта задач'}
-                {(!currentUser || !googleToken) && (
+                {!currentUser && (
                   <button
                     type="button"
                     onClick={() => {
