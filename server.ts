@@ -204,6 +204,9 @@ try {
   }
 }
 
+// Highly reliable in-memory cache to guarantee successful pairings even on strict read-only environments
+const inMemoryRooms = new Map<string, any>();
+
 // Route to save state to a room (PC exports state to room)
 app.post('/api/sync/room/save', (req, res) => {
   const { roomId, state } = req.body;
@@ -215,13 +218,17 @@ app.post('/api/sync/room/save', (req, res) => {
     return res.status(400).json({ error: 'Некорректный ID комнаты. Используйте только латиницу и цифры.' });
   }
 
+  // Persist to in-memory cache first (always succeeds)
+  inMemoryRooms.set(cleanRoomId, state);
+
+  // Attempt to write to file system for cross-restart preservation
   try {
     const filePath = path.join(SYNC_DIR, `${cleanRoomId}.json`);
     fs.writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf8');
-    res.json({ success: true, roomId: cleanRoomId, updatedAt: new Date().toISOString() });
+    res.json({ success: true, roomId: cleanRoomId, updatedAt: new Date().toISOString(), mode: 'hybrid' });
   } catch (err: any) {
-    console.error('Error saving room state:', err);
-    res.status(500).json({ error: `Ошибка выгрузки в комнату: ${err.message}` });
+    console.warn(`[Sync] File-system write failed, using in-memory fallback for room ${cleanRoomId}:`, err.message);
+    res.json({ success: true, roomId: cleanRoomId, updatedAt: new Date().toISOString(), mode: 'memory-only' });
   }
 });
 
@@ -229,8 +236,14 @@ app.post('/api/sync/room/save', (req, res) => {
 app.get('/api/sync/room/load/:roomId', (req, res) => {
   const { roomId } = req.params;
   const cleanRoomId = String(roomId).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  const filePath = path.join(SYNC_DIR, `${cleanRoomId}.json`);
+  
+  // First check highly reliable in-memory cache
+  if (inMemoryRooms.has(cleanRoomId)) {
+    return res.json({ state: inMemoryRooms.get(cleanRoomId), source: 'memory' });
+  }
 
+  // Fallback to reading from local filesystem
+  const filePath = path.join(SYNC_DIR, `${cleanRoomId}.json`);
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Комната не найдена. Сначала выгрузите данные на первом устройстве.' });
   }
@@ -238,7 +251,11 @@ app.get('/api/sync/room/load/:roomId', (req, res) => {
   try {
     const data = fs.readFileSync(filePath, 'utf8');
     const parsedState = JSON.parse(data);
-    res.json({ state: parsedState });
+    
+    // Cache it in memory for future fast lookups
+    inMemoryRooms.set(cleanRoomId, parsedState);
+    
+    res.json({ state: parsedState, source: 'file' });
   } catch (err: any) {
     console.error('Error loading room state:', err);
     res.status(500).json({ error: `Ошибка загрузки из комнаты: ${err.message}` });
