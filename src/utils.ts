@@ -245,29 +245,6 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
           nextNode.completed = allCompleted;
           nodeChanged = true;
         }
-
-        // If a task has subtasks with date and time, set the latest date and time for it
-        const subtasksWithDates = children.filter(c => c.dueDate && !c.archived);
-        if (subtasksWithDates.length > 0) {
-          let latestSub = subtasksWithDates[0];
-          for (let i = 1; i < subtasksWithDates.length; i++) {
-            const curr = subtasksWithDates[i];
-            const latestStr = `${latestSub.dueDate}T${latestSub.dueTime || '00:00'}`;
-            const currStr = `${curr.dueDate}T${curr.dueTime || '00:00'}`;
-            if (currStr > latestStr) {
-              latestSub = curr;
-            }
-          }
-
-          if (nextNode.dueDate !== latestSub.dueDate) {
-            nextNode.dueDate = latestSub.dueDate;
-            nodeChanged = true;
-          }
-          if (nextNode.dueTime !== latestSub.dueTime) {
-            nextNode.dueTime = latestSub.dueTime;
-            nodeChanged = true;
-          }
-        }
       }
 
       if (nodeChanged) {

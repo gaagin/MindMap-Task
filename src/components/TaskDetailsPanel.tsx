@@ -807,8 +807,9 @@ export default function TaskDetailsPanel({
   };
 
   const handleCreateTagCategory = (name: string, color: string) => {
+    const nextId = 'cat-' + generateId();
     const newCat: TagCategory = {
-      id: 'cat-' + generateId(),
+      id: nextId,
       name,
       color,
       tags: []
@@ -817,6 +818,9 @@ export default function TaskDetailsPanel({
       ...node,
       tagCategories: [...activeCategories, newCat]
     });
+    if (onCreateTagCategory) {
+      onCreateTagCategory(name, color);
+    }
   };
 
   const handleUpdateTagCategory = (id: string, name: string, color: string, tags: string[]) => {
@@ -827,6 +831,9 @@ export default function TaskDetailsPanel({
       ...node,
       tagCategories: nextCategories
     });
+    if (onUpdateTagCategory) {
+      onUpdateTagCategory(id, name, color, tags);
+    }
   };
 
   const handleDeleteTagCategory = (id: string) => {
@@ -835,6 +842,9 @@ export default function TaskDetailsPanel({
       ...node,
       tagCategories: nextCategories
     });
+    if (onDeleteTagCategory) {
+      onDeleteTagCategory(id);
+    }
   };
 
   // Category collapse state, loaded and persisted in localStorage using the same key as Sidebar for 100% synchronization
@@ -1066,6 +1076,36 @@ export default function TaskDetailsPanel({
     } else {
       const updatedTags = node.tags ? [...node.tags, tag] : [tag];
       handlePropChange('tags', updatedTags);
+    }
+  };
+
+  const handleCreateAndAssignCategoryTag = (catId: string, tagName: string) => {
+    if (!node) return;
+    const trimmed = tagName.trim().replace(/#/g, '');
+    if (!trimmed) return;
+
+    const cat = activeCategories.find(c => c.id === catId);
+    if (!cat) return;
+
+    const alreadyInCat = cat.tags && cat.tags.includes(trimmed);
+    const updatedTags = alreadyInCat ? (cat.tags || []) : [...(cat.tags || []), trimmed];
+
+    const nextCategories = activeCategories.map(c => 
+      c.id === catId ? { ...c, tags: updatedTags } : c
+    );
+
+    const alreadyOnNode = node.tags && node.tags.includes(trimmed);
+    const updatedNodeTags = alreadyOnNode ? (node.tags || []) : [...(node.tags || []), trimmed];
+
+    onUpdateNode({
+      ...node,
+      tagCategories: nextCategories,
+      tags: updatedNodeTags,
+      updatedAt: new Date().toISOString()
+    });
+
+    if (onUpdateTagCategory && !alreadyInCat) {
+      onUpdateTagCategory(catId, cat.name, cat.color, updatedTags);
     }
   };
 
@@ -2406,14 +2446,7 @@ export default function TaskDetailsPanel({
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
-                                const trimmed = newCatTagName.trim().replace(/#/g, '');
-                                if (trimmed) {
-                                  const alreadyInCat = cat.tags && cat.tags.includes(trimmed);
-                                  if (!alreadyInCat) {
-                                    const updatedTags = cat.tags ? [...cat.tags, trimmed] : [trimmed];
-                                    handleUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
-                                  }
-                                }
+                                handleCreateAndAssignCategoryTag(cat.id, newCatTagName);
                                 setAddingTagToCatId(null);
                               }
                               if (e.key === 'Escape') {
@@ -2426,14 +2459,7 @@ export default function TaskDetailsPanel({
                           <button
                             type="button"
                             onClick={() => {
-                              const trimmed = newCatTagName.trim().replace(/#/g, '');
-                              if (trimmed) {
-                                const alreadyInCat = cat.tags && cat.tags.includes(trimmed);
-                                if (!alreadyInCat) {
-                                  const updatedTags = cat.tags ? [...cat.tags, trimmed] : [trimmed];
-                                  handleUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
-                                }
-                              }
+                              handleCreateAndAssignCategoryTag(cat.id, newCatTagName);
                               setAddingTagToCatId(null);
                             }}
                             className="px-1.5 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[9.5px] rounded font-semibold cursor-pointer shrink-0"

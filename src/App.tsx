@@ -207,6 +207,14 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
     // Hydrate empty projects, and keep tag categories separate
     const updatedProjects = projects.map(p => {
       if (!p) return p;
+
+      // Track originally explicit category IDs for this project to prevent deleting them
+      const originalCatIds = new Set(
+        (Array.isArray(p.tagCategories) ? p.tagCategories : [])
+          .filter(cat => cat && cat.id)
+          .map(cat => cat.id)
+      );
+
       // If project-specific categories are completely empty/missing but global exists,
       // initialize them from global categories so that we don't lose anything (deep copied)
       let pCats = Array.isArray(p.tagCategories) ? p.tagCategories.filter(Boolean) : [];
@@ -238,6 +246,9 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
         });
         pCats = pCats.filter(cat => {
           if (!cat) return false;
+          // Keep category if it is empty (newly created) or explicitly belonged to this project originally
+          if (originalCatIds.has(cat.id)) return true;
+          if (!cat.tags || cat.tags.length === 0) return true;
           return Array.isArray(cat.tags) && cat.tags.some(t => usedTags.has(t));
         });
       }
@@ -2874,16 +2885,24 @@ export default function App() {
         updatedAt: new Date().toISOString()
       };
 
-      let updatedList = currentNodes.map(n => n.id === updatedNode.id ? nodeWithTimeStamp : n);
-      
-      // If completed state was toggled from details panel, sync all descendants
-      if (targetNode && targetNode.completed !== updatedNode.completed) {
-        updatedList = toggleNodeAndDescendants(updatedNode.id, updatedNode.completed, updatedList);
-      }
+      let updatedList;
+      if (targetNode) {
+        updatedList = currentNodes.map(n => n.id === updatedNode.id ? nodeWithTimeStamp : n);
+        
+        // If completed state was toggled from details panel, sync all descendants
+        if (targetNode.completed !== updatedNode.completed) {
+          updatedList = toggleNodeAndDescendants(updatedNode.id, updatedNode.completed, updatedList);
+        }
 
-      // If archived state was toggled, sync all descendants
-      if (targetNode && targetNode.archived !== updatedNode.archived) {
-        updatedList = toggleNodeArchive(updatedNode.id, !!updatedNode.archived, updatedList);
+        // If archived state was toggled, sync all descendants
+        if (targetNode.archived !== updatedNode.archived) {
+          updatedList = toggleNodeArchive(updatedNode.id, !!updatedNode.archived, updatedList);
+        }
+      } else {
+        // Safe append if creating from matrix view or similar
+        updatedList = [...currentNodes, nodeWithTimeStamp];
+        // Ensure new node selection so the user can see/edit it instantly
+        setTimeout(() => setSelectedNodeId(updatedNode.id), 0);
       }
 
       // Automatically reconcile bottom-up completion constraints
