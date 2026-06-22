@@ -37,7 +37,7 @@ import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch } from '../utils';
 import { auth, db } from '../lib/firebase';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
-import GoogleDriveImage from './GoogleDriveImage';
+import Markdown from 'react-markdown';
 
 const fetch = proxiedFetch;
 
@@ -166,105 +166,31 @@ export default function TaskDetailsPanel({
     setIsUploadingCommentImage(true);
 
     try {
-      if (googleToken) {
-        // 1. Get or create special folder on Google Drive
-        const folderId = await getOrCreateGoogleDriveFolder(googleToken);
-
-        // 2. Create the file metadata reference on Google Drive
-        const name = file.name || `Pasted_Image_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-        const mimeType = file.type || 'image/png';
-        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            name,
-            mimeType,
-            parents: folderId ? [folderId] : undefined
-          })
-        });
-
-        if (!createRes.ok) {
-          const errText = await createRes.text();
-          throw new Error(`Не удалось создать метаданные на Диске: ${errText}`);
-        }
-
-        const createData = await createRes.json();
-        const driveFileId = createData.id;
-
-        // 3. Upload raw file body as media
-        const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': mimeType
-          },
-          body: file
-        });
-
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text();
-          throw new Error(`Не удалось загрузить тело файла: ${errText}`);
-        }
-
-        // Grant public read permission so other devices can read the file anonymously and automatically
-        try {
-          await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${googleToken}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              role: 'reader',
-              type: 'anyone'
-            })
-          });
-        } catch (permissionErr) {
-          console.warn('[Google Drive Auth] Failed to list file permissions as public for comment image:', permissionErr);
-        }
-
-        // 4. Retrieve web links
-        const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
-          headers: {
-            'Authorization': `Bearer ${googleToken}`
-          }
-        });
-
-        if (!finalRes.ok) {
-          throw new Error('Не удалось получить ссылки на файл с Диска');
-        }
-
-        const finalData = await finalRes.json();
-        setUploadedCommentImageInfo({
-          imageUrl: finalData.webViewLink || finalData.webContentLink || '',
-          imageGoogleDriveId: driveFileId,
-          imageWebViewLink: finalData.webViewLink
-        });
-      } else {
-        const MAX_BYTES = 1024 * 1024; // 1MB limit for comments local image
-        if (file.size > MAX_BYTES) {
-          setFileError('Размер изображения для чата превышает 1 МБ. Войдите через Google для хранения без лимитов!');
-          setCommentImagePreview(null);
-          setIsUploadingCommentImage(false);
-          return;
-        }
-
-        const readerLocal = new FileReader();
-        readerLocal.onload = () => {
-          setUploadedCommentImageInfo({
-            imageUrl: readerLocal.result as string
-          });
-        };
-        readerLocal.readAsDataURL(file);
+      const MAX_BYTES = 1.5 * 1024 * 1024; // 1.5MB limit for comments
+      if (file.size > MAX_BYTES) {
+        setFileError('Размер изображения превышает 1.5 МБ. Пожалуйста, сожмите или вставьте картинку меньшего размера.');
+        setCommentImagePreview(null);
+        setIsUploadingCommentImage(false);
+        return;
       }
+
+      const readerLocal = new FileReader();
+      readerLocal.onload = () => {
+        setUploadedCommentImageInfo({
+          imageUrl: readerLocal.result as string
+        });
+        setIsUploadingCommentImage(false);
+      };
+      readerLocal.onerror = () => {
+        setFileError('Ошибка считывания файла.');
+        setCommentImagePreview(null);
+        setIsUploadingCommentImage(false);
+      };
+      readerLocal.readAsDataURL(file);
     } catch (err: any) {
       console.error(err);
       setFileError(`Не удалось загрузить картинку в чат: ${err.message || err}`);
       setCommentImagePreview(null);
-    } finally {
       setIsUploadingCommentImage(false);
     }
   };
@@ -1143,43 +1069,7 @@ export default function TaskDetailsPanel({
     }
   };
 
-  // Helper to get or create a folder on Google Drive
-  const getOrCreateGoogleDriveFolder = async (token: string): Promise<string | null> => {
-    try {
-      const q = encodeURIComponent("name='MindMap_Attachments' and mimeType='application/vnd.google-apps.folder' and trashed=false");
-      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        if (searchData.files && searchData.files.length > 0) {
-          return searchData.files[0].id;
-        }
-      }
-
-      // Create folder if not found
-      const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: 'MindMap_Attachments',
-          mimeType: 'application/vnd.google-apps.folder'
-        })
-      });
-      if (createRes.ok) {
-        const createData = await createRes.json();
-        return createData.id;
-      }
-    } catch (e) {
-      console.error('Error getting/creating Drive folder:', e);
-    }
-    return null;
-  };
-
-  // Upload attachment either to local base64 or directly to Google Drive
+  // Upload attachment to local base64
   const uploadFile = async (file: File) => {
     // If it's a pasted image with generic name, rename it to make it look nicer
     let finalFile = file;
@@ -1189,104 +1079,12 @@ export default function TaskDetailsPanel({
       finalFile = new File([file], `Pasted_File_${formattedDate}.${extension}`, { type: file.type });
     }
 
-    if (googleToken) {
-      setIsUploadingFile(true);
-      try {
-        // 1. Get or create special folder on Google Drive
-        const folderId = await getOrCreateGoogleDriveFolder(googleToken);
-
-        // 2. Create the file metadata reference on Google Drive
-        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            name: finalFile.name,
-            mimeType: finalFile.type || 'application/octet-stream',
-            parents: folderId ? [folderId] : undefined
-          })
-        });
-
-        if (!createRes.ok) {
-          const errText = await createRes.text();
-          throw new Error(`Не удалось создать метаданные на Диске: ${errText}`);
-        }
-
-        const createData = await createRes.json();
-        const driveFileId = createData.id;
-
-        // 3. Upload raw file body as media
-        const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': finalFile.type || 'application/octet-stream'
-          },
-          body: finalFile
-        });
-
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text();
-          throw new Error(`Не удалось загрузить тело файла: ${errText}`);
-        }
-
-        // Grant public read permission so other devices can read the file anonymously and automatically
-        try {
-          await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${googleToken}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              role: 'reader',
-              type: 'anyone'
-            })
-          });
-        } catch (permissionErr) {
-          console.warn('[Google Drive Auth] Failed to list file permissions as public:', permissionErr);
-        }
-
-        // 4. Retrieve web links
-        const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
-          headers: {
-            'Authorization': `Bearer ${googleToken}`
-          }
-        });
-
-        if (!finalRes.ok) {
-          throw new Error('Не удалось получить ссылки на файл с Диска');
-        }
-
-        const finalData = await finalRes.json();
-
-        // 5. Build and save attachment record
-        const newAttachment: AttachmentFile = {
-          id: generateId(),
-          name: finalFile.name,
-          type: finalFile.type,
-          size: finalFile.size,
-          dataUrl: finalData.webViewLink || finalData.webContentLink || '',
-          googleDriveId: driveFileId,
-          webViewLink: finalData.webViewLink,
-          webContentLink: finalData.webContentLink,
-        };
-
-        const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
-        handlePropChange('files', updatedFiles);
-      } catch (err: any) {
-        console.error(err);
-        setFileError(`Не удалось сохранить на Google Диск: ${err.message || err}`);
-      } finally {
-        setIsUploadingFile(false);
-      }
-    } else {
-      // Local Base64 storage
+    setIsUploadingFile(true);
+    try {
       const MAX_BYTES = 1.5 * 1024 * 1024;
       if (finalFile.size > MAX_BYTES) {
-        setFileError('Размер файла превышает 1.5 МБ. Пожалуйста, авторизуйте Google Sheets в шапке, чтобы разблокировать неограниченные вложения на Google Диск!');
+        setFileError('Размер файла превышает 1.5 МБ. Пожалуйста, сожмите или выберите файл меньшего размера.');
+        setIsUploadingFile(false);
         return;
       }
 
@@ -1303,11 +1101,17 @@ export default function TaskDetailsPanel({
 
         const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
         handlePropChange('files', updatedFiles);
+        setIsUploadingFile(false);
       };
       reader.onerror = () => {
         setFileError('Ошибка считывания файла.');
+        setIsUploadingFile(false);
       };
       reader.readAsDataURL(finalFile);
+    } catch (err: any) {
+      console.error(err);
+      setFileError('Ошибка загрузки файла.');
+      setIsUploadingFile(false);
     }
   };
 
@@ -1349,24 +1153,9 @@ export default function TaskDetailsPanel({
     }
   };
 
-  // Remove individual attachment and destroy its cloud file if applicable
+  // Remove individual attachment
   const handleRemoveFile = async (fileId: string) => {
     if (!node.files) return;
-    const fileToRemove = node.files.find(f => f.id === fileId);
-
-    if (fileToRemove && fileToRemove.googleDriveId && googleToken) {
-      try {
-        await fetch(`https://www.googleapis.com/drive/v3/files/${fileToRemove.googleDriveId}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`
-          }
-        });
-      } catch (e) {
-        console.error('Failed to delete cloud Google Drive file:', e);
-      }
-    }
-
     const updatedFiles = node.files.filter(f => f.id !== fileId);
     handlePropChange('files', updatedFiles);
   };
@@ -2857,68 +2646,52 @@ export default function TaskDetailsPanel({
                   recordHistoryVersion(originalText, originalNotes, 'Правка заметок');
                 }
               }}
-              className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-sans"
-              rows={5}
-              placeholder="Опишите задачу подробнее. Например, [[Название задачи]] или воспользуйтесь кнопкой «Связать задачу»..."
+              placeholder="Введите заметки к задаче. Поддерживается Markdown (например: **жирный**, - список, [текст](ссылка))"
+              className="w-full h-80 px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-xs dark:text-slate-200 line-height-relaxed font-sans"
             />
           ) : (
-            renderNotesWithLinks(node.notes)
+            <div className="w-full h-80 overflow-y-auto px-3 py-2 bg-slate-50/50 dark:bg-[#1E293B]/30 border border-slate-200/50 dark:border-slate-800 rounded-xl text-xs dark:text-slate-350 prose prose-slate dark:prose-invert max-w-none">
+              {node.notes ? (
+                <div className="markdown-body">
+                  <Markdown>{node.notes}</Markdown>
+                </div>
+              ) : (
+                <p className="text-slate-400 italic">Заметки к задаче пусты. Нажмите «Редактировать» вверху, чтобы добавить их.</p>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Version History Section */}
-        <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mt-2 bg-[#FAFBFD]/30 dark:bg-slate-800/20">
-          <button
-            type="button"
-            onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)}
-            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-850/80 transition-all select-none cursor-pointer"
-          >
-            <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-indigo-500" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-350 uppercase tracking-wider">
-                История изменений
-              </span>
-              <span className="text-[10px] font-extrabold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 px-2 py-0.5 rounded-full font-mono">
-                {(node.history || []).length}
-              </span>
+        {/* Snapshots / History manager */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800 pb-1.5">
+            <label className="text-xs font-bold text-slate-400 dark:text-slate-505 uppercase tracking-wider">
+              Снимки истории
+            </label>
+            <button
+              type="button"
+              onClick={() => recordHistoryVersion(node.text, node.notes || '', 'Вручную (снимок)')}
+              className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 rounded-lg text-[10px] font-bold transition-all border border-indigo-100/50 dark:border-indigo-950/50 cursor-pointer shadow-2xs shrink-0"
+              title="Сохранить текущую версию как снимок"
+            >
+              + Снимок
+            </button>
+          </div>
+
+          {(node.history || []).length === 0 ? (
+            <div className="text-center py-4 text-xs text-slate-400 dark:text-slate-550 italic font-medium">
+              История изменений пока пуста
             </div>
-            {isHistorySectionOpen ? (
-              <ChevronDown className="w-4 h-4 text-slate-500" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-slate-500" />
-            )}
-          </button>
-
-          {isHistorySectionOpen && (
-            <div className="p-4 space-y-4 bg-white dark:bg-slate-900 animate-fade-in">
-              <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 italic leading-normal">
-                  Автосохранение при выходе из полей названия и заметок.
-                </span>
-                <button
-                  type="button"
-                  onClick={handleSaveManualCheckpoint}
-                  className="px-2.5 py-1 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-950/30 dark:hover:bg-indigo-900/40 dark:text-indigo-400 rounded-md transition-all cursor-pointer shadow-2xs shrink-0"
-                  title="Сохранить текущую версию как снимок"
-                >
-                  + Снимок
-                </button>
-              </div>
-
-              {(node.history || []).length === 0 ? (
-                <div className="text-center py-4 text-xs text-slate-400 dark:text-slate-555 italic font-medium">
-                  История изменений пока пуста
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
-                  {(node.history || []).map((ver) => {
+          ) : (
+            <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+              {(node.history || []).map((ver) => {
                     const isExpanded = expandedVersionId === ver.id;
                     const canRestore = ver.text !== node.text || ver.notes !== node.notes;
 
                     return (
                       <div
                         key={ver.id}
-                        className="p-2.5 border border-slate-105 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 rounded-lg hover:border-slate-200 dark:hover:border-slate-700 transition-all flex flex-col gap-1.5"
+                        className="p-2.5 border border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 rounded-lg hover:border-slate-200 dark:hover:border-slate-700 transition-all flex flex-col gap-1.5"
                       >
                         <div className="flex items-start justify-between gap-1.5">
                           <div className="space-y-0.5">
@@ -2951,7 +2724,7 @@ export default function TaskDetailsPanel({
                               className={`px-1.5 py-0.5 text-[9px] font-extrabold rounded select-none cursor-pointer transition ${
                                 canRestore 
                                   ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/30 dark:text-emerald-450 border border-emerald-200/45' 
-                                  : 'bg-slate-105 text-slate-405 dark:bg-slate-800 dark:text-slate-600 border border-transparent cursor-not-allowed'
+                                  : 'bg-slate-100 text-slate-400 dark:bg-slate-850 dark:text-slate-600 border border-transparent cursor-not-allowed'
                               }`}
                               title={canRestore ? "Восстановить эту версию" : "Текущая версия совпадает"}
                             >
@@ -2961,7 +2734,7 @@ export default function TaskDetailsPanel({
                             <button
                               type="button"
                               onClick={() => handleDeleteVersion(ver.id)}
-                              className="p-1 hover:bg-rose-100 dark:hover:bg-rose-950/20 text-rose-500 rounded transition"
+                              className="p-1 hover:bg-rose-100 dark:hover:bg-rose-955/20 text-rose-500 rounded transition"
                               title="Удалить запись"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -3000,27 +2773,25 @@ export default function TaskDetailsPanel({
                       </div>
                     );
                   })}
-                </div>
-              )}
+            </div>
+          )}
 
-              {(node.history || []).length > 0 && (
-                <div className="flex justify-end pt-1">
-                  <button
-                    type="button"
-                    onClick={handleClearHistory}
-                    className="text-[9px] font-bold text-rose-600 hover:underline transition-colors cursor-pointer"
-                  >
-                    Очистить всю историю
-                  </button>
-                </div>
-              )}
+          {(node.history || []).length > 0 && (
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleClearHistory}
+                className="text-[9px] font-bold text-rose-600 hover:underline transition-colors cursor-pointer"
+              >
+                Очистить всю историю
+              </button>
             </div>
           )}
         </div>
 
-        {/* Files Attached list & input */}
+                {/* Files Attached list & input */}
         <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+          <label className="text-xs font-bold text-slate-400 dark:text-slate-550 uppercase tracking-wider block">
             Файлы и вложения
           </label>
 
@@ -3033,9 +2804,9 @@ export default function TaskDetailsPanel({
             />
             {isUploadingFile ? (
               <div className="flex flex-col items-center justify-center gap-1">
-                <Loader2 className="w-5 h-5 animate-spin text-amber-500" />
-                <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold mt-1">
-                  Загрузка в Google Диск...
+                <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                <p className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mt-1">
+                  Загрузка файла...
                 </p>
               </div>
             ) : (
@@ -3045,9 +2816,7 @@ export default function TaskDetailsPanel({
                   Нажмите для выбора файла или вставьте из буфера обмена (Ctrl+V)
                 </p>
                 <p className="text-[10px] text-slate-400 mt-1 leading-normal">
-                  {googleToken 
-                    ? "✓ Файл загрузится напрямую в облако на ваш Google Диск!"
-                    : "До 1.5 МБ локально. Войдите через Google вверху для хранения файлов на Диске без лимитов!"}
+                  До 1.5 МБ вложений в локальную базу данных
                 </p>
               </>
             )}
@@ -3061,7 +2830,6 @@ export default function TaskDetailsPanel({
             <div className="space-y-1.5 mt-3">
               {node.files.map((file) => {
                 const isImg = file.type.startsWith('image/');
-                const isCloud = !!file.googleDriveId;
                 return (
                   <div 
                     key={file.id}
@@ -3074,22 +2842,12 @@ export default function TaskDetailsPanel({
                           className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-slate-200/50 dark:border-slate-700 cursor-pointer group shadow-sm hover:scale-105 active:scale-95 transition-all"
                           title="Нажмите для предпросмотра"
                         >
-                          {file.googleDriveId ? (
-                            <GoogleDriveImage 
-                              driveId={file.googleDriveId}
-                              googleToken={googleToken}
-                              alt={file.name}
-                              sz="w150"
-                              className="w-full h-full"
-                            />
-                          ) : (
-                            <img 
-                              src={file.dataUrl} 
-                              alt={file.name} 
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                              referrerPolicy="no-referrer"
-                            />
-                          )}
+                          <img 
+                            src={file.dataUrl} 
+                            alt={file.name} 
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                            referrerPolicy="no-referrer"
+                          />
                           <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <Eye className="w-3.5 h-3.5 text-white drop-shadow-sm" />
                           </div>
@@ -3110,35 +2868,19 @@ export default function TaskDetailsPanel({
                         </p>
                         <p className="text-[10px] text-slate-450 dark:text-slate-500 flex items-center gap-1.5 mt-0.5">
                           <span>{formatFileSize(file.size)}</span>
-                          {isCloud && (
-                            <span className="font-extrabold text-[8px] bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded px-1 py-0.2 select-none uppercase tracking-wide">
-                              Google Drive
-                            </span>
-                          )}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex gap-1.5 flex-shrink-0">
-                      {isCloud && file.webViewLink && (
-                        <a
-                          href={file.webViewLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
-                          title="Просмотреть на Google Диске"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </a>
-                      )}
                       {file.dataUrl && (
                         <a
-                          href={file.webContentLink || file.dataUrl}
+                          href={file.dataUrl}
                           target="_blank"
                           rel="noreferrer"
-                          download={!isCloud ? file.name : undefined}
+                          download={file.name}
                           className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
-                          title={isCloud ? "Скачать с Google Диска" : "Скачать файл"}
+                          title="Скачать файл"
                         >
                           <Download className="w-3.5 h-3.5" />
                         </a>
@@ -3146,7 +2888,7 @@ export default function TaskDetailsPanel({
                       <button
                         onClick={() => handleRemoveFile(file.id)}
                         className="p-1.5 bg-white dark:bg-slate-700 text-slate-400 hover:text-rose-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
-                        title={isCloud ? "Удалить вложение (также удалится с вашего Google Диска)" : "Удалить файл"}
+                        title="Удалить файл"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -3221,22 +2963,12 @@ export default function TaskDetailsPanel({
                             className="relative w-32 h-32 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-slate-200/60 dark:border-slate-755 cursor-pointer group/img shadow-2xs hover:scale-[1.02] hover:border-indigo-400/85 transition-all"
                             title="Нажмите для увеличения"
                           >
-                            {comment.imageGoogleDriveId ? (
-                              <GoogleDriveImage 
-                                driveId={comment.imageGoogleDriveId}
-                                googleToken={googleToken}
-                                alt="Comment upload"
-                                sz="w300"
-                                className="w-full h-full"
-                              />
-                            ) : (
                               <img
                                 src={comment.imageUrl}
                                 alt="Comment upload"
                                 className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
                                 referrerPolicy="no-referrer"
                               />
-                            )}
                             <div className="absolute inset-0 bg-black/15 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
                               <Eye className="w-4 h-4 text-white drop-shadow-sm" />
                             </div>
@@ -3348,15 +3080,9 @@ export default function TaskDetailsPanel({
                 <Send className="w-4 h-4" />
               </button>
             </div>
-            {googleToken ? (
-              <p className="text-[9px] text-emerald-600 dark:text-emerald-400 pl-1 font-sans">
-                ✓ Картинки сохраняются на вашем Google Диске!
-              </p>
-            ) : (
-              <p className="text-[9px] text-amber-600 dark:text-amber-500 pl-1 font-sans">
-                До 1 МБ локально. Войдите через Google, чтобы хранить картинки в облаке на Google Диске!
-              </p>
-            )}
+            <p className="text-[9px] text-slate-400 pl-1 font-sans">
+              До 1.5 МБ локально. Сохраняется в базу данных.
+            </p>
           </div>
         </div>
       )}
@@ -3492,24 +3218,12 @@ export default function TaskDetailsPanel({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {lightboxImage.googleDriveId ? (
-              <GoogleDriveImage 
-                driveId={lightboxImage.googleDriveId}
-                googleToken={googleToken}
-                alt={lightboxImage.name}
-                sz="w1000"
-                className="max-w-full max-h-[80vh]"
-                imgClassName="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10 cursor-grab active:cursor-grabbing"
-                fallbackUrl={lightboxImage.dataUrl}
-              />
-            ) : (
-              <img 
-                src={lightboxImage.dataUrl} 
-                alt={lightboxImage.name} 
-                className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10 cursor-grab active:cursor-grabbing"
-                referrerPolicy="no-referrer"
-              />
-            )}
+            <img 
+              src={lightboxImage.dataUrl} 
+              alt={lightboxImage.name} 
+              className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10 cursor-grab active:cursor-grabbing"
+              referrerPolicy="no-referrer"
+            />
           </div>
         </div>
       </div>

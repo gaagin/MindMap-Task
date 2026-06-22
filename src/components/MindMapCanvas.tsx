@@ -5214,7 +5214,7 @@ export default function MindMapCanvas({
                       });
                       setDragStart({ x: touch.clientX, y: touch.clientY });
                     }}
-                    title="Перетащите, чтобы изменить изгиб линии"
+                    {...{title: "Перетащите, чтобы изменить изгиб линии"}}
                   />
 
                   {/* Midpoint overlay controls (Label input & Delete button) */}

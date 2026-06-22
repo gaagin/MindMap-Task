@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocFromCache, setDoc, updateDoc, arrayUnion, deleteField, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { WorkspaceState, TaskNode, Folder, Project, TagCategory, DeletionRecord } from '../types';
 
@@ -29,101 +29,146 @@ export function getLocalDeletions(): DeletionRecord[] {
   }
 }
 
-export function clearLocalDeletions(uploaded: DeletionRecord[]) {
-  try {
-    const current = getLocalDeletions();
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    
-    // Tombstone retention window (30 days) to prevent deleted items from reappearing.
-    const filtered = current.filter(item => {
-      try {
-        return new Date(item.deletedAt || 0).getTime() > thirtyDaysAgo;
-      } catch {
-        return true; 
-      }
-    });
-    
-    localStorage.setItem(DELETIONS_KEY, JSON.stringify(filtered));
-    console.log(`[Sync] Kept ${filtered.length} tombstones for 30-day cross-device preservation.`);
-  } catch (error) {
-    console.error('Failed to clear deletions registry:', error);
+// ----------------- IN-MEMORY STATE CACHE FOR CHIP SHIELD DEEP COMPARISON -----------------
+let lastSyncedStateInMemory: WorkspaceState | null = null;
+
+export function updateLastSyncedStateCache(state: WorkspaceState | null) {
+  if (state) {
+    // Deep clone to ensure we hold a static snapshot, not a live reference
+    lastSyncedStateInMemory = JSON.parse(JSON.stringify(state));
+  } else {
+    lastSyncedStateInMemory = null;
   }
 }
-
-// ----------------- FIREBASE SYNC -----------------
 
 /**
- * Recursively removes any undefined fields or converts them to null to prevent Firestore invalid data errors.
+ * Perform static domain-specific deep comparison of 2 states to shield Firestore
+ * from redundant write operations on small edits or accidental duplicate effect runs.
+ * Conserves Firestore Write Operation quotas.
  */
-function sanitizeForFirestore(obj: any): any {
-  if (obj === undefined) {
-    return null;
+export function isWorkspaceStateSemanticallyEqual(a: WorkspaceState, b: WorkspaceState): boolean {
+  if (a.activeProjectId !== b.activeProjectId) return false;
+  
+  // Folders comparison
+  const af = a.folders || [];
+  const bf = b.folders || [];
+  if (af.length !== bf.length) return false;
+  const afMap = new Map(af.map(f => [f.id, f]));
+  for (const f of bf) {
+    const existing = afMap.get(f.id);
+    if (!existing) return false;
+    if (existing.name !== f.name || existing.parentId !== f.parentId || existing.updatedAt !== f.updatedAt) {
+      return false;
+    }
   }
-  if (obj === null) {
-    return null;
+
+  // Projects comparison
+  const ap = a.projects || [];
+  const bp = b.projects || [];
+  if (ap.length !== bp.length) return false;
+  const apMap = new Map(ap.map(p => [p.id, p]));
+  for (const p of bp) {
+    const existing = apMap.get(p.id);
+    if (!existing) return false;
+    if (existing.name !== p.name || existing.folderId !== p.folderId || existing.updatedAt !== p.updatedAt) {
+      return false;
+    }
   }
-  if (Array.isArray(obj)) {
-    return obj.map(sanitizeForFirestore);
+
+  // TagCategories comparison
+  const at = a.tagCategories || [];
+  const bt = b.tagCategories || [];
+  if (at.length !== bt.length) return false;
+  const atMap = new Map(at.map(t => [t.id, t]));
+  for (const t of bt) {
+    const existing = atMap.get(t.id);
+    if (!existing) return false;
+    if (existing.name !== t.name || existing.color !== t.color || existing.updatedAt !== t.updatedAt) {
+      return false;
+    }
+    if (existing.tags.length !== t.tags.length || !existing.tags.every((val, idx) => val === t.tags[idx])) {
+      return false;
+    }
   }
-  if (typeof obj === 'object') {
-    const res: any = {};
-    for (const key of Object.keys(obj)) {
-      const val = obj[key];
-      if (val !== undefined) {
-        res[key] = sanitizeForFirestore(val);
+
+  // Nodes comparison
+  const anKeys = Object.keys(a.nodes || {});
+  const bnKeys = Object.keys(b.nodes || {});
+  if (anKeys.length !== bnKeys.length) return false;
+  for (const pId of anKeys) {
+    const anList = a.nodes[pId] || [];
+    const bnList = b.nodes[pId] || [];
+    if (anList.length !== bnList.length) return false;
+    
+    const anMap = new Map(anList.map(n => [n.id, n]));
+    for (const n of bnList) {
+      const existing = anMap.get(n.id);
+      if (!existing) return false;
+      // Compare key properties of the nodes
+      if (
+        existing.text !== n.text ||
+        existing.notes !== n.notes ||
+        existing.x !== n.x ||
+        existing.y !== n.y ||
+        existing.parentId !== n.parentId ||
+        existing.priority !== n.priority ||
+        existing.completed !== n.completed ||
+        existing.color !== n.color ||
+        existing.collapsed !== n.collapsed ||
+        existing.isCardCollapsed !== n.isCardCollapsed ||
+        existing.dueDate !== n.dueDate ||
+        existing.dueTime !== n.dueTime ||
+        existing.startDate !== n.startDate ||
+        existing.startTime !== n.startTime ||
+        existing.progress !== n.progress ||
+        existing.isFloating !== n.isFloating ||
+        existing.isContainer !== n.isContainer ||
+        existing.isWorkflowRectangle !== n.isWorkflowRectangle ||
+        existing.workflowShape !== n.workflowShape ||
+        existing.zoneWidth !== n.zoneWidth ||
+        existing.zoneHeight !== n.zoneHeight ||
+        existing.width !== n.width ||
+        existing.height !== n.height ||
+        existing.updatedAt !== n.updatedAt ||
+        existing.pomodoroTotalTime !== n.pomodoroTotalTime ||
+        existing.pomodoroSessionsCount !== n.pomodoroSessionsCount ||
+        existing.archived !== n.archived ||
+        existing.externalLink !== n.externalLink
+      ) {
+        return false;
+      }
+      
+      // Compare tags list within node
+      if (existing.tags.length !== n.tags.length || !existing.tags.every((t_val, idx) => t_val === n.tags[idx])) {
+        return false;
+      }
+
+      // Compare attachments lists length
+      const eFiles = existing.files || [];
+      const nFiles = n.files || [];
+      if (eFiles.length !== nFiles.length) return false;
+      // Check attachment metadata
+      for (let i = 0; i < eFiles.length; i++) {
+        if (eFiles[i].id !== nFiles[i].id || eFiles[i].name !== nFiles[i].name || eFiles[i].size !== nFiles[i].size) {
+          return false;
+        }
       }
     }
-    return res;
   }
-  return obj;
-}
 
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
+  // Deletions comparison
+  const ad = a.deletions || [];
+  const bd = b.deletions || [];
+  if (ad.length !== bd.length) return false;
+  const adMap = new Map(ad.map(d => [`${d.type}:${d.id}`, d]));
+  for (const d of bd) {
+    if (!adMap.has(`${d.type}:${d.id}`)) return false;
   }
+
+  return true;
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
+// ----------------- RELATIONAL COMBINATION MERGER -----------------
 
 /**
  * Fully symmetrical logic for merging two workspace states.
@@ -199,22 +244,7 @@ export function mergeWorkspaceStates(
       const localTime = new Date(existingN.updatedAt || 0).getTime();
       const remoteTime = new Date(sn.updatedAt || 0).getTime();
       if (remoteTime > localTime) {
-        const mergedFiles = (sn.files || []).map(remoteFile => {
-          if (remoteFile.dataUrl?.startsWith('_OMITTED_DUE_TO_SIZE_')) {
-            const localFile = (existingN.files || []).find(lf => lf.id === remoteFile.id);
-            if (localFile && localFile.dataUrl && !localFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
-              return {
-                ...remoteFile,
-                dataUrl: localFile.dataUrl
-              };
-            }
-          }
-          return remoteFile;
-        });
-        mergedNodesMap.set(sn.id, {
-          ...sn,
-          files: mergedFiles
-        });
+        mergedNodesMap.set(sn.id, sn);
       }
     }
   });
@@ -269,179 +299,342 @@ export function mergeWorkspaceStates(
     nodes: finalNodesMap,
     activeProjectId: finalActiveProjectId,
     tagCategories: finalTagCats,
-    googleSheetsFileId: local.googleSheetsFileId !== undefined ? local.googleSheetsFileId : (cloud.googleSheetsFileId !== undefined ? cloud.googleSheetsFileId : null),
-    taskSheetsSpreadsheetId: local.taskSheetsSpreadsheetId !== undefined ? local.taskSheetsSpreadsheetId : (cloud.taskSheetsSpreadsheetId !== undefined ? cloud.taskSheetsSpreadsheetId : null),
     deletions: mergedDeletions
   };
 }
 
+// ----------------- SANITIZATION AND DATES CONVERSION -----------------
+
 /**
- * Saves current WorkspaceState snapshot to Firestore database dynamically.
+ * Converts Firestore server Timestamp representations into normal ISO string objects inside loaded state.
+ * This guarantees perfect type integrity with client-side code and avoids component errors.
  */
-export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; isOfflineQueued?: boolean; error?: string }> {
+export function convertTimestampsToIso(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj.toDate === 'function') {
+    return obj.toDate().toISOString();
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(convertTimestampsToIso);
+  }
+  if (typeof obj === 'object') {
+    const res: any = {};
+    for (const key of Object.keys(obj)) {
+      res[key] = convertTimestampsToIso(obj[key]);
+    }
+    return res;
+  }
+  return obj;
+}
+
+/**
+ * Recursively removes any undefined fields or converts them to null to prevent Firestore invalid data errors.
+ */
+function sanitizeForFirestore(obj: any): any {
+  if (obj === undefined) {
+    return null;
+  }
+  if (obj === null) {
+    return null;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeForFirestore);
+  }
+  if (typeof obj === 'object') {
+    const res: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+         res[key] = sanitizeForFirestore(val);
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
+// ----------------- ERROR HANDLING BLOCK (SKILLS SECTION 3) -----------------
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+// ----------------- DISCIPLINED POINT-LEVEL DELTA WRITES -----------------
+
+/**
+ * Saves current WorkspaceState changes to Firestore dynamically using point-level updates.
+ * Implements strict state shielding via semantic equivalence comparison to conserve Firestore operations count.
+ */
+export async function saveToFirebaseDirectly(
+  userId: string, 
+  state: WorkspaceState
+): Promise<{ success: boolean; isOfflineQueued?: boolean; error?: string }> {
   try {
     const docRef = doc(db, 'workspaces', userId);
-    
-    // Fetch existing cloud doc to merge
-    let cloudData: any = null;
-    try {
-      const getDocTimeoutMs = 8000;
-      const snap = await Promise.race([
-        getDoc(docRef),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('getDoc timeout')), getDocTimeoutMs)
-        )
-      ]);
-      if (snap.exists()) {
-        cloudData = snap.data();
-      }
-    } catch (e) {
-      console.warn('[saveToFirebaseDirectly] Failed to fetch existing cloud doc, proceeding with overwrite/local override:', e);
+
+    // CRITICAL: Shield write operations check. If semantic check returns true, skip writing.
+    // Minimizes read/write traffic significantly on accidental renders.
+    if (lastSyncedStateInMemory && isWorkspaceStateSemanticallyEqual(state, lastSyncedStateInMemory)) {
+      console.log('[Sync Shield] Skip redundant save. State holds no mutations.');
+      return { success: true };
     }
 
-    const cloudDeletions: DeletionRecord[] = cloudData?.deletions || [];
+    // Load active Local Deletions registry
     const localDeletions = getLocalDeletions();
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    
-    // Merge deletions and prune older than 30 days
-    const mergedDeletions: DeletionRecord[] = [];
-    const appendUniqueDeletion = (rec: DeletionRecord) => {
+
+    // Prune very old mutations
+    const activeLocalDeletions = localDeletions.filter(rec => {
       try {
-        const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
-        if (deletedAtMs < thirtyDaysAgo) return; 
+        return new Date(rec.deletedAt || 0).getTime() > thirtyDaysAgo;
       } catch {
-        // Keep it if parsing fails
+        return true;
       }
-      if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
-        mergedDeletions.push(rec);
-      }
-    };
-    cloudDeletions.forEach(appendUniqueDeletion);
-    localDeletions.forEach(appendUniqueDeletion);
+    });
 
-    // Update local deletion registry to be fully aligned
+    // 1. Fetch current cloud document safely using standard offline-first friendly getDoc with cache fallback
+    let cloudDocSnap = null;
     try {
-      localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
-    } catch (e) {
-      console.error(e);
+      cloudDocSnap = await getDoc(docRef);
+    } catch (e: any) {
+      const isOfflineError = !navigator.onLine || 
+        String(e?.message || '').toLowerCase().includes('offline') ||
+        e?.code === 'unavailable';
+      if (isOfflineError) {
+        console.warn('[Sync] Offline or connection error; attempting to load from local Firestore cache for delta updates...', e);
+        try {
+          cloudDocSnap = await getDocFromCache(docRef);
+          console.log('[Sync] Success loading from local cache for delta computation while offline.');
+        } catch (cacheError) {
+          console.warn('[Sync] Failed to perform initial document fetch (offline fallback and cache is empty):', cacheError);
+        }
+      } else {
+        console.warn('[Sync] Failed to perform initial document fetch (offline fallback):', e);
+      }
     }
 
+    const payloadExists = cloudDocSnap && cloudDocSnap.exists();
+    
+    if (!payloadExists) {
+      // SCENARIO A: Document does not exist. Initialize complete blueprint first
+      const rawPayload = {
+        userId,
+        folders: state.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
+        projects: state.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() })),
+        nodes: Object.keys(state.nodes).reduce((acc, pId) => {
+          acc[pId] = (state.nodes[pId] || []).map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
+          return acc;
+        }, {} as Record<string, TaskNode[]>),
+        activeProjectId: state.activeProjectId,
+        tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
+        deletions: activeLocalDeletions,
+        updatedAt: serverTimestamp() // Set secure server time (Pillar 13)
+      };
+
+      const sanitized = sanitizeForFirestore(rawPayload);
+      await setDoc(docRef, sanitized);
+      updateLastSyncedStateCache(state); // Update local memory representation
+      console.log('[Sync] Created brand new user workspace root doc with server timestamp.');
+      return { success: true };
+    }
+
+    // SCENARIO B: Document already exists. Apply highly performant, point-level delta updates
+    const cloudDataResponse = convertTimestampsToIso(cloudDocSnap!.data());
     const cloudState: WorkspaceState = {
-      folders: cloudData?.folders || [],
-      projects: cloudData?.projects || [],
-      nodes: cloudData?.nodes || {},
-      activeProjectId: cloudData?.activeProjectId || null,
-      tagCategories: cloudData?.tagCategories || [],
-      googleSheetsFileId: cloudData?.googleSheetsFileId || undefined,
-      taskSheetsSpreadsheetId: cloudData?.taskSheetsSpreadsheetId || undefined,
+      folders: cloudDataResponse?.folders || [],
+      projects: cloudDataResponse?.projects || [],
+      nodes: cloudDataResponse?.nodes || {},
+      activeProjectId: cloudDataResponse?.activeProjectId || null,
+      tagCategories: cloudDataResponse?.tagCategories || [],
+      deletions: cloudDataResponse?.deletions || []
     };
 
-    const mergedState = cloudData
-      ? mergeWorkspaceStates(state, cloudState, mergedDeletions)
-      : state;
-
-    // Load and include local active Pomodoro state if any
-    let activePomodoro = null;
-    try {
-      const localPomoSaved = localStorage.getItem('task_mindmap_pomodoro');
-      if (localPomoSaved) {
-        activePomodoro = JSON.parse(localPomoSaved);
+    // Synthesize deletion tombstone collections
+    const mergedDeletionsList: DeletionRecord[] = [];
+    const pushIfUnique = (rec: DeletionRecord) => {
+      if (!mergedDeletionsList.some(m => m.id === rec.id && m.type === rec.type)) {
+        mergedDeletionsList.push(rec);
       }
-    } catch (e) {
-      console.error('Failed to parse local Pomodoro state for Firestore syncer:', e);
-    }
-
-    const rawPayload = {
-      userId,
-      folders: mergedState.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
-      projects: mergedState.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() })),
-      nodes: Object.keys(mergedState.nodes).reduce((acc, key) => {
-        acc[key] = mergedState.nodes[key].map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
-        return acc;
-      }, {} as Record<string, TaskNode[]>),
-      activeProjectId: mergedState.activeProjectId,
-      tagCategories: (mergedState.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
-      googleSheetsFileId: mergedState.googleSheetsFileId || null,
-      taskSheetsSpreadsheetId: mergedState.taskSheetsSpreadsheetId || null,
-      activePomodoro,
-      deletions: mergedDeletions,
-      updatedAt: new Date().toISOString()
     };
-    
-    const payload = sanitizeForFirestore(rawPayload);
-    
-    // Estimate payload size in KB
-    const serialized = JSON.stringify(payload);
-    const sizeInKb = Math.round(serialized.length / 1024);
-    if (sizeInKb > 1000) {
-      throw new Error(`Размер вашей карты (${sizeInKb} KB) превышает лимит базы данных Firestore (1000 KB). Пожалуйста, удалите некоторые вложения!`);
+    (cloudState.deletions || []).forEach(pushIfUnique);
+    activeLocalDeletions.forEach(pushIfUnique);
+
+    // Merge conflicts on the client via Last Write Wins strategy
+    const mergedState = mergeWorkspaceStates(state, cloudState, mergedDeletionsList);
+
+    // Create the delta mutation map referencing nested pathways
+    const deltaMap: Record<string, any> = {};
+
+    // Point 1: Check activeProjectId change
+    if (mergedState.activeProjectId !== cloudState.activeProjectId) {
+      deltaMap['activeProjectId'] = mergedState.activeProjectId;
     }
 
-    const currentTimeoutMs = 25000;
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Превышено время ожидания сервера (${currentTimeoutMs / 1000}с). Снимок сохранён локально, и синхронизируется при стабильном подключении.`)), currentTimeoutMs)
-    );
+    // Point 2: Compare and detect folder modifications
+    const foldersChanged = JSON.stringify(mergedState.folders) !== JSON.stringify(cloudState.folders);
+    if (foldersChanged) {
+      deltaMap['folders'] = mergedState.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() }));
+    }
 
-    await Promise.race([
-      setDoc(docRef, payload),
-      timeoutPromise
-    ]);
+    // Point 3: Compare and detect project modifications
+    const projectsChanged = JSON.stringify(mergedState.projects) !== JSON.stringify(cloudState.projects);
+    if (projectsChanged) {
+      deltaMap['projects'] = mergedState.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() }));
+    }
 
-    console.log(`Firebase cloud sync completed successfully.`);
+    // Point 4: Compare tagCategories
+    const tagCatsChanged = JSON.stringify(mergedState.tagCategories) !== JSON.stringify(cloudState.tagCategories);
+    if (tagCatsChanged) {
+      deltaMap['tagCategories'] = (mergedState.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() }));
+    }
+
+    // Point 5: Compare nodes project-by-project and trigger granular point writes for affected nodes arrays
+    const cloudNodePids = Object.keys(cloudState.nodes || {});
+    const localNodePids = Object.keys(mergedState.nodes || {});
+    const checkedPids = new Set([...cloudNodePids, ...localNodePids]);
+
+    checkedPids.forEach(pId => {
+      const localListObj = mergedState.nodes[pId];
+      const cloudListObj = cloudState.nodes[pId];
+
+      if (!localListObj) {
+        // Project was removed, delete its nested nodes field completely
+        deltaMap[`nodes.${pId}`] = deleteField();
+      } else if (!cloudListObj || JSON.stringify(localListObj) !== JSON.stringify(cloudListObj)) {
+        // Segment was mutated or added. Point write segment nodes!
+        deltaMap[`nodes.${pId}`] = localListObj.map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
+      }
+    });
+
+    // Point 6: Compare deletions and use arrayUnion to append new records
+    const previousDeletionsMap = new Set((cloudState.deletions || []).map((d: any) => `${d.type}:${d.id}`));
+    const newAdditionDeletions = mergedDeletionsList.filter(d => !previousDeletionsMap.has(`${d.type}:${d.id}`));
+    if (newAdditionDeletions.length > 0) {
+      deltaMap['deletions'] = arrayUnion(...newAdditionDeletions);
+    }
+
+    // If there are point modifications, append the root serverTimestamp and updateDoc
+    if (Object.keys(deltaMap).length > 0) {
+      deltaMap['updatedAt'] = serverTimestamp();
+      
+      const sanitizedDelta = sanitizeForFirestore(deltaMap);
+      await updateDoc(docRef, sanitizedDelta);
+      console.log(`[Sync Delta] Successfully updated modified key fields in Firestore:`, Object.keys(deltaMap));
+    } else {
+      console.log('[Sync Delta] No point changes detected after structural merging.');
+    }
+
+    // Ensure we capture this state as successfully synced
+    updateLastSyncedStateCache(state);
     return { success: true };
+
   } catch (error: any) {
     if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
       handleFirestoreError(error, OperationType.WRITE, `workspaces/${userId}`);
     }
-    
-    if (error?.message && error.message.includes('Превышено время ожидания сервера')) {
-      console.info('Firebase sync offline queued:', error.message);
-      return { 
-        success: true, 
-        isOfflineQueued: true, 
-        error: error.message 
-      };
-    }
-
-    console.error('Firebase snapshot save error:', error);
+    console.error('[Sync] Error during point-level delta snapshot save:', error);
     return { 
       success: false, 
-      error: error?.message || 'Превышено время ожидания сервера.' 
+      error: error?.message || 'Failed to sync with standard Cloud storage.' 
     };
   }
 }
 
 /**
  * Fetch latest WorkspaceState snapshot from Firestore database.
+ * Resolves standard Firestore types safely via timestamp-to-ISO utilities.
  */
 export async function loadFromFirebaseDirectly(userId: string): Promise<WorkspaceState | null> {
+  const docRef = doc(db, 'workspaces', userId);
+  let snap;
   try {
-    const docRef = doc(db, 'workspaces', userId);
-    const currentTimeoutMs = 60000;
-    
-    const snap = await Promise.race([
-      getDoc(docRef),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Превышено время ожидания загрузки (${currentTimeoutMs / 1000}с).`)), currentTimeoutMs)
-      )
-    ]);
+    try {
+      snap = await getDoc(docRef);
+    } catch (getDocErr: any) {
+      const isOfflineError = !navigator.onLine || 
+        String(getDocErr?.message || '').toLowerCase().includes('offline') ||
+        getDocErr?.code === 'unavailable';
+      if (isOfflineError) {
+        console.warn('[Sync] Offline or connection error detected during direct Firestore load. Attempting to load from local cache...');
+        try {
+          snap = await getDocFromCache(docRef);
+          console.log('[Sync] Successfully loaded document from Firestore local cache.');
+        } catch (cacheErr: any) {
+          console.warn('[Sync] Failed to load document from Firestore cache:', cacheErr);
+          throw getDocErr; // rethrow the original offline error
+        }
+      } else {
+        throw getDocErr;
+      }
+    }
 
-    if (snap.exists()) {
-      return snap.data() as WorkspaceState;
+    if (snap && snap.exists()) {
+      const converted = convertTimestampsToIso(snap.data());
+      const stateObj = converted as WorkspaceState;
+      // Initialize module cache
+      updateLastSyncedStateCache(stateObj);
+      return stateObj;
     }
     return null;
   } catch (error: any) {
     if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
       handleFirestoreError(error, OperationType.GET, `workspaces/${userId}`);
     }
-    const errMsg = String(error?.message || '');
-    if (errMsg.includes('offline') || error?.code === 'unavailable' || error?.code === 'failed-precondition') {
-      console.warn('Firebase snapshot load bypassed: web client is currently offline.', errMsg);
-    } else if (error?.message && error.message.includes('Превышено время ожидания')) {
-      console.warn('Firebase snapshot load timeout:', error.message);
-    } else {
-      console.error('Firebase snapshot load error:', error);
+    
+    const isOfflineMode = !navigator.onLine || 
+      String(error?.message || '').toLowerCase().includes('offline') ||
+      error?.code === 'unavailable';
+      
+    if (isOfflineMode) {
+      console.warn('[Sync] Firestore load failed due to being offline. Graceful degradation.', error);
+      // Under offline conditions, return null instead of throwing terminal uncaught failures
+      return null;
     }
-    throw error || new Error('Превышено время ожидания загрузки. Пожалуйста, проверьте интернет-соединение.');
+    
+    console.error('[Sync] Firestore document load error:', error);
+    throw error || new Error('Could not download root workspace database.');
   }
 }

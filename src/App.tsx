@@ -60,7 +60,6 @@ import {
   initAuth, 
   googleSignIn, 
   logout,
-  setAccessToken,
   db,
   signInGuest
 } from './lib/firebase';
@@ -439,6 +438,27 @@ export default function App() {
   const [forceCloudSyncLoading, setForceCloudSyncLoading] = useState<'upload' | 'download' | null>(null);
   const [forceCloudSyncFeedback, setForceCloudSyncFeedback] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setCurrentUser(res.user);
+        setGoogleToken(null);
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+      }
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      console.error("Sign in failed:", err);
+      if (msg.includes("unauthorized-domain") || (err?.code && err.code.includes("unauthorized-domain"))) {
+        setAuthError("unauthorized-domain");
+      } else {
+        setAuthError(msg);
+      }
+      throw err;
+    }
+  };
 
   // Symmetrical Device Sync Room pairing (6-digit / custom name) states
   const [roomSyncId, setRoomSyncId] = useState<string>(() => {
@@ -1028,10 +1048,10 @@ export default function App() {
   // 1. Firebase Auth listener registration
   useEffect(() => {
     const unsubscribe = initAuth(
-      (user, token) => {
+      (user) => {
         isFirstSnapshotRef.current = true;
         setCurrentUser(user);
-        setGoogleToken(token);
+        setGoogleToken(null);
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
       },
       () => {
@@ -3196,10 +3216,18 @@ export default function App() {
               <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-2">
                 {state.projects.find(p => p.id === state.activeProjectId)?.name || 'Карта задач'}
                 {(!currentUser || !googleToken) && (
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 shadow-xs animate-pulse whitespace-nowrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSyncMenuOpen(true);
+                      setSyncTab('firebase');
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-900/50 shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer animate-pulse whitespace-nowrap"
+                    title="Нажмите для авторизации через Google"
+                  >
                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                    <span>Нужна авторизация!</span>
-                  </span>
+                    <span>Нужна авторизация! (Войти) 🔑</span>
+                  </button>
                 )}
               </h2>
               {viewMode !== 'mobile-list' && (
@@ -4373,22 +4401,10 @@ export default function App() {
                           <button
                             type="button"
                             onClick={async () => {
-                              setAuthError(null);
                               try {
-                                const res = await googleSignIn();
-                                if (res) {
-                                  setCurrentUser(res.user);
-                                  setGoogleToken(res.accessToken);
-                                  setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-                                }
-                              } catch (err: any) {
-                                const msg = err?.message || String(err);
-                                console.error("Sign in failed:", err);
-                                if (msg.includes("unauthorized-domain") || (err?.code && err.code.includes("unauthorized-domain"))) {
-                                  setAuthError("unauthorized-domain");
-                                } else {
-                                  setAuthError(msg);
-                                }
+                                await handleGoogleSignIn();
+                              } catch (err) {
+                                // handleGoogleSignIn already updates authError state
                               }
                             }}
                             className="flex items-center gap-2.5 py-2.5 px-4.5 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white text-xs font-bold rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.03] active:scale-[0.98] shadow-md hover:shadow-lg shrink-0 border border-indigo-700 dark:border-indigo-400"
