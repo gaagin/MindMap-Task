@@ -157,8 +157,8 @@ export function isWorkspaceStateSemanticallyEqual(a: WorkspaceState, b: Workspac
   }
 
   // Deletions comparison
-  const ad = a.deletions || [];
-  const bd = b.deletions || [];
+  const ad = Array.isArray(a.deletions) ? a.deletions : [];
+  const bd = Array.isArray(b.deletions) ? b.deletions : [];
   if (ad.length !== bd.length) return false;
   const adMap = new Map(ad.map(d => [`${d.type}:${d.id}`, d]));
   for (const d of bd) {
@@ -489,7 +489,7 @@ export async function saveToFirebaseDirectly(
       nodes: cloudDataResponse?.nodes || {},
       activeProjectId: cloudDataResponse?.activeProjectId || null,
       tagCategories: cloudDataResponse?.tagCategories || [],
-      deletions: cloudDataResponse?.deletions || []
+      deletions: Array.isArray(cloudDataResponse?.deletions) ? cloudDataResponse.deletions : []
     };
 
     // Synthesize deletion tombstone collections
@@ -499,7 +499,7 @@ export async function saveToFirebaseDirectly(
         mergedDeletionsList.push(rec);
       }
     };
-    (cloudState.deletions || []).forEach(pushIfUnique);
+    (Array.isArray(cloudState.deletions) ? cloudState.deletions : []).forEach(pushIfUnique);
     activeLocalDeletions.forEach(pushIfUnique);
 
     // Merge conflicts on the client via Last Write Wins strategy
@@ -550,7 +550,7 @@ export async function saveToFirebaseDirectly(
     });
 
     // Point 6: Compare deletions and use arrayUnion to append new records
-    const previousDeletionsMap = new Set((cloudState.deletions || []).map((d: any) => `${d.type}:${d.id}`));
+    const previousDeletionsMap = new Set((Array.isArray(cloudState.deletions) ? cloudState.deletions : []).map((d: any) => `${d.type}:${d.id}`));
     const newAdditionDeletions = mergedDeletionsList.filter(d => !previousDeletionsMap.has(`${d.type}:${d.id}`));
     if (newAdditionDeletions.length > 0) {
       deltaMap['deletions'] = arrayUnion(...newAdditionDeletions);

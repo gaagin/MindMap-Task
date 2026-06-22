@@ -1114,7 +1114,7 @@ export default function App() {
       localDeletions = JSON.parse(saved);
     } catch {}
 
-    const cloudDeletions: DeletionRecord[] = cloudData.deletions || [];
+    const cloudDeletions: DeletionRecord[] = Array.isArray(cloudData?.deletions) ? cloudData.deletions : [];
     
     const delMap = new Map<string, DeletionRecord>();
     localDeletions.forEach(d => {
@@ -1381,7 +1381,7 @@ export default function App() {
           return [];
         }
       })();
-      const cloudDeletions = cloudData.deletions || [];
+      const cloudDeletions = Array.isArray(cloudData?.deletions) ? cloudData.deletions : [];
       const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
       const mergedDeletions: any[] = [];
       const appendUnique = (rec: any) => {
@@ -1562,7 +1562,7 @@ export default function App() {
               return [];
             }
           })();
-          const cloudDeletions = cloudData.deletions || [];
+          const cloudDeletions = Array.isArray(cloudData?.deletions) ? cloudData.deletions : [];
           const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
           const mergedDeletions: any[] = [];
           const appendUnique = (rec: any) => {
@@ -1763,7 +1763,7 @@ export default function App() {
             return [];
           }
         })();
-        const cloudDeletions = cloudData.deletions || [];
+        const cloudDeletions = Array.isArray(cloudData?.deletions) ? cloudData.deletions : [];
         const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
         const mergedDeletions: any[] = [];
         const appendUnique = (rec: any) => {
