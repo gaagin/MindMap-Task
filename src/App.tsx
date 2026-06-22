@@ -364,7 +364,7 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
     .sort((a, b) => a.id.localeCompare(b.id));
 
   // 5. Serialize deletions deterministically to prevent cross-device races
-  const deletions = (wsState.deletions || [])
+  const deletions = (Array.isArray(wsState.deletions) ? wsState.deletions : [])
     .map(d => ({
       type: d.type || '',
       id: d.id || '',
@@ -1111,13 +1111,14 @@ export default function App() {
     let localDeletions: DeletionRecord[] = [];
     try {
       const saved = localStorage.getItem('milli_deleted_registry') || '[]';
-      localDeletions = JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      localDeletions = Array.isArray(parsed) ? parsed : [];
     } catch {}
 
     const cloudDeletions: DeletionRecord[] = Array.isArray(cloudData?.deletions) ? cloudData.deletions : [];
     
     const delMap = new Map<string, DeletionRecord>();
-    localDeletions.forEach(d => {
+    (localDeletions || []).forEach(d => {
       if (d && d.id) delMap.set(`${d.type}:${d.id}`, d);
     });
     cloudDeletions.forEach(d => {
@@ -1376,7 +1377,8 @@ export default function App() {
       const localDeletions = (() => {
         try {
           const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
-          return JSON.parse(listJson) || [];
+          const parsed = JSON.parse(listJson);
+          return Array.isArray(parsed) ? parsed : [];
         } catch {
           return [];
         }
@@ -1557,7 +1559,8 @@ export default function App() {
           const localDeletions = (() => {
             try {
               const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
-              return JSON.parse(listJson) || [];
+              const parsed = JSON.parse(listJson);
+              return Array.isArray(parsed) ? parsed : [];
             } catch {
               return [];
             }
@@ -1758,7 +1761,8 @@ export default function App() {
         const localDeletions = (() => {
           try {
             const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
-            return JSON.parse(listJson) || [];
+            const parsed = JSON.parse(listJson);
+            return Array.isArray(parsed) ? parsed : [];
           } catch {
             return [];
           }

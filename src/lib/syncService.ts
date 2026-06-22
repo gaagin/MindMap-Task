@@ -10,8 +10,9 @@ const DELETIONS_KEY = 'milli_deleted_registry';
 export function logDeletion(type: 'folder' | 'project' | 'node' | 'tagCategory', id: string) {
   try {
     const listJson = localStorage.getItem(DELETIONS_KEY) || '[]';
-    const list = JSON.parse(listJson) as DeletionRecord[];
-    if (!list.some(item => item.id === id && item.type === type)) {
+    const parsed = JSON.parse(listJson);
+    const list = Array.isArray(parsed) ? (parsed as DeletionRecord[]) : [];
+    if (!list.some(item => item && item.id === id && item.type === type)) {
       list.push({ type, id, deletedAt: new Date().toISOString() });
       localStorage.setItem(DELETIONS_KEY, JSON.stringify(list));
     }
@@ -23,7 +24,8 @@ export function logDeletion(type: 'folder' | 'project' | 'node' | 'tagCategory',
 export function getLocalDeletions(): DeletionRecord[] {
   try {
     const listJson = localStorage.getItem(DELETIONS_KEY) || '[]';
-    return JSON.parse(listJson) as DeletionRecord[];
+    const parsed = JSON.parse(listJson);
+    return Array.isArray(parsed) ? (parsed as DeletionRecord[]) : [];
   } catch {
     return [];
   }

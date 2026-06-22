@@ -107,9 +107,10 @@ export function loadWorkspace(): WorkspaceState {
     // Filter out deleted elements using milli_deleted_registry
     try {
       const deletionsJson = localStorage.getItem('milli_deleted_registry') || '[]';
-      const deletions = JSON.parse(deletionsJson) || [];
+      const parsed = JSON.parse(deletionsJson);
+      const deletions = Array.isArray(parsed) ? parsed : [];
       state.deletions = deletions; // Ensure deletions list is preserved directly inside active state representation
-      if (Array.isArray(deletions) && deletions.length > 0) {
+      if (deletions.length > 0) {
         const isDeleted = (type: string, id: string) => {
           return deletions.some((d: any) => d && d.type === type && d.id === id);
         };
