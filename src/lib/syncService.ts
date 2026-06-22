@@ -339,10 +339,26 @@ function sanitizeForFirestore(obj: any): any {
   if (obj === null) {
     return null;
   }
+
+  // Guard against corrupting Firestore FieldValue sentinels (serverTimestamp, deleteField, arrayUnion)
+  if (typeof obj === 'object') {
+    const constructorName = obj.constructor?.name || '';
+    if (
+      constructorName.includes('FieldValue') || 
+      '_methodName' in obj || 
+      (typeof obj.isEqual === 'function' && constructorName !== 'Object')
+    ) {
+      return obj;
+    }
+  }
+
   if (Array.isArray(obj)) {
     return obj.map(sanitizeForFirestore);
   }
   if (typeof obj === 'object') {
+    if (obj instanceof Date) {
+      return obj;
+    }
     const res: any = {};
     for (const key of Object.keys(obj)) {
       const val = obj[key];
