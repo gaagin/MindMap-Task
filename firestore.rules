@@ -26,5 +26,9 @@ service cloud.firestore {
       allow read, delete: if isOwner(userId);
       allow create, update: if isOwner(userId) && isValidWorkspace(request.resource.data);
     }
+
+    match /sync_rooms/{roomId} {
+      allow read, write: if true;
+    }
   }
 }

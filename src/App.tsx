@@ -70,7 +70,7 @@ import {
   mergeWorkspaceStates,
   logDeletion 
 } from './lib/syncService';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, getDoc, setDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 
 /**
@@ -1129,29 +1129,61 @@ export default function App() {
     setRoomSyncFeedback(null);
     try {
       const stateToSave = forceState || stateRef.current;
-      const res = await fetch('/api/sync/room/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId: id, state: stateToSave })
-      });
       
-      let data: any = {};
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        data = await res.json();
-      } else {
-        const textStr = await res.text();
-        if (!res.ok) {
-          throw new Error(`Ошибка сервера (${res.status}): ${textStr.substring(0, 120)}`);
+      // 1. Try Express API first
+      let apiSuccess = false;
+      let apiErrorMsg = '';
+      try {
+        const res = await fetch('/api/sync/room/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId: id, state: stateToSave })
+        });
+        
+        let data: any = {};
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const textStr = await res.text();
+          if (!res.ok) {
+            throw new Error(`Ошибка сервера (${res.status}): ${textStr.substring(0, 120)}`);
+          }
+          data = { error: textStr || 'Неверный формат ответа от сервера' };
         }
-        data = { error: textStr || 'Неверный формат ответа от сервера' };
+
+        if (!res.ok) {
+          throw new Error(data.error || `Ошибка сервера (${res.status})`);
+        }
+        apiSuccess = true;
+      } catch (err: any) {
+        console.warn('[Sync] Express API failed, falling back to Firebase Firestore:', err);
+        apiErrorMsg = err?.message || String(err);
       }
 
-      if (!res.ok) {
-        throw new Error(data.error || `Ошибка сервера (${res.status})`);
+      // 2. Try Firestore fallback
+      let firestoreSuccess = false;
+      try {
+        const docRef = doc(db, 'sync_rooms', id);
+        const cleanState = JSON.parse(JSON.stringify(stateToSave));
+        await setDoc(docRef, { state: cleanState, updatedAt: new Date().toISOString() });
+        firestoreSuccess = true;
+      } catch (firestoreErr: any) {
+        console.error('[Sync] Firestore pairing sync also failed:', firestoreErr);
+        if (!apiSuccess) {
+          throw new Error(`Не удалось сохранить ни на сервере, ни в Firebase.\nОшибка API: ${apiErrorMsg}\nОшибка БД: ${firestoreErr.message}`);
+        }
       }
+
       setRoomSyncStatus('saved');
-      setRoomSyncFeedback(`Данные выгружены в комнату "${id}" (${new Date().toLocaleTimeString()})`);
+      const timeStr = new Date().toLocaleTimeString();
+      if (apiSuccess && firestoreSuccess) {
+        setRoomSyncFeedback(`Данные выгружены на Сервер и в Облако "${id}" (${timeStr})`);
+      } else if (firestoreSuccess) {
+        setRoomSyncFeedback(`Данные выгружены в Облако "${id}" (${timeStr})`);
+      } else {
+        setRoomSyncFeedback(`Данные выгружены на Сервер "${id}" (${timeStr})`);
+      }
       localStorage.setItem('milli_room_sync_id', id);
     } catch (err: any) {
       console.error('[Sync Room Save Error]:', err);
@@ -1166,53 +1198,74 @@ export default function App() {
     setRoomSyncStatus('syncing');
     setRoomSyncFeedback(null);
     try {
-      const res = await fetch(`/api/sync/room/load/${id}`);
-      if (res.status === 404) {
-        // If the room doesn't exist yet on the server, we initialize/upload to it!
+      let stateFromCloud: WorkspaceState | null = null;
+      let loadedSource = '';
+
+      // 1. Try Express API first
+      try {
+        const res = await fetch(`/api/sync/room/load/${id}`);
+        if (res.ok) {
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await res.json();
+            if (data && data.state) {
+              stateFromCloud = data.state;
+              loadedSource = 'Резервный';
+            }
+          }
+        } else if (res.status !== 404) {
+          console.warn(`[Sync] Express load failed with status ${res.status}`);
+        }
+      } catch (err) {
+        console.warn('[Sync] Express load fetch failed, falling back to Firebase Firestore:', err);
+      }
+
+      // 2. Try Firestore fallback
+      if (!stateFromCloud) {
+        try {
+          const docRef = doc(db, 'sync_rooms', id);
+          const snap = await getDoc(docRef);
+          if (snap.exists()) {
+            const data = snap.data();
+            if (data && data.state) {
+              stateFromCloud = data.state;
+              loadedSource = 'Облако';
+            }
+          }
+        } catch (firestoreErr) {
+          console.error('[Sync] Firestore fallback load failed:', firestoreErr);
+        }
+      }
+
+      // 3. Auto-initialize room if not found anywhere (new room)
+      if (!stateFromCloud) {
+        console.log('[Sync] Room not found anywhere, initializing/saving current state as initial data.');
         await saveStateToSyncRoom(id);
         return;
       }
-      
-      let data: any = {};
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        data = await res.json();
+
+      const merged = getMergedRoomState(stateFromCloud);
+      const mergedHash = getSyncHash(merged);
+      const localHash = getSyncHash(stateRef.current);
+      const cloudHash = getSyncHash(stateFromCloud);
+
+      let didUpdate = false;
+      if (mergedHash !== localHash) {
+        ignoreNextStateChangeRef.current = true;
+        setRawState(merged);
+        didUpdate = true;
+      }
+
+      if (mergedHash !== cloudHash) {
+        await saveStateToSyncRoom(id, merged);
       } else {
-        const textStr = await res.text();
-        if (!res.ok) {
-          throw new Error(`Ошибка сервера (${res.status}): ${textStr.substring(0, 120)}`);
-        }
-        throw new Error('Некорректный формат ответа (ожидался JSON)');
+        setRoomSyncStatus('saved');
+        setRoomSyncFeedback(didUpdate 
+          ? `Данные синхронизированы и объединены (источник: ${loadedSource})!`
+          : `Уже синхронизировано с комнатой "${id}" (источник: ${loadedSource}).`
+        );
       }
-
-      if (!res.ok) {
-        throw new Error(data.error || `Ошибка сервера (${res.status})`);
-      }
-      if (data.state) {
-        const merged = getMergedRoomState(data.state);
-        const mergedHash = getSyncHash(merged);
-        const localHash = getSyncHash(stateRef.current);
-        const cloudHash = getSyncHash(data.state);
-
-        let didUpdate = false;
-        if (mergedHash !== localHash) {
-          ignoreNextStateChangeRef.current = true;
-          setRawState(merged);
-          didUpdate = true;
-        }
-
-        // If after merge, local has items that need to go back to the cloud, push them!
-        if (mergedHash !== cloudHash) {
-          saveStateToSyncRoom(id, merged);
-        } else {
-          setRoomSyncStatus('saved');
-          setRoomSyncFeedback(didUpdate 
-            ? `Данные синхронизированы и объединены с изменениями из комнаты "${id}"!`
-            : `Уже синхронизировано с комнатой "${id}".`
-          );
-        }
-        localStorage.setItem('milli_room_sync_id', id);
-      }
+      localStorage.setItem('milli_room_sync_id', id);
     } catch (err: any) {
       console.error('[Sync Room Load Error]:', err);
       setRoomSyncStatus('error');
