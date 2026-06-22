@@ -187,9 +187,21 @@ app.post('/api/gemini/clear-logs', (req, res) => {
 });
 
 // ----------------- ZERO-AUTH DEVICE PAIRING SYNC ENDPOINTS -----------------
-const SYNC_DIR = path.join(process.cwd(), 'sync-rooms');
-if (!fs.existsSync(SYNC_DIR)) {
-  fs.mkdirSync(SYNC_DIR, { recursive: true });
+let SYNC_DIR = path.join(process.cwd(), 'sync-rooms');
+try {
+  if (!fs.existsSync(SYNC_DIR)) {
+    fs.mkdirSync(SYNC_DIR, { recursive: true });
+  }
+} catch (err: any) {
+  console.warn(`[Sync] Cannot create local sync directory at ${SYNC_DIR}, falling back to /tmp/sync-rooms. Error:`, err.message);
+  SYNC_DIR = path.join('/tmp', 'sync-rooms');
+  try {
+    if (!fs.existsSync(SYNC_DIR)) {
+      fs.mkdirSync(SYNC_DIR, { recursive: true });
+    }
+  } catch (tmpErr: any) {
+    console.error('[Critical Sync] Failed to create /tmp/sync-rooms directory:', tmpErr.message);
+  }
 }
 
 // Route to save state to a room (PC exports state to room)
