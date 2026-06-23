@@ -295,13 +295,18 @@ export function mergeWorkspaceStates(
     finalActiveProjectId = null;
   }
 
+  const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
+  const cloudTime = cloud.updatedAt ? new Date(cloud.updatedAt).getTime() : 0;
+  const finalUpdatedAt = (localTime > cloudTime ? local.updatedAt : cloud.updatedAt) || new Date().toISOString();
+
   return {
     folders: finalFolders,
     projects: finalProjects,
     nodes: finalNodesMap,
     activeProjectId: finalActiveProjectId,
     tagCategories: finalTagCats,
-    deletions: mergedDeletions
+    deletions: mergedDeletions,
+    updatedAt: finalUpdatedAt
   };
 }
 
@@ -506,13 +511,13 @@ export async function saveToFirebaseDirectly(
         activeProjectId: state.activeProjectId,
         tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
         deletions: activeLocalDeletions,
-        updatedAt: serverTimestamp() // Set secure server time (Pillar 13)
+        updatedAt: state.updatedAt || new Date().toISOString()
       };
 
       const sanitized = sanitizeForFirestore(rawPayload);
       await withTimeout(setDoc(docRef, sanitized), 25000, 'Firestore write/set timed out');
       updateLastSyncedStateCache(state); // Update local memory representation
-      console.log('[Sync] Created brand new user workspace root doc with server timestamp.');
+      console.log('[Sync] Created brand new user workspace root doc with local timestamp.');
       return { success: true };
     }
 
@@ -524,8 +529,23 @@ export async function saveToFirebaseDirectly(
       nodes: cloudDataResponse?.nodes || {},
       activeProjectId: cloudDataResponse?.activeProjectId || null,
       tagCategories: cloudDataResponse?.tagCategories || [],
-      deletions: Array.isArray(cloudDataResponse?.deletions) ? cloudDataResponse.deletions : []
+      deletions: Array.isArray(cloudDataResponse?.deletions) ? cloudDataResponse.deletions : [],
+      updatedAt: cloudDataResponse?.updatedAt
     };
+
+    // STRICT LOOP / ECHO PREVENTION: Only write to the cloud if the local update timestamp is strictly newer
+    if (state.updatedAt && cloudState.updatedAt) {
+      const localTime = new Date(state.updatedAt).getTime();
+      const cloudTime = new Date(cloudState.updatedAt).getTime();
+      if (localTime <= cloudTime) {
+        console.log('[Sync Loop Protection] Skipping cloud write: Local updatedAt is not newer than Firestore copy.', {
+          localTime: state.updatedAt,
+          cloudTime: cloudState.updatedAt
+        });
+        updateLastSyncedStateCache(state);
+        return { success: true };
+      }
+    }
 
     // Synthesize deletion tombstone collections
     const mergedDeletionsList: DeletionRecord[] = [];
@@ -591,9 +611,9 @@ export async function saveToFirebaseDirectly(
       deltaMap['deletions'] = arrayUnion(...newAdditionDeletions);
     }
 
-    // If there are point modifications, append the root serverTimestamp and updateDoc
+    // If there are point modifications, append the root local updatedAt and updateDoc
     if (Object.keys(deltaMap).length > 0) {
-      deltaMap['updatedAt'] = serverTimestamp();
+      deltaMap['updatedAt'] = state.updatedAt || new Date().toISOString();
       
       const sanitizedDelta = sanitizeForFirestore(deltaMap);
       await withTimeout(updateDoc(docRef, sanitizedDelta), 25000, 'Firestore write/update timed out');

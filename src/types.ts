@@ -129,6 +129,7 @@ export interface WorkspaceState {
   taskSheetsSpreadsheetId?: string;  // ID of the manual sync Google Spreadsheet, synchronized across devices
   deletions?: DeletionRecord[];
   activePomodoro?: any;
+  updatedAt?: string;
 }
 
 export interface SyncReport {

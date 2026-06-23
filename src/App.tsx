@@ -170,7 +170,8 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
     folders: enrichedFolders,
     projects: enrichedProjects,
     nodes: enrichedNodes,
-    tagCategories: enrichedTagCats
+    tagCategories: enrichedTagCats,
+    updatedAt: now
   };
 }
 
@@ -1035,6 +1036,22 @@ export default function App() {
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [aiConsoleOpen, setAiConsoleOpen] = useState(false);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_autosave');
+      return saved === null ? false : saved === 'true'; // Default is FALSE to avoid write loops and stay strictly under quota limits
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('task_mindmap_autosave', String(autoSaveEnabled));
+    } catch (e) {
+      console.error('[Storage] Failed to save autosave toggle state:', e);
+    }
+  }, [autoSaveEnabled]);
 
   useEffect(() => {
     try {
@@ -1593,6 +1610,12 @@ export default function App() {
         return; // Already synced! Prevents infinite trigger loops
       }
 
+      // If auto-save to cloud is disabled, do not write back automatically here.
+      // Symmetrical rare background sync will run every 5 minutes in background effect.
+      if (!autoSaveEnabled) {
+        return;
+      }
+
       setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
       const countSaved = unsyncedEditsCount;
       const timer = setTimeout(async () => {
@@ -1606,10 +1629,43 @@ export default function App() {
           lastSyncedStateHashRef.current = getSyncHash(state); // Update hash on successful upload
           setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
         }
-      }, 1500); // 1.5s snapshot rate-limiting debounce
+      }, 3000); // 3.0s (3000ms) rate-limiting debounce as requested by user to limit writes
       return () => clearTimeout(timer);
     }
-  }, [state, currentUser, isInitialSyncComplete]);
+  }, [state, currentUser, isInitialSyncComplete, autoSaveEnabled]);
+
+  // Symmetrical 5-minute rare cloud backup for safety & offline session close handlers
+  useEffect(() => {
+    if (!currentUser || isQuotaExceeded) return;
+
+    const interval = setInterval(async () => {
+      if (unsyncedEditsCountRef.current > 0) {
+        console.log('[Rare background Sync/5m] Auto-saving workspace state snapshot...');
+        setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+        const res = await saveToFirebaseDirectly(currentUser.uid, stateRef.current);
+        setIsQuotaExceeded(!!res.isQuotaExceeded);
+        setSyncStatus(prev => ({
+          ...prev,
+          firebase: res.success ? 'saved' : 'error'
+        }));
+        if (res.success) {
+          lastSyncedStateHashRef.current = getSyncHash(stateRef.current);
+          setUnsyncedEditsCount(0);
+        }
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    const handleBeforeUnload = () => {
+      // Offline-first approach relies 100% reliably on synchronous write to localStorage which occurs instantly.
+      // No blocking or heavy sync writes on window exit are needed as offline state is preserved locally.
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [currentUser, isQuotaExceeded]);
 
   // 4. Force check and download newer database version on window focus or visibility change (fixes mobile background freezing)
   useEffect(() => {
@@ -4438,7 +4494,69 @@ export default function App() {
 
                     {currentUser && (
                       <div className="bg-indigo-50/25 dark:bg-indigo-950/10 border border-indigo-150/80 dark:border-indigo-900/40 p-4.5 rounded-xl space-y-3.5">
-                        <div className="flex items-center gap-2">
+                        
+                        {/* Auto-save / Manual save control panel */}
+                        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-805 space-y-3 shadow-xs">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-205 flex items-center gap-1.5">
+                                🔄 Автоматическая отправка изменений
+                              </h4>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-normal max-w-[380px]">
+                                {autoSaveEnabled
+                                  ? 'Активно: изменения отправляются в Firebase в фоновом режиме с умной задержкой (debounce) в 3 секунды.'
+                                  : 'Выключено: все промежуточные изменения пишутся только на этом устройстве. Облако обновится принудительно.'}
+                              </p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer select-none shrink-0 scale-95">
+                              <input
+                                type="checkbox"
+                                checked={autoSaveEnabled}
+                                onChange={(e) => setAutoSaveEnabled(e.target.checked)}
+                                className="sr-only peer"
+                              />
+                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full dark:bg-slate-705 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-650" />
+                            </label>
+                          </div>
+
+                          {/* Extra feedback line of Sync Status */}
+                          <div className="flex items-center justify-between text-[11px] border-t pt-2.5 border-slate-100 dark:border-slate-800">
+                            <span className="text-slate-400 dark:text-slate-500 font-bold">Статус облачного кэша:</span>
+                            <div className="flex items-center gap-2">
+                              {syncStatus.firebase === 'syncing' ? (
+                                <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-black">
+                                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
+                                  <span>Идет сохранение...</span>
+                                </div>
+                              ) : unsyncedEditsCount > 0 ? (
+                                <div className="flex items-center gap-1.5 text-amber-650 dark:text-amber-500 font-black">
+                                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                  <span>{unsyncedEditsCount} изменений не в облаке</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-450 font-black">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                  <span>Облако синхронизировано ✓</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-4 bg-slate-50/75 dark:bg-slate-950/40 px-3 py-2 rounded-lg border border-slate-100 dark:border-slate-850/80">
+                            <span className="text-[10px] text-slate-500 dark:text-slate-450 font-medium">Принудительно отправить сейчас:</span>
+                            <button
+                              type="button"
+                              onClick={handleManualCloudSync}
+                              disabled={syncStatus.firebase === 'syncing'}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-black tracking-wide transition-all duration-150 hover:scale-[1.03] flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${syncStatus.firebase === 'syncing' ? 'animate-spin' : ''}`} />
+                              <span>Сохранить в облако</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-2">
                           <div className="p-1 px-1.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded font-extrabold text-[10px]">
                             РЕШЕНИЕ СВЯЗИ
                           </div>
