@@ -3,6 +3,43 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRe
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, persistentSingleTabManager, memoryLocalCache } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+// Intercept console errors and warnings to catch Firestore quota/exhaustion issues immediately
+if (typeof window !== 'undefined') {
+  const origError = console.error;
+  console.error = function (...args) {
+    const msg = args.map(arg => typeof arg === 'string' ? arg : String(arg)).join(' ');
+    if (
+      msg.toLowerCase().includes('quota') || 
+      msg.toLowerCase().includes('exhausted') || 
+      msg.toLowerCase().includes('resource-exhausted') ||
+      msg.toLowerCase().includes('limit')
+    ) {
+      try {
+        localStorage.setItem('milli_firestore_quota_exceeded', String(Date.now()));
+        window.dispatchEvent(new CustomEvent('milli-quota-exceeded'));
+      } catch (e) {}
+    }
+    origError.apply(console, args);
+  };
+
+  const origWarn = console.warn;
+  console.warn = function (...args) {
+    const msg = args.map(arg => typeof arg === 'string' ? arg : String(arg)).join(' ');
+    if (
+      msg.toLowerCase().includes('quota') || 
+      msg.toLowerCase().includes('exhausted') || 
+      msg.toLowerCase().includes('resource-exhausted') ||
+      msg.toLowerCase().includes('limit')
+    ) {
+      try {
+        localStorage.setItem('milli_firestore_quota_exceeded', String(Date.now()));
+        window.dispatchEvent(new CustomEvent('milli-quota-exceeded'));
+      } catch (e) {}
+    }
+    origWarn.apply(console, args);
+  };
+}
+
 const app = initializeApp(firebaseConfig);
 
 // Detect if we are in an iframe or if IndexedDB/localStorage is blocked/restricted

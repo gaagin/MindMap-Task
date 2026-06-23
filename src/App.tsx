@@ -452,7 +452,38 @@ export default function App() {
   const [forceCloudSyncLoading, setForceCloudSyncLoading] = useState<'upload' | 'download' | null>(null);
   const [forceCloudSyncFeedback, setForceCloudSyncFeedback] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(() => {
+    try {
+      const stored = localStorage.getItem('milli_firestore_quota_exceeded');
+      if (stored) {
+        const timestamp = parseInt(stored, 10);
+        if (!isNaN(timestamp) && Date.now() - timestamp < 12 * 60 * 60 * 1000) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  });
+
+  useEffect(() => {
+    try {
+      if (isQuotaExceeded) {
+        localStorage.setItem('milli_firestore_quota_exceeded', String(Date.now()));
+      } else {
+        localStorage.removeItem('milli_firestore_quota_exceeded');
+      }
+    } catch {}
+  }, [isQuotaExceeded]);
+
+  useEffect(() => {
+    const handleQuotaExceeded = () => {
+      setIsQuotaExceeded(true);
+    };
+    window.addEventListener('milli-quota-exceeded', handleQuotaExceeded);
+    return () => {
+      window.removeEventListener('milli-quota-exceeded', handleQuotaExceeded);
+    };
+  }, []);
 
   const handleGoogleSignIn = async () => {
     setAuthError(null);
@@ -1553,6 +1584,10 @@ export default function App() {
     // Only save to Firebase if the state actually changed as a local user edit or there are pending unsynced local edits.
     // This prevents a stale client session or received cloud snapshots from overwriting newer changes in the cloud on load/sync.
     if (currentUser && isInitialSyncComplete && (isLocalChange || unsyncedEditsCountRef.current > 0)) {
+      if (isQuotaExceeded) {
+        setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
+        return;
+      }
       const currentHash = getSyncHash(state);
       if (currentHash === lastSyncedStateHashRef.current) {
         return; // Already synced! Prevents infinite trigger loops
@@ -1578,7 +1613,7 @@ export default function App() {
 
   // 4. Force check and download newer database version on window focus or visibility change (fixes mobile background freezing)
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || isQuotaExceeded) return;
 
     let isFetching = false;
 
