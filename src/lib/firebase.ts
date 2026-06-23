@@ -37,12 +37,10 @@ const isMobileDevice = (): boolean => {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
 };
 
-const localCacheConfig = shouldDisablePersistentCache()
+const localCacheConfig = shouldDisablePersistentCache() || isMobileDevice()
   ? memoryLocalCache()
   : persistentLocalCache({
-      tabManager: isMobileDevice()
-        ? persistentSingleTabManager({})
-        : persistentMultipleTabManager()
+      tabManager: persistentMultipleTabManager()
     });
 
 // Configure Firestore with persistentLocalCache/memoryLocalCache for offline-first support and reducing read quota usage,
