@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronDown,
   Cloud,
+  CloudOff,
   Database,
   RefreshCw,
   LogOut,
@@ -451,6 +452,7 @@ export default function App() {
   const [forceCloudSyncLoading, setForceCloudSyncLoading] = useState<'upload' | 'download' | null>(null);
   const [forceCloudSyncFeedback, setForceCloudSyncFeedback] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
   const handleGoogleSignIn = async () => {
     setAuthError(null);
@@ -1502,6 +1504,12 @@ export default function App() {
       }
     }, (error: any) => {
       const errMsg = String(error?.message || '');
+      const isQuota = errMsg.toLowerCase().includes('quota') || 
+                      errMsg.toLowerCase().includes('exhausted') || 
+                      error?.code === 'resource-exhausted';
+      if (isQuota) {
+        setIsQuotaExceeded(true);
+      }
       if (errMsg.includes('offline') || error?.code === 'unavailable' || error?.code === 'failed-precondition') {
         console.warn('[Firebase snapshot listener]: Web client is currently offline.', errMsg);
       } else {
@@ -1554,6 +1562,7 @@ export default function App() {
       const countSaved = unsyncedEditsCount;
       const timer = setTimeout(async () => {
         const res = await saveToFirebaseDirectly(currentUser.uid, state);
+        setIsQuotaExceeded(!!res.isQuotaExceeded);
         setSyncStatus(prev => ({
           ...prev,
           firebase: res.success ? 'saved' : 'error'
@@ -1647,8 +1656,13 @@ export default function App() {
             }
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.warn('[Focus Sync] Background sync on focus failed:', err);
+        const errMsg = String(err?.message || '').toLowerCase();
+        const isQuota = errMsg.includes('quota') || errMsg.includes('exhausted') || err?.code === 'resource-exhausted';
+        if (isQuota) {
+          setIsQuotaExceeded(true);
+        }
       } finally {
         isFetching = false;
       }
@@ -1737,6 +1751,7 @@ export default function App() {
     
     setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
     const res = await saveToFirebaseDirectly(currentUser.uid, state);
+    setIsQuotaExceeded(!!res.isQuotaExceeded);
     setSyncStatus(prev => ({
       ...prev,
       firebase: res.success ? 'saved' : 'error'
@@ -1755,6 +1770,7 @@ export default function App() {
     setForceCloudSyncFeedback(null);
     try {
       const res = await saveToFirebaseDirectly(currentUser.uid, currentWorkspace);
+      setIsQuotaExceeded(!!res.isQuotaExceeded);
       if (res.success) {
         lastSyncedStateHashRef.current = getSyncHash(currentWorkspace); // Update hash to prevent reflection loops
         setUnsyncedEditsCount(0);
@@ -1765,10 +1781,21 @@ export default function App() {
           setForceCloudSyncFeedback('Успешно выгружено в облако! Теперь откройте это приложение на другом устройстве и нажмите кнопку "Загрузить из облака".');
         }
       } else {
-        setForceCloudSyncFeedback(`Ошибка выгрузки: ${res.error || 'Проверьте интернет-соединение или права доступа.'}`);
+        if (res.isQuotaExceeded) {
+          setForceCloudSyncFeedback('Ошибка выгрузки: превышен суточный лимит бесплатной базы данных Firebase. Ваши данные надежно сохранены в этом браузере.');
+        } else {
+          setForceCloudSyncFeedback(`Ошибка выгрузки: ${res.error || 'Проверьте интернет-соединение или права доступа.'}`);
+        }
       }
     } catch (e: any) {
-      setForceCloudSyncFeedback(`Ошибка: ${e?.message || String(e)}`);
+      const errMsg = String(e?.message || '').toLowerCase();
+      const isQuota = errMsg.includes('quota') || errMsg.includes('exhausted') || e?.code === 'resource-exhausted';
+      if (isQuota) {
+        setIsQuotaExceeded(true);
+        setForceCloudSyncFeedback('Ошибка выгрузки: превышен суточный лимит бесплатной базы данных Firebase. Ваши данные надежно сохранены в этом браузере.');
+      } else {
+        setForceCloudSyncFeedback(`Ошибка: ${e?.message || String(e)}`);
+      }
     } finally {
       setForceCloudSyncLoading(null);
     }
@@ -3767,6 +3794,36 @@ export default function App() {
           </div>
         </header>
 
+        {/* Firebase Firestore Quota Limit Exceeded Friendly Warning Banner */}
+        {isQuotaExceeded && (
+          <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 sm:px-6 py-3.5 flex items-start gap-3.5 text-xs text-amber-900 dark:text-amber-300 z-30 animate-in slide-in-from-top-1">
+            <CloudOff className="w-5 h-5 text-amber-500 shrink-0 mt-0.5 animate-pulse" />
+            <div className="flex-1 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-extrabold text-amber-950 dark:text-amber-400">
+                  Облачное хранилище заполнено на сегодня (Суточный лимит)
+                </span>
+                <span className="px-1.5 py-0.5 bg-amber-600 dark:bg-amber-905 border border-amber-500 dark:border-amber-850 text-white dark:text-amber-300 rounded font-extrabold text-[8.5px] uppercase tracking-wider leading-none shadow-sm">
+                  Ваши данные защищены локально! ✅
+                </span>
+              </div>
+              <p className="leading-relaxed text-[11px] text-slate-600 dark:text-slate-350">
+                Вы успешно вошли через Google. Однако бесплатный суточный лимит записей в облачную базу данных Google Firebase исчерпан. 
+                Не беспокойтесь: все изменения <b>автоматически сохраняются в локальной памяти вашего браузера (localStorage)</b>. 
+                Вы можете продолжать работу прямо сейчас! Двусторонняя синхронизация с телефоном возобновится автоматически по истечении суток. Скачать резервную копию JSON можно в меню «Синхронизация».
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsQuotaExceeded(false)}
+              className="p-1 rounded-md hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 hover:text-amber-header focus:outline-none cursor-pointer mt-0.5 transition-all shrink-0"
+              title="Скрыть предупреждение"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
 
 
         {/* Collapsible advanced filters subheader panel */}
@@ -4174,7 +4231,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setIsSyncMenuOpen(false)}
-                  className="p-1 px-2 py-1 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all text-xs font-semibold"
+                  className="p-1 px-2 py-1 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all text-xs font-semibold"
                 >
                   Закрыть
                 </button>
@@ -4183,9 +4240,35 @@ export default function App() {
               {/* Modal Content Scroll */}
               <div className="p-6 overflow-y-auto space-y-5.5 text-xs text-slate-700 dark:text-slate-300">
                 
+                {/* Tabs Selector headers */}
+                <div className="flex border-b border-slate-200 dark:border-slate-800 gap-1 sm:gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSyncTab('pairing')}
+                    className={`pb-2.5 px-3 border-b-2 font-extrabold text-xs cursor-pointer transition-all ${
+                      syncTab === 'pairing'
+                        ? 'border-indigo-650 text-indigo-650 dark:text-indigo-400'
+                        : 'border-transparent text-slate-400 hover:text-slate-655'
+                    }`}
+                  >
+                    📂 Слияние через секретные комнаты
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSyncTab('firebase')}
+                    className={`pb-2.5 px-3 border-b-2 font-extrabold text-xs cursor-pointer transition-all ${
+                      syncTab === 'firebase'
+                        ? 'border-indigo-650 text-indigo-650 dark:text-indigo-400'
+                        : 'border-transparent text-slate-400 hover:text-slate-655'
+                    }`}
+                  >
+                    ☁️ Облако аккаунта (Google Firebase)
+                  </button>
+                </div>
+
                 {/* 2. OPTIONAL FIREBASE DB ACCOUNT TAB */}
                 {syncTab === 'firebase' && (
-                  <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="space-y-4 animate-in fade-in duration-200 font-sans">
                     {/* Connection status section */}
                     <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div>
@@ -4194,43 +4277,64 @@ export default function App() {
                         </span>
                         <div className="flex items-center gap-2">
                           <span className={`w-2.5 h-2.5 rounded-full ${
-                            hasSyncOrAuthError 
-                              ? 'bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]' 
-                              : (currentUser && !currentUser.isAnonymous)
-                                ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
-                                : 'bg-amber-500 animate-pulse'
+                            isQuotaExceeded
+                              ? 'bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]'
+                              : hasSyncOrAuthError 
+                                ? 'bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]' 
+                                : (currentUser && !currentUser.isAnonymous)
+                                  ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
+                                  : 'bg-amber-500 animate-pulse'
                           }`} />
                           <span className="font-extrabold text-xs text-slate-800 dark:text-slate-150">
-                            {hasSyncOrAuthError 
-                              ? 'Ошибка синхронизации / авторизации' 
-                              : (currentUser && !currentUser.isAnonymous)
-                                ? 'Авторизован через Google (Облако)' 
-                                : 'Режим Гостя (Локально на этом телефоне/ПК)'}
+                            {isQuotaExceeded
+                              ? 'Google-авторизация успешна | Лимит облака'
+                              : hasSyncOrAuthError 
+                                ? 'Ошибка синхронизации / авторизации' 
+                                : (currentUser && !currentUser.isAnonymous)
+                                  ? 'Авторизован через Google (Облако)' 
+                                  : 'Режим Гостя (Локально на этом телефоне/ПК)'}
                           </span>
                         </div>
                         
                         {currentUser && (
                           <div className="mt-3">
                             {currentUser.isAnonymous ? (
-                              <div className="text-[11px] text-amber-600 dark:text-amber-450 font-medium leading-relaxed bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-3 rounded-lg mb-2">
+                              <div className="text-[11px] text-amber-600 dark:text-amber-450 font-medium leading-relaxed bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-3 rounded-lg mb-2 block">
                                 <b>Режим Гостя активен:</b> Ваши задачи сейчас сохраняются только в кэше этого браузера под временным ID (UID). Чтобы задачи появились на других ваших устройствах (телефоне, планшете), <b>войдите через свою Google-почту</b> ниже.
                               </div>
                             ) : (
-                              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/50 rounded-lg max-w-xs">
-                                {currentUser.photoURL ? (
-                                  <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-slate-200" />
-                                ) : (
-                                  <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 font-bold flex items-center justify-center text-[10px] text-indigo-700 dark:text-indigo-400">
-                                    {currentUser.email?.[0].toUpperCase() || 'U'}
+                              <div className="space-y-3">
+                                <div className="flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/50 rounded-lg max-w-xs">
+                                  {currentUser.photoURL ? (
+                                    <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-slate-200" />
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 font-bold flex items-center justify-center text-[10px] text-indigo-700 dark:text-indigo-400">
+                                      {currentUser.email?.[0].toUpperCase() || 'U'}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="font-bold text-slate-700 dark:text-slate-200 truncate leading-none text-[11px]">{currentUser.displayName || 'Пользователь Google'}</p>
+                                    <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">{currentUser.email}</p>
+                                    <p className="text-[8.5px] text-indigo-650 dark:text-indigo-400 font-mono leading-none mt-1 select-all" title="Ваш уникальный UID в системе Firebase">
+                                      UID: {currentUser.uid}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {isQuotaExceeded && (
+                                  <div className="bg-amber-55/60 dark:bg-amber-950/15 border border-amber-200 dark:border-amber-900/40 p-3.5 rounded-xl space-y-2 text-[11px] text-amber-900 dark:text-amber-300 leading-normal block">
+                                    <div className="flex items-center gap-1.5 font-extrabold text-amber-850 dark:text-amber-400 uppercase tracking-wide">
+                                      <CloudOff className="w-4 h-4 text-amber-500 shrink-0" />
+                                      <span>Превышен дневной лимит бесплатных записей</span>
+                                    </div>
+                                    <p>
+                                      Вы <b>успешно вошли</b> под своим Google-аккаунтом! Однако бесплатный лимит Google Cloud Firestore (20,000 суточных операций записи) для этого проекта исчерпан другими пользователями.
+                                    </p>
+                                    <p className="font-semibold">
+                                      Режим локальной сохранности активирован: вся ваша работа 100% автоматически записывается в localStorage этого браузера. Вы можете продолжать творить и закрывать окно — данные не пропадут! Синхронизация с облаком восстановится сама, когда Google сбросит таймер.
+                                    </p>
                                   </div>
                                 )}
-                                <div className="min-w-0">
-                                  <p className="font-bold text-slate-700 dark:text-slate-200 truncate leading-none text-[11px]">{currentUser.displayName || 'Пользователь Google'}</p>
-                                  <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">{currentUser.email}</p>
-                                  <p className="text-[8.5px] text-indigo-650 dark:text-indigo-400 font-mono leading-none mt-1 select-all" title="Ваш уникальный UID в системе Firebase">
-                                    UID: {currentUser.uid}
-                                  </p>
-                                </div>
                               </div>
                             )}
                           </div>

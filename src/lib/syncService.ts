@@ -444,7 +444,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: st
 export async function saveToFirebaseDirectly(
   userId: string, 
   state: WorkspaceState
-): Promise<{ success: boolean; isOfflineQueued?: boolean; error?: string }> {
+): Promise<{ success: boolean; isOfflineQueued?: boolean; error?: string; isQuotaExceeded?: boolean }> {
   try {
     const docRef = doc(db, 'workspaces', userId);
 
@@ -611,8 +611,15 @@ export async function saveToFirebaseDirectly(
       handleFirestoreError(error, OperationType.WRITE, `workspaces/${userId}`);
     }
     console.error('[Sync] Error during point-level delta snapshot save:', error);
+    
+    const errMessageStr = String(error?.message || '').toLowerCase();
+    const isQuota = errMessageStr.includes('quota') || 
+                    errMessageStr.includes('exhausted') || 
+                    error?.code === 'resource-exhausted';
+                    
     return { 
       success: false, 
+      isQuotaExceeded: isQuota,
       error: error?.message || 'Failed to sync with standard Cloud storage.' 
     };
   }
