@@ -796,52 +796,26 @@ export default function TaskDetailsPanel({
   const [newCatTagName, setNewCatTagName] = useState('');
 
 
-  // Local active categories for this specific node
-  const activeCategories = node.tagCategories || categories || [];
+  // Local active categories for this specific node, always prioritizing global project categories
+  const activeCategories = categories || [];
 
   const handleUpdateCategories = (newCategories: TagCategory[]) => {
-    onUpdateNode({
-      ...node,
-      tagCategories: newCategories
-    });
+    // Rely on global callbacks to update the categories state
   };
 
   const handleCreateTagCategory = (name: string, color: string) => {
-    const nextId = 'cat-' + generateId();
-    const newCat: TagCategory = {
-      id: nextId,
-      name,
-      color,
-      tags: []
-    };
-    onUpdateNode({
-      ...node,
-      tagCategories: [...activeCategories, newCat]
-    });
     if (onCreateTagCategory) {
       onCreateTagCategory(name, color);
     }
   };
 
   const handleUpdateTagCategory = (id: string, name: string, color: string, tags: string[]) => {
-    const nextCategories = activeCategories.map(c => 
-      c.id === id ? { ...c, name, color, tags, updatedAt: new Date().toISOString() } : c
-    );
-    onUpdateNode({
-      ...node,
-      tagCategories: nextCategories
-    });
     if (onUpdateTagCategory) {
       onUpdateTagCategory(id, name, color, tags);
     }
   };
 
   const handleDeleteTagCategory = (id: string) => {
-    const nextCategories = activeCategories.filter(c => c.id !== id);
-    onUpdateNode({
-      ...node,
-      tagCategories: nextCategories
-    });
     if (onDeleteTagCategory) {
       onDeleteTagCategory(id);
     }
@@ -1090,16 +1064,11 @@ export default function TaskDetailsPanel({
     const alreadyInCat = cat.tags && cat.tags.includes(trimmed);
     const updatedTags = alreadyInCat ? (cat.tags || []) : [...(cat.tags || []), trimmed];
 
-    const nextCategories = activeCategories.map(c => 
-      c.id === catId ? { ...c, tags: updatedTags } : c
-    );
-
     const alreadyOnNode = node.tags && node.tags.includes(trimmed);
     const updatedNodeTags = alreadyOnNode ? (node.tags || []) : [...(node.tags || []), trimmed];
 
     onUpdateNode({
       ...node,
-      tagCategories: nextCategories,
       tags: updatedNodeTags,
       updatedAt: new Date().toISOString()
     });

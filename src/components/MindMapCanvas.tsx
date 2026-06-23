@@ -306,13 +306,74 @@ export default function MindMapCanvas({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isFullScreen) {
         setIsFullScreen(false);
+        return;
       }
+
+      // If typing in any input/textarea, ignore arrow navigation
+      const isEditing = document.activeElement && (
+        document.activeElement.tagName === 'INPUT' ||
+        document.activeElement.tagName === 'TEXTAREA' ||
+        document.activeElement.tagName === 'SELECT' ||
+        document.activeElement.getAttribute('contenteditable') === 'true' ||
+        (document.activeElement as HTMLElement).isContentEditable
+      );
+      if (isEditing) return;
+
+      const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+      if (!arrowKeys.includes(e.key)) return;
+
+      // Determine which nodes are currently selected
+      const targets: string[] = [];
+      if (selectedNodeIds && selectedNodeIds.length > 0) {
+        targets.push(...selectedNodeIds);
+      } else if (selectedNodeId) {
+        targets.push(selectedNodeId);
+      }
+
+      if (targets.length === 0) return;
+
+      // Prevent page scrolling on arrow key press when nodes are selected and we move them
+      e.preventDefault();
+
+      // Calculate step size based on modifier keys
+      let step = 10;
+      if (e.shiftKey) {
+        step = 50;
+      } else if (e.altKey || e.ctrlKey || e.metaKey) {
+        step = 1;
+      }
+
+      let dx = 0;
+      let dy = 0;
+
+      switch (e.key) {
+        case 'ArrowUp':
+          dy = -step;
+          break;
+        case 'ArrowDown':
+          dy = step;
+          break;
+        case 'ArrowLeft':
+          dx = -step;
+          break;
+        case 'ArrowRight':
+          dx = step;
+          break;
+      }
+
+      // Apply coordinates update
+      targets.forEach(nodeId => {
+        const node = incomingNodes.find(n => n.id === nodeId);
+        if (node) {
+          onUpdateNodeCoordinates(nodeId, node.x + dx, node.y + dy);
+        }
+      });
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isFullScreen]);
+  }, [isFullScreen, selectedNodeId, selectedNodeIds, incomingNodes, onUpdateNodeCoordinates]);
   
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
@@ -6406,15 +6467,11 @@ export default function MindMapCanvas({
                   ? 'bg-emerald-50/10 dark:bg-emerald-950/15 border-emerald-500 ring-4 ring-emerald-500 scale-[1.03] shadow-[0_0_15px_rgba(16,185,129,0.4)] animate-pulse'
                   : hoverTargetId === node.id
                     ? 'bg-indigo-50/10 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500 scale-[1.03] shadow-[0_0_15px_rgba(99,102,241,0.4)] animate-pulse'
-                    : isRoot
-                      ? isSelected
-                        ? 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent ring-4 ring-indigo-250 dark:ring-indigo-900 shadow-xl'
-                        : 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent shadow-md hover:shadow-lg hover:scale-[1.02]'
-                      : priorityViewActive
-                        ? `bg-white dark:bg-slate-900 ${getPriorityCardStyles(node.priority, isSelected)}`
-                        : isSelected
-                          ? 'bg-white dark:bg-slate-900 border-indigo-650 dark:border-indigo-400 ring-4 ring-indigo-100 dark:ring-indigo-950/40 shadow-lg' 
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:hover:border-slate-655 shadow-sm'
+                    : priorityViewActive
+                      ? `bg-white dark:bg-slate-900 ${getPriorityCardStyles(node.priority, isSelected)}`
+                      : isSelected
+                        ? 'bg-white dark:bg-slate-900 border-indigo-650 dark:border-indigo-400 ring-4 ring-indigo-100 dark:ring-indigo-950/40 shadow-lg' 
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:hover:border-slate-655 shadow-sm'
               } ${node.completed ? 'opacity-85' : isNodeOverdue(node, nodes) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5 animate-pulse' : ''}`}
               onMouseDown={(e) => {
                 const target = e.target as HTMLElement;
@@ -6456,11 +6513,6 @@ export default function MindMapCanvas({
 
               {/* Card Title & Checkbox */}
               <div className="p-3">
-                {isRoot && (
-                  <p className="text-[8px] font-bold text-indigo-200 uppercase tracking-widest mb-1">
-                    Главная цель / Идея
-                  </p>
-                )}
                 <div className="flex items-start gap-2">
                   <button
                     onClick={(e) => {
@@ -6468,29 +6520,17 @@ export default function MindMapCanvas({
                       onToggleNodeCompleted(node.id);
                     }}
                     title={node.completed ? "Отметить невыполненной" : "Отметить выполненной"}
-                    className={`mt-0.5 cursor-pointer transition-colors ${
-                      isRoot 
-                        ? 'text-indigo-300 hover:text-white' 
-                        : 'text-slate-400 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400'
-                    }`}
+                    className="mt-0.5 cursor-pointer transition-colors text-slate-400 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400"
                   >
                     {node.completed ? (
-                      isRoot ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-300 fill-indigo-800/50" />
-                      ) : (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 fill-emerald-50 dark:fill-emerald-950/30" />
-                      )
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 fill-emerald-50 dark:fill-emerald-950/30" />
                     ) : activePomodoroNodeId === node.id ? (
                       <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
                         <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-rose-400 opacity-75"></span>
                         <Loader2 className="w-4 h-4 text-rose-500 dark:text-rose-400 animate-spin" />
                       </span>
                     ) : (
-                      isRoot ? (
-                        <Circle className="w-4 h-4 text-indigo-400 grayscale contrast-125" />
-                      ) : (
-                        <Circle className="w-4 h-4 text-slate-300 dark:text-slate-705" />
-                      )
+                      <Circle className="w-4 h-4 text-slate-300 dark:text-slate-705" />
                     )}
                   </button>
 
@@ -6528,18 +6568,12 @@ export default function MindMapCanvas({
                             text: e.target.value
                           });
                         }}
-                        className={`w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-1 py-0.5 rounded border border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
-                          isRoot ? 'text-slate-900 bg-white' : ''
-                        }`}
+                        className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-1 py-0.5 rounded border border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
                       />
                     ) : (
-                      <p className={`text-xs font-semibold leading-snug font-sans break-words ${
-                        isRoot 
-                          ? 'text-white' 
-                          : 'text-slate-800 dark:text-slate-100 font-medium'
-                      } ${node.completed ? 'line-through opacity-60 italic' : ''} flex items-center flex-wrap gap-1`}>
+                      <p className={`text-xs font-semibold leading-snug font-sans break-words text-slate-800 dark:text-slate-100 font-medium ${node.completed ? 'line-through opacity-60 italic' : ''} flex items-center flex-wrap gap-1`}>
                         <span>{node.text || 'Без названия'}</span>
                         {node.externalLink && (
                           <a
@@ -6548,11 +6582,7 @@ export default function MindMapCanvas({
                             rel="noreferrer"
                             onClick={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
-                            className={`inline-flex items-center justify-center p-0.5 rounded transition-colors shrink-0 ${
-                              isRoot 
-                                ? 'hover:bg-indigo-600 text-indigo-200' 
-                                : 'hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-550 dark:text-indigo-400'
-                            }`}
+                            className="inline-flex items-center justify-center p-0.5 rounded transition-colors shrink-0 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-550 dark:text-indigo-400"
                             title={`Открыть внешнюю ссылку: ${node.externalLink}`}
                           >
                             <LinkIcon className="w-3.5 h-3.5" />
@@ -6576,8 +6606,7 @@ export default function MindMapCanvas({
                   <>
                     {/* Priority, Due Date & Tags inline editing triggers */}
                     <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                      {!isRoot && (
-                        <div className="relative">
+                      <div className="relative">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -6625,7 +6654,6 @@ export default function MindMapCanvas({
                             </div>
                           )}
                         </div>
-                      )}
 
                       {/* Due date spot edit popup */}
                       <div className="relative">

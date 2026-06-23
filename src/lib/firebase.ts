@@ -84,20 +84,23 @@ export const googleSignIn = async (): Promise<{ user: User } | null> => {
       localStorage.removeItem('explicit_logout');
     } catch (e) {}
 
-    // On mobile or inside iframe, popups are frequently blocked. Direct redirect is more reliable.
-    if (isMobileOrIframe()) {
-      console.log('[Auth] Mobile/iframe environment detected, launching signInWithRedirect...');
-      await signInWithRedirect(auth, googleProvider);
-      return null; // Will redirect away, page will reload
-    }
-
+    // First, attempt signInWithPopup. This is highly reliable on both desktop and mobile
+    // because it executes in the first-party context of the popup window, avoiding
+    // third-party cookie restrictions on Chrome, iOS Safari, and other mobile browsers.
     try {
+      console.log('[Auth] Attempting Google signInWithPopup...');
       const result = await signInWithPopup(auth, googleProvider);
       return { user: result.user };
     } catch (popupError: any) {
-      // Fallback if popup is blocked by desktop browser settings
-      if (popupError?.code === 'auth/popup-blocked' || popupError?.code === 'auth/cancelled-popup-request') {
-        console.warn('[Auth] Popup blocked/canceled, falling back to signInWithRedirect...', popupError);
+      // If popup fails or is blocked (e.g. by popup blockers or if inside an iframe),
+      // we fall back to signInWithRedirect as the secondary mechanism.
+      console.warn('[Auth] signInWithPopup failed or was blocked, trying redirect fallback...', popupError);
+      
+      const isInsideAnIframe = typeof window !== 'undefined' && window.self !== window.top;
+      const isPopupBlocked = popupError?.code === 'auth/popup-blocked' || popupError?.code === 'auth/cancelled-popup-request';
+      
+      if (isInsideAnIframe || isPopupBlocked) {
+        console.log('[Auth] Launching signInWithRedirect fallback...');
         await signInWithRedirect(auth, googleProvider);
         return null;
       }
