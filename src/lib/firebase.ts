@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, persistentSingleTabManager, memoryLocalCache } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -30,10 +30,19 @@ const shouldDisablePersistentCache = (): boolean => {
   return false;
 };
 
+// Check if user is on a mobile device
+const isMobileDevice = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const userAgent = window.navigator.userAgent || '';
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+};
+
 const localCacheConfig = shouldDisablePersistentCache()
   ? memoryLocalCache()
   : persistentLocalCache({
-      tabManager: persistentMultipleTabManager()
+      tabManager: isMobileDevice()
+        ? persistentSingleTabManager({})
+        : persistentMultipleTabManager()
     });
 
 // Configure Firestore with persistentLocalCache/memoryLocalCache for offline-first support and reducing read quota usage,
