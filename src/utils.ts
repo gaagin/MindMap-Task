@@ -434,16 +434,20 @@ export async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit)
       }
     }
 
+    const method = init?.method || (input && typeof input === 'object' && 'method' in input ? (input as Request).method : 'GET');
     const proxyInit: RequestInit = {
-      method: init?.method || (input && typeof input === 'object' && 'method' in input ? (input as Request).method : 'GET'),
+      method,
       headers: finalHeaders,
-      body: body,
       credentials: init?.credentials,
       mode: 'cors',
       cache: init?.cache,
       redirect: init?.redirect,
       referrer: init?.referrer,
     };
+
+    if (method !== 'GET' && method !== 'HEAD' && body !== undefined) {
+      proxyInit.body = body;
+    }
 
     try {
       const response = await window.fetch(proxyUrl, proxyInit);

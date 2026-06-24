@@ -25,7 +25,7 @@ app.all('/api/google-proxy', express.raw({ type: '*/*', limit: '50mb' }), async 
   }
 
   const headers: Record<string, string> = {};
-  const headersToForward = ['authorization', 'content-type', 'accept', 'range'];
+  const headersToForward = ['authorization', 'content-type', 'content-length', 'accept', 'range'];
   for (const h of headersToForward) {
     if (req.headers[h]) {
       headers[h] = req.headers[h] as string;
