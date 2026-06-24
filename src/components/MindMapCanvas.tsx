@@ -41,8 +41,7 @@ import {
   ToggleRight,
   Square,
   Hexagon,
-  Bell,
-  Target
+  Bell
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue } from '../utils';
@@ -87,8 +86,6 @@ interface MindMapCanvasProps {
   onClearLastCreatedNodeId?: () => void;
   onContainerFocusChange?: (isFocused: boolean) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
-  canvasFocusedTaskId?: string | null;
-  onSetCanvasFocusedTaskId?: (id: string | null) => void;
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -294,9 +291,7 @@ export default function MindMapCanvas({
   lastCreatedNodeId,
   onClearLastCreatedNodeId,
   onContainerFocusChange,
-  onFullScreenChange,
-  canvasFocusedTaskId = null,
-  onSetCanvasFocusedTaskId
+  onFullScreenChange
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -4443,36 +4438,6 @@ export default function MindMapCanvas({
   const visibleNodes = nodes.filter(node => {
     if (node.parentId === 'inbox') return false;
 
-    // --- Task Focus Mode ---
-    if (canvasFocusedTaskId) {
-      if (node.id === canvasFocusedTaskId) return true;
-      
-      // Check if node is a descendant of canvasFocusedTaskId
-      let isDescendantOfFocused = false;
-      let currentParentId = node.parentId;
-      while (currentParentId !== null) {
-        if (currentParentId === canvasFocusedTaskId) {
-          isDescendantOfFocused = true;
-          break;
-        }
-        const findParent = nodes.find(n => n.id === currentParentId);
-        if (!findParent) break;
-        currentParentId = findParent.parentId;
-      }
-      
-      if (!isDescendantOfFocused) return false;
-      
-      // Since it is a descendant, check if any ancestor between this node and canvasFocusedTaskId is collapsed
-      currentParentId = node.parentId;
-      while (currentParentId !== null && currentParentId !== canvasFocusedTaskId) {
-        const parent = nodes.find(n => n.id === currentParentId);
-        if (!parent) break;
-        if (parent.collapsed) return false;
-        currentParentId = parent.parentId;
-      }
-      return true;
-    }
-
     // Hide child nodes from main canvas view if parent is a container in list/kanban/calendar/gantt/table view (unless focused)
     if (node.parentId) {
       const parentNode = nodes.find(n => n.id === node.parentId);
@@ -4587,53 +4552,6 @@ export default function MindMapCanvas({
           </button>
         </div>
       )}
-
-      {/* Immersive Task Focus Mode Top Banner */}
-      {canvasFocusedTaskId && (() => {
-        const focusedNode = nodes.find(n => n.id === canvasFocusedTaskId);
-        if (!focusedNode) return null;
-        
-        const descendants = getDescendants(canvasFocusedTaskId, nodes);
-        const totalSubtasks = descendants.filter(d => !d.isContainer && !d.isWorkflowRectangle).length;
-        const completedSubtasks = descendants.filter(d => !d.isContainer && !d.isWorkflowRectangle && d.completed).length;
-        
-        return (
-          <div className="absolute top-4 left-4 right-16 md:right-auto md:left-1/2 md:transform md:-translate-x-1/2 z-40 bg-indigo-50/95 dark:bg-slate-900/95 border border-indigo-200 dark:border-indigo-900/60 rounded-xl shadow-lg transition-all animate-in fade-in slide-in-from-top-4 flex items-center justify-between px-4 py-2.5 max-w-lg md:min-w-[400px]">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-950/50 flex items-center justify-center shrink-0 border border-indigo-200 dark:border-indigo-900/40 text-indigo-650 dark:text-indigo-400">
-                <Target className="w-4 h-4 animate-pulse" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[9px] font-black uppercase tracking-wider text-indigo-500">
-                  Режим фокуса на задаче
-                </div>
-                <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
-                  {focusedNode.text || 'Без названия'}
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3 shrink-0 pl-4 border-l border-indigo-200/50 dark:border-slate-800">
-              <div className="text-right hidden sm:block">
-                <div className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
-                  {completedSubtasks}/{totalSubtasks} выполнено
-                </div>
-                <div className="text-[9px] font-medium text-slate-400">
-                  подзадач
-                </div>
-              </div>
-              
-              <button
-                type="button"
-                onClick={() => onSetCanvasFocusedTaskId?.(null)}
-                className="px-2.5 py-1 text-[10px] font-black text-indigo-650 hover:text-white dark:text-indigo-400 bg-white dark:bg-slate-800 hover:bg-indigo-600 dark:hover:bg-indigo-600 border border-indigo-200 dark:border-indigo-950 rounded-lg transition-all cursor-pointer shadow-xs"
-              >
-                Выйти
-              </button>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Immersive Focused Container Top Stats Bar */}
       {focusedContainerId && (() => {
@@ -6094,7 +6012,7 @@ export default function MindMapCanvas({
                             ? 'bg-emerald-500 text-white border-emerald-600'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
                       }`}>
-                        {node.isZoneTriggerDisabled ? '⛔ Триггер выключен' : isAnyDraggingNodeOverlapping ? `🔗 Авто-тег: ${node.text || 'Шаг_Workflow'}` : (node.text || 'Триггер')}
+                        {node.isZoneTriggerDisabled ? '⛔ Триггер выключен' : isAnyDraggingNodeOverlapping ? `🔗 Авто-тег: ${node.text || 'Шаг_Workflow'}` : 'Зона Триггера'}
                       </div>
 
                       {/* Resize Handles of trigger zone - visible only when active workflow step is selected */}
@@ -7301,28 +7219,6 @@ export default function MindMapCanvas({
                     className="flex items-center justify-center w-8 h-8 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                   >
                     <Eye className="w-4 h-4" />
-                  </button>
-
-                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
-
-                  {/* Button 2.7: Сфокусироваться (Target) */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (canvasFocusedTaskId === node.id) {
-                        onSetCanvasFocusedTaskId?.(null);
-                      } else {
-                        onSetCanvasFocusedTaskId?.(node.id);
-                      }
-                    }}
-                    title={canvasFocusedTaskId === node.id ? "Выйти из режима фокуса" : "Сфокусироваться на этой задаче"}
-                    className={`flex items-center justify-center w-8 h-8 rounded-full cursor-pointer transition-colors ${
-                      canvasFocusedTaskId === node.id
-                        ? 'text-amber-600 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/50'
-                        : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <Target className="w-4 h-4" />
                   </button>
 
                   <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />

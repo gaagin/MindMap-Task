@@ -680,7 +680,7 @@ export default function App() {
     }
   }, [selectedNodeId]);
 
-   const handleSelectNode = (id: string | null, eOrIsMulti?: any) => {
+  const handleSelectNode = (id: string | null, eOrIsMulti?: any) => {
     let isMulti = false;
     
     if (typeof eOrIsMulti === 'boolean') {
@@ -698,7 +698,6 @@ export default function App() {
         setSelectedNodeId(null);
         setSelectedNodeIds([]);
         setIsDrawerOpen(false);
-        setCanvasFocusedTaskId(null);
       }
       return;
     }
@@ -709,10 +708,6 @@ export default function App() {
     } else {
       setSelectedNodeId(id);
       setIsDrawerOpen(true);
-      const nodeObj = (state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : []).find(n => n.id === id);
-      if (nodeObj && !nodeObj.isWorkflowRectangle) {
-        setCanvasFocusedTaskId(id);
-      }
     }
   };
 
@@ -734,7 +729,6 @@ export default function App() {
         setSelectedNodeId(null);
         setSelectedNodeIds([]);
         setIsDrawerOpen(false);
-        setCanvasFocusedTaskId(null);
       }
       return;
     }
@@ -744,10 +738,6 @@ export default function App() {
       handleToggleSelectNode(id);
     } else {
       setSelectedNodeId(id);
-      const nodeObj = (state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : []).find(n => n.id === id);
-      if (nodeObj && !nodeObj.isWorkflowRectangle) {
-        setCanvasFocusedTaskId(id);
-      }
     }
   };
 
