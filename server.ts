@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import https from 'https';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
@@ -32,30 +33,41 @@ app.all('/api/google-proxy', express.raw({ type: '*/*', limit: '50mb' }), async 
   }
 
   try {
-    const fetchOptions: RequestInit = {
+    const urlObj = new URL(targetUrl);
+    const options: https.RequestOptions = {
       method: req.method,
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
       headers: headers,
     };
 
-    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Buffer.isBuffer(req.body) && req.body.length > 0) {
-      fetchOptions.body = req.body;
-    }
-
-    const googleRes = await fetch(targetUrl, fetchOptions);
-    
-    // Copy headers from response
-    googleRes.headers.forEach((value, name) => {
-      if (name !== 'transfer-encoding' && name !== 'content-encoding') {
-        res.setHeader(name, value);
+    const googleReq = https.request(options, (googleRes) => {
+      // Copy headers from Google response
+      if (googleRes.headers) {
+        Object.entries(googleRes.headers).forEach(([name, value]) => {
+          if (name !== 'transfer-encoding' && name !== 'content-encoding' && value !== undefined) {
+            res.setHeader(name, value);
+          }
+        });
       }
+
+      res.status(googleRes.statusCode || 200);
+      googleRes.pipe(res);
     });
 
-    res.status(googleRes.status);
-    const buffer = await googleRes.arrayBuffer();
-    res.send(Buffer.from(buffer));
+    googleReq.on('error', (error: any) => {
+      console.error('Proxy HTTPS request to Google failed:', error);
+      res.status(500).json({ error: `Proxy request failed: ${error.message || error}` });
+    });
+
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Buffer.isBuffer(req.body) && req.body.length > 0) {
+      googleReq.write(req.body);
+    }
+
+    googleReq.end();
   } catch (error: any) {
-    console.error('Proxy request to Google failed:', error);
-    res.status(500).json({ error: `Proxy request failed: ${error.message || error}` });
+    console.error('Proxy initialization failed:', error);
+    res.status(500).json({ error: `Proxy init failed: ${error.message || error}` });
   }
 });
 
