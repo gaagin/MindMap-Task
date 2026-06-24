@@ -1043,9 +1043,9 @@ export default function App() {
   const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('task_mindmap_autosave');
-      return saved === null ? false : saved === 'true'; // Default is FALSE to avoid write loops and stay strictly under quota limits
+      return saved === null ? true : saved === 'true'; // Default is TRUE now that write loops are fixed
     } catch {
-      return false;
+      return true;
     }
   });
 
@@ -1237,7 +1237,7 @@ export default function App() {
     };
 
     const normalizedCloud = normalizeWorkspaceState(cloudState);
-    return mergeWorkspaceStates(stateRef.current, normalizedCloud, mergedDeletions);
+    return normalizeWorkspaceState(mergeWorkspaceStates(stateRef.current, normalizedCloud, mergedDeletions));
   };
 
   const saveStateToSyncRoom = async (roomIdToUse?: string, forceState?: WorkspaceState) => {
@@ -1533,7 +1533,7 @@ export default function App() {
         console.log('[Sync] Cloud state is different from local. Performing robust Last-Write-Wins merge values...');
         
         // 1. Always perform a professional, safe Last-Write-Wins merge between current local state and incoming cloud state
-        const merged = mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions);
+        const merged = normalizeWorkspaceState(mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions));
         
         isFirstSnapshotRef.current = false;
         
@@ -1756,7 +1756,7 @@ export default function App() {
               setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
             } else {
               // Merge if we edit concurrently
-              const merged = mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions);
+              const merged = normalizeWorkspaceState(mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions));
               ignoreNextStateChangeRef.current = true;
               setRawState(merged);
               setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
