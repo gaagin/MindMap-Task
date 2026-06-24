@@ -1481,7 +1481,7 @@ export default function KanbanView({
             <button
               type="button"
               onClick={() => setIsFullScreen(!isFullScreen)}
-              className={`flex items-center gap-0.5 px-1.5 py-0.2 text-[10px] font-black rounded cursor-pointer transition-all border ${
+              className={`flex items-center gap-0.5 px-1.5 py-0.2 text-[10px] font-black rounded cursor-pointer transition-all border shrink-0 ${
                 isFullScreen 
                   ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-850 dark:text-amber-400' 
                   : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-slate-700 dark:text-slate-300 border-slate-200/50 dark:border-slate-800'

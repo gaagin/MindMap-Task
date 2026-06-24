@@ -416,26 +416,26 @@ export default function EisenhowerMatrixView({
       }`}
     >
       
-      {/* Floating Settings/Filter button placed absolutely to save vertical layout space for the matrix */}
-      <div className="absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5">
+      {/* Floating Settings/Filter button placed absolutely on desktop to save space, but statically as a header on mobile to prevent overlapping */}
+      <div className="sm:absolute sm:top-2.5 sm:right-2.5 z-30 flex items-center justify-end gap-1.5 p-2 sm:p-0 bg-white/80 dark:bg-slate-900/80 sm:bg-transparent border-b sm:border-b-0 border-slate-200 dark:border-slate-800 w-full sm:w-auto shrink-0">
         {/* Toggle Button for Full Screen */}
         <button
           type="button"
           onClick={() => setIsFullScreen(!isFullScreen)}
-          className={`p-1.5 rounded-full backdrop-blur-xs border transition-all shadow-sm cursor-pointer flex items-center justify-center ${
+          className={`p-1.5 rounded-full backdrop-blur-xs border transition-all shadow-sm cursor-pointer flex items-center justify-center shrink-0 ${
             isFullScreen 
               ? 'text-amber-600 bg-amber-50/90 border-amber-200 dark:bg-amber-950/40 dark:border-amber-855 dark:text-amber-400' 
               : 'text-slate-500 hover:bg-white/80 dark:hover:bg-slate-800 bg-white/60 dark:bg-slate-900/60 border-slate-200/50 dark:border-slate-800/50'
           }`}
           title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
         >
-          {isFullScreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+          {isFullScreen ? <Minimize2 className="w-5 h-5 font-bold" /> : <Maximize2 className="w-5 h-5 font-bold" />}
         </button>
 
         <button 
           type="button"
           onClick={() => setShowFilterMenu(!showFilterMenu)}
-          className="p-1.5 rounded-full text-slate-500 hover:bg-white/80 dark:hover:bg-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xs border border-slate-200/50 dark:border-slate-800/50 transition-colors shadow-sm cursor-pointer flex items-center justify-center"
+          className="p-1.5 rounded-full text-slate-500 hover:bg-white/80 dark:hover:bg-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xs border border-slate-200/50 dark:border-slate-800/50 transition-colors shadow-sm cursor-pointer flex items-center justify-center shrink-0"
           title="Опции фильтрации"
         >
           <MoreVertical className="w-5 h-5 flex items-center justify-center" />

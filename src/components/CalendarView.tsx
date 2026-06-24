@@ -692,7 +692,7 @@ export default function CalendarView({
               <button
                 type="button"
                 onClick={() => setIsFullScreen(!isFullScreen)}
-                className={`px-2 py-1 text-[10px] font-black rounded-lg transition-all cursor-pointer flex items-center gap-1 border ${
+                className={`px-2 py-1 text-[10px] font-black rounded-lg transition-all cursor-pointer flex items-center gap-1 border shrink-0 ${
                   isFullScreen 
                     ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-850 dark:text-amber-400' 
                     : 'bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-200/90 dark:hover:bg-slate-700 text-[#1E293B] dark:text-slate-100 border-slate-200/60 dark:border-slate-700'

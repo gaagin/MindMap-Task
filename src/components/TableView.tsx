@@ -402,7 +402,7 @@ export default function TableView({
             <button
               type="button"
               onClick={() => setIsFullScreen(!isFullScreen)}
-              className={`flex items-center gap-1.5 text-xs py-2 px-3 rounded-xl border cursor-pointer select-none transition-all outline-none ${
+              className={`flex items-center gap-1.5 text-xs py-2 px-3 rounded-xl border cursor-pointer select-none transition-all outline-none shrink-0 ${
                 isFullScreen 
                   ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 font-extrabold shadow-sm w-auto' 
                   : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 w-auto'

@@ -1072,16 +1072,16 @@ export default function MobileListView({
       {/* Super Compact Mobile-Adapted Dashboard Header */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-2 shrink-0 transition-all">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xs font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-widest whitespace-nowrap pl-1">
+          <h2 className="text-xs font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-widest whitespace-nowrap pl-1 shrink-0">
             Задачи
           </h2>
-          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 pr-1">
-            <span>Актив.: <strong className="font-bold text-slate-700 dark:text-slate-200">{activeCount}</strong></span>
-            <span>Проср.: <strong className="font-bold text-rose-500">{overdueCount}</strong></span>
+          <div className="text-[10px] text-slate-400 font-mono flex items-center justify-end gap-x-2 gap-y-0.5 pr-1 flex-1 flex-wrap min-w-0">
+            <span className="whitespace-nowrap">Актив.: <strong className="font-bold text-slate-700 dark:text-slate-200">{activeCount}</strong></span>
+            <span className="whitespace-nowrap">Проср.: <strong className="font-bold text-rose-500">{overdueCount}</strong></span>
             <button
               type="button"
               onClick={() => setIsFullScreen(!isFullScreen)}
-              className={`p-1 rounded-sm border cursor-pointer select-none transition-all outline-none flex items-center justify-center ${
+              className={`p-1 rounded-sm border cursor-pointer select-none transition-all outline-none flex items-center justify-center shrink-0 ${
                 isFullScreen 
                   ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400' 
                   : 'bg-slate-50 hover:bg-slate-105 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
