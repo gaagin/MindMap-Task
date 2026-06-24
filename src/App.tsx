@@ -70,7 +70,8 @@ import {
   saveToFirebaseDirectly, 
   loadFromFirebaseDirectly, 
   mergeWorkspaceStates,
-  logDeletion 
+  logDeletion,
+  getLocalDeletions
 } from './lib/syncService';
 import { doc, onSnapshot, updateDoc, getDoc, setDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
@@ -525,9 +526,11 @@ export default function App() {
   });
   const [roomSyncAuto, setRoomSyncAuto] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('milli_room_sync_auto') === 'true';
+      const saved = localStorage.getItem('milli_room_sync_auto');
+      if (saved === null) return true; // Default to true for instant and seamless device-to-device pairing sync
+      return saved === 'true';
     } catch {
-      return false;
+      return true;
     }
   });
   const [roomSyncStatus, setRoomSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle');
@@ -1183,6 +1186,7 @@ export default function App() {
 
   // Zero-auth sync room helper functions & effects
   const lastRoomStateRef = React.useRef<any>(null);
+  const lastSeenRoomStateRef = React.useRef<WorkspaceState | null>(null);
 
   const getMergedRoomState = (cloudData: any): WorkspaceState => {
     let localDeletions: DeletionRecord[] = [];
@@ -1393,12 +1397,93 @@ export default function App() {
 
   // Safe debounce auto-uploader for custom pairing sync-room
   useEffect(() => {
-    return; // Deactivated in favor of exclusive and seamless Google/Firebase Cloud Sync
+    if (!roomSyncAuto || !roomSyncId) return;
+    if (ignoreNextStateChangeRef.current) {
+      ignoreNextStateChangeRef.current = false;
+      return;
+    }
+
+    const cleanId = roomSyncId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!cleanId) return;
+
+    // Check if state is different from what we last saw
+    if (lastSeenRoomStateRef.current && isStateSemanticallyEqual(state, lastSeenRoomStateRef.current)) {
+      return;
+    }
+    if (lastRoomStateRef.current && isStateSemanticallyEqual(state, lastRoomStateRef.current)) {
+      return;
+    }
+    lastRoomStateRef.current = state;
+
+    setRoomSyncStatus('syncing');
+    const timer = setTimeout(async () => {
+      try {
+        await saveStateToSyncRoom(cleanId, state);
+      } catch (err) {
+        console.error('[Room Sync Auto Save Error]:', err);
+      }
+    }, 3000); // 3-second rate-limiting debounce
+
+    return () => clearTimeout(timer);
   }, [state, roomSyncAuto, roomSyncId]);
 
-  // Safe window load and focus automatic merger logic
+  // Real-time Firestore snapshot synchronization for Symmetrical Device Sync Room (Pairing via roomSyncId)
   useEffect(() => {
-    return; // Deactivated in favor of exclusive and seamless Google/Firebase Cloud Sync
+    if (!roomSyncAuto || !roomSyncId) return;
+
+    const cleanId = roomSyncId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!cleanId) return;
+
+    console.log(`[Room Sync] Subscribed to real-time sync room: "${cleanId}"`);
+    const docRef = doc(db, 'sync_rooms', cleanId);
+    
+    const unsubscribe = onSnapshot(docRef, (snap) => {
+      if (!snap.exists()) {
+        console.log('[Room Sync] Room doc does not exist yet.');
+        return;
+      }
+      const data = snap.data();
+      if (!data || !data.state) return;
+
+      const cloudState = data.state;
+      const currentState = stateRef.current;
+      
+      const normalizedCloud = normalizeWorkspaceState(cloudState);
+      const isEquivalent = isStateSemanticallyEqual(currentState, normalizedCloud);
+      
+      if (!isEquivalent) {
+        console.log('[Room Sync] Incoming room state is different. Merging...');
+        const merged = normalizeWorkspaceState(mergeWorkspaceStates(currentState, normalizedCloud, getLocalDeletions()));
+        
+        const mergedHash = getSyncHash(merged);
+        const currentLocalHash = getSyncHash(currentState);
+        const cloudHash = getSyncHash(normalizedCloud);
+
+        lastSeenRoomStateRef.current = normalizedCloud;
+
+        // If the merged state has newer cloud updates, apply them locally
+        if (mergedHash !== currentLocalHash) {
+          console.log('[Room Sync] Applying newer updates from room to local...');
+          ignoreNextStateChangeRef.current = true;
+          setRawState(merged);
+          setRoomSyncStatus('saved');
+        }
+
+        // If local has newer updates that need to go to the room, save them
+        if (mergedHash !== cloudHash) {
+          console.log('[Room Sync] Local has newer updates, updating room...');
+          saveStateToSyncRoom(cleanId, merged);
+        }
+      } else {
+        lastSeenRoomStateRef.current = normalizedCloud;
+        setRoomSyncStatus('saved');
+      }
+    }, (error) => {
+      console.error('[Room Sync Error]:', error);
+      setRoomSyncStatus('error');
+    });
+
+    return () => unsubscribe();
   }, [roomSyncAuto, roomSyncId]);
 
   // 3. Real-time Firestore snapshot synchronization for instant Desktop-to-Mobile and Mobile-To-Desktop updates
@@ -4711,6 +4796,130 @@ export default function App() {
                         )}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {syncTab === 'pairing' && (
+                  <div className="space-y-4 animate-in fade-in duration-200 font-sans">
+                    {/* Pairing Explanation */}
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl space-y-2">
+                      <h4 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        📂 Двусторонняя связь по секретному коду комнаты
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Этот метод позволяет связывать ваш компьютер и телефон <b>без регистрации</b>. 
+                        Просто введите один и тот же код на обоих устройствах, включите автосинхронизацию, и изменения будут переноситься мгновенно в реальном времени!
+                      </p>
+                    </div>
+
+                    {/* Room Settings Controls */}
+                    <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-805 space-y-4 shadow-xs">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block mb-1">
+                          КОД СЕКРЕТНОЙ КОМНАТЫ:
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={roomSyncId}
+                            onChange={(e) => {
+                              const val = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+                              setRoomSyncId(val);
+                              localStorage.setItem('milli_room_sync_id', val);
+                            }}
+                            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg font-mono text-sm tracking-widest font-black text-slate-800 dark:text-slate-100 max-w-[200px] text-center"
+                            placeholder="Код комнаты"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const gen = Math.floor(100000 + Math.random() * 900000).toString();
+                              setRoomSyncId(gen);
+                              localStorage.setItem('milli_room_sync_id', gen);
+                            }}
+                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-colors text-[11px]"
+                            title="Сгенерировать новый код комнаты"
+                          >
+                            Сгенерировать новый
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Auto Sync Toggle */}
+                      <div className="flex items-center justify-between gap-4 border-t pt-3.5 border-slate-100 dark:border-slate-800">
+                        <div>
+                          <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-205 flex items-center gap-1.5">
+                            🔄 Автоматическая фоновая синхронизация
+                          </h4>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-normal max-w-[380px]">
+                            Включите, чтобы изменения между ПК и Телефоном передавались в реальном времени через облачные сокеты.
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer select-none shrink-0 scale-95">
+                          <input
+                            type="checkbox"
+                            checked={roomSyncAuto}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              setRoomSyncAuto(val);
+                              localStorage.setItem('milli_room_sync_auto', String(val));
+                            }}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full dark:bg-slate-705 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-650" />
+                        </label>
+                      </div>
+
+                      {/* Status and Action Buttons */}
+                      <div className="flex items-center justify-between text-[11px] border-t pt-3.5 border-slate-100 dark:border-slate-800">
+                        <span className="text-slate-400 dark:text-slate-500 font-bold">Статус соединения комнаты:</span>
+                        <div className="flex items-center gap-2">
+                          {roomSyncStatus === 'syncing' ? (
+                            <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-black">
+                              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
+                              <span>Идет обмен...</span>
+                            </div>
+                          ) : roomSyncStatus === 'saved' ? (
+                            <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-450 font-black">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                              <span>Комната синхронизирована ✓</span>
+                            </div>
+                          ) : roomSyncStatus === 'error' ? (
+                            <div className="flex items-center gap-1.5 text-rose-600 dark:text-rose-450 font-black">
+                              <span className="w-2 h-2 rounded-full bg-rose-500" />
+                              <span>Ошибка обмена</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-500 dark:text-slate-400 font-bold">Готов</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {roomSyncFeedback && (
+                        <div className="bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/60 p-3 rounded-lg text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed font-semibold">
+                          {roomSyncFeedback}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => saveStateToSyncRoom()}
+                          className="py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-extrabold cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-sm animate-in zoom-in-95 duration-100"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Выгрузить в комнату</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => loadStateFromSyncRoom()}
+                          className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-extrabold cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-sm animate-in zoom-in-95 duration-100"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Загрузить из комнаты</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
