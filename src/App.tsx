@@ -494,6 +494,10 @@ export default function App() {
         setCurrentUser(res.user);
         setGoogleToken(null);
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        try {
+          localStorage.setItem('auth_method', 'google');
+          localStorage.removeItem('explicit_logout');
+        } catch (e) {}
       }
     } catch (err: any) {
       const msg = err?.message || String(err);
@@ -1116,6 +1120,14 @@ export default function App() {
         setCurrentUser(user);
         setGoogleToken(null);
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        try {
+          if (user && !user.isAnonymous) {
+            localStorage.setItem('auth_method', 'google');
+            localStorage.removeItem('explicit_logout');
+          } else if (user && user.isAnonymous) {
+            localStorage.setItem('auth_method', 'guest');
+          }
+        } catch (e) {}
       },
       () => {
         isFirstSnapshotRef.current = true;
@@ -1126,11 +1138,15 @@ export default function App() {
         // Automatic anonymous authentication if the user did not explicitly log out
         try {
           const explicitLogout = localStorage.getItem('explicit_logout') === 'true';
-          if (!explicitLogout) {
+          const authMethod = localStorage.getItem('auth_method');
+          
+          if (!explicitLogout && authMethod !== 'google') {
             console.log('[Auth] Automatic anonymous guest sign in triggered');
             signInGuest().catch(err => {
               console.error('[Auth] Failed to automatically sign in guest:', err);
             });
+          } else {
+            console.log('[Auth] Skip automatic guest sign-in (explicit logout or Google user session present)');
           }
         } catch (e) {
           console.error('[Auth] Error checking explicit logout state:', e);
@@ -1841,7 +1857,18 @@ export default function App() {
     if (syncStatus.firebase === 'syncing') return;
     
     setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+    
+    // Add a minimum visual delay of 800ms so the user can see the spin animation
+    const startTime = Date.now();
+    
     const res = await saveToFirebaseDirectly(currentUser.uid, state);
+    
+    const elapsed = Date.now() - startTime;
+    const minDelay = 800; // 800ms minimum duration
+    if (elapsed < minDelay) {
+      await new Promise(resolve => setTimeout(resolve, minDelay - elapsed));
+    }
+    
     setIsQuotaExceeded(!!res.isQuotaExceeded);
     setSyncStatus(prev => ({
       ...prev,

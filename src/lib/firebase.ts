@@ -126,6 +126,7 @@ export const googleSignIn = async (): Promise<{ user: User } | null> => {
   try {
     try {
       localStorage.removeItem('explicit_logout');
+      localStorage.setItem('auth_method', 'google');
     } catch (e) {}
 
     // First, attempt signInWithPopup. This is highly reliable on both desktop and mobile
@@ -163,6 +164,7 @@ export const signInGuest = async (): Promise<User> => {
     const result = await signInAnonymously(auth);
     try {
       localStorage.removeItem('explicit_logout');
+      localStorage.setItem('auth_method', 'guest');
     } catch (e) {}
     return result.user;
   } catch (error) {
@@ -174,6 +176,7 @@ export const signInGuest = async (): Promise<User> => {
 export const logout = async () => {
   try {
     localStorage.setItem('explicit_logout', 'true');
+    localStorage.removeItem('auth_method');
   } catch (e) {
     console.error('[Firebase Auth] Failed to set explicit_logout state:', e);
   }
