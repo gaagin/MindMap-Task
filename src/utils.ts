@@ -107,10 +107,9 @@ export function loadWorkspace(): WorkspaceState {
     // Filter out deleted elements using milli_deleted_registry
     try {
       const deletionsJson = localStorage.getItem('milli_deleted_registry') || '[]';
-      const parsed = JSON.parse(deletionsJson);
-      const deletions = Array.isArray(parsed) ? parsed : [];
+      const deletions = JSON.parse(deletionsJson) || [];
       state.deletions = deletions; // Ensure deletions list is preserved directly inside active state representation
-      if (deletions.length > 0) {
+      if (Array.isArray(deletions) && deletions.length > 0) {
         const isDeleted = (type: string, id: string) => {
           return deletions.some((d: any) => d && d.type === type && d.id === id);
         };
@@ -244,6 +243,29 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
         if (nextNode.completed !== allCompleted) {
           nextNode.completed = allCompleted;
           nodeChanged = true;
+        }
+
+        // If a task has subtasks with date and time, set the latest date and time for it
+        const subtasksWithDates = children.filter(c => c.dueDate && !c.archived);
+        if (subtasksWithDates.length > 0) {
+          let latestSub = subtasksWithDates[0];
+          for (let i = 1; i < subtasksWithDates.length; i++) {
+            const curr = subtasksWithDates[i];
+            const latestStr = `${latestSub.dueDate}T${latestSub.dueTime || '00:00'}`;
+            const currStr = `${curr.dueDate}T${curr.dueTime || '00:00'}`;
+            if (currStr > latestStr) {
+              latestSub = curr;
+            }
+          }
+
+          if (nextNode.dueDate !== latestSub.dueDate) {
+            nextNode.dueDate = latestSub.dueDate;
+            nodeChanged = true;
+          }
+          if (nextNode.dueTime !== latestSub.dueTime) {
+            nextNode.dueTime = latestSub.dueTime;
+            nodeChanged = true;
+          }
         }
       }
 
@@ -434,20 +456,16 @@ export async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit)
       }
     }
 
-    const method = init?.method || (input && typeof input === 'object' && 'method' in input ? (input as Request).method : 'GET');
     const proxyInit: RequestInit = {
-      method,
+      method: init?.method || (input && typeof input === 'object' && 'method' in input ? (input as Request).method : 'GET'),
       headers: finalHeaders,
+      body: body,
       credentials: init?.credentials,
       mode: 'cors',
       cache: init?.cache,
       redirect: init?.redirect,
       referrer: init?.referrer,
     };
-
-    if (method !== 'GET' && method !== 'HEAD' && body !== undefined) {
-      proxyInit.body = body;
-    }
 
     try {
       const response = await window.fetch(proxyUrl, proxyInit);

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Folder, Project, TagCategory, WorkspaceState } from '../types';
 import { playNotificationChime } from '../utils';
+import GoogleSheetsSync from './GoogleSheetsSync';
 
 interface SidebarProps {
   folders: Folder[];

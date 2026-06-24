@@ -1,175 +1,86 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, persistentSingleTabManager, memoryLocalCache } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
+import { initializeFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Intercept console errors and warnings to catch Firestore quota/exhaustion issues immediately
-if (typeof window !== 'undefined') {
-  const origError = console.error;
-  console.error = function (...args) {
-    const msg = args.map(arg => typeof arg === 'string' ? arg : String(arg)).join(' ');
-    if (
-      msg.toLowerCase().includes('quota') || 
-      msg.toLowerCase().includes('exhausted') || 
-      msg.toLowerCase().includes('resource-exhausted') ||
-      msg.toLowerCase().includes('limit')
-    ) {
-      try {
-        localStorage.setItem('milli_firestore_quota_exceeded', String(Date.now()));
-        window.dispatchEvent(new CustomEvent('milli-quota-exceeded'));
-      } catch (e) {}
-    }
-    origError.apply(console, args);
-  };
-
-  const origWarn = console.warn;
-  console.warn = function (...args) {
-    const msg = args.map(arg => typeof arg === 'string' ? arg : String(arg)).join(' ');
-    if (
-      msg.toLowerCase().includes('quota') || 
-      msg.toLowerCase().includes('exhausted') || 
-      msg.toLowerCase().includes('resource-exhausted') ||
-      msg.toLowerCase().includes('limit')
-    ) {
-      try {
-        localStorage.setItem('milli_firestore_quota_exceeded', String(Date.now()));
-        window.dispatchEvent(new CustomEvent('milli-quota-exceeded'));
-      } catch (e) {}
-    }
-    origWarn.apply(console, args);
-  };
-}
-
 const app = initializeApp(firebaseConfig);
-
-// Detect if we are in an iframe or if IndexedDB/localStorage is blocked/restricted
-const shouldDisablePersistentCache = (): boolean => {
-  if (typeof window === 'undefined') return true;
-  
-  // 1. Check if inside an iframe
-  if (window.self !== window.top) {
-    console.log('[Firebase Settings] Inside iframe environment. Opting for memory-only Firestore cache to avoid sandbox lock hangs.');
-    return true;
-  }
-
-  // 2. Safely probe IndexedDB and localStorage
-  try {
-    if (!window.indexedDB) return true;
-    // Attempt a dummy probe to detect SecurityError or blocking in restricted domains
-    const temp = window.localStorage.getItem('__init_probe__');
-    window.localStorage.setItem('__init_probe__', '1');
-    window.localStorage.removeItem('__init_probe__');
-  } catch (e) {
-    console.warn('[Firebase Settings] Storage/IndexedDB access restricted or throws SecurityError. Opting for memory-only Firestore cache:', e);
-    return true;
-  }
-
-  return false;
-};
-
-// Check if user is on a mobile device
-const isMobileDevice = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  const userAgent = window.navigator.userAgent || '';
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
-};
-
-const localCacheConfig = shouldDisablePersistentCache() || isMobileDevice()
-  ? memoryLocalCache()
-  : persistentLocalCache({
-      tabManager: persistentMultipleTabManager()
-    });
-
-// Configure Firestore with persistentLocalCache/memoryLocalCache for offline-first support and reducing read quota usage,
-// and force long polling to bypass iframe/proxy stream network blocks
-export const db = initializeFirestore(
-  app,
-  {
-    experimentalForceLongPolling: true,
-    useFetchStreams: false,
-    localCache: localCacheConfig
-  } as any,
-  (firebaseConfig as any).firestoreDatabaseId || '(default)'
-);
-
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+  useFetchStreams: false,
+} as any);
 export const auth = getAuth(app);
 
 export const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+// Enable Google Drive file access and Google Sheets access
 googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
-
+googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
 // Prioritize user's account and avoid showing "Choose your account" screen
 googleProvider.setCustomParameters({
   login_hint: 'adibavtomatika@gmail.com'
 });
 
+// Cache the access token in memory and persist in localStorage to survive page refreshes
+let cachedAccessToken: string | null = null;
+try {
+  cachedAccessToken = localStorage.getItem('google_oauth_access_token');
+} catch (e) {
+  console.error('[Firebase Auth] Failed to restore Google access token from localStorage:', e);
+}
+let isSigningIn = false;
+
+export const setAccessToken = (token: string | null) => {
+  cachedAccessToken = token;
+  try {
+    if (token) {
+      localStorage.setItem('google_oauth_access_token', token);
+    } else {
+      localStorage.removeItem('google_oauth_access_token');
+    }
+  } catch (e) {
+    console.error('[Firebase Auth] Failed to set Google access token in localStorage:', e);
+  }
+};
+
 export const initAuth = (
-  onAuthSuccess?: (user: User) => void,
+  onAuthSuccess?: (user: User, token: string | null) => void,
   onAuthFailure?: () => void
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
-      if (onAuthSuccess) onAuthSuccess(user);
+      if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
     } else {
+      setAccessToken(null);
       if (onAuthFailure) onAuthFailure();
     }
   });
 };
 
-// Check if user is on a mobile device or if we are inside an iframe (popups often blocked)
-const isMobileOrIframe = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  const userAgent = window.navigator.userAgent || '';
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
-  const isInsideIframe = window.self !== window.top;
-  return isMobile || isInsideIframe;
-};
-
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string | null } | null> => {
+export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
+    isSigningIn = true;
+    const result = await signInWithPopup(auth, googleProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) {
+      throw new Error('Failed to get access token from Firebase Auth');
+    }
     try {
       localStorage.removeItem('explicit_logout');
-      localStorage.setItem('auth_method', 'google');
     } catch (e) {}
-
-    // First, attempt signInWithPopup. This is highly reliable on both desktop and mobile
-    // because it executes in the first-party context of the popup window, avoiding
-    // third-party cookie restrictions on Chrome, iOS Safari, and other mobile browsers.
-    try {
-      console.log('[Auth] Attempting Google signInWithPopup...');
-      const result = await signInWithPopup(auth, googleProvider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      const accessToken = credential?.accessToken || null;
-      return { user: result.user, accessToken };
-    } catch (popupError: any) {
-      // If popup fails or is blocked (e.g. by popup blockers or if inside an iframe),
-      // we fall back to signInWithRedirect as the secondary mechanism.
-      console.warn('[Auth] signInWithPopup failed or was blocked, trying redirect fallback...', popupError);
-      
-      const isInsideAnIframe = typeof window !== 'undefined' && window.self !== window.top;
-      const isPopupBlocked = popupError?.code === 'auth/popup-blocked' || popupError?.code === 'auth/cancelled-popup-request';
-      
-      if (isInsideAnIframe || isPopupBlocked) {
-        console.log('[Auth] Launching signInWithRedirect fallback...');
-        await signInWithRedirect(auth, googleProvider);
-        return null;
-      }
-      throw popupError;
-    }
+    setAccessToken(credential.accessToken);
+    return { user: result.user, accessToken: credential.accessToken };
   } catch (error) {
     console.error('Sign in error:', error);
     throw error;
+  } finally {
+    isSigningIn = false;
   }
 };
-
-export { getRedirectResult };
 
 export const signInGuest = async (): Promise<User> => {
   try {
     const result = await signInAnonymously(auth);
     try {
       localStorage.removeItem('explicit_logout');
-      localStorage.setItem('auth_method', 'guest');
     } catch (e) {}
     return result.user;
   } catch (error) {
@@ -178,14 +89,16 @@ export const signInGuest = async (): Promise<User> => {
   }
 };
 
+export const getAccessToken = async (): Promise<string | null> => {
+  return cachedAccessToken;
+};
+
 export const logout = async () => {
   try {
     localStorage.setItem('explicit_logout', 'true');
-    localStorage.removeItem('auth_method');
   } catch (e) {
     console.error('[Firebase Auth] Failed to set explicit_logout state:', e);
   }
   await auth.signOut();
+  setAccessToken(null);
 };
-
-

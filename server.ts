@@ -1,7 +1,5 @@
 import express from 'express';
 import path from 'path';
-import fs from 'fs';
-import https from 'https';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
@@ -25,7 +23,7 @@ app.all('/api/google-proxy', express.raw({ type: '*/*', limit: '50mb' }), async 
   }
 
   const headers: Record<string, string> = {};
-  const headersToForward = ['authorization', 'content-type', 'content-length', 'accept', 'range'];
+  const headersToForward = ['authorization', 'content-type', 'accept', 'range'];
   for (const h of headersToForward) {
     if (req.headers[h]) {
       headers[h] = req.headers[h] as string;
@@ -33,45 +31,34 @@ app.all('/api/google-proxy', express.raw({ type: '*/*', limit: '50mb' }), async 
   }
 
   try {
-    const urlObj = new URL(targetUrl);
-    const options: https.RequestOptions = {
+    const fetchOptions: RequestInit = {
       method: req.method,
-      hostname: urlObj.hostname,
-      path: urlObj.pathname + urlObj.search,
       headers: headers,
     };
 
-    const googleReq = https.request(options, (googleRes) => {
-      // Copy headers from Google response
-      if (googleRes.headers) {
-        Object.entries(googleRes.headers).forEach(([name, value]) => {
-          if (name !== 'transfer-encoding' && name !== 'content-encoding' && value !== undefined) {
-            res.setHeader(name, value);
-          }
-        });
-      }
-
-      res.status(googleRes.statusCode || 200);
-      googleRes.pipe(res);
-    });
-
-    googleReq.on('error', (error: any) => {
-      console.error('Proxy HTTPS request to Google failed:', error);
-      res.status(500).json({ error: `Proxy request failed: ${error.message || error}` });
-    });
-
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Buffer.isBuffer(req.body) && req.body.length > 0) {
-      googleReq.write(req.body);
+      fetchOptions.body = req.body;
     }
 
-    googleReq.end();
+    const googleRes = await fetch(targetUrl, fetchOptions);
+    
+    // Copy headers from response
+    googleRes.headers.forEach((value, name) => {
+      if (name !== 'transfer-encoding' && name !== 'content-encoding') {
+        res.setHeader(name, value);
+      }
+    });
+
+    res.status(googleRes.status);
+    const buffer = await googleRes.arrayBuffer();
+    res.send(Buffer.from(buffer));
   } catch (error: any) {
-    console.error('Proxy initialization failed:', error);
-    res.status(500).json({ error: `Proxy init failed: ${error.message || error}` });
+    console.error('Proxy request to Google failed:', error);
+    res.status(500).json({ error: `Proxy request failed: ${error.message || error}` });
   }
 });
 
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json());
 
 // Lazy-initialized Gemini-client to avoid crashing if key is missing on startup
 let aiClient: GoogleGenAI | null = null;
@@ -196,82 +183,6 @@ app.post('/api/gemini/clear-logs', (req, res) => {
   queueState.apiLogs = [];
   logEvent('info', 'Консоль логов очищена пользователем.');
   res.json({ success: true });
-});
-
-// ----------------- ZERO-AUTH DEVICE PAIRING SYNC ENDPOINTS -----------------
-let SYNC_DIR = path.join(process.cwd(), 'sync-rooms');
-try {
-  if (!fs.existsSync(SYNC_DIR)) {
-    fs.mkdirSync(SYNC_DIR, { recursive: true });
-  }
-} catch (err: any) {
-  console.warn(`[Sync] Cannot create local sync directory at ${SYNC_DIR}, falling back to /tmp/sync-rooms. Error:`, err.message);
-  SYNC_DIR = path.join('/tmp', 'sync-rooms');
-  try {
-    if (!fs.existsSync(SYNC_DIR)) {
-      fs.mkdirSync(SYNC_DIR, { recursive: true });
-    }
-  } catch (tmpErr: any) {
-    console.error('[Critical Sync] Failed to create /tmp/sync-rooms directory:', tmpErr.message);
-  }
-}
-
-// Highly reliable in-memory cache to guarantee successful pairings even on strict read-only environments
-const inMemoryRooms = new Map<string, any>();
-
-// Route to save state to a room (PC exports state to room)
-app.post('/api/sync/room/save', (req, res) => {
-  const { roomId, state } = req.body;
-  if (!roomId || !state) {
-    return res.status(400).json({ error: 'Необходим ID комнаты и данные состояния' });
-  }
-  const cleanRoomId = String(roomId).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  if (!cleanRoomId) {
-    return res.status(400).json({ error: 'Некорректный ID комнаты. Используйте только латиницу и цифры.' });
-  }
-
-  // Persist to in-memory cache first (always succeeds)
-  inMemoryRooms.set(cleanRoomId, state);
-
-  // Attempt to write to file system for cross-restart preservation
-  try {
-    const filePath = path.join(SYNC_DIR, `${cleanRoomId}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf8');
-    res.json({ success: true, roomId: cleanRoomId, updatedAt: new Date().toISOString(), mode: 'hybrid' });
-  } catch (err: any) {
-    console.warn(`[Sync] File-system write failed, using in-memory fallback for room ${cleanRoomId}:`, err.message);
-    res.json({ success: true, roomId: cleanRoomId, updatedAt: new Date().toISOString(), mode: 'memory-only' });
-  }
-});
-
-// Route to load state from a room (Phone / other device imports state from room)
-app.get('/api/sync/room/load/:roomId', (req, res) => {
-  const { roomId } = req.params;
-  const cleanRoomId = String(roomId).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  
-  // First check highly reliable in-memory cache
-  if (inMemoryRooms.has(cleanRoomId)) {
-    return res.json({ state: inMemoryRooms.get(cleanRoomId), source: 'memory' });
-  }
-
-  // Fallback to reading from local filesystem
-  const filePath = path.join(SYNC_DIR, `${cleanRoomId}.json`);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'Комната не найдена. Сначала выгрузите данные на первом устройстве.' });
-  }
-
-  try {
-    const data = fs.readFileSync(filePath, 'utf8');
-    const parsedState = JSON.parse(data);
-    
-    // Cache it in memory for future fast lookups
-    inMemoryRooms.set(cleanRoomId, parsedState);
-    
-    res.json({ state: parsedState, source: 'file' });
-  } catch (err: any) {
-    console.error('Error loading room state:', err);
-    res.status(500).json({ error: `Ошибка загрузки из комнаты: ${err.message}` });
-  }
 });
 
 // Main request proxy route

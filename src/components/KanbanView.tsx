@@ -703,7 +703,7 @@ export default function KanbanView({
         key={node.id}
         id={`kanban-card-${node.id}`}
         draggable="true"
-        onDragStart={(e: any) => handleDragStart(e, node.id)}
+        onDragStart={(e) => handleDragStart(e, node.id)}
         onClick={(e) => onSelectNode(node.id, e)}
         onTouchStart={(e) => handleTouchStart(e, node.id, node.text)}
         onTouchMove={handleTouchMove}
