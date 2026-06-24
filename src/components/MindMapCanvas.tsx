@@ -4584,7 +4584,7 @@ export default function MindMapCanvas({
       onDoubleClick={handleDoubleClick}
     >
       {/* Floating Full Screen Control on Top Right */}
-      <div className="absolute top-4 right-4 z-50">
+      <div className="absolute top-4 right-4 z-30">
         <button
           onClick={() => setIsFullScreen(!isFullScreen)}
           className={`p-2.5 rounded-lg border shadow-md transition-all cursor-pointer flex items-center justify-center outline-none ${

@@ -417,7 +417,7 @@ export default function EisenhowerMatrixView({
     >
       
       {/* Floating Settings/Filter button placed absolutely to save vertical layout space for the matrix */}
-      <div className="absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5">
+      <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
         {/* Toggle Button for Full Screen */}
         <button
           type="button"

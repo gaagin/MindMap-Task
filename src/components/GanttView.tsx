@@ -349,12 +349,12 @@ export default function GanttView({
             {isFullScreen ? (
               <>
                 <Minimize2 className="w-3.5 h-3.5" />
-                <span>Свернуть</span>
+                <span className="hidden sm:inline-block">Свернуть</span>
               </>
             ) : (
               <>
                 <Maximize2 className="w-3.5 h-3.5" />
-                <span>На весь экран</span>
+                <span className="hidden sm:inline-block">На весь экран</span>
               </>
             )}
           </button>

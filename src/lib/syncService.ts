@@ -50,6 +50,25 @@ export function updateLastSyncedStateCache(state: WorkspaceState | null) {
  */
 export function isWorkspaceStateSemanticallyEqual(a: WorkspaceState, b: WorkspaceState): boolean {
   if (a.activeProjectId !== b.activeProjectId) return false;
+  if (a.googleSheetsFileId !== b.googleSheetsFileId) return false;
+  if (a.taskSheetsSpreadsheetId !== b.taskSheetsSpreadsheetId) return false;
+
+  // Active Pomodoro comparison
+  const apomo = a.activePomodoro;
+  const bpomo = b.activePomodoro;
+  if (!!apomo !== !!bpomo) return false;
+  if (apomo && bpomo) {
+    if (
+      apomo.nodeId !== bpomo.nodeId ||
+      apomo.isRunning !== bpomo.isRunning ||
+      apomo.isPaused !== bpomo.isPaused ||
+      apomo.isBreak !== bpomo.isBreak ||
+      Math.abs((apomo.endTime || 0) - (bpomo.endTime || 0)) > 2000 ||
+      apomo.nodeText !== bpomo.nodeText
+    ) {
+      return false;
+    }
+  }
   
   // Folders comparison
   const af = a.folders || [];
@@ -299,6 +318,11 @@ export function mergeWorkspaceStates(
   const cloudTime = cloud.updatedAt ? new Date(cloud.updatedAt).getTime() : 0;
   const finalUpdatedAt = (localTime > cloudTime ? local.updatedAt : cloud.updatedAt) || new Date().toISOString();
 
+  // Symmetrical merge of Pomodoro session state using ending timestamps to choose the most fresh session
+  const localPomoTime = local.activePomodoro?.endTime || 0;
+  const cloudPomoTime = cloud.activePomodoro?.endTime || 0;
+  const finalActivePomodoro = localPomoTime > cloudPomoTime ? local.activePomodoro : cloud.activePomodoro;
+
   return {
     folders: finalFolders,
     projects: finalProjects,
@@ -306,7 +330,10 @@ export function mergeWorkspaceStates(
     activeProjectId: finalActiveProjectId,
     tagCategories: finalTagCats,
     deletions: mergedDeletions,
-    updatedAt: finalUpdatedAt
+    updatedAt: finalUpdatedAt,
+    googleSheetsFileId: local.googleSheetsFileId || cloud.googleSheetsFileId,
+    taskSheetsSpreadsheetId: local.taskSheetsSpreadsheetId || cloud.taskSheetsSpreadsheetId,
+    activePomodoro: finalActivePomodoro
   };
 }
 
@@ -511,7 +538,10 @@ export async function saveToFirebaseDirectly(
         activeProjectId: state.activeProjectId,
         tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
         deletions: activeLocalDeletions,
-        updatedAt: state.updatedAt || new Date().toISOString()
+        updatedAt: state.updatedAt || new Date().toISOString(),
+        googleSheetsFileId: state.googleSheetsFileId || null,
+        taskSheetsSpreadsheetId: state.taskSheetsSpreadsheetId || null,
+        activePomodoro: state.activePomodoro || null
       };
 
       const sanitized = sanitizeForFirestore(rawPayload);
@@ -530,7 +560,10 @@ export async function saveToFirebaseDirectly(
       activeProjectId: cloudDataResponse?.activeProjectId || null,
       tagCategories: cloudDataResponse?.tagCategories || [],
       deletions: Array.isArray(cloudDataResponse?.deletions) ? cloudDataResponse.deletions : [],
-      updatedAt: cloudDataResponse?.updatedAt
+      updatedAt: cloudDataResponse?.updatedAt,
+      googleSheetsFileId: cloudDataResponse?.googleSheetsFileId || undefined,
+      taskSheetsSpreadsheetId: cloudDataResponse?.taskSheetsSpreadsheetId || undefined,
+      activePomodoro: cloudDataResponse?.activePomodoro || undefined
     };
 
     // STRICT LOOP / ECHO PREVENTION: Only write to the cloud if the local update timestamp is strictly newer
@@ -609,6 +642,31 @@ export async function saveToFirebaseDirectly(
     const newAdditionDeletions = mergedDeletionsList.filter(d => !previousDeletionsMap.has(`${d.type}:${d.id}`));
     if (newAdditionDeletions.length > 0) {
       deltaMap['deletions'] = arrayUnion(...newAdditionDeletions);
+    }
+
+    // Point 7: Check googleSheetsFileId change
+    if (mergedState.googleSheetsFileId !== cloudState.googleSheetsFileId) {
+      deltaMap['googleSheetsFileId'] = mergedState.googleSheetsFileId || null;
+    }
+
+    // Point 8: Check taskSheetsSpreadsheetId change
+    if (mergedState.taskSheetsSpreadsheetId !== cloudState.taskSheetsSpreadsheetId) {
+      deltaMap['taskSheetsSpreadsheetId'] = mergedState.taskSheetsSpreadsheetId || null;
+    }
+
+    // Point 9: Check activePomodoro change
+    const localPomo = mergedState.activePomodoro;
+    const cloudPomo = cloudState.activePomodoro;
+    const pomoChanged = !localPomo !== !cloudPomo || (localPomo && cloudPomo && (
+      localPomo.nodeId !== cloudPomo.nodeId ||
+      localPomo.isRunning !== cloudPomo.isRunning ||
+      localPomo.isPaused !== cloudPomo.isPaused ||
+      localPomo.isBreak !== cloudPomo.isBreak ||
+      Math.abs((localPomo.endTime || 0) - (cloudPomo.endTime || 0)) > 2000 ||
+      localPomo.nodeText !== cloudPomo.nodeText
+    ));
+    if (pomoChanged) {
+      deltaMap['activePomodoro'] = mergedState.activePomodoro || null;
     }
 
     // If there are point modifications, append the root local updatedAt and updateDoc
