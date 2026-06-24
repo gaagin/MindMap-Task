@@ -2847,7 +2847,7 @@ export default function MindMapCanvas({
     const containerOverlap = visibleNodes.find(otherNode => {
       if (otherNode.id === draggingId) return false;
       if (isDescendantOrSelf(otherNode.id, draggingId, nodes)) return false;
-      if (!otherNode.isContainer || otherNode.collapsed) return false;
+      if (!otherNode.isContainer) return false;
 
       if (draggingNode.isContainer) return false; // Containers cannot go inside other containers
       if (focusedContainerId === otherNode.id) return false; // Do not overlap with the focused container itself in focus mode
@@ -2862,8 +2862,9 @@ export default function MindMapCanvas({
 
       const dx = Math.abs(newX - otherNode.x);
       const dy = Math.abs(newY - otherNode.y);
-      const halfW = (otherNode.width || 520) / 2;
-      const halfH = (otherNode.height || 400) / 2;
+      const isCollapsed = !!otherNode.collapsed;
+      const halfW = (isCollapsed ? 220 : (otherNode.width || 520)) / 2;
+      const halfH = (isCollapsed ? 100 : (otherNode.height || 400)) / 2;
       return dx < halfW && dy < halfH;
     });
 
@@ -3366,11 +3367,12 @@ export default function MindMapCanvas({
                 // Check if release position is inside any container
                 const container = visibleNodes.find(otherNode => {
                   if (otherNode.id === node.id) return false;
-                  if (!otherNode.isContainer || otherNode.collapsed) return false;
+                  if (!otherNode.isContainer) return false;
                   const cdx = Math.abs(node.x - otherNode.x);
                   const cdy = Math.abs(node.y - otherNode.y);
-                  const halfW = (otherNode.width || 520) / 2;
-                  const halfH = (otherNode.height || 400) / 2;
+                  const isCollapsed = !!otherNode.collapsed;
+                  const halfW = (isCollapsed ? 220 : (otherNode.width || 520)) / 2;
+                  const halfH = (isCollapsed ? 100 : (otherNode.height || 400)) / 2;
                   return cdx < halfW && cdy < halfH;
                 });
                 if (container) {
@@ -4050,11 +4052,12 @@ export default function MindMapCanvas({
                   // Check if release position is inside any container
                   const container = visibleNodes.find(otherNode => {
                     if (otherNode.id === node.id) return false;
-                    if (!otherNode.isContainer || otherNode.collapsed) return false;
+                    if (!otherNode.isContainer) return false;
                     const cdx = Math.abs(node.x - otherNode.x);
                     const cdy = Math.abs(node.y - otherNode.y);
-                    const halfW = (otherNode.width || 520) / 2;
-                    const halfH = (otherNode.height || 400) / 2;
+                    const isCollapsed = !!otherNode.collapsed;
+                    const halfW = (isCollapsed ? 220 : (otherNode.width || 520)) / 2;
+                    const halfH = (isCollapsed ? 100 : (otherNode.height || 400)) / 2;
                     return cdx < halfW && cdy < halfH;
                   });
                   if (container) {
@@ -4091,6 +4094,15 @@ export default function MindMapCanvas({
     }
   };
 
+  // Find the closest ancestor container for a given node (if any)
+  const getAncestorContainer = (nodeId: string | null): TaskNode | null => {
+    if (!nodeId) return null;
+    const parent = nodes.find(n => n.id === nodeId);
+    if (!parent) return null;
+    if (parent.isContainer) return parent;
+    return getAncestorContainer(parent.parentId);
+  };
+
   // Check if a card is touching any workflow outer dashed trigger zone
   const checkWorkflowTriggerCollisions = (movedNode: TaskNode, currentX: number, currentY: number): string[] | null => {
     if (movedNode.isWorkflowRectangle || movedNode.isContainer) return null;
@@ -4106,6 +4118,15 @@ export default function MindMapCanvas({
 
     nodes.forEach(flow => {
       if (!flow.isWorkflowRectangle || flow.isZoneTriggerDisabled) return;
+
+      // Ensure that triggers in containers only affect tasks in the same container,
+      // and triggers outside containers only affect tasks outside containers.
+      const flowContainer = getAncestorContainer(flow.id);
+      const movedContainer = getAncestorContainer(movedNode.id);
+      const flowContainerId = flowContainer ? flowContainer.id : null;
+      const movedContainerId = movedContainer ? movedContainer.id : null;
+
+      if (flowContainerId !== movedContainerId) return;
 
       const w = getNodeWidth(flow);
       const h = getNodeHeight(flow);
@@ -4411,14 +4432,7 @@ export default function MindMapCanvas({
     }
   };
 
-  // Find the closest ancestor container for a given node (if any)
-  const getAncestorContainer = (nodeId: string | null): TaskNode | null => {
-    if (!nodeId) return null;
-    const parent = nodes.find(n => n.id === nodeId);
-    if (!parent) return null;
-    if (parent.isContainer) return parent;
-    return getAncestorContainer(parent.parentId);
-  };
+  // Find the closest ancestor container (moved up to checkWorkflowTriggerCollisions)
 
   // Trace parent nodes back to root to determine if any ancestor is collapsed, or filtered by focus mode
   const visibleNodes = nodes.filter(node => {
@@ -5944,19 +5958,26 @@ export default function MindMapCanvas({
                   if (draggingNodeId && !node.isZoneTriggerDisabled) {
                     const draggingNode = nodes.find(n => n.id === draggingNodeId);
                     if (draggingNode && !draggingNode.isWorkflowRectangle && !draggingNode.isContainer) {
-                      const cardW = draggingNode.width || 210;
-                      const cardH = draggingNode.height || 110;
-                      const dragLeft = draggingNode.x - cardW / 2;
-                      const dragRight = draggingNode.x + cardW / 2;
-                      const dragTop = draggingNode.y - cardH / 2;
-                      const dragBottom = draggingNode.y + cardH / 2;
+                      const flowContainer = getAncestorContainer(node.id);
+                      const dragContainer = getAncestorContainer(draggingNode.id);
+                      const flowContainerId = flowContainer ? flowContainer.id : null;
+                      const dragContainerId = dragContainer ? dragContainer.id : null;
 
-                      isAnyDraggingNodeOverlapping = (
-                        dragLeft <= zoneRight &&
-                        dragRight >= zoneLeft &&
-                        dragTop <= zoneBottom &&
-                        dragBottom >= zoneTop
-                      );
+                      if (flowContainerId === dragContainerId) {
+                        const cardW = draggingNode.width || 210;
+                        const cardH = draggingNode.height || 110;
+                        const dragLeft = draggingNode.x - cardW / 2;
+                        const dragRight = draggingNode.x + cardW / 2;
+                        const dragTop = draggingNode.y - cardH / 2;
+                        const dragBottom = draggingNode.y + cardH / 2;
+
+                        isAnyDraggingNodeOverlapping = (
+                          dragLeft <= zoneRight &&
+                          dragRight >= zoneLeft &&
+                          dragTop <= zoneBottom &&
+                          dragBottom >= zoneTop
+                        );
+                      }
                     }
                   }
 
@@ -7217,7 +7238,7 @@ export default function MindMapCanvas({
                     <Paperclip className="w-4 h-4" />
                   </button>
 
-                  {!isRoot && (
+                  {true && (
                     <>
                       <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
@@ -7227,7 +7248,7 @@ export default function MindMapCanvas({
                           e.stopPropagation();
                           onDeleteNode(node.id);
                         }}
-                        title="Удалить ветвь"
+                        title={isRoot ? "Удалить главную задачу" : "Удалить ветвь"}
                         className="flex items-center justify-center w-8 h-8 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />

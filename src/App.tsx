@@ -2096,13 +2096,22 @@ export default function App() {
           const isInitiallyRoot = n.parentId === null && !n.isFloating;
           const updatedIsFloating = isInitiallyRoot ? false : (newParentId === null);
 
+          // If parent is a container, update containerPlace property on the task node
+          let updatedContainerPlace = n.containerPlace;
+          if (parent && parent.isContainer) {
+            updatedContainerPlace = `${parent.text} (X: ${Math.round(parent.x)}, Y: ${Math.round(parent.y)})`;
+          } else if (newParentId === null) {
+            updatedContainerPlace = undefined;
+          }
+
           return {
             ...n,
             x: Math.round(targetX),
             y: Math.round(targetY),
             parentId: newParentId,
             color: parentColor || n.color,
-            isFloating: updatedIsFloating
+            isFloating: updatedIsFloating,
+            containerPlace: updatedContainerPlace
           };
         }
         return n;
@@ -2333,10 +2342,6 @@ export default function App() {
   const handleBulkDelete = () => {
     const pid = state.activeProjectId;
     if (!pid || selectedNodeIds.length === 0) return;
-
-    if (!window.confirm(`Вы уверены, что хотите безвозвратно удалить выбранные задачи (${selectedNodeIds.length})?`)) {
-      return;
-    }
 
     const currentNodes = state.nodes[pid] || [];
     pushToUndo(pid, currentNodes);
@@ -3792,6 +3797,7 @@ export default function App() {
             onUpdateTagCategory={handleUpdateTagCategory}
             onDeleteTagCategory={handleDeleteTagCategory}
             googleToken={googleToken}
+            onUpdateNodeParent={handleUpdateNodeParent}
           />
         )}
 

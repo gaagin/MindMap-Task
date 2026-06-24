@@ -87,6 +87,7 @@ export interface TaskNode {
   history?: TaskVersion[]; // Version history stack/list for tracking edits
   tagCategories?: TagCategory[]; // Optional private card-specific tag categories and tags
   externalLink?: string; // Optional external URL link
+  containerPlace?: string; // Optional field for container addition place
 }
 
 export interface Project {

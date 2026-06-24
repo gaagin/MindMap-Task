@@ -54,6 +54,7 @@ interface TaskDetailsPanelProps {
   onUpdateTagCategory?: (id: string, name: string, color: string, tags: string[]) => void;
   onDeleteTagCategory?: (id: string) => void;
   googleToken?: string | null;
+  onUpdateNodeParent?: (id: string, newParentId: string | null, newX?: number, newY?: number) => void;
 }
 
 const PASTEL_COLORS = [
@@ -78,7 +79,8 @@ export default function TaskDetailsPanel({
   onCreateTagCategory,
   onUpdateTagCategory,
   onDeleteTagCategory,
-  googleToken = null
+  googleToken = null,
+  onUpdateNodeParent
 }: TaskDetailsPanelProps) {
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
@@ -1567,6 +1569,67 @@ export default function TaskDetailsPanel({
             >
               {node.completed ? '✓ Выполнено' : '○ В процессе'}
             </button>
+          </div>
+        )}
+
+        {/* Container Properties Section */}
+        {!node.isWorkflowRectangle && !node.isContainer && (
+          <div className="space-y-2.5 bg-[#FAFBFD]/60 dark:bg-slate-800/30 p-3.5 rounded-xl border border-slate-150 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                Контейнерные свойства
+              </span>
+              {node.parentId && allNodes.find(p => p.id === node.parentId && p.isContainer) ? (
+                <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-extrabold uppercase py-0.5 px-2 rounded-full tracking-wider border border-amber-500/20">
+                  Внутри контейнера
+                </span>
+              ) : (
+                <span className="text-[10px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 font-extrabold uppercase py-0.5 px-2 rounded-full tracking-wider">
+                  Вне контейнера
+                </span>
+              )}
+            </div>
+
+            {/* Container Selector dropdown */}
+            {onUpdateNodeParent && (
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block">
+                  Переместить в контейнер:
+                </span>
+                <select
+                  value={node.parentId || 'no-container'}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'no-container') {
+                      onUpdateNodeParent(node.id, null);
+                    } else {
+                      onUpdateNodeParent(node.id, val);
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none dark:text-slate-100 cursor-pointer"
+                >
+                  <option value="no-container">📦 Без контейнера</option>
+                  {allNodes
+                    .filter(n => n.isContainer && n.id !== node.id)
+                    .map(container => (
+                      <option key={container.id} value={container.id}>
+                        📥 {container.text || 'Без имени'}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+            {node.containerPlace && (
+              <div className="pt-1.5 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block">
+                  Место добавления контейнера:
+                </span>
+                <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800/55 break-words">
+                  📦 {node.containerPlace}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -3362,7 +3425,7 @@ export default function TaskDetailsPanel({
       )}
 
       {/* Dangerous/Root operations */}
-      {!isCentralRootNode && activeTab === 'details' ? (
+      {activeTab === 'details' ? (
         <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/60 flex items-stretch gap-2">
           {/* Archive / Restore Button */}
           <button
@@ -3405,7 +3468,7 @@ export default function TaskDetailsPanel({
             <span className="truncate">
               {confirmDelete 
                 ? 'Уверены?' 
-                : (node.isWorkflowRectangle ? 'Удалить workflow-шаг' : node.isContainer ? 'Удалить вложенное' : 'Удалить текущую')}
+                : (node.isWorkflowRectangle ? 'Удалить workflow-шаг' : node.isContainer ? 'Удалить вложенное' : isCentralRootNode ? 'Удалить главную задачу' : 'Удалить текущую')}
             </span>
           </button>
         </div>
