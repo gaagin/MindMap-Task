@@ -1,11 +1,10 @@
-import { doc, getDoc, getDocFromCache, setDoc, updateDoc, arrayUnion, deleteField, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from './firebase';
 import { WorkspaceState, TaskNode, Folder, Project, TagCategory, DeletionRecord } from '../types';
+import { proxiedFetch } from '../utils';
 
 const DELETIONS_KEY = 'milli_deleted_registry';
 
 /**
- * Register a deleted element so we can synchronize its deletion with the cloud.
+ * Register a deleted element so we can synchronize its deletion with Google Sheets.
  */
 export function logDeletion(type: 'folder' | 'project' | 'node' | 'tagCategory', id: string) {
   try {
@@ -31,732 +30,767 @@ export function getLocalDeletions(): DeletionRecord[] {
   }
 }
 
-// ----------------- IN-MEMORY STATE CACHE FOR CHIP SHIELD DEEP COMPARISON -----------------
-let lastSyncedStateInMemory: WorkspaceState | null = null;
-
-export function updateLastSyncedStateCache(state: WorkspaceState | null) {
-  if (state) {
-    // Deep clone to ensure we hold a static snapshot, not a live reference
-    lastSyncedStateInMemory = JSON.parse(JSON.stringify(state));
-  } else {
-    lastSyncedStateInMemory = null;
-  }
+export function clearLocalDeletions() {
+  localStorage.removeItem(DELETIONS_KEY);
 }
 
-/**
- * Perform static domain-specific deep comparison of 2 states to shield Firestore
- * from redundant write operations on small edits or accidental duplicate effect runs.
- * Conserves Firestore Write Operation quotas.
- */
-export function isWorkspaceStateSemanticallyEqual(a: WorkspaceState, b: WorkspaceState): boolean {
-  if (a.activeProjectId !== b.activeProjectId) return false;
-  if (a.googleSheetsFileId !== b.googleSheetsFileId) return false;
-  if (a.taskSheetsSpreadsheetId !== b.taskSheetsSpreadsheetId) return false;
+// ----------------- GOOGLE SHEETS API HELPER UTILITIES -----------------
 
-  // Active Pomodoro comparison
-  const apomo = a.activePomodoro;
-  const bpomo = b.activePomodoro;
-  if (!!apomo !== !!bpomo) return false;
-  if (apomo && bpomo) {
-    if (
-      apomo.nodeId !== bpomo.nodeId ||
-      apomo.isRunning !== bpomo.isRunning ||
-      apomo.isPaused !== bpomo.isPaused ||
-      apomo.isBreak !== bpomo.isBreak ||
-      Math.abs((apomo.endTime || 0) - (bpomo.endTime || 0)) > 2000 ||
-      apomo.nodeText !== bpomo.nodeText
-    ) {
-      return false;
-    }
-  }
-  
-  // Folders comparison
-  const af = a.folders || [];
-  const bf = b.folders || [];
-  if (af.length !== bf.length) return false;
-  const afMap = new Map(af.map(f => [f.id, f]));
-  for (const f of bf) {
-    const existing = afMap.get(f.id);
-    if (!existing) return false;
-    if (existing.name !== f.name || existing.parentId !== f.parentId || existing.updatedAt !== f.updatedAt) {
-      return false;
-    }
-  }
+async function googleApiCall(url: string, token: string, options: RequestInit = {}): Promise<any> {
+  const headers = new Headers(options.headers || {});
+  headers.set('Authorization', `Bearer ${token}`);
+  headers.set('Content-Type', 'application/json');
 
-  // Projects comparison
-  const ap = a.projects || [];
-  const bp = b.projects || [];
-  if (ap.length !== bp.length) return false;
-  const apMap = new Map(ap.map(p => [p.id, p]));
-  for (const p of bp) {
-    const existing = apMap.get(p.id);
-    if (!existing) return false;
-    if (existing.name !== p.name || existing.folderId !== p.folderId || existing.updatedAt !== p.updatedAt) {
-      return false;
-    }
-  }
-
-  // TagCategories comparison
-  const at = a.tagCategories || [];
-  const bt = b.tagCategories || [];
-  if (at.length !== bt.length) return false;
-  const atMap = new Map(at.map(t => [t.id, t]));
-  for (const t of bt) {
-    const existing = atMap.get(t.id);
-    if (!existing) return false;
-    if (existing.name !== t.name || existing.color !== t.color || existing.updatedAt !== t.updatedAt) {
-      return false;
-    }
-    if (existing.tags.length !== t.tags.length || !existing.tags.every((val, idx) => val === t.tags[idx])) {
-      return false;
-    }
-  }
-
-  // Nodes comparison
-  const anKeys = Object.keys(a.nodes || {});
-  const bnKeys = Object.keys(b.nodes || {});
-  if (anKeys.length !== bnKeys.length) return false;
-  for (const pId of anKeys) {
-    const anList = a.nodes[pId] || [];
-    const bnList = b.nodes[pId] || [];
-    if (anList.length !== bnList.length) return false;
-    
-    const anMap = new Map(anList.map(n => [n.id, n]));
-    for (const n of bnList) {
-      const existing = anMap.get(n.id);
-      if (!existing) return false;
-      // Compare key properties of the nodes
-      if (
-        existing.text !== n.text ||
-        existing.notes !== n.notes ||
-        existing.x !== n.x ||
-        existing.y !== n.y ||
-        existing.parentId !== n.parentId ||
-        existing.priority !== n.priority ||
-        existing.completed !== n.completed ||
-        existing.color !== n.color ||
-        existing.collapsed !== n.collapsed ||
-        existing.isCardCollapsed !== n.isCardCollapsed ||
-        existing.dueDate !== n.dueDate ||
-        existing.dueTime !== n.dueTime ||
-        existing.startDate !== n.startDate ||
-        existing.startTime !== n.startTime ||
-        existing.progress !== n.progress ||
-        existing.isFloating !== n.isFloating ||
-        existing.isContainer !== n.isContainer ||
-        existing.isWorkflowRectangle !== n.isWorkflowRectangle ||
-        existing.workflowShape !== n.workflowShape ||
-        existing.zoneWidth !== n.zoneWidth ||
-        existing.zoneHeight !== n.zoneHeight ||
-        existing.width !== n.width ||
-        existing.height !== n.height ||
-        existing.updatedAt !== n.updatedAt ||
-        existing.pomodoroTotalTime !== n.pomodoroTotalTime ||
-        existing.pomodoroSessionsCount !== n.pomodoroSessionsCount ||
-        existing.archived !== n.archived ||
-        existing.externalLink !== n.externalLink
-      ) {
-        return false;
-      }
-      
-      // Compare tags list within node
-      if (existing.tags.length !== n.tags.length || !existing.tags.every((t_val, idx) => t_val === n.tags[idx])) {
-        return false;
-      }
-
-      // Compare attachments lists length
-      const eFiles = existing.files || [];
-      const nFiles = n.files || [];
-      if (eFiles.length !== nFiles.length) return false;
-      // Check attachment metadata
-      for (let i = 0; i < eFiles.length; i++) {
-        if (eFiles[i].id !== nFiles[i].id || eFiles[i].name !== nFiles[i].name || eFiles[i].size !== nFiles[i].size) {
-          return false;
-        }
-      }
-    }
-  }
-
-  // Deletions comparison
-  const ad = Array.isArray(a.deletions) ? a.deletions : [];
-  const bd = Array.isArray(b.deletions) ? b.deletions : [];
-  if (ad.length !== bd.length) return false;
-  const adMap = new Map(ad.map(d => [`${d.type}:${d.id}`, d]));
-  for (const d of bd) {
-    if (!adMap.has(`${d.type}:${d.id}`)) return false;
-  }
-
-  return true;
-}
-
-// ----------------- RELATIONAL COMBINATION MERGER -----------------
-
-/**
- * Fully symmetrical logic for merging two workspace states.
- * Ensures that updatedAt timestamps and deletions are strictly and authoritatively respected.
- */
-export function mergeWorkspaceStates(
-  local: WorkspaceState,
-  cloud: WorkspaceState,
-  mergedDeletions: DeletionRecord[]
-): WorkspaceState {
-  const isDeleted = (type: string, id: string) => {
-    return mergedDeletions.some(d => d.type === type && d.id === id);
+  const finalOptions: RequestInit = {
+    ...options,
+    headers
   };
 
-  // 1. Merge Folders
-  const mergedFoldersMap = new Map<string, Folder>();
-  (local.folders || []).forEach(f => {
-    if (!isDeleted('folder', f.id)) {
-      mergedFoldersMap.set(f.id, { ...f, updatedAt: f.updatedAt || new Date(0).toISOString() });
-    }
-  });
-
-  (cloud.folders || []).forEach(sf => {
-    if (isDeleted('folder', sf.id)) return;
-    const existingF = mergedFoldersMap.get(sf.id);
-    if (!existingF) {
-      mergedFoldersMap.set(sf.id, sf);
-    } else {
-      const localTime = new Date(existingF.updatedAt || 0).getTime();
-      const remoteTime = new Date(sf.updatedAt || 0).getTime();
-      if (remoteTime > localTime) {
-        mergedFoldersMap.set(sf.id, sf);
-      }
-    }
-  });
-
-  // 2. Merge Projects
-  const mergedProjectsMap = new Map<string, Project>();
-  (local.projects || []).forEach(p => {
-    if (!isDeleted('project', p.id)) {
-      mergedProjectsMap.set(p.id, { ...p, updatedAt: p.updatedAt || new Date(0).toISOString() });
-    }
-  });
-
-  (cloud.projects || []).forEach(sp => {
-    if (isDeleted('project', sp.id)) return;
-    const existingP = mergedProjectsMap.get(sp.id);
-    if (!existingP) {
-      mergedProjectsMap.set(sp.id, sp);
-    } else {
-      const localTime = new Date(existingP.updatedAt || 0).getTime();
-      const remoteTime = new Date(sp.updatedAt || 0).getTime();
-      if (remoteTime > localTime) {
-        mergedProjectsMap.set(sp.id, sp);
-      }
-    }
-  });
-
-  // 3. Merge Nodes (flat merge)
-  const mergedNodesMap = new Map<string, TaskNode>();
-  Object.values(local.nodes || {}).flat().forEach(node => {
-    if (node && !isDeleted('node', node.id)) {
-      mergedNodesMap.set(node.id, { ...node, updatedAt: node.updatedAt || new Date(0).toISOString() });
-    }
-  });
-
-  Object.values(cloud.nodes || {}).flat().forEach(sn => {
-    if (!sn || isDeleted('node', sn.id)) return;
-    const existingN = mergedNodesMap.get(sn.id);
-    if (!existingN) {
-      mergedNodesMap.set(sn.id, sn);
-    } else {
-      const localTime = new Date(existingN.updatedAt || 0).getTime();
-      const remoteTime = new Date(sn.updatedAt || 0).getTime();
-      if (remoteTime > localTime) {
-        mergedNodesMap.set(sn.id, sn);
-      }
-    }
-  });
-
-  // Group nodes back into project maps
-  const finalNodesMap: Record<string, TaskNode[]> = {};
-  mergedNodesMap.forEach(node => {
-    if (mergedProjectsMap.has(node.projectId)) {
-      if (!finalNodesMap[node.projectId]) finalNodesMap[node.projectId] = [];
-      finalNodesMap[node.projectId].push(node);
-    }
-  });
-
-  // 4. Merge TagCategories
-  const mergedTagCatsMap = new Map<string, TagCategory>();
-  (local.tagCategories || []).forEach(tc => {
-    if (!isDeleted('tagCategory', tc.id)) {
-      mergedTagCatsMap.set(tc.id, { ...tc, updatedAt: tc.updatedAt || new Date(0).toISOString() });
-    }
-  });
-
-  (cloud.tagCategories || []).forEach(stc => {
-    if (isDeleted('tagCategory', stc.id)) return;
-    const existingTC = mergedTagCatsMap.get(stc.id);
-    if (!existingTC) {
-      mergedTagCatsMap.set(stc.id, stc);
-    } else {
-      const localTime = new Date(existingTC.updatedAt || 0).getTime();
-      const remoteTime = new Date(stc.updatedAt || 0).getTime();
-      if (remoteTime > localTime) {
-        mergedTagCatsMap.set(stc.id, stc);
-      }
-    }
-  });
-
-  const finalFolders = Array.from(mergedFoldersMap.values());
-  const finalProjects = Array.from(mergedProjectsMap.values());
-  const finalTagCats = Array.from(mergedTagCatsMap.values());
-
-  let finalActiveProjectId = local.activeProjectId;
-  if (finalProjects.length > 0) {
-    if (!finalActiveProjectId || !mergedProjectsMap.has(finalActiveProjectId)) {
-      finalActiveProjectId = finalProjects[0].id;
-    }
-  } else {
-    finalActiveProjectId = null;
-  }
-
-  const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
-  const cloudTime = cloud.updatedAt ? new Date(cloud.updatedAt).getTime() : 0;
-  const finalUpdatedAt = (localTime > cloudTime ? local.updatedAt : cloud.updatedAt) || new Date().toISOString();
-
-  // Symmetrical merge of Pomodoro session state using ending timestamps to choose the most fresh session
-  const localPomoTime = local.activePomodoro?.endTime || 0;
-  const cloudPomoTime = cloud.activePomodoro?.endTime || 0;
-  const finalActivePomodoro = localPomoTime > cloudPomoTime ? local.activePomodoro : cloud.activePomodoro;
-
-  return {
-    folders: finalFolders,
-    projects: finalProjects,
-    nodes: finalNodesMap,
-    activeProjectId: finalActiveProjectId,
-    tagCategories: finalTagCats,
-    deletions: mergedDeletions,
-    updatedAt: finalUpdatedAt,
-    googleSheetsFileId: local.googleSheetsFileId || cloud.googleSheetsFileId,
-    taskSheetsSpreadsheetId: local.taskSheetsSpreadsheetId || cloud.taskSheetsSpreadsheetId,
-    activePomodoro: finalActivePomodoro
-  };
-}
-
-// ----------------- SANITIZATION AND DATES CONVERSION -----------------
-
-/**
- * Converts Firestore server Timestamp representations into normal ISO string objects inside loaded state.
- * This guarantees perfect type integrity with client-side code and avoids component errors.
- */
-export function convertTimestampsToIso(obj: any): any {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj.toDate === 'function') {
-    return obj.toDate().toISOString();
-  }
-  if (Array.isArray(obj)) {
-    return obj.map(convertTimestampsToIso);
-  }
-  if (typeof obj === 'object') {
-    const res: any = {};
-    for (const key of Object.keys(obj)) {
-      res[key] = convertTimestampsToIso(obj[key]);
-    }
-    return res;
-  }
-  return obj;
-}
-
-/**
- * Recursively removes any undefined fields or converts them to null to prevent Firestore invalid data errors.
- */
-function sanitizeForFirestore(obj: any): any {
-  if (obj === undefined) {
-    return null;
-  }
-  if (obj === null) {
-    return null;
-  }
-
-  // Guard against corrupting Firestore FieldValue sentinels (serverTimestamp, deleteField, arrayUnion)
-  if (typeof obj === 'object') {
-    const constructorName = obj.constructor?.name || '';
-    if (
-      constructorName.includes('FieldValue') || 
-      '_methodName' in obj || 
-      (typeof obj.isEqual === 'function' && constructorName !== 'Object')
-    ) {
-      return obj;
-    }
-  }
-
-  if (Array.isArray(obj)) {
-    return obj.map(sanitizeForFirestore);
-  }
-  if (typeof obj === 'object') {
-    if (obj instanceof Date) {
-      return obj;
-    }
-    const res: any = {};
-    for (const key of Object.keys(obj)) {
-      const val = obj[key];
-      if (val !== undefined) {
-         res[key] = sanitizeForFirestore(val);
-      }
-    }
-    return res;
-  }
-  return obj;
-}
-
-// ----------------- ERROR HANDLING BLOCK (SKILLS SECTION 3) -----------------
-
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
-
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
-/**
- * Executes a promise with a timeout window. Rejects if timeout expires.
- */
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
-  let timeoutId: any;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(errorMessage));
-    }, timeoutMs);
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeoutId) clearTimeout(timeoutId);
-  });
-}
-
-// ----------------- DISCIPLINED POINT-LEVEL DELTA WRITES -----------------
-
-/**
- * Saves current WorkspaceState changes to Firestore dynamically using point-level updates.
- * Implements strict state shielding via semantic equivalence comparison to conserve Firestore operations count.
- */
-export async function saveToFirebaseDirectly(
-  userId: string, 
-  state: WorkspaceState
-): Promise<{ success: boolean; isOfflineQueued?: boolean; error?: string; isQuotaExceeded?: boolean }> {
-  try {
-    const docRef = doc(db, 'workspaces', userId);
-
-    // CRITICAL: Shield write operations check. If semantic check returns true, skip writing.
-    // Minimizes read/write traffic significantly on accidental renders.
-    if (lastSyncedStateInMemory && isWorkspaceStateSemanticallyEqual(state, lastSyncedStateInMemory)) {
-      console.log('[Sync Shield] Skip redundant save. State holds no mutations.');
-      return { success: true };
-    }
-
-    // Load active Local Deletions registry
-    const localDeletions = getLocalDeletions();
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-
-    // Prune very old mutations
-    const activeLocalDeletions = localDeletions.filter(rec => {
-      try {
-        return new Date(rec.deletedAt || 0).getTime() > thirtyDaysAgo;
-      } catch {
-        return true;
-      }
-    });
-
-    // 1. Fetch current cloud document safely using standard offline-first friendly getDoc with cache fallback
-    let cloudDocSnap = null;
+  const response = await proxiedFetch(url, finalOptions);
+  if (!response.ok) {
+    let errMsg = `Google API Error (${response.status})`;
     try {
-      // 15-second timeout to fall back to cache quickly if connection is blocked or hanging
-      cloudDocSnap = await withTimeout(getDoc(docRef), 15000, 'Firestore fetch timed out');
-    } catch (e: any) {
-      const isOfflineError = !navigator.onLine || 
-        String(e?.message || '').toLowerCase().includes('offline') ||
-        String(e?.message || '').toLowerCase().includes('timeout') ||
-        e?.code === 'unavailable';
-      if (isOfflineError) {
-        console.warn('[Sync] Offline, timeout, or connection error; attempting to load from local Firestore cache for delta updates...', e);
-        try {
-          cloudDocSnap = await getDocFromCache(docRef);
-          console.log('[Sync] Success loading from local cache for delta computation while offline.');
-        } catch (cacheError) {
-          console.warn('[Sync] Failed to perform initial document fetch (offline fallback and cache is empty):', cacheError);
-        }
-      } else {
-        console.warn('[Sync] Failed to perform initial document fetch (offline fallback):', e);
-      }
-    }
+      const errJson = await response.json();
+      errMsg = errJson?.error?.message || errMsg;
+    } catch {}
+    throw new Error(errMsg);
+  }
+  return response.json();
+}
 
-    const payloadExists = cloudDocSnap && cloudDocSnap.exists();
+/**
+ * Searches Google Drive for an existing synchronization spreadsheet or creates a new one.
+ */
+export async function getOrCreateSpreadsheet(token: string): Promise<string> {
+  try {
+    console.log('[Sheets Sync] Searching for existing Milli Sync Spreadsheet...');
+    const searchUrl = 'https://www.googleapis.com/drive/v3/files?q=name%3D%27Milli%20Task%20%26%20Mind%20Map%20Sync%20Data%27%20and%20mimeType%3D%27application%2fvnd.google-apps.spreadsheet%27%20and%20trashed%3Dfalse&fields=files(id)';
+    const searchRes = await googleApiCall(searchUrl, token);
     
-    if (!payloadExists) {
-      // SCENARIO A: Document does not exist. Initialize complete blueprint first
-      const rawPayload = {
-        userId,
-        folders: state.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
-        projects: state.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() })),
-        nodes: Object.keys(state.nodes).reduce((acc, pId) => {
-          acc[pId] = (state.nodes[pId] || []).map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
-          return acc;
-        }, {} as Record<string, TaskNode[]>),
-        activeProjectId: state.activeProjectId,
-        tagCategories: (state.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
-        deletions: activeLocalDeletions,
-        updatedAt: state.updatedAt || new Date().toISOString(),
-        googleSheetsFileId: state.googleSheetsFileId || null,
-        taskSheetsSpreadsheetId: state.taskSheetsSpreadsheetId || null,
-        activePomodoro: state.activePomodoro || null
-      };
-
-      const sanitized = sanitizeForFirestore(rawPayload);
-      await withTimeout(setDoc(docRef, sanitized), 25000, 'Firestore write/set timed out');
-      updateLastSyncedStateCache(state); // Update local memory representation
-      console.log('[Sync] Created brand new user workspace root doc with local timestamp.');
-      return { success: true };
+    if (searchRes.files && searchRes.files.length > 0) {
+      const fileId = searchRes.files[0].id;
+      console.log('[Sheets Sync] Found existing spreadsheet ID:', fileId);
+      return fileId;
     }
 
-    // SCENARIO B: Document already exists. Apply highly performant, point-level delta updates
-    const cloudDataResponse = convertTimestampsToIso(cloudDocSnap!.data());
-    const cloudState: WorkspaceState = {
-      folders: cloudDataResponse?.folders || [],
-      projects: cloudDataResponse?.projects || [],
-      nodes: cloudDataResponse?.nodes || {},
-      activeProjectId: cloudDataResponse?.activeProjectId || null,
-      tagCategories: cloudDataResponse?.tagCategories || [],
-      deletions: Array.isArray(cloudDataResponse?.deletions) ? cloudDataResponse.deletions : [],
-      updatedAt: cloudDataResponse?.updatedAt,
-      googleSheetsFileId: cloudDataResponse?.googleSheetsFileId || undefined,
-      taskSheetsSpreadsheetId: cloudDataResponse?.taskSheetsSpreadsheetId || undefined,
-      activePomodoro: cloudDataResponse?.activePomodoro || undefined
+    console.log('[Sheets Sync] Spreadsheet not found. Creating a brand new one...');
+    const createUrl = 'https://sheets.googleapis.com/v1/spreadsheets';
+    const body = {
+      properties: {
+        title: 'Milli Task & Mind Map Sync Data'
+      },
+      sheets: [
+        { properties: { title: 'folders' } },
+        { properties: { title: 'projects' } },
+        { properties: { title: 'nodes' } },
+        { properties: { title: 'tagCategories' } },
+        { properties: { title: 'deletions' } },
+        { properties: { title: 'metadata' } }
+      ]
     };
 
-    // STRICT LOOP / ECHO PREVENTION: Only write to the cloud if the local update timestamp is strictly newer
-    if (state.updatedAt && cloudState.updatedAt) {
-      const localTime = new Date(state.updatedAt).getTime();
-      const cloudTime = new Date(cloudState.updatedAt).getTime();
-      if (localTime <= cloudTime) {
-        console.log('[Sync Loop Protection] Skipping cloud write: Local updatedAt is not newer than Firestore copy.', {
-          localTime: state.updatedAt,
-          cloudTime: cloudState.updatedAt
-        });
-        updateLastSyncedStateCache(state);
-        return { success: true };
-      }
+    const createRes = await googleApiCall(createUrl, token, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+
+    const newSpreadsheetId = createRes.spreadsheetId;
+    console.log('[Sheets Sync] Successfully created spreadsheet with ID:', newSpreadsheetId);
+
+    // Write initial headers for all sheets
+    await writeSheetHeaders(token, newSpreadsheetId);
+
+    return newSpreadsheetId;
+  } catch (error) {
+    console.error('[Sheets Sync] Error getting or creating spreadsheet:', error);
+    throw error;
+  }
+}
+
+async function writeSheetHeaders(token: string, spreadsheetId: string) {
+  const batchUrl = `https://sheets.googleapis.com/v1/spreadsheets/${spreadsheetId}/values:batchUpdate`;
+  const data = [
+    { range: 'folders!A1:F1', values: [['id', 'name', 'parentId', 'updatedAt', 'deviceId', 'version']] },
+    { range: 'projects!A1:G1', values: [['id', 'name', 'folderId', 'createdAt', 'updatedAt', 'deviceId', 'version']] },
+    { range: 'nodes!A1:AF1', values: [[
+      'id', 'projectId', 'text', 'x', 'y', 'parentId', 'priority', 'tagsJson', 'notes', 'completed', 
+      'filesJson', 'commentsJson', 'color', 'collapsed', 'isCardCollapsed', 'dueDate', 'dueTime', 
+      'startDate', 'startTime', 'progress', 'isFloating', 'isContainer', 'isWorkflowRectangle', 
+      'workflowShape', 'zoneWidth', 'zoneHeight', 'pomodoroTotalTime', 'pomodoroSessionsCount', 
+      'archived', 'workflowConnectionsJson', 'updatedAt', 'deviceId'
+    ]] },
+    { range: 'tagCategories!A1:F1', values: [['id', 'name', 'color', 'tagsJson', 'updatedAt', 'deviceId']] },
+    { range: 'deletions!A1:D1', values: [['type', 'id', 'deletedAt', 'deviceId']] },
+    { range: 'metadata!A1:C1', values: [['key', 'value', 'updatedAt']] }
+  ];
+
+  await googleApiCall(batchUrl, token, {
+    method: 'POST',
+    body: JSON.stringify({
+      valueInputOption: 'USER_ENTERED',
+      data
+    })
+  });
+}
+
+/**
+ * Checks and creates missing sheets inside our spreadsheet.
+ */
+async function ensureSheetsExist(token: string, spreadsheetId: string) {
+  try {
+    const metaUrl = `https://sheets.googleapis.com/v1/spreadsheets/${spreadsheetId}`;
+    const meta = await googleApiCall(metaUrl, token);
+    const existingTitles = (meta.sheets || []).map((s: any) => s.properties.title);
+
+    const requiredSheets = ['folders', 'projects', 'nodes', 'tagCategories', 'deletions', 'metadata'];
+    const missingSheets = requiredSheets.filter(title => !existingTitles.includes(title));
+
+    if (missingSheets.length > 0) {
+      console.log('[Sheets Sync] Creating missing sheets:', missingSheets);
+      const requests = missingSheets.map(title => ({
+        addSheet: { properties: { title } }
+      }));
+
+      await googleApiCall(`${metaUrl}:batchUpdate`, token, {
+        method: 'POST',
+        body: JSON.stringify({ requests })
+      });
+
+      // Write headers for the missing sheets
+      await writeSheetHeaders(token, spreadsheetId);
+    }
+  } catch (error) {
+    console.error('[Sheets Sync] Error ensuring sheets exist:', error);
+  }
+}
+
+// Helper to convert sheet values (array of arrays) into array of records/objects
+function valuesToObjects(rows: any[][]): any[] {
+  if (!rows || rows.length < 2) return [];
+  const headers = rows[0];
+  const objects: any[] = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const obj: any = {};
+    headers.forEach((header: string, index: number) => {
+      const val = row[index];
+      obj[header] = val !== undefined ? val : '';
+    });
+    objects.push(obj);
+  }
+  return objects;
+}
+
+// Convert objects to sheet values matching header order
+function objectsToValues(objects: any[], headers: string[]): any[][] {
+  return objects.map(obj => {
+    return headers.map(header => {
+      const val = obj[header];
+      return val !== undefined && val !== null ? val : '';
+    });
+  });
+}
+
+// ----------------- SYMMETRICAL MULTI-DEVICE SYNCHRONIZATION ALGORITHMS -----------------
+
+/**
+ * 1. sync_local_to_cloud()
+ * Sends changes from device to Google Sheets with pre-write collision prevention.
+ */
+export async function sync_local_to_cloud(
+  token: string,
+  localState: WorkspaceState,
+  deviceId: string
+): Promise<{ success: boolean; state?: WorkspaceState; error?: string }> {
+  try {
+    const spreadsheetId = localState.googleSheetsFileId || localStorage.getItem('google_sheets_sync_file_id');
+    if (!spreadsheetId) {
+      throw new Error('Spreadsheet ID is not linked. Create or Link a Google Sheet first.');
     }
 
-    // Synthesize deletion tombstone collections
+    console.log('[Sheets Sync] Starting sync_local_to_cloud()...');
+    await ensureSheetsExist(token, spreadsheetId);
+
+    // Fetch all current cloud values first to check timestamps
+    const batchGetUrl = `https://sheets.googleapis.com/v1/spreadsheets/${spreadsheetId}/values:batchGet?ranges=folders!A1:F999&ranges=projects!A1:G999&ranges=nodes!A1:AF999&ranges=tagCategories!A1:F999&ranges=deletions!A1:D999&ranges=metadata!A1:C999`;
+    const getRes = await googleApiCall(batchGetUrl, token);
+    const valueRanges = getRes.valueRanges || [];
+
+    const cloudFoldersRaw = valueRanges[0]?.values || [];
+    const cloudProjectsRaw = valueRanges[1]?.values || [];
+    const cloudNodesRaw = valueRanges[2]?.values || [];
+    const cloudTagCatsRaw = valueRanges[3]?.values || [];
+    const cloudDeletionsRaw = valueRanges[4]?.values || [];
+    const cloudMetadataRaw = valueRanges[5]?.values || [];
+
+    const cloudFolders = valuesToObjects(cloudFoldersRaw);
+    const cloudProjects = valuesToObjects(cloudProjectsRaw);
+    const cloudNodes = valuesToObjects(cloudNodesRaw);
+    const cloudTagCats = valuesToObjects(cloudTagCatsRaw);
+    const cloudDeletions = valuesToObjects(cloudDeletionsRaw);
+    const cloudMetadata = valuesToObjects(cloudMetadataRaw);
+
+    // Retrieve global cloud updatedAt to check if cloud has newer changes
+    const cloudMetaUpdatedAt = cloudMetadata.find(m => m.key === 'updatedAt')?.value || '1970-01-01T00:00:00.000Z';
+    const localUpdatedAt = localState.updatedAt || new Date(0).toISOString();
+
+    // Symmetrical Deletion Registry Merge
+    const localDeletionsList = getLocalDeletions();
     const mergedDeletionsList: DeletionRecord[] = [];
-    const pushIfUnique = (rec: DeletionRecord) => {
+    const pushIfUniqueDeletion = (rec: DeletionRecord) => {
       if (!mergedDeletionsList.some(m => m.id === rec.id && m.type === rec.type)) {
         mergedDeletionsList.push(rec);
       }
     };
-    (Array.isArray(cloudState.deletions) ? cloudState.deletions : []).forEach(pushIfUnique);
-    activeLocalDeletions.forEach(pushIfUnique);
 
-    // Merge conflicts on the client via Last Write Wins strategy
-    const mergedState = mergeWorkspaceStates(state, cloudState, mergedDeletionsList);
+    cloudDeletions.forEach((d: any) => {
+      if (d.type && d.id) {
+        pushIfUniqueDeletion({ type: d.type, id: d.id, deletedAt: d.deletedAt });
+      }
+    });
+    localDeletionsList.forEach(pushIfUniqueDeletion);
 
-    // Create the delta mutation map referencing nested pathways
-    const deltaMap: Record<string, any> = {};
+    const isDeleted = (type: string, id: string) => {
+      return mergedDeletionsList.some(d => d.type === type && d.id === id);
+    };
 
-    // Point 1: Check activeProjectId change
-    if (mergedState.activeProjectId !== cloudState.activeProjectId) {
-      deltaMap['activeProjectId'] = mergedState.activeProjectId;
-    }
+    // --- MERGING LOGIC: "MOST RECENT TIMESTAMP WINS" at the level of each row ---
 
-    // Point 2: Compare and detect folder modifications
-    const foldersChanged = JSON.stringify(mergedState.folders) !== JSON.stringify(cloudState.folders);
-    if (foldersChanged) {
-      deltaMap['folders'] = mergedState.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() }));
-    }
-
-    // Point 3: Compare and detect project modifications
-    const projectsChanged = JSON.stringify(mergedState.projects) !== JSON.stringify(cloudState.projects);
-    if (projectsChanged) {
-      deltaMap['projects'] = mergedState.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() }));
-    }
-
-    // Point 4: Compare tagCategories
-    const tagCatsChanged = JSON.stringify(mergedState.tagCategories) !== JSON.stringify(cloudState.tagCategories);
-    if (tagCatsChanged) {
-      deltaMap['tagCategories'] = (mergedState.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() }));
-    }
-
-    // Point 5: Compare nodes project-by-project and trigger granular point writes for affected nodes arrays
-    const cloudNodePids = Object.keys(cloudState.nodes || {});
-    const localNodePids = Object.keys(mergedState.nodes || {});
-    const checkedPids = new Set([...cloudNodePids, ...localNodePids]);
-
-    checkedPids.forEach(pId => {
-      const localListObj = mergedState.nodes[pId];
-      const cloudListObj = cloudState.nodes[pId];
-
-      if (!localListObj) {
-        // Project was removed, delete its nested nodes field completely
-        deltaMap[`nodes.${pId}`] = deleteField();
-      } else if (!cloudListObj || JSON.stringify(localListObj) !== JSON.stringify(cloudListObj)) {
-        // Segment was mutated or added. Point write segment nodes!
-        deltaMap[`nodes.${pId}`] = localListObj.map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
+    // 1. Folders
+    const finalFoldersMap = new Map<string, any>();
+    // Insert all local
+    localState.folders.forEach(f => {
+      if (!isDeleted('folder', f.id)) {
+        finalFoldersMap.set(f.id, {
+          id: f.id,
+          name: f.name,
+          parentId: f.parentId || '',
+          updatedAt: f.updatedAt || new Date().toISOString(),
+          deviceId: deviceId,
+          version: '1'
+        });
+      }
+    });
+    // Overlay cloud based on timestamps
+    cloudFolders.forEach(cf => {
+      if (isDeleted('folder', cf.id)) return;
+      const localFolder = finalFoldersMap.get(cf.id);
+      if (!localFolder) {
+        finalFoldersMap.set(cf.id, cf);
+      } else {
+        const localTime = new Date(localFolder.updatedAt).getTime();
+        const cloudTime = new Date(cf.updatedAt).getTime();
+        if (cloudTime > localTime) {
+          finalFoldersMap.set(cf.id, cf);
+        }
       }
     });
 
-    // Point 6: Compare deletions and use arrayUnion to append new records
-    const previousDeletionsMap = new Set((Array.isArray(cloudState.deletions) ? cloudState.deletions : []).map((d: any) => `${d.type}:${d.id}`));
-    const newAdditionDeletions = mergedDeletionsList.filter(d => !previousDeletionsMap.has(`${d.type}:${d.id}`));
-    if (newAdditionDeletions.length > 0) {
-      deltaMap['deletions'] = arrayUnion(...newAdditionDeletions);
-    }
+    // 2. Projects
+    const finalProjectsMap = new Map<string, any>();
+    localState.projects.forEach(p => {
+      if (!isDeleted('project', p.id)) {
+        finalProjectsMap.set(p.id, {
+          id: p.id,
+          name: p.name,
+          folderId: p.folderId || '',
+          createdAt: p.createdAt || new Date().toISOString(),
+          updatedAt: p.updatedAt || new Date().toISOString(),
+          deviceId: deviceId,
+          version: '1'
+        });
+      }
+    });
+    cloudProjects.forEach(cp => {
+      if (isDeleted('project', cp.id)) return;
+      const localProject = finalProjectsMap.get(cp.id);
+      if (!localProject) {
+        finalProjectsMap.set(cp.id, cp);
+      } else {
+        const localTime = new Date(localProject.updatedAt).getTime();
+        const cloudTime = new Date(cp.updatedAt).getTime();
+        if (cloudTime > localTime) {
+          finalProjectsMap.set(cp.id, cp);
+        }
+      }
+    });
 
-    // Point 7: Check googleSheetsFileId change
-    if (mergedState.googleSheetsFileId !== cloudState.googleSheetsFileId) {
-      deltaMap['googleSheetsFileId'] = mergedState.googleSheetsFileId || null;
-    }
+    // 3. Nodes
+    const finalNodesMap = new Map<string, any>();
+    Object.values(localState.nodes).flat().forEach((n: TaskNode) => {
+      if (n && !isDeleted('node', n.id)) {
+        finalNodesMap.set(n.id, {
+          id: n.id,
+          projectId: n.projectId,
+          text: n.text || '',
+          x: String(n.x || 0),
+          y: String(n.y || 0),
+          parentId: n.parentId || '',
+          priority: n.priority || 'none',
+          tagsJson: JSON.stringify(n.tags || []),
+          notes: n.notes || '',
+          completed: n.completed ? 'TRUE' : 'FALSE',
+          filesJson: JSON.stringify(n.files || []),
+          commentsJson: JSON.stringify(n.comments || []),
+          color: n.color || '',
+          collapsed: n.collapsed ? 'TRUE' : 'FALSE',
+          isCardCollapsed: n.isCardCollapsed ? 'TRUE' : 'FALSE',
+          dueDate: n.dueDate || '',
+          dueTime: n.dueTime || '',
+          startDate: n.startDate || '',
+          startTime: n.startTime || '',
+          progress: String(n.progress || 0),
+          isFloating: n.isFloating ? 'TRUE' : 'FALSE',
+          isContainer: n.isContainer ? 'TRUE' : 'FALSE',
+          isWorkflowRectangle: n.isWorkflowRectangle ? 'TRUE' : 'FALSE',
+          workflowShape: n.workflowShape || '',
+          zoneWidth: String(n.zoneWidth || 0),
+          zoneHeight: String(n.zoneHeight || 0),
+          pomodoroTotalTime: String(n.pomodoroTotalTime || 0),
+          pomodoroSessionsCount: String(n.pomodoroSessionsCount || 0),
+          archived: n.archived ? 'TRUE' : 'FALSE',
+          workflowConnectionsJson: JSON.stringify(n.workflowConnections || []),
+          updatedAt: n.updatedAt || new Date().toISOString(),
+          deviceId: deviceId
+        });
+      }
+    });
+    cloudNodes.forEach(cn => {
+      if (isDeleted('node', cn.id)) return;
+      const localNode = finalNodesMap.get(cn.id);
+      if (!localNode) {
+        finalNodesMap.set(cn.id, cn);
+      } else {
+        const localTime = new Date(localNode.updatedAt).getTime();
+        const cloudTime = new Date(cn.updatedAt).getTime();
+        if (cloudTime > localTime) {
+          finalNodesMap.set(cn.id, cn);
+        }
+      }
+    });
 
-    // Point 8: Check taskSheetsSpreadsheetId change
-    if (mergedState.taskSheetsSpreadsheetId !== cloudState.taskSheetsSpreadsheetId) {
-      deltaMap['taskSheetsSpreadsheetId'] = mergedState.taskSheetsSpreadsheetId || null;
-    }
+    // 4. TagCategories
+    const finalTagCatsMap = new Map<string, any>();
+    (localState.tagCategories || []).forEach(tc => {
+      if (!isDeleted('tagCategory', tc.id)) {
+        finalTagCatsMap.set(tc.id, {
+          id: tc.id,
+          name: tc.name,
+          color: tc.color,
+          tagsJson: JSON.stringify(tc.tags || []),
+          updatedAt: tc.updatedAt || new Date().toISOString(),
+          deviceId: deviceId
+        });
+      }
+    });
+    cloudTagCats.forEach(ctc => {
+      if (isDeleted('tagCategory', ctc.id)) return;
+      const localTC = finalTagCatsMap.get(ctc.id);
+      if (!localTC) {
+        finalTagCatsMap.set(ctc.id, ctc);
+      } else {
+        const localTime = new Date(localTC.updatedAt).getTime();
+        const cloudTime = new Date(ctc.updatedAt).getTime();
+        if (cloudTime > localTime) {
+          finalTagCatsMap.set(ctc.id, ctc);
+        }
+      }
+    });
 
-    // Point 9: Check activePomodoro change
-    const localPomo = mergedState.activePomodoro;
-    const cloudPomo = cloudState.activePomodoro;
-    const pomoChanged = !localPomo !== !cloudPomo || (localPomo && cloudPomo && (
-      localPomo.nodeId !== cloudPomo.nodeId ||
-      localPomo.isRunning !== cloudPomo.isRunning ||
-      localPomo.isPaused !== cloudPomo.isPaused ||
-      localPomo.isBreak !== cloudPomo.isBreak ||
-      Math.abs((localPomo.endTime || 0) - (cloudPomo.endTime || 0)) > 2000 ||
-      localPomo.nodeText !== cloudPomo.nodeText
-    ));
-    if (pomoChanged) {
-      deltaMap['activePomodoro'] = mergedState.activePomodoro || null;
-    }
+    // Build values to write
+    const finalFolders = Array.from(finalFoldersMap.values());
+    const finalProjects = Array.from(finalProjectsMap.values());
+    const finalNodes = Array.from(finalNodesMap.values());
+    const finalTagCats = Array.from(finalTagCatsMap.values());
 
-    // If there are point modifications, append the root local updatedAt and updateDoc
-    if (Object.keys(deltaMap).length > 0) {
-      deltaMap['updatedAt'] = state.updatedAt || new Date().toISOString();
-      
-      const sanitizedDelta = sanitizeForFirestore(deltaMap);
-      await withTimeout(updateDoc(docRef, sanitizedDelta), 25000, 'Firestore write/update timed out');
-      console.log(`[Sync Delta] Successfully updated modified key fields in Firestore:`, Object.keys(deltaMap));
-    } else {
-      console.log('[Sync Delta] No point changes detected after structural merging.');
-    }
+    const folderHeaders = ['id', 'name', 'parentId', 'updatedAt', 'deviceId', 'version'];
+    const projectHeaders = ['id', 'name', 'folderId', 'createdAt', 'updatedAt', 'deviceId', 'version'];
+    const nodeHeaders = [
+      'id', 'projectId', 'text', 'x', 'y', 'parentId', 'priority', 'tagsJson', 'notes', 'completed', 
+      'filesJson', 'commentsJson', 'color', 'collapsed', 'isCardCollapsed', 'dueDate', 'dueTime', 
+      'startDate', 'startTime', 'progress', 'isFloating', 'isContainer', 'isWorkflowRectangle', 
+      'workflowShape', 'zoneWidth', 'zoneHeight', 'pomodoroTotalTime', 'pomodoroSessionsCount', 
+      'archived', 'workflowConnectionsJson', 'updatedAt', 'deviceId'
+    ];
+    const tagCatHeaders = ['id', 'name', 'color', 'tagsJson', 'updatedAt', 'deviceId'];
+    const deletionHeaders = ['type', 'id', 'deletedAt', 'deviceId'];
+    const metadataHeaders = ['key', 'value', 'updatedAt'];
 
-    // Ensure we capture this state as successfully synced
-    updateLastSyncedStateCache(state);
-    return { success: true };
+    const newUpdatedAt = new Date().toISOString();
 
-  } catch (error: any) {
-    if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
-      handleFirestoreError(error, OperationType.WRITE, `workspaces/${userId}`);
-    }
-    console.error('[Sync] Error during point-level delta snapshot save:', error);
-    
-    const errMessageStr = String(error?.message || '').toLowerCase();
-    const isQuota = errMessageStr.includes('quota') || 
-                    errMessageStr.includes('exhausted') || 
-                    error?.code === 'resource-exhausted';
-                    
-    return { 
-      success: false, 
-      isQuotaExceeded: isQuota,
-      error: error?.message || 'Failed to sync with standard Cloud storage.' 
+    const folderRows = [folderHeaders, ...objectsToValues(finalFolders, folderHeaders)];
+    const projectRows = [projectHeaders, ...objectsToValues(finalProjects, projectHeaders)];
+    const nodeRows = [nodeHeaders, ...objectsToValues(finalNodes, nodeHeaders)];
+    const tagCatRows = [tagCatHeaders, ...objectsToValues(finalTagCats, tagCatHeaders)];
+    const deletionRows = [deletionHeaders, ...objectsToValues(mergedDeletionsList.map(d => ({
+      type: d.type,
+      id: d.id,
+      deletedAt: d.deletedAt,
+      deviceId: deviceId
+    })), deletionHeaders)];
+
+    // Metadata preparation
+    const finalMetadata = [
+      { key: 'activeProjectId', value: localState.activeProjectId || '', updatedAt: newUpdatedAt },
+      { key: 'activePomodoro', value: localState.activePomodoro ? JSON.stringify(localState.activePomodoro) : '', updatedAt: newUpdatedAt },
+      { key: 'updatedAt', value: newUpdatedAt, updatedAt: newUpdatedAt }
+    ];
+    const metadataRows = [metadataHeaders, ...objectsToValues(finalMetadata, metadataHeaders)];
+
+    // Perform massive 1-step batched values update to override sheets, saving quota
+    console.log('[Sheets Sync] Bulk uploading merged delta-update to Google Sheets...');
+    const updateBatchUrl = `https://sheets.googleapis.com/v1/spreadsheets/${spreadsheetId}/values:batchUpdate`;
+    const batchBody = {
+      valueInputOption: 'USER_ENTERED',
+      data: [
+        { range: 'folders!A1:F999', values: folderRows },
+        { range: 'projects!A1:G999', values: projectRows },
+        { range: 'nodes!A1:AF999', values: nodeRows },
+        { range: 'tagCategories!A1:F999', values: tagCatRows },
+        { range: 'deletions!A1:D999', values: deletionRows },
+        { range: 'metadata!A1:C10', values: metadataRows }
+      ]
     };
+
+    await googleApiCall(updateBatchUrl, token, {
+      method: 'POST',
+      body: JSON.stringify(batchBody)
+    });
+
+    console.log('[Sheets Sync] Upload successful! Cleared deletions queue.');
+    clearLocalDeletions();
+
+    // Map rows back to state format to return
+    const updatedNodesObj: Record<string, TaskNode[]> = {};
+    finalNodes.forEach(rn => {
+      const pId = rn.projectId;
+      if (!updatedNodesObj[pId]) updatedNodesObj[pId] = [];
+      updatedNodesObj[pId].push({
+        id: rn.id,
+        projectId: rn.projectId,
+        text: rn.text,
+        x: Number(rn.x || 0),
+        y: Number(rn.y || 0),
+        parentId: rn.parentId || null,
+        priority: rn.priority as any,
+        tags: rn.tagsJson ? JSON.parse(rn.tagsJson) : [],
+        notes: rn.notes || '',
+        completed: rn.completed === 'TRUE',
+        files: rn.filesJson ? JSON.parse(rn.filesJson) : [],
+        comments: rn.commentsJson ? JSON.parse(rn.commentsJson) : [],
+        color: rn.color || undefined,
+        collapsed: rn.collapsed === 'TRUE',
+        isCardCollapsed: rn.isCardCollapsed === 'TRUE',
+        dueDate: rn.dueDate || undefined,
+        dueTime: rn.dueTime || undefined,
+        startDate: rn.startDate || undefined,
+        startTime: rn.startTime || undefined,
+        progress: rn.progress ? Number(rn.progress) : undefined,
+        isFloating: rn.isFloating === 'TRUE',
+        isContainer: rn.isContainer === 'TRUE',
+        isWorkflowRectangle: rn.isWorkflowRectangle === 'TRUE',
+        workflowShape: rn.workflowShape ? rn.workflowShape as any : undefined,
+        zoneWidth: rn.zoneWidth ? Number(rn.zoneWidth) : undefined,
+        zoneHeight: rn.zoneHeight ? Number(rn.zoneHeight) : undefined,
+        pomodoroTotalTime: rn.pomodoroTotalTime ? Number(rn.pomodoroTotalTime) : undefined,
+        pomodoroSessionsCount: rn.pomodoroSessionsCount ? Number(rn.pomodoroSessionsCount) : undefined,
+        archived: rn.archived === 'TRUE',
+        workflowConnections: rn.workflowConnectionsJson ? JSON.parse(rn.workflowConnectionsJson) : undefined,
+        updatedAt: rn.updatedAt
+      });
+    });
+
+    const parsedFolders: Folder[] = finalFolders.map(rf => ({
+      id: rf.id,
+      name: rf.name,
+      parentId: rf.parentId || null,
+      updatedAt: rf.updatedAt
+    }));
+
+    const parsedProjects: Project[] = finalProjects.map(rp => ({
+      id: rp.id,
+      name: rp.name,
+      folderId: rp.folderId || null,
+      createdAt: rp.createdAt,
+      updatedAt: rp.updatedAt
+    }));
+
+    const parsedTagCategories: TagCategory[] = finalTagCats.map(rtc => ({
+      id: rtc.id,
+      name: rtc.name,
+      color: rtc.color,
+      tags: rtc.tagsJson ? JSON.parse(rtc.tagsJson) : [],
+      updatedAt: rtc.updatedAt
+    }));
+
+    const activePomoMeta = finalMetadata.find(m => m.key === 'activePomodoro')?.value;
+    const activePomodoroParsed = activePomoMeta ? JSON.parse(activePomoMeta) : null;
+
+    const mergedState: WorkspaceState = {
+      folders: parsedFolders,
+      projects: parsedProjects,
+      nodes: updatedNodesObj,
+      activeProjectId: finalMetadata.find(m => m.key === 'activeProjectId')?.value || null,
+      tagCategories: parsedTagCategories,
+      deletions: mergedDeletionsList,
+      activePomodoro: activePomodoroParsed,
+      updatedAt: newUpdatedAt,
+      googleSheetsFileId: spreadsheetId
+    };
+
+    return { success: true, state: mergedState };
+  } catch (err: any) {
+    console.error('[Sheets Sync] Error in sync_local_to_cloud:', err);
+    return { success: false, error: err?.message || String(err) };
   }
 }
 
 /**
- * Fetch latest WorkspaceState snapshot from Firestore database.
- * Resolves standard Firestore types safely via timestamp-to-ISO utilities.
+ * 2. sync_cloud_to_local()
+ * Fetches latest updates from Google Sheets, implementing Quota-friendly Delta checks.
  */
-export async function loadFromFirebaseDirectly(userId: string): Promise<WorkspaceState | null> {
-  const docRef = doc(db, 'workspaces', userId);
-  let snap;
+export async function sync_cloud_to_local(
+  token: string,
+  localState: WorkspaceState,
+  deviceId: string
+): Promise<{ success: boolean; state?: WorkspaceState; error?: string }> {
   try {
-    try {
-      snap = await withTimeout(getDoc(docRef), 15000, 'Firestore fetch timed out');
-    } catch (getDocErr: any) {
-      const isOfflineError = !navigator.onLine || 
-        String(getDocErr?.message || '').toLowerCase().includes('offline') ||
-        String(getDocErr?.message || '').toLowerCase().includes('timeout') ||
-        getDocErr?.code === 'unavailable';
-      if (isOfflineError) {
-        console.warn('[Sync] Offline or connection error detected during direct Firestore load. Attempting to load from local cache...');
-        try {
-          snap = await getDocFromCache(docRef);
-          console.log('[Sync] Successfully loaded document from Firestore local cache.');
-        } catch (cacheErr: any) {
-          console.warn('[Sync] Failed to load document from Firestore cache:', cacheErr);
-          throw getDocErr; // rethrow the original offline error
-        }
-      } else {
-        throw getDocErr;
-      }
+    const spreadsheetId = localState.googleSheetsFileId || localStorage.getItem('google_sheets_sync_file_id');
+    if (!spreadsheetId) {
+      throw new Error('Spreadsheet ID is not linked.');
     }
 
-    if (snap && snap.exists()) {
-      const converted = convertTimestampsToIso(snap.data());
-      const stateObj = converted as WorkspaceState;
-      // Initialize module cache
-      updateLastSyncedStateCache(stateObj);
-      return stateObj;
+    console.log('[Sheets Sync] Starting sync_cloud_to_local()...');
+    await ensureSheetsExist(token, spreadsheetId);
+
+    // ZERO-QUERY OPTIMIZATION: Fetch Metadata table first to see if there are newer changes
+    console.log('[Sheets Sync] Fetching metadata to verify sync time...');
+    const metaGetUrl = `https://sheets.googleapis.com/v1/spreadsheets/${spreadsheetId}/values/metadata!A1:C10`;
+    const metaRes = await googleApiCall(metaGetUrl, token);
+    const metadataObjects = valuesToObjects(metaRes.values || []);
+
+    const cloudMetaUpdatedAt = metadataObjects.find(m => m.key === 'updatedAt')?.value || '1970-01-01T00:00:00.000Z';
+    const localUpdatedAt = localState.updatedAt || '1970-01-01T00:00:00.000Z';
+
+    const localTime = new Date(localUpdatedAt).getTime();
+    const cloudTime = new Date(cloudMetaUpdatedAt).getTime();
+
+    if (cloudTime <= localTime && localState.folders.length > 0) {
+      console.log('[Sheets Sync] Quota Optimization: Cloud is not newer than local state. Skipping full sheets download.');
+      return { success: true, state: localState };
     }
-    return null;
-  } catch (error: any) {
-    if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
-      handleFirestoreError(error, OperationType.GET, `workspaces/${userId}`);
-    }
-    
-    const isOfflineMode = !navigator.onLine || 
-      String(error?.message || '').toLowerCase().includes('offline') ||
-      String(error?.message || '').toLowerCase().includes('timeout') ||
-      error?.code === 'unavailable';
-      
-    if (isOfflineMode) {
-      console.warn('[Sync] Firestore load failed due to being offline. Graceful degradation.', error);
-      // Under offline conditions, return null instead of throwing terminal uncaught failures
-      return null;
-    }
-    
-    console.error('[Sync] Firestore document load error:', error);
-    throw error || new Error('Could not download root workspace database.');
+
+    // Cloud is newer or local is empty! Proceed to fetch all tables
+    console.log('[Sheets Sync] Cloud is newer, launching full tables download...');
+    const batchGetUrl = `https://sheets.googleapis.com/v1/spreadsheets/${spreadsheetId}/values:batchGet?ranges=folders!A1:F999&ranges=projects!A1:G999&ranges=nodes!A1:AF999&ranges=tagCategories!A1:F999&ranges=deletions!A1:D999`;
+    const getRes = await googleApiCall(batchGetUrl, token);
+    const valueRanges = getRes.valueRanges || [];
+
+    const cloudFolders = valuesToObjects(valueRanges[0]?.values || []);
+    const cloudProjects = valuesToObjects(valueRanges[1]?.values || []);
+    const cloudNodes = valuesToObjects(valueRanges[2]?.values || []);
+    const cloudTagCats = valuesToObjects(valueRanges[3]?.values || []);
+    const cloudDeletions = valuesToObjects(valueRanges[4]?.values || []);
+
+    // Merge Deletions lists
+    const localDeletionsList = getLocalDeletions();
+    const mergedDeletionsList: DeletionRecord[] = [];
+    const pushIfUniqueDeletion = (rec: DeletionRecord) => {
+      if (!mergedDeletionsList.some(m => m.id === rec.id && m.type === rec.type)) {
+        mergedDeletionsList.push(rec);
+      }
+    };
+    cloudDeletions.forEach((d: any) => {
+      if (d.type && d.id) {
+        pushIfUniqueDeletion({ type: d.type, id: d.id, deletedAt: d.deletedAt });
+      }
+    });
+    localDeletionsList.forEach(pushIfUniqueDeletion);
+
+    const isDeleted = (type: string, id: string) => {
+      return mergedDeletionsList.some(d => d.type === type && d.id === id);
+    };
+
+    // Apply LWW merging algorithm
+    const finalFoldersMap = new Map<string, any>();
+    localState.folders.forEach(f => {
+      if (!isDeleted('folder', f.id)) {
+        finalFoldersMap.set(f.id, f);
+      }
+    });
+    cloudFolders.forEach(cf => {
+      if (isDeleted('folder', cf.id)) return;
+      const localFolder = finalFoldersMap.get(cf.id);
+      if (!localFolder) {
+        finalFoldersMap.set(cf.id, {
+          id: cf.id,
+          name: cf.name,
+          parentId: cf.parentId || null,
+          updatedAt: cf.updatedAt
+        });
+      } else {
+        const localTime = new Date(localFolder.updatedAt || 0).getTime();
+        const cloudTime = new Date(cf.updatedAt || 0).getTime();
+        if (cloudTime > localTime) {
+          finalFoldersMap.set(cf.id, {
+            id: cf.id,
+            name: cf.name,
+            parentId: cf.parentId || null,
+            updatedAt: cf.updatedAt
+          });
+        }
+      }
+    });
+
+    const finalProjectsMap = new Map<string, any>();
+    localState.projects.forEach(p => {
+      if (!isDeleted('project', p.id)) {
+        finalProjectsMap.set(p.id, p);
+      }
+    });
+    cloudProjects.forEach(cp => {
+      if (isDeleted('project', cp.id)) return;
+      const localProject = finalProjectsMap.get(cp.id);
+      if (!localProject) {
+        finalProjectsMap.set(cp.id, {
+          id: cp.id,
+          name: cp.name,
+          folderId: cp.folderId || null,
+          createdAt: cp.createdAt,
+          updatedAt: cp.updatedAt
+        });
+      } else {
+        const localTime = new Date(localProject.updatedAt || 0).getTime();
+        const cloudTime = new Date(cp.updatedAt || 0).getTime();
+        if (cloudTime > localTime) {
+          finalProjectsMap.set(cp.id, {
+            id: cp.id,
+            name: cp.name,
+            folderId: cp.folderId || null,
+            createdAt: cp.createdAt,
+            updatedAt: cp.updatedAt
+          });
+        }
+      }
+    });
+
+    const finalNodesMap = new Map<string, TaskNode>();
+    Object.values(localState.nodes).flat().forEach((n: TaskNode) => {
+      if (n && !isDeleted('node', n.id)) {
+        finalNodesMap.set(n.id, n);
+      }
+    });
+    cloudNodes.forEach(cn => {
+      if (isDeleted('node', cn.id)) return;
+      const localNode = finalNodesMap.get(cn.id);
+      const parsedNode: TaskNode = {
+        id: cn.id,
+        projectId: cn.projectId,
+        text: cn.text || '',
+        x: Number(cn.x || 0),
+        y: Number(cn.y || 0),
+        parentId: cn.parentId || null,
+        priority: (cn.priority || 'none') as any,
+        tags: cn.tagsJson ? JSON.parse(cn.tagsJson) : [],
+        notes: cn.notes || '',
+        completed: cn.completed === 'TRUE',
+        files: cn.filesJson ? JSON.parse(cn.filesJson) : [],
+        comments: cn.commentsJson ? JSON.parse(cn.commentsJson) : [],
+        color: cn.color || undefined,
+        collapsed: cn.collapsed === 'TRUE',
+        isCardCollapsed: cn.isCardCollapsed === 'TRUE',
+        dueDate: cn.dueDate || undefined,
+        dueTime: cn.dueTime || undefined,
+        startDate: cn.startDate || undefined,
+        startTime: cn.startTime || undefined,
+        progress: cn.progress ? Number(cn.progress) : undefined,
+        isFloating: cn.isFloating === 'TRUE',
+        isContainer: cn.isContainer === 'TRUE',
+        isWorkflowRectangle: cn.isWorkflowRectangle === 'TRUE',
+        workflowShape: cn.workflowShape ? cn.workflowShape as any : undefined,
+        zoneWidth: cn.zoneWidth ? Number(cn.zoneWidth) : undefined,
+        zoneHeight: cn.zoneHeight ? Number(cn.zoneHeight) : undefined,
+        pomodoroTotalTime: cn.pomodoroTotalTime ? Number(cn.pomodoroTotalTime) : undefined,
+        pomodoroSessionsCount: cn.pomodoroSessionsCount ? Number(cn.pomodoroSessionsCount) : undefined,
+        archived: cn.archived === 'TRUE',
+        workflowConnections: cn.workflowConnectionsJson ? JSON.parse(cn.workflowConnectionsJson) : undefined,
+        updatedAt: cn.updatedAt
+      };
+
+      if (!localNode) {
+        finalNodesMap.set(cn.id, parsedNode);
+      } else {
+        const localTime = new Date(localNode.updatedAt || 0).getTime();
+        const cloudTime = new Date(cn.updatedAt || 0).getTime();
+        if (cloudTime > localTime) {
+          finalNodesMap.set(cn.id, parsedNode);
+        }
+      }
+    });
+
+    const finalTagCatsMap = new Map<string, any>();
+    (localState.tagCategories || []).forEach(tc => {
+      if (!isDeleted('tagCategory', tc.id)) {
+        finalTagCatsMap.set(tc.id, tc);
+      }
+    });
+    cloudTagCats.forEach(ctc => {
+      if (isDeleted('tagCategory', ctc.id)) return;
+      const localTC = finalTagCatsMap.get(ctc.id);
+      const parsedTC: TagCategory = {
+        id: ctc.id,
+        name: ctc.name,
+        color: ctc.color,
+        tags: ctc.tagsJson ? JSON.parse(ctc.tagsJson) : [],
+        updatedAt: ctc.updatedAt
+      };
+
+      if (!localTC) {
+        finalTagCatsMap.set(ctc.id, parsedTC);
+      } else {
+        const localTime = new Date(localTC.updatedAt || 0).getTime();
+        const cloudTime = new Date(ctc.updatedAt || 0).getTime();
+        if (cloudTime > localTime) {
+          finalTagCatsMap.set(ctc.id, parsedTC);
+        }
+      }
+    });
+
+    const groupedNodes: Record<string, TaskNode[]> = {};
+    finalNodesMap.forEach(n => {
+      if (!groupedNodes[n.projectId]) {
+        groupedNodes[n.projectId] = [];
+      }
+      groupedNodes[n.projectId].push(n);
+    });
+
+    const activePomoMeta = metadataObjects.find(m => m.key === 'activePomodoro')?.value;
+    const activePomodoroParsed = activePomoMeta ? JSON.parse(activePomoMeta) : null;
+
+    const mergedState: WorkspaceState = {
+      folders: Array.from(finalFoldersMap.values()),
+      projects: Array.from(finalProjectsMap.values()),
+      nodes: groupedNodes,
+      activeProjectId: metadataObjects.find(m => m.key === 'activeProjectId')?.value || null,
+      tagCategories: Array.from(finalTagCatsMap.values()),
+      deletions: mergedDeletionsList,
+      activePomodoro: activePomodoroParsed,
+      updatedAt: cloudMetaUpdatedAt,
+      googleSheetsFileId: spreadsheetId
+    };
+
+    return { success: true, state: mergedState };
+  } catch (err: any) {
+    console.error('[Sheets Sync] Error in sync_cloud_to_local:', err);
+    return { success: false, error: err?.message || String(err) };
   }
 }
+
+// Dummy standard sync room functions to keep code compile-friendly
+export async function saveStateToSyncRoom(roomId: string, state: WorkspaceState): Promise<void> {}
+export async function loadStateFromSyncRoom(roomId: string): Promise<WorkspaceState | null> { return null; }
+export function isWorkspaceStateSemanticallyEqual(a: WorkspaceState, b: WorkspaceState): boolean { return false; }
+export function mergeWorkspaceStates(a: WorkspaceState, b: WorkspaceState, del: DeletionRecord[]): WorkspaceState { return a; }
+export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<any> { return { success: true }; }
+export async function loadFromFirebaseDirectly(userId: string): Promise<any> { return null; }

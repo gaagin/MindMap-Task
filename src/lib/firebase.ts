@@ -95,6 +95,9 @@ export const db = initializeFirestore(
 export const auth = getAuth(app);
 
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
+
 // Prioritize user's account and avoid showing "Choose your account" screen
 googleProvider.setCustomParameters({
   login_hint: 'adibavtomatika@gmail.com'
@@ -122,7 +125,7 @@ const isMobileOrIframe = (): boolean => {
   return isMobile || isInsideIframe;
 };
 
-export const googleSignIn = async (): Promise<{ user: User } | null> => {
+export const googleSignIn = async (): Promise<{ user: User; accessToken: string | null } | null> => {
   try {
     try {
       localStorage.removeItem('explicit_logout');
@@ -135,7 +138,9 @@ export const googleSignIn = async (): Promise<{ user: User } | null> => {
     try {
       console.log('[Auth] Attempting Google signInWithPopup...');
       const result = await signInWithPopup(auth, googleProvider);
-      return { user: result.user };
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const accessToken = credential?.accessToken || null;
+      return { user: result.user, accessToken };
     } catch (popupError: any) {
       // If popup fails or is blocked (e.g. by popup blockers or if inside an iframe),
       // we fall back to signInWithRedirect as the secondary mechanism.

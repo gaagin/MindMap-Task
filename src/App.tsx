@@ -67,14 +67,13 @@ import {
   getRedirectResult
 } from './lib/firebase';
 import { 
-  saveToFirebaseDirectly, 
-  loadFromFirebaseDirectly, 
-  mergeWorkspaceStates,
   logDeletion,
-  getLocalDeletions
+  getLocalDeletions,
+  getOrCreateSpreadsheet,
+  sync_local_to_cloud,
+  sync_cloud_to_local
 } from './lib/syncService';
-import { doc, onSnapshot, updateDoc, getDoc, setDoc } from 'firebase/firestore';
-import { User } from 'firebase/auth';
+import { GoogleAuthProvider, User } from 'firebase/auth';
 
 /**
  * Automatically computes precisely what entities were changed and stamps them with updatedAt.
@@ -449,7 +448,13 @@ export default function App() {
 
   // Firebase Authentication & Symmetrical Sync statuses
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('google_access_token');
+    } catch {
+      return null;
+    }
+  });
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
   const [forceCloudSyncLoading, setForceCloudSyncLoading] = useState<'upload' | 'download' | null>(null);
   const [forceCloudSyncFeedback, setForceCloudSyncFeedback] = useState<string | null>(null);
@@ -493,7 +498,12 @@ export default function App() {
       const res = await googleSignIn();
       if (res) {
         setCurrentUser(res.user);
-        setGoogleToken(null);
+        if (res.accessToken) {
+          setGoogleToken(res.accessToken);
+          try {
+            localStorage.setItem('google_access_token', res.accessToken);
+          } catch (e) {}
+        }
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         try {
           localStorage.setItem('auth_method', 'google');
@@ -536,6 +546,33 @@ export default function App() {
   const [roomSyncStatus, setRoomSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle');
   const [roomSyncFeedback, setRoomSyncFeedback] = useState<string | null>(null);
   const [syncTab, setSyncTab] = useState<'pairing' | 'firebase'>('firebase');
+  
+  // Google Sheets Sync States & Refs
+  const [syncStatusSheets, setSyncStatusSheets] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle');
+  const [sheetsFeedback, setSheetsFeedback] = useState<string | null>(null);
+  const [autoSaveSheets, setAutoSaveSheets] = useState<boolean>(() => {
+    try {
+      const val = localStorage.getItem('milli_sheets_auto_sync');
+      return val === null ? true : val === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  const deviceIdRef = React.useRef<string>('');
+  if (!deviceIdRef.current) {
+    try {
+      let id = localStorage.getItem('milli_device_id');
+      if (!id) {
+        id = 'dev_' + Math.random().toString(36).substring(2, 10);
+        localStorage.setItem('milli_device_id', id);
+      }
+      deviceIdRef.current = id;
+    } catch {
+      deviceIdRef.current = 'dev_fallback';
+    }
+  }
+
   const [syncStatus, setSyncStatus] = useState<{
     local: 'saved' | 'saving' | 'error';
     firebase: 'idle' | 'saved' | 'syncing' | 'error';
@@ -669,16 +706,7 @@ export default function App() {
                 localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextState));
                 setGlobalPomo(nextState);
 
-                // Firestore sync
-                const userObj = currentUserRef.current;
-                if (userObj) {
-                  const userDocRef = doc(db, 'workspaces', userObj.uid);
-                  updateDoc(userDocRef, {
-                    activePomodoro: nextState
-                  }).catch(err => {
-                    console.warn('[Firebase Pomo Sync] Failed to update activePomodoro to break:', err);
-                  });
-                }
+
 
                 window.dispatchEvent(new Event('task_mindmap_pomo_update'));
                 return;
@@ -701,16 +729,7 @@ export default function App() {
                 localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextState));
                 setGlobalPomo(nextState);
 
-                // Firestore sync
-                const userObj = currentUserRef.current;
-                if (userObj) {
-                  const userDocRef = doc(db, 'workspaces', userObj.uid);
-                  updateDoc(userDocRef, {
-                    activePomodoro: nextState
-                  }).catch(err => {
-                    console.warn('[Firebase Pomo Sync] Failed to clear activePomodoro on break complete:', err);
-                  });
-                }
+
 
                 window.dispatchEvent(new Event('task_mindmap_pomo_update'));
                 return;
@@ -1167,7 +1186,14 @@ export default function App() {
           console.log('[Auth] Google redirect sign-in success:', result.user.email);
           isFirstSnapshotRef.current = true;
           setCurrentUser(result.user);
-          setGoogleToken(null);
+          const credential = GoogleAuthProvider.credentialFromResult(result);
+          const token = credential?.accessToken || null;
+          if (token) {
+            setGoogleToken(token);
+            try {
+              localStorage.setItem('google_access_token', token);
+            } catch (e) {}
+          }
           setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
         }
       })
@@ -1184,492 +1210,11 @@ export default function App() {
   const unsyncedEditsCountRef = React.useRef(unsyncedEditsCount);
   unsyncedEditsCountRef.current = unsyncedEditsCount;
 
-  // Zero-auth sync room helper functions & effects
-  const lastRoomStateRef = React.useRef<any>(null);
-  const lastSeenRoomStateRef = React.useRef<WorkspaceState | null>(null);
+  // Google Sheets sync engine goes here
 
-  const getMergedRoomState = (cloudData: any): WorkspaceState => {
-    let localDeletions: DeletionRecord[] = [];
-    try {
-      const saved = localStorage.getItem('milli_deleted_registry') || '[]';
-      const parsed = JSON.parse(saved);
-      localDeletions = Array.isArray(parsed) ? parsed : [];
-    } catch {}
+  // ==================== GOOGLE SHEETS SYNCHRONIZATION ENGINE ====================
 
-    const cloudDeletions: DeletionRecord[] = Array.isArray(cloudData?.deletions) ? cloudData.deletions : [];
-    
-    const delMap = new Map<string, DeletionRecord>();
-    (localDeletions || []).forEach(d => {
-      if (d && d.id) delMap.set(`${d.type}:${d.id}`, d);
-    });
-    cloudDeletions.forEach(d => {
-      if (d && d.id) {
-        const key = `${d.type}:${d.id}`;
-        const existing = delMap.get(key);
-        if (!existing || new Date(d.deletedAt || 0).getTime() > new Date(existing.deletedAt || 0).getTime()) {
-          delMap.set(key, d);
-        }
-      }
-    });
-    const mergedDeletions = Array.from(delMap.values());
-    try {
-      localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
-    } catch {}
-
-    const isDeleted = (type: string, id: string) => {
-      return mergedDeletions.some(d => d.type === type && d.id === id);
-    };
-
-    const filteredFolders = (cloudData.folders || []).filter((f: any) => !isDeleted('folder', f.id));
-    const filteredProjects = (cloudData.projects || []).filter((p: any) => !isDeleted('project', p.id));
-    const filteredNodes: Record<string, TaskNode[]> = {};
-    Object.keys(cloudData.nodes || {}).forEach(pid => {
-      const list = (cloudData.nodes[pid] || []).filter((n: any) => !isDeleted('node', n.id));
-      if (list.length > 0) {
-        filteredNodes[pid] = list;
-      }
-    });
-    const filteredTagCats = (cloudData.tagCategories || []).filter((tc: any) => !isDeleted('tagCategory', tc.id));
-
-    const cloudState: WorkspaceState = {
-      folders: filteredFolders,
-      projects: filteredProjects,
-      nodes: filteredNodes,
-      activeProjectId: cloudData.activeProjectId || null,
-      tagCategories: filteredTagCats,
-      deletions: mergedDeletions
-    };
-
-    const normalizedCloud = normalizeWorkspaceState(cloudState);
-    return normalizeWorkspaceState(mergeWorkspaceStates(stateRef.current, normalizedCloud, mergedDeletions));
-  };
-
-  const saveStateToSyncRoom = async (roomIdToUse?: string, forceState?: WorkspaceState) => {
-    const id = (roomIdToUse || roomSyncId || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    if (!id) return;
-    setRoomSyncStatus('syncing');
-    setRoomSyncFeedback(null);
-    try {
-      const stateToSave = forceState || stateRef.current;
-      
-      // 1. Try Express API first
-      let apiSuccess = false;
-      let apiErrorMsg = '';
-      try {
-        const res = await fetch('/api/sync/room/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId: id, state: stateToSave })
-        });
-        
-        let data: any = {};
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          data = await res.json();
-        } else {
-          const textStr = await res.text();
-          if (!res.ok) {
-            throw new Error(`Ошибка сервера (${res.status}): ${textStr.substring(0, 120)}`);
-          }
-          data = { error: textStr || 'Неверный формат ответа от сервера' };
-        }
-
-        if (!res.ok) {
-          throw new Error(data.error || `Ошибка сервера (${res.status})`);
-        }
-        apiSuccess = true;
-      } catch (err: any) {
-        console.warn('[Sync] Express API failed, falling back to Firebase Firestore:', err);
-        apiErrorMsg = err?.message || String(err);
-      }
-
-      // 2. Try Firestore fallback
-      let firestoreSuccess = false;
-      try {
-        const docRef = doc(db, 'sync_rooms', id);
-        const cleanState = JSON.parse(JSON.stringify(stateToSave));
-        await setDoc(docRef, { state: cleanState, updatedAt: new Date().toISOString() });
-        firestoreSuccess = true;
-      } catch (firestoreErr: any) {
-        console.error('[Sync] Firestore pairing sync also failed:', firestoreErr);
-        if (!apiSuccess) {
-          throw new Error(`Не удалось сохранить ни на сервере, ни в Firebase.\nОшибка API: ${apiErrorMsg}\nОшибка БД: ${firestoreErr.message}`);
-        }
-      }
-
-      setRoomSyncStatus('saved');
-      const timeStr = new Date().toLocaleTimeString();
-      if (apiSuccess && firestoreSuccess) {
-        setRoomSyncFeedback(`Данные выгружены на Сервер и в Облако "${id}" (${timeStr})`);
-      } else if (firestoreSuccess) {
-        setRoomSyncFeedback(`Данные выгружены в Облако "${id}" (${timeStr})`);
-      } else {
-        setRoomSyncFeedback(`Данные выгружены на Сервер "${id}" (${timeStr})`);
-      }
-      localStorage.setItem('milli_room_sync_id', id);
-    } catch (err: any) {
-      console.error('[Sync Room Save Error]:', err);
-      setRoomSyncStatus('error');
-      setRoomSyncFeedback(`Ошибка выгрузки: ${err?.message || String(err)}`);
-    }
-  };
-
-  const loadStateFromSyncRoom = async (roomIdToUse?: string) => {
-    const id = (roomIdToUse || roomSyncId || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    if (!id) return;
-    setRoomSyncStatus('syncing');
-    setRoomSyncFeedback(null);
-    try {
-      let stateFromCloud: WorkspaceState | null = null;
-      let loadedSource = '';
-
-      // 1. Try Express API first
-      try {
-        const res = await fetch(`/api/sync/room/load/${id}`);
-        if (res.ok) {
-          const contentType = res.headers.get('content-type') || '';
-          if (contentType.includes('application/json')) {
-            const data = await res.json();
-            if (data && data.state) {
-              stateFromCloud = data.state;
-              loadedSource = 'Резервный';
-            }
-          }
-        } else if (res.status !== 404) {
-          console.warn(`[Sync] Express load failed with status ${res.status}`);
-        }
-      } catch (err) {
-        console.warn('[Sync] Express load fetch failed, falling back to Firebase Firestore:', err);
-      }
-
-      // 2. Try Firestore fallback
-      if (!stateFromCloud) {
-        try {
-          const docRef = doc(db, 'sync_rooms', id);
-          const snap = await getDoc(docRef);
-          if (snap.exists()) {
-            const data = snap.data();
-            if (data && data.state) {
-              stateFromCloud = data.state;
-              loadedSource = 'Облако';
-            }
-          }
-        } catch (firestoreErr) {
-          console.error('[Sync] Firestore fallback load failed:', firestoreErr);
-        }
-      }
-
-      // 3. Auto-initialize room if not found anywhere (new room)
-      if (!stateFromCloud) {
-        console.log('[Sync] Room not found anywhere, initializing/saving current state as initial data.');
-        await saveStateToSyncRoom(id);
-        return;
-      }
-
-      const merged = getMergedRoomState(stateFromCloud);
-      const mergedHash = getSyncHash(merged);
-      const localHash = getSyncHash(stateRef.current);
-      const cloudHash = getSyncHash(stateFromCloud);
-
-      let didUpdate = false;
-      if (mergedHash !== localHash) {
-        ignoreNextStateChangeRef.current = true;
-        setRawState(merged);
-        didUpdate = true;
-      }
-
-      if (mergedHash !== cloudHash) {
-        await saveStateToSyncRoom(id, merged);
-      } else {
-        setRoomSyncStatus('saved');
-        setRoomSyncFeedback(didUpdate 
-          ? `Данные синхронизированы и объединены (источник: ${loadedSource})!`
-          : `Уже синхронизировано с комнатой "${id}" (источник: ${loadedSource}).`
-        );
-      }
-      localStorage.setItem('milli_room_sync_id', id);
-    } catch (err: any) {
-      console.error('[Sync Room Load Error]:', err);
-      setRoomSyncStatus('error');
-      setRoomSyncFeedback(err?.message || String(err));
-    }
-  };
-
-  // Safe debounce auto-uploader for custom pairing sync-room
-  useEffect(() => {
-    if (!roomSyncAuto || !roomSyncId) return;
-    if (ignoreNextStateChangeRef.current) {
-      ignoreNextStateChangeRef.current = false;
-      return;
-    }
-
-    const cleanId = roomSyncId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    if (!cleanId) return;
-
-    // Check if state is different from what we last saw
-    if (lastSeenRoomStateRef.current && isStateSemanticallyEqual(state, lastSeenRoomStateRef.current)) {
-      return;
-    }
-    if (lastRoomStateRef.current && isStateSemanticallyEqual(state, lastRoomStateRef.current)) {
-      return;
-    }
-    lastRoomStateRef.current = state;
-
-    setRoomSyncStatus('syncing');
-    const timer = setTimeout(async () => {
-      try {
-        await saveStateToSyncRoom(cleanId, state);
-      } catch (err) {
-        console.error('[Room Sync Auto Save Error]:', err);
-      }
-    }, 3000); // 3-second rate-limiting debounce
-
-    return () => clearTimeout(timer);
-  }, [state, roomSyncAuto, roomSyncId]);
-
-  // Real-time Firestore snapshot synchronization for Symmetrical Device Sync Room (Pairing via roomSyncId)
-  useEffect(() => {
-    if (!roomSyncAuto || !roomSyncId) return;
-
-    const cleanId = roomSyncId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    if (!cleanId) return;
-
-    console.log(`[Room Sync] Subscribed to real-time sync room: "${cleanId}"`);
-    const docRef = doc(db, 'sync_rooms', cleanId);
-    
-    const unsubscribe = onSnapshot(docRef, (snap) => {
-      if (!snap.exists()) {
-        console.log('[Room Sync] Room doc does not exist yet.');
-        return;
-      }
-      const data = snap.data();
-      if (!data || !data.state) return;
-
-      const cloudState = data.state;
-      const currentState = stateRef.current;
-      
-      const normalizedCloud = normalizeWorkspaceState(cloudState);
-      const isEquivalent = isStateSemanticallyEqual(currentState, normalizedCloud);
-      
-      if (!isEquivalent) {
-        console.log('[Room Sync] Incoming room state is different. Merging...');
-        const merged = normalizeWorkspaceState(mergeWorkspaceStates(currentState, normalizedCloud, getLocalDeletions()));
-        
-        const mergedHash = getSyncHash(merged);
-        const currentLocalHash = getSyncHash(currentState);
-        const cloudHash = getSyncHash(normalizedCloud);
-
-        lastSeenRoomStateRef.current = normalizedCloud;
-
-        // If the merged state has newer cloud updates, apply them locally
-        if (mergedHash !== currentLocalHash) {
-          console.log('[Room Sync] Applying newer updates from room to local...');
-          ignoreNextStateChangeRef.current = true;
-          setRawState(merged);
-          setRoomSyncStatus('saved');
-        }
-
-        // If local has newer updates that need to go to the room, save them
-        if (mergedHash !== cloudHash) {
-          console.log('[Room Sync] Local has newer updates, updating room...');
-          saveStateToSyncRoom(cleanId, merged);
-        }
-      } else {
-        lastSeenRoomStateRef.current = normalizedCloud;
-        setRoomSyncStatus('saved');
-      }
-    }, (error) => {
-      console.error('[Room Sync Error]:', error);
-      setRoomSyncStatus('error');
-    });
-
-    return () => unsubscribe();
-  }, [roomSyncAuto, roomSyncId]);
-
-  // 3. Real-time Firestore snapshot synchronization for instant Desktop-to-Mobile and Mobile-To-Desktop updates
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const docRef = doc(db, 'workspaces', currentUser.uid);
-    const unsubscribe = onSnapshot(docRef, (snap) => {
-      if (!snap.exists()) {
-        console.log('[Sync] User workspace document does not exist in standard cloud storage yet.');
-        setIsInitialSyncComplete(true);
-        isFirstSnapshotRef.current = false;
-        lastSyncedStateHashRef.current = ''; // Reset cached hash to allow initial local upload
-        // Set unsynced edits count to trigger initial upload of client state to Cloud
-        setUnsyncedEditsCount(prev => Math.max(1, prev));
-        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-        return;
-      }
-      const cloudData = snap.data();
-      if (!cloudData) return;
-
-      // Real-time Pomodoro state synchronization across devices
-      if (cloudData.activePomodoro) {
-        try {
-          const localPomoSaved = localStorage.getItem('task_mindmap_pomodoro');
-          const localPomo = localPomoSaved ? JSON.parse(localPomoSaved) : null;
-          const cloudPomo = cloudData.activePomodoro;
-
-          const isPomoSubstantivelyDifferent = !localPomo || 
-            localPomo.nodeId !== cloudPomo.nodeId ||
-            localPomo.isRunning !== cloudPomo.isRunning ||
-            localPomo.isPaused !== cloudPomo.isPaused ||
-            localPomo.isBreak !== cloudPomo.isBreak ||
-            // Support small clock deviations between devices by checking if endTime difference is larger than 2 seconds
-            Math.abs((localPomo.endTime || 0) - (cloudPomo.endTime || 0)) > 2000 ||
-            localPomo.nodeText !== cloudPomo.nodeText;
-
-          if (isPomoSubstantivelyDifferent) {
-            console.log('[Sync] Received substantive active Pomodoro update from Firestore, updating local state.');
-            localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(cloudPomo));
-            window.dispatchEvent(new Event('task_mindmap_pomo_update'));
-          }
-        } catch (e) {
-          console.error('[Sync] Error syncing active Pomodoro from Firestore snapshot:', e);
-        }
-      } else {
-        try {
-          const localPomoSaved = localStorage.getItem('task_mindmap_pomodoro');
-          if (localPomoSaved) {
-            const localPomo = JSON.parse(localPomoSaved);
-            if (localPomo && localPomo.isRunning) {
-              console.log('[Sync] Pomodoro cleared in cloud, resetting local timer.');
-              localStorage.removeItem('task_mindmap_pomodoro');
-              window.dispatchEvent(new Event('task_mindmap_pomo_update'));
-            }
-          }
-        } catch (e) {
-          console.error('[Sync] Error checking local active Pomodoro when cloud is empty:', e);
-        }
-      }
-
-      const localDeletions = (() => {
-        try {
-          const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
-          const parsed = JSON.parse(listJson);
-          return Array.isArray(parsed) ? parsed : [];
-        } catch {
-          return [];
-        }
-      })();
-      const cloudDeletions = Array.isArray(cloudData?.deletions) ? cloudData.deletions : [];
-      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      const mergedDeletions: any[] = [];
-      const appendUnique = (rec: any) => {
-        try {
-          const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
-          if (deletedAtMs < thirtyDaysAgo) return; // Prune deletions older than 30 days
-        } catch {
-          // Safeguard
-        }
-        if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
-          mergedDeletions.push(rec);
-        }
-      };
-      (localDeletions || []).forEach(appendUnique);
-      (cloudDeletions || []).forEach(appendUnique);
-
-      // Save them back to local storage
-      try {
-        localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
-      } catch (e) {
-        console.error(e);
-      }
-
-      const isDeleted = (type: string, id: string) => {
-        return mergedDeletions.some(d => d.type === type && d.id === id);
-      };
-
-      const filteredFolders = (cloudData.folders || []).filter((f: any) => !isDeleted('folder', f.id));
-      const filteredProjects = (cloudData.projects || []).filter((p: any) => !isDeleted('project', p.id));
-      const filteredNodes: Record<string, TaskNode[]> = {};
-      Object.keys(cloudData.nodes || {}).forEach(pid => {
-        const list = (cloudData.nodes[pid] || []).filter((n: any) => !isDeleted('node', n.id));
-        if (list.length > 0) {
-          filteredNodes[pid] = list;
-        }
-      });
-      const filteredTagCats = (cloudData.tagCategories || []).filter((tc: any) => !isDeleted('tagCategory', tc.id));
-
-      const cloudState: WorkspaceState = {
-        folders: filteredFolders,
-        projects: filteredProjects,
-        nodes: filteredNodes,
-        activeProjectId: cloudData.activeProjectId || null,
-        tagCategories: filteredTagCats,
-        googleSheetsFileId: cloudData.googleSheetsFileId || undefined,
-        taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined,
-        deletions: mergedDeletions
-      };
-
-      const currentState = stateRef.current;
-      const normalizedCloud = normalizeWorkspaceState(cloudState);
-      const isEquivalent = isStateSemanticallyEqual(currentState, normalizedCloud);
-      const fromCache = !!snap.metadata?.fromCache;
-      
-      // Allow writes immediately upon first snapshot (even if loaded from cache)
-      setIsInitialSyncComplete(true);
-
-      const cloudHash = getSyncHash(normalizedCloud);
-
-      if (!isEquivalent) {
-        console.log('[Sync] Cloud state is different from local. Performing robust Last-Write-Wins merge values...');
-        
-        // 1. Always perform a professional, safe Last-Write-Wins merge between current local state and incoming cloud state
-        const merged = normalizeWorkspaceState(mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions));
-        
-        isFirstSnapshotRef.current = false;
-        
-        const mergedHash = getSyncHash(merged);
-        const currentLocalHash = getSyncHash(currentState);
-        
-        // 2. If the merged state contains new/newer updates from the cloud, apply them locally
-        if (mergedHash !== currentLocalHash) {
-          console.log('[Sync] Appending newer updates from the cloud to the local screen...');
-          ignoreNextStateChangeRef.current = true;
-          setRawState(merged);
-        }
-
-        // 3. If the merged state contains newer local changes that are not in the cloud yet, schedule upload
-        if (mergedHash !== cloudHash) {
-          console.log('[Sync] Local has newer unsynced offline edits. Scheduling automatic background upload.');
-          if (unsyncedEditsCountRef.current === 0) {
-            setUnsyncedEditsCount(1);
-          }
-        } else {
-          // Both client and cloud are completely in sync to the same state
-          setUnsyncedEditsCount(0);
-          lastSyncedStateHashRef.current = cloudHash;
-          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-        }
-      } else {
-        isFirstSnapshotRef.current = false;
-        // If they are equivalent, ensure client is marked as saved and has 0 unsynced edits count
-        setUnsyncedEditsCount(0);
-        lastSyncedStateHashRef.current = cloudHash;
-        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-      }
-    }, (error: any) => {
-      const errMsg = String(error?.message || '');
-      const isQuota = errMsg.toLowerCase().includes('quota') || 
-                      errMsg.toLowerCase().includes('exhausted') || 
-                      error?.code === 'resource-exhausted';
-      if (isQuota) {
-        setIsQuotaExceeded(true);
-      }
-      if (errMsg.includes('offline') || error?.code === 'unavailable' || error?.code === 'failed-precondition') {
-        console.warn('[Firebase snapshot listener]: Web client is currently offline.', errMsg);
-      } else {
-        console.error('[Firebase snapshot listener error]:', error);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [currentUser]);
-
-  // 2. Local save & Automatic Firebase snapshot update upon state modifications (fully offline-first optimized)
+  // Automatic debounced Local -> Google Sheets cloud sync when state changes
   useEffect(() => {
     saveWorkspace(state);
 
@@ -1677,186 +1222,110 @@ export default function App() {
     const stateChanged = !isFirstTime && state !== lastStateRef.current;
     lastStateRef.current = state;
 
-    let isLocalChange = false;
-
     if (isFirstTime) {
       if (isFirstRender.current) {
         isFirstRender.current = false;
       }
-    } else if (stateChanged) {
+      return;
+    }
+
+    if (stateChanged) {
       if (isFirstRender.current) {
         isFirstRender.current = false;
-      } else if (ignoreNextStateChangeRef.current) {
-        // Skip incrementing unsynced edits count when the update was caused by Google Sheets sync download/merge or Firestore snapshot
+        return;
+      }
+      if (ignoreNextStateChangeRef.current) {
         ignoreNextStateChangeRef.current = false;
-      } else {
-        isLocalChange = true;
-        setUnsyncedEditsCount(prev => prev + 1);
-      }
-    } else {
-      if (isFirstRender.current) {
-        isFirstRender.current = false;
-      }
-    }
-    
-    // Only save to Firebase if the state actually changed as a local user edit or there are pending unsynced local edits.
-    // This prevents a stale client session or received cloud snapshots from overwriting newer changes in the cloud on load/sync.
-    if (currentUser && isInitialSyncComplete && (isLocalChange || unsyncedEditsCountRef.current > 0)) {
-      if (isQuotaExceeded) {
-        setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
         return;
       }
-      const currentHash = getSyncHash(state);
-      if (currentHash === lastSyncedStateHashRef.current) {
-        return; // Already synced! Prevents infinite trigger loops
-      }
-
-      // If auto-save to cloud is disabled, do not write back automatically here.
-      // Symmetrical rare background sync will run every 5 minutes in background effect.
-      if (!autoSaveEnabled) {
-        return;
-      }
-
-      setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
-      const countSaved = unsyncedEditsCount;
-      const timer = setTimeout(async () => {
-        const res = await saveToFirebaseDirectly(currentUser.uid, state);
-        setIsQuotaExceeded(!!res.isQuotaExceeded);
-        setSyncStatus(prev => ({
-          ...prev,
-          firebase: res.success ? 'saved' : 'error'
-        }));
-        if (res.success) {
-          lastSyncedStateHashRef.current = getSyncHash(state); // Update hash on successful upload
-          setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
-        }
-      }, 3000); // 3.0s (3000ms) rate-limiting debounce as requested by user to limit writes
-      return () => clearTimeout(timer);
+      // Increment local edits count
+      setUnsyncedEditsCount(prev => prev + 1);
     }
-  }, [state, currentUser, isInitialSyncComplete, autoSaveEnabled]);
 
-  // Symmetrical 5-minute rare cloud backup for safety & offline session close handlers
-  useEffect(() => {
-    if (!currentUser || isQuotaExceeded) return;
+    if (!googleToken || !state.googleSheetsFileId || !autoSaveSheets) {
+      return;
+    }
 
-    const interval = setInterval(async () => {
-      if (unsyncedEditsCountRef.current > 0) {
-        console.log('[Rare background Sync/5m] Auto-saving workspace state snapshot...');
-        setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
-        const res = await saveToFirebaseDirectly(currentUser.uid, stateRef.current);
-        setIsQuotaExceeded(!!res.isQuotaExceeded);
-        setSyncStatus(prev => ({
-          ...prev,
-          firebase: res.success ? 'saved' : 'error'
-        }));
-        if (res.success) {
-          lastSyncedStateHashRef.current = getSyncHash(stateRef.current);
-          setUnsyncedEditsCount(0);
-        }
-      }
-    }, 5 * 60 * 1000); // 5 minutes
-
-    const handleBeforeUnload = () => {
-      // Offline-first approach relies 100% reliably on synchronous write to localStorage which occurs instantly.
-      // No blocking or heavy sync writes on window exit are needed as offline state is preserved locally.
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [currentUser, isQuotaExceeded]);
-
-  // 4. Force check and download newer database version on window focus or visibility change (fixes mobile background freezing)
-  useEffect(() => {
-    if (!currentUser || isQuotaExceeded) return;
-
-    let isFetching = false;
-
-    const handleFocus = async () => {
-      if (isFetching) return;
-      isFetching = true;
+    setSyncStatusSheets('syncing');
+    const timer = setTimeout(async () => {
       try {
-        const cloudData = await loadFromFirebaseDirectly(currentUser.uid);
-        if (cloudData) {
-          const localDeletions = (() => {
-            try {
-              const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
-              const parsed = JSON.parse(listJson);
-              return Array.isArray(parsed) ? parsed : [];
-            } catch {
-              return [];
-            }
-          })();
-          const cloudDeletions = Array.isArray(cloudData?.deletions) ? cloudData.deletions : [];
-          const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-          const mergedDeletions: any[] = [];
-          const appendUnique = (rec: any) => {
-            try {
-              const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
-              if (deletedAtMs < thirtyDaysAgo) return;
-            } catch {}
-            if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
-              mergedDeletions.push(rec);
-            }
-          };
-          (localDeletions || []).forEach(appendUnique);
-          (cloudDeletions || []).forEach(appendUnique);
-
-          const isDeleted = (type: string, id: string) => {
-            return mergedDeletions.some(d => d.type === type && d.id === id);
-          };
-
-          const filteredFolders = (cloudData.folders || []).filter((f: any) => !isDeleted('folder', f.id));
-          const filteredProjects = (cloudData.projects || []).filter((p: any) => !isDeleted('project', p.id));
-          const filteredNodes: Record<string, TaskNode[]> = {};
-          Object.keys(cloudData.nodes || {}).forEach(pid => {
-            const list = (cloudData.nodes[pid] || []).filter((n: any) => !isDeleted('node', n.id));
-            filteredNodes[pid] = list;
-          });
-          const filteredTagCats = (cloudData.tagCategories || []).filter((tc: any) => !isDeleted('tagCategory', tc.id));
-
-          const cloudState: WorkspaceState = {
-            folders: filteredFolders,
-            projects: filteredProjects,
-            nodes: filteredNodes,
-            activeProjectId: cloudData.activeProjectId || null,
-            tagCategories: filteredTagCats,
-            googleSheetsFileId: cloudData.googleSheetsFileId || undefined,
-            taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined,
-            deletions: mergedDeletions
-          };
-
-          const currentState = stateRef.current;
-          const normalizedCloud = normalizeWorkspaceState(cloudState);
-          const isEquivalent = isStateSemanticallyEqual(currentState, normalizedCloud);
-
-          if (!isEquivalent) {
-            console.log('[Focus Sync] Found different state on focus/visibility change. Applying update.');
-            if (unsyncedEditsCountRef.current === 0) {
-              ignoreNextStateChangeRef.current = true;
-              lastSyncedStateHashRef.current = getSyncHash(normalizedCloud);
-              setRawState(normalizedCloud);
-              setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-            } else {
-              // Merge if we edit concurrently
-              const merged = normalizeWorkspaceState(mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions));
-              ignoreNextStateChangeRef.current = true;
-              setRawState(merged);
-              setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-            }
-          }
+        console.log('[Sheets Sync] Unsynced changes detected. Saving to Google Sheets...');
+        const res = await sync_local_to_cloud(googleToken, stateRef.current, deviceIdRef.current);
+        if (res.success && res.state) {
+          ignoreNextStateChangeRef.current = true;
+          setRawState(res.state);
+          setSyncStatusSheets('saved');
+          setUnsyncedEditsCount(0);
+          setSheetsFeedback(`Авто-сохранение успешно (${new Date().toLocaleTimeString()})`);
+        } else {
+          setSyncStatusSheets('error');
+          setSheetsFeedback(`Ошибка сохранения: ${res.error || 'Неизвестная ошибка'}`);
         }
       } catch (err: any) {
-        console.warn('[Focus Sync] Background sync on focus failed:', err);
-        const errMsg = String(err?.message || '').toLowerCase();
-        const isQuota = errMsg.includes('quota') || errMsg.includes('exhausted') || err?.code === 'resource-exhausted';
-        if (isQuota) {
-          setIsQuotaExceeded(true);
+        console.error('[Sheets Sync] Auto save failed:', err);
+        setSyncStatusSheets('error');
+        setSheetsFeedback(`Ошибка авто-сохранения: ${err.message || err}`);
+      }
+    }, 3000); // 3 seconds rate-limiting debounce
+
+    return () => clearTimeout(timer);
+  }, [state, googleToken, state.googleSheetsFileId, autoSaveSheets]);
+
+  // Symmetrical background sync checker (runs every 30 seconds to fetch remote changes)
+  useEffect(() => {
+    if (!googleToken || !state.googleSheetsFileId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        console.log('[Sheets Sync] Performing background remote check...');
+        const res = await sync_cloud_to_local(googleToken, stateRef.current, deviceIdRef.current);
+        if (res.success && res.state) {
+          const localHash = getSyncHash(stateRef.current);
+          const fetchedHash = getSyncHash(res.state);
+          if (localHash !== fetchedHash) {
+            console.log('[Sheets Sync] Background sync found newer cloud changes. Merging into local UI...');
+            ignoreNextStateChangeRef.current = true;
+            setRawState(res.state);
+            setSyncStatusSheets('saved');
+            setUnsyncedEditsCount(0);
+            setSheetsFeedback(`Облачные изменения загружены (${new Date().toLocaleTimeString()})`);
+          }
         }
-      } finally {
-        isFetching = false;
+      } catch (err) {
+        console.warn('[Sheets Sync Background Error]:', err);
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [googleToken, state.googleSheetsFileId]);
+
+  // Window Focus Sync (Instant pull when browser tab comes to foreground)
+  useEffect(() => {
+    if (!googleToken || !state.googleSheetsFileId) return;
+
+    const handleFocus = async () => {
+      try {
+        console.log('[Sheets Sync] Tab focused. Performing instant delta check...');
+        setSyncStatusSheets('syncing');
+        const res = await sync_cloud_to_local(googleToken, stateRef.current, deviceIdRef.current);
+        if (res.success && res.state) {
+          const localHash = getSyncHash(stateRef.current);
+          const fetchedHash = getSyncHash(res.state);
+          if (localHash !== fetchedHash) {
+            ignoreNextStateChangeRef.current = true;
+            setRawState(res.state);
+            setSheetsFeedback(`Синхронизировано при активации вкладки (${new Date().toLocaleTimeString()})`);
+          } else {
+            setSheetsFeedback(`Синхронно с облаком (${new Date().toLocaleTimeString()})`);
+          }
+          setSyncStatusSheets('saved');
+          setUnsyncedEditsCount(0);
+        } else {
+          setSyncStatusSheets('error');
+        }
+      } catch (err) {
+        console.warn('[Sheets Focus Sync Error]:', err);
+        setSyncStatusSheets('error');
       }
     };
 
@@ -1868,20 +1337,16 @@ export default function App() {
 
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-
     return () => {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [currentUser]);
+  }, [googleToken, state.googleSheetsFileId]);
 
-  // Google Sheets integration has been deprecated in favor of high-performance real-time Firebase synchronization.
-
-  // Close / stop the active Pomodoro session
+  // Handle Close Pomodoro Session
   const handleClosePomo = () => {
     if (!globalPomo) return;
 
-    // If it is an active work session (not break), save accumulated elapsed time
     if (!globalPomo.isBreak && globalPomo.nodeId) {
       const elapsed = globalPomo.duration - globalPomo.timeLeft;
       if (elapsed > 0) {
@@ -1900,7 +1365,8 @@ export default function App() {
           const updatedNode = {
             ...foundNode,
             pomodoroTotalTime: (foundNode.pomodoroTotalTime || 0) + elapsed,
-            pomodoroSessionsCount: (foundNode.pomodoroSessionsCount || 0) + 1
+            pomodoroSessionsCount: (foundNode.pomodoroSessionsCount || 0) + 1,
+            updatedAt: new Date().toISOString()
           };
           
           setState(prev => {
@@ -1912,7 +1378,8 @@ export default function App() {
               nodes: {
                 ...prev.nodes,
                 [foundPid!]: syncedNodes
-              }
+              },
+              updatedAt: new Date().toISOString()
             };
           });
         }
@@ -1921,171 +1388,88 @@ export default function App() {
 
     localStorage.removeItem('task_mindmap_pomodoro');
     window.dispatchEvent(new Event('task_mindmap_pomo_update'));
-
-    if (currentUser) {
-      try {
-        const docRef = doc(db, 'workspaces', currentUser.uid);
-        updateDoc(docRef, {
-          activePomodoro: null
-        }).catch(err => {
-          console.warn('[Firebase Pomo Sync] Failed to clear activePomodoro on close:', err);
-        });
-      } catch (err) {
-        console.error('[Firebase Pomo Sync] Error building Firestore path for clear activePomodoro:', err);
-      }
-    }
   };
 
-  // Manual Firebase real-time cloud sync trigger
-  const handleManualCloudSync = async () => {
-    if (!currentUser) return;
-    if (syncStatus.firebase === 'syncing') return;
-    
-    setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
-    
-    // Add a minimum visual delay of 800ms so the user can see the spin animation
-    const startTime = Date.now();
-    
-    const res = await saveToFirebaseDirectly(currentUser.uid, state);
-    
-    const elapsed = Date.now() - startTime;
-    const minDelay = 800; // 800ms minimum duration
-    if (elapsed < minDelay) {
-      await new Promise(resolve => setTimeout(resolve, minDelay - elapsed));
-    }
-    
-    setIsQuotaExceeded(!!res.isQuotaExceeded);
-    setSyncStatus(prev => ({
-      ...prev,
-      firebase: res.success ? 'saved' : 'error'
-    }));
-    
-    if (res.success) {
-      lastSyncedStateHashRef.current = getSyncHash(state); // Update hash on successful upload
-      setUnsyncedEditsCount(0);
-    }
-  };
-
-  // Manual forced cloud sync actions to solve multi-device desynchronizations immediately
-  const forceUploadToCloud = async (currentWorkspace: WorkspaceState) => {
-    if (!currentUser) return;
-    setForceCloudSyncLoading('upload');
-    setForceCloudSyncFeedback(null);
+  // Symmetrical manual triggers for Google Sheets Sync UI
+  const handleCreateOrLinkSpreadsheet = async () => {
+    if (!googleToken) return;
+    setSyncStatusSheets('syncing');
+    setSheetsFeedback('Поиск или автоматическое создание таблицы "Milli Task & Mind Map Sync Data" в вашем Google Drive...');
     try {
-      const res = await saveToFirebaseDirectly(currentUser.uid, currentWorkspace);
-      setIsQuotaExceeded(!!res.isQuotaExceeded);
-      if (res.success) {
-        lastSyncedStateHashRef.current = getSyncHash(currentWorkspace); // Update hash to prevent reflection loops
-        setUnsyncedEditsCount(0);
-        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-        if (res.isOfflineQueued) {
-          setForceCloudSyncFeedback('Снимок успешно сохранен локально! Синхронизация с облаком произойдет автоматически при восстановлении стабильного интернет-соединения.');
-        } else {
-          setForceCloudSyncFeedback('Успешно выгружено в облако! Теперь откройте это приложение на другом устройстве и нажмите кнопку "Загрузить из облака".');
-        }
-      } else {
-        if (res.isQuotaExceeded) {
-          setForceCloudSyncFeedback('Ошибка выгрузки: превышен суточный лимит бесплатной базы данных Firebase. Ваши данные надежно сохранены в этом браузере.');
-        } else {
-          setForceCloudSyncFeedback(`Ошибка выгрузки: ${res.error || 'Проверьте интернет-соединение или права доступа.'}`);
-        }
-      }
-    } catch (e: any) {
-      const errMsg = String(e?.message || '').toLowerCase();
-      const isQuota = errMsg.includes('quota') || errMsg.includes('exhausted') || e?.code === 'resource-exhausted';
-      if (isQuota) {
-        setIsQuotaExceeded(true);
-        setForceCloudSyncFeedback('Ошибка выгрузки: превышен суточный лимит бесплатной базы данных Firebase. Ваши данные надежно сохранены в этом браузере.');
-      } else {
-        setForceCloudSyncFeedback(`Ошибка: ${e?.message || String(e)}`);
-      }
-    } finally {
-      setForceCloudSyncLoading(null);
-    }
-  };
+      const fileId = await getOrCreateSpreadsheet(googleToken);
+      
+      setState(prev => {
+        const next = { ...prev, googleSheetsFileId: fileId, updatedAt: new Date().toISOString() };
+        saveWorkspace(next);
+        return next;
+      });
 
-  const forceDownloadFromCloud = async () => {
-    if (!currentUser) return;
-    setForceCloudSyncLoading('download');
-    setForceCloudSyncFeedback(null);
-    try {
-      const cloudData = await loadFromFirebaseDirectly(currentUser.uid);
-      if (cloudData) {
-        const localDeletions = (() => {
-          try {
-            const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
-            const parsed = JSON.parse(listJson);
-            return Array.isArray(parsed) ? parsed : [];
-          } catch {
-            return [];
-          }
-        })();
-        const cloudDeletions = Array.isArray(cloudData?.deletions) ? cloudData.deletions : [];
-        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-        const mergedDeletions: any[] = [];
-        const appendUnique = (rec: any) => {
-          try {
-            const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
-            if (deletedAtMs < thirtyDaysAgo) return; // Prune deletions older than 30 days
-          } catch {
-            // Safeguard
-          }
-          if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
-            mergedDeletions.push(rec);
-          }
-        };
-        (localDeletions || []).forEach(appendUnique);
-        (cloudDeletions || []).forEach(appendUnique);
+      localStorage.setItem('google_sheets_sync_file_id', fileId);
 
-        try {
-          localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
-        } catch (e) {
-          console.error(e);
-        }
-
-        const isDeleted = (type: string, id: string) => {
-          return mergedDeletions.some(d => d.type === type && d.id === id);
-        };
-
-        const filteredFolders = (cloudData.folders || []).filter((f: any) => !isDeleted('folder', f.id));
-        const filteredProjects = (cloudData.projects || []).filter((p: any) => !isDeleted('project', p.id));
-        const filteredNodes: Record<string, TaskNode[]> = {};
-        Object.keys(cloudData.nodes || {}).forEach(pid => {
-          const list = (cloudData.nodes[pid] || []).filter((n: any) => !isDeleted('node', n.id));
-          if (list.length > 0) {
-            filteredNodes[pid] = list;
-          }
-        });
-        const filteredTagCats = (cloudData.tagCategories || []).filter((tc: any) => !isDeleted('tagCategory', tc.id));
-
-        const cloudState: WorkspaceState = {
-          folders: filteredFolders,
-          projects: filteredProjects,
-          nodes: filteredNodes,
-          activeProjectId: cloudData.activeProjectId || null,
-          tagCategories: filteredTagCats,
-          googleSheetsFileId: cloudData.googleSheetsFileId || undefined,
-          taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined,
-          deletions: mergedDeletions
-        };
+      // Perform initial cloud pulling to merge data
+      const res = await sync_cloud_to_local(googleToken, { ...stateRef.current, googleSheetsFileId: fileId }, deviceIdRef.current);
+      if (res.success && res.state) {
         ignoreNextStateChangeRef.current = true;
-        const normalized = normalizeWorkspaceState(cloudState);
-        lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent reflection loops
-        setRawState(normalized);
+        setRawState(res.state);
+        setSyncStatusSheets('saved');
         setUnsyncedEditsCount(0);
-        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
-        setForceCloudSyncFeedback('Успешно загружено! Данные на этом устройстве полностью заменены версией из вашего облака.');
+        setSheetsFeedback('Таблица Google Таблиц успешно создана и привязана! Данные синхронизированы.');
       } else {
-        setForceCloudSyncFeedback('В облаке не найдено сохраненных данных. Пожалуйста, сначала сделайте "Выгрузить в облако" на первом устройстве!');
+        setSyncStatusSheets('saved');
+        setSheetsFeedback('Таблица создана и привязана успешно! Сделайте принудительную выгрузку, чтобы записать данные.');
       }
-    } catch (e: any) {
-      setForceCloudSyncFeedback(`Ошибка загрузки: ${e?.message || String(e)}`);
-    } finally {
-      setForceCloudSyncLoading(null);
+    } catch (err: any) {
+      console.error('[Sheets Link Error]:', err);
+      setSyncStatusSheets('error');
+      setSheetsFeedback(`Ошибка создания/привязки: ${err.message || err}`);
     }
   };
 
-  // 3. Auto-sync effects for Firebase are fully covered in our main saving and snapshot listeners above.
+  const handleManualSheetsUpload = async () => {
+    if (!googleToken || !state.googleSheetsFileId) return;
+    setSyncStatusSheets('syncing');
+    setSheetsFeedback('Выгрузка всех ваших локальных проектов, папок и заметок в Google Таблицу...');
+    try {
+      const res = await sync_local_to_cloud(googleToken, stateRef.current, deviceIdRef.current);
+      if (res.success && res.state) {
+        ignoreNextStateChangeRef.current = true;
+        setRawState(res.state);
+        setSyncStatusSheets('saved');
+        setUnsyncedEditsCount(0);
+        setSheetsFeedback('Локальные данные успешно отправлены и слиты в Google Таблицу!');
+      } else {
+        setSyncStatusSheets('error');
+        setSheetsFeedback(`Ошибка при отправке: ${res.error}`);
+      }
+    } catch (err: any) {
+      setSyncStatusSheets('error');
+      setSheetsFeedback(`Ошибка выгрузки: ${err.message || err}`);
+    }
+  };
+
+  const handleManualSheetsDownload = async () => {
+    if (!googleToken || !state.googleSheetsFileId) return;
+    setSyncStatusSheets('syncing');
+    setSheetsFeedback('Загрузка актуальных данных из вашей Google Таблицы...');
+    try {
+      // Force ignore timestamp check during manual download to ensure we always fetch
+      const dummyState = { ...stateRef.current, updatedAt: '1970-01-01T00:00:00.000Z' };
+      const res = await sync_cloud_to_local(googleToken, dummyState, deviceIdRef.current);
+      if (res.success && res.state) {
+        ignoreNextStateChangeRef.current = true;
+        setRawState(res.state);
+        setSyncStatusSheets('saved');
+        setUnsyncedEditsCount(0);
+        setSheetsFeedback('Данные успешно загружены из Google Таблицы и объединены с вашим экраном!');
+      } else {
+        setSyncStatusSheets('error');
+        setSheetsFeedback(`Ошибка при загрузке: ${res.error}`);
+      }
+    } catch (err: any) {
+      setSyncStatusSheets('error');
+      setSheetsFeedback(`Ошибка загрузки: ${err.message || err}`);
+    }
+  };
 
   // Handle media/dark mode class on body element
   useEffect(() => {
@@ -3959,7 +3343,7 @@ export default function App() {
               type="button"
               onClick={() => setIsSyncMenuOpen(true)}
               className={`flex items-center gap-1.5 py-1.5 px-3 border rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:scale-[1.01] shrink-0 ${
-                syncStatus.firebase === 'syncing'
+                syncStatusSheets === 'syncing'
                   ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-955/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
                   : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
               }`}
@@ -3967,29 +3351,29 @@ export default function App() {
             >
               <Database className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
               <span className="hidden lg:inline">Синхронизация</span>
-              {hasSyncOrAuthError ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
-              ) : currentUser ? (
+              {googleToken && state.googleSheetsFileId ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              ) : googleToken ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
               ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
               )}
             </button>
 
             {/* Quick Symmetrical Cloud Sync Button */}
-            {currentUser && (
+            {googleToken && state.googleSheetsFileId && (
               <button
                 id="milli-quick-cloud-sync-btn"
                 type="button"
-                onClick={handleManualCloudSync}
+                onClick={handleManualSheetsUpload}
                 className={`p-1.5 border rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.05] shrink-0 ${
-                  syncStatus.firebase === 'syncing'
+                  syncStatusSheets === 'syncing'
                     ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse'
                     : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-emerald-600 dark:text-emerald-400'
                 }`}
-                title="Мгновенная синхронизация со всеми устройствами"
+                title="Мгновенная синхронизация с Google Таблицей"
               >
-                <RefreshCw className={`w-4 h-4 ${syncStatus.firebase === 'syncing' ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${syncStatusSheets === 'syncing' ? 'animate-spin' : ''}`} />
               </button>
             )}
 
@@ -4604,323 +3988,256 @@ export default function App() {
                       </div>
                     </div>
 
-                    {currentUser && (
-                      <div className="bg-indigo-50/25 dark:bg-indigo-950/10 border border-indigo-150/80 dark:border-indigo-900/40 p-4.5 rounded-xl space-y-3.5">
+                    {!googleToken && currentUser && !currentUser.isAnonymous && (
+                      <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-4 rounded-xl space-y-3 font-sans animate-in fade-in duration-200">
+                        <div className="flex items-start gap-2.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                          <div>
+                            <h4 className="font-extrabold text-xs text-amber-850 dark:text-amber-400 leading-tight">
+                              🔑 Требуется авторизация Google Диска
+                            </h4>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal mt-1">
+                              Вы вошли в систему, но для синхронизации с Google Таблицами требуется временный токен доступа к Google Диску. Нажмите кнопку ниже, чтобы войти в аккаунт и предоставить разрешения на работу с таблицами.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await handleGoogleSignIn();
+                            } catch (err) {}
+                          }}
+                          className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow"
+                        >
+                          <svg className="w-4 h-4 fill-current text-white" viewBox="0 0 24 24">
+                            <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.414 0-6.19-2.77-6.19-6.19 0-3.418 2.776-6.19 6.19-6.19 1.483 0 2.844.52 3.917 1.391l3.056-3.056C19.11 2.8 15.86 1.332 12.24 1.332 6.136 1.332 1.2 6.268 1.2 12.37s4.936 11.04 11.04 11.04c6.264 0 10.8-4.4 10.8-10.74 0-.74-.065-1.3-.18-1.85H12.24z"/>
+                          </svg>
+                          <span>Предоставить доступ к Google Диску & Таблицам</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {googleToken && (
+                      <div className="bg-emerald-50/25 dark:bg-emerald-950/10 border border-emerald-150/80 dark:border-emerald-900/40 p-4.5 rounded-xl space-y-3.5">
                         
                         {/* Auto-save / Manual save control panel */}
                         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-805 space-y-3 shadow-xs">
                           <div className="flex items-center justify-between gap-4">
                             <div>
                               <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-205 flex items-center gap-1.5">
-                                🔄 Автоматическая отправка изменений
+                                🔄 Автоматическая отправка в Google Таблицу
                               </h4>
                               <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-normal max-w-[380px]">
-                                {autoSaveEnabled
-                                  ? 'Активно: изменения отправляются в Firebase в фоновом режиме с умной задержкой (debounce) в 3 секунды.'
-                                  : 'Выключено: все промежуточные изменения пишутся только на этом устройстве. Облако обновится принудительно.'}
+                                {autoSaveSheets
+                                  ? 'Активно: изменения автоматически записываются в Google Sheets в фоне через 3 секунды после редактирования.'
+                                  : 'Выключено: все промежуточные изменения пишутся локально. Таблица обновится только вручную.'}
                               </p>
                             </div>
                             <label className="relative inline-flex items-center cursor-pointer select-none shrink-0 scale-95">
                               <input
                                 type="checkbox"
-                                checked={autoSaveEnabled}
-                                onChange={(e) => setAutoSaveEnabled(e.target.checked)}
+                                checked={autoSaveSheets}
+                                onChange={(e) => setAutoSaveSheets(e.target.checked)}
                                 className="sr-only peer"
                               />
-                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full dark:bg-slate-705 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-650" />
+                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full dark:bg-slate-705 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-emerald-650" />
                             </label>
                           </div>
 
                           {/* Extra feedback line of Sync Status */}
                           <div className="flex items-center justify-between text-[11px] border-t pt-2.5 border-slate-100 dark:border-slate-800">
-                            <span className="text-slate-400 dark:text-slate-500 font-bold">Статус облачного кэша:</span>
+                            <span className="text-slate-400 dark:text-slate-500 font-bold">Статус синхронизации:</span>
                             <div className="flex items-center gap-2">
-                              {syncStatus.firebase === 'syncing' ? (
-                                <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-black">
-                                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
+                              {syncStatusSheets === 'syncing' ? (
+                                <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-black">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                                   <span>Идет сохранение...</span>
                                 </div>
                               ) : unsyncedEditsCount > 0 ? (
                                 <div className="flex items-center gap-1.5 text-amber-650 dark:text-amber-500 font-black">
                                   <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                                  <span>{unsyncedEditsCount} изменений не в облаке</span>
+                                  <span>{unsyncedEditsCount} изменений не сохранено</span>
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-450 font-black">
                                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                                  <span>Облако синхронизировано ✓</span>
+                                  <span>Синхронизировано ✓</span>
                                 </div>
                               )}
                             </div>
                           </div>
-
-                          <div className="flex items-center justify-between gap-4 bg-slate-50/75 dark:bg-slate-950/40 px-3 py-2 rounded-lg border border-slate-100 dark:border-slate-850/80">
-                            <span className="text-[10px] text-slate-500 dark:text-slate-450 font-medium">Принудительно отправить сейчас:</span>
-                            <button
-                              type="button"
-                              onClick={handleManualCloudSync}
-                              disabled={syncStatus.firebase === 'syncing'}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-black tracking-wide transition-all duration-150 hover:scale-[1.03] flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-                            >
-                              <RefreshCw className={`w-3 h-3 ${syncStatus.firebase === 'syncing' ? 'animate-spin' : ''}`} />
-                              <span>Сохранить в облако</span>
-                            </button>
-                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2 pt-2">
-                          <div className="p-1 px-1.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded font-extrabold text-[10px]">
-                            РЕШЕНИЕ СВЯЗИ
-                          </div>
-                          <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-200">
-                            Принудительная синхронизация (ПК ⇄ Телефон)
-                          </h4>
-                        </div>
-
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                          Если автоматический обмен застрял (или вы вошли под одним аккаунтом Google на ПК и телефоне, но изменения с одного девайса не отображаются на другом), воспользуйтесь кнопками <b>принудительного обхода</b>:
-                        </p>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {/* Left: Force Upload (Export) */}
-                          <div className="border border-indigo-100/60 dark:border-indigo-950 bg-white dark:bg-slate-900 p-3 rounded-lg flex flex-col justify-between">
-                            <div>
-                              <div className="font-extrabold text-[11px] text-indigo-750 dark:text-indigo-400 flex items-center gap-1.5">
-                                <Upload className="w-3.5 h-3.5" />
-                                1. С ПК: ВЫГРУЗИТЬ В ОБЛАКО
-                              </div>
-                              <p className="text-[10px] text-slate-550 dark:text-slate-400 mt-1 leading-normal">
-                                Записать текущее состояние экрана в облако. Всё облако заменится вашей картой.
+                        {/* Google Sheets Link Panel */}
+                        {!state.googleSheetsFileId ? (
+                          <div className="bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/50 dark:border-amber-900/30 p-4 rounded-xl space-y-3">
+                            <div className="space-y-1">
+                              <h4 className="font-extrabold text-[12px] text-amber-850 dark:text-amber-400">⚠️ Таблица не подключена</h4>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                                Для включения синхронизации необходимо создать или подключить файл в вашем Google Drive. Приложение автоматически создаст таблицу <b>«Milli Task & Mind Map Sync Data»</b> и настроит все необходимые вкладки.
                               </p>
                             </div>
                             <button
                               type="button"
-                              disabled={forceCloudSyncLoading !== null}
-                              onClick={() => forceUploadToCloud(state)}
-                              className="mt-3 w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-550 text-white rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                              onClick={handleCreateOrLinkSpreadsheet}
+                              disabled={syncStatusSheets === 'syncing'}
+                              className="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              {forceCloudSyncLoading === 'upload' ? (
-                                <>
-                                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  <span>Выгрузка...</span>
-                                </>
-                              ) : (
-                                <span>Выгрузить в Облако</span>
-                              )}
+                              <Database className="w-4 h-4" />
+                              <span>Создать или привязать Google Таблицу</span>
                             </button>
-                          </div>
-
-                          {/* Right: Force Download (Import) */}
-                          <div className="border border-indigo-100/60 dark:border-indigo-950 bg-white dark:bg-slate-900 p-3 rounded-lg flex flex-col justify-between">
-                            <div>
-                              <div className="font-extrabold text-[11px] text-emerald-705 dark:text-emerald-400 flex items-center gap-1.5">
-                                <Download className="w-3.5 h-3.5" />
-                                2. НА ТЕЛЕФОНЕ: ЗАГРУЗИТЬ СЮДА
-                              </div>
-                              <p className="text-[10px] text-slate-550 dark:text-slate-400 mt-1 leading-normal">
-                                Полностью перезаписать экран последними данными из облака (все локальные изменения исчезнут).
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              disabled={forceCloudSyncLoading !== null}
-                              onClick={forceDownloadFromCloud}
-                              className="mt-3 w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-550 text-white rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                              {forceCloudSyncLoading === 'download' ? (
-                                <>
-                                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  <span>Загрузка...</span>
-                                </>
-                              ) : (
-                                <span>Загрузить из Облака</span>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Feedback Messages */}
-                        {forceCloudSyncFeedback && (
-                          <div className="bg-white dark:bg-slate-950 border border-indigo-100 dark:border-indigo-900 px-3 py-2.5 rounded-lg text-[11px] font-bold text-indigo-700 dark:text-indigo-400 flex items-start gap-2 animate-in fade-in duration-150">
-                            <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
-                            <span className="leading-snug">{forceCloudSyncFeedback}</span>
-                          </div>
-                        )}
-
-                        {/* Troubleshooting list for separate accounts */}
-                        <div className="bg-slate-100/50 dark:bg-slate-900/40 p-3 rounded-lg space-y-1.5">
-                          <p className="font-extrabold text-[10px] text-slate-600 dark:text-slate-400">⚠️ Диагностический чек-лист:</p>
-                          <ul className="list-disc list-inside space-y-1.5 text-slate-500 dark:text-slate-450 text-[10px] leading-relaxed">
-                            <li>
-                              <span className="font-bold text-slate-700 dark:text-slate-300">Проверьте UID (ID):</span> Сравните строку <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[9px]">UID</code> под вашей почтой на ПК и на Телефоне. Если эти буквы не совпадают — вы авторизованы под разными Google аккаунтами. <b>Они должны быть одинаковыми!</b>
-                            </li>
-                            <li>
-                              <span className="font-bold text-slate-700 dark:text-slate-300">Блокировка Apple/Safari:</span> Мобильные системы очень часто замораживают веб-сокеты и соединение с Firestore при неактивном экране. Просто обновите вкладку на телефоне и нажмите <span className="underline">Загрузить из Облака</span>.
-                            </li>
-                          </ul>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Unauthorized Domain Error Advice */}
-                    {authError && (
-                      <div className="bg-red-50 dark:bg-rose-950/20 border border-red-200 dark:border-red-900 shadow-sm rounded-xl p-4 text-xs space-y-3">
-                        <div className="flex items-center gap-1.5 text-red-650 dark:text-red-400 font-bold">
-                          <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
-                          <span>Ошибка авторизации (Unauthorized Domain)</span>
-                        </div>
-                        
-                        {authError === 'unauthorized-domain' ? (
-                          <div className="space-y-3 text-slate-600 dark:text-slate-350">
-                            <p className="leading-relaxed">
-                              Домен этой страницы не добавлен в список разрешённых для OAuth-авторизации в настройках вашего Firebase-проекта.
-                            </p>
-                            
-                            <div className="bg-white dark:bg-slate-900 border border-red-105 dark:border-red-950 p-3 rounded-lg space-y-1.5">
-                              <p className="font-bold text-slate-700 dark:text-slate-205">Как исправить за 1 минуту:</p>
-                              <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400 text-[11px]">
-                                <li>Перейдите в <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-650 dark:text-indigo-400 underline font-semibold">Консоль Firebase</a>.</li>
-                                <li>Откройте проект <b>"Default Gemini Project"</b>.</li>
-                                <li>Перейдите в раздел <b>Authentication</b> → вкладка <b>Settings</b> → <b>Authorized domains</b> (Разрешенные домены).</li>
-                                <li>Нажмите кнопку <b>Add domain</b> и добавьте этот домен:</li>
-                              </ol>
-                              <div className="mt-2 flex items-center justify-between bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded border border-slate-200 dark:border-slate-800 font-mono text-[10px]">
-                                <span className="select-all truncate">{window.location.hostname}</span>
-                              </div>
-                            </div>
                           </div>
                         ) : (
-                          <p className="text-red-655 dark:text-red-400 leading-relaxed font-semibold">
-                            {authError}
-                          </p>
+                          <div className="space-y-3">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-805 p-3.5 rounded-xl space-y-2 shadow-xs">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-extrabold text-[11px] text-slate-700 dark:text-slate-300">Привязанный файл:</span>
+                                <a
+                                  href={`https://docs.google.com/spreadsheets/d/${state.googleSheetsFileId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 underline flex items-center gap-1"
+                                >
+                                  <span>Открыть в Google Таблицах ↗</span>
+                                </a>
+                              </div>
+                              <p className="font-mono text-[9px] text-slate-400 truncate bg-slate-50 dark:bg-slate-950/80 px-2 py-1 rounded border border-slate-100 dark:border-slate-850/60 select-all">
+                                ID: {state.googleSheetsFileId}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-1">
+                              <div className="p-1 px-1.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 rounded font-extrabold text-[10px] uppercase">
+                                Ручное управление
+                              </div>
+                              <h4 className="font-extrabold text-[11px] text-slate-800 dark:text-slate-200">
+                                Двустороннее слияние дельт
+                              </h4>
+                            </div>
+
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
+                              Если вы работаете одновременно на нескольких устройствах (например, ПК и телефон), вы можете быстро форсировать слияние:
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1.5">
+                              {/* Left: Force Upload (Export) */}
+                              <div className="border border-slate-200/60 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 rounded-lg flex flex-col justify-between">
+                                <div>
+                                  <div className="font-extrabold text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                    <Upload className="w-3.5 h-3.5 text-emerald-500" />
+                                    1. ВЫГРУЗИТЬ В ОБЛАКО
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-normal">
+                                    Записать все ваши локальные изменения и слить их с таблицей Google.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={syncStatusSheets === 'syncing'}
+                                  onClick={handleManualSheetsUpload}
+                                  className="mt-3 w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  {syncStatusSheets === 'syncing' ? (
+                                    <>
+                                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                      <span>Выгрузка...</span>
+                                    </>
+                                  ) : (
+                                    <span>Выгрузить сейчас</span>
+                                  )}
+                                </button>
+                              </div>
+
+                              {/* Right: Force Download (Import) */}
+                              <div className="border border-slate-200/60 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 rounded-lg flex flex-col justify-between">
+                                <div>
+                                  <div className="font-extrabold text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                    <Download className="w-3.5 h-3.5 text-emerald-500" />
+                                    2. ЗАГРУЗИТЬ ИЗ ОБЛАКА
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-normal">
+                                    Загрузить последние изменения из Google таблицы и обновить текущий экран.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={syncStatusSheets === 'syncing'}
+                                  onClick={handleManualSheetsDownload}
+                                  className="mt-3 w-full py-1.5 px-3 bg-slate-600 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  {syncStatusSheets === 'syncing' ? (
+                                    <>
+                                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                      <span>Загрузка...</span>
+                                    </>
+                                  ) : (
+                                    <span>Загрузить сейчас</span>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
                         )}
-                      </div>
-                    )}
-                  </div>
-                )}
 
-                {syncTab === 'pairing' && (
-                  <div className="space-y-4 animate-in fade-in duration-200 font-sans">
-                    {/* Pairing Explanation */}
-                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl space-y-2">
-                      <h4 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                        📂 Двусторонняя связь по секретному коду комнаты
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                        Этот метод позволяет связывать ваш компьютер и телефон <b>без регистрации</b>. 
-                        Просто введите один и тот же код на обоих устройствах, включите автосинхронизацию, и изменения будут переноситься мгновенно в реальном времени!
-                      </p>
-                    </div>
-
-                    {/* Room Settings Controls */}
-                    <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-805 space-y-4 shadow-xs">
-                      <div>
-                        <label className="text-[9px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block mb-1">
-                          КОД СЕКРЕТНОЙ КОМНАТЫ:
-                        </label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={roomSyncId}
-                            onChange={(e) => {
-                              const val = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-                              setRoomSyncId(val);
-                              localStorage.setItem('milli_room_sync_id', val);
-                            }}
-                            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg font-mono text-sm tracking-widest font-black text-slate-800 dark:text-slate-100 max-w-[200px] text-center"
-                            placeholder="Код комнаты"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const gen = Math.floor(100000 + Math.random() * 900000).toString();
-                              setRoomSyncId(gen);
-                              localStorage.setItem('milli_room_sync_id', gen);
-                            }}
-                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-colors text-[11px]"
-                            title="Сгенерировать новый код комнаты"
-                          >
-                            Сгенерировать новый
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Auto Sync Toggle */}
-                      <div className="flex items-center justify-between gap-4 border-t pt-3.5 border-slate-100 dark:border-slate-800">
-                        <div>
-                          <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-205 flex items-center gap-1.5">
-                            🔄 Автоматическая фоновая синхронизация
-                          </h4>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-normal max-w-[380px]">
-                            Включите, чтобы изменения между ПК и Телефоном передавались в реальном времени через облачные сокеты.
-                          </p>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer select-none shrink-0 scale-95">
-                          <input
-                            type="checkbox"
-                            checked={roomSyncAuto}
-                            onChange={(e) => {
-                              const val = e.target.checked;
-                              setRoomSyncAuto(val);
-                              localStorage.setItem('milli_room_sync_auto', String(val));
-                            }}
-                            className="sr-only peer"
-                          />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full dark:bg-slate-705 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-650" />
-                        </label>
-                      </div>
-
-                      {/* Status and Action Buttons */}
-                      <div className="flex items-center justify-between text-[11px] border-t pt-3.5 border-slate-100 dark:border-slate-800">
-                        <span className="text-slate-400 dark:text-slate-500 font-bold">Статус соединения комнаты:</span>
-                        <div className="flex items-center gap-2">
-                          {roomSyncStatus === 'syncing' ? (
-                            <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-black">
-                              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
-                              <span>Идет обмен...</span>
+                          {/* Feedback Messages */}
+                          {sheetsFeedback && (
+                            <div className="bg-white dark:bg-slate-950 border border-emerald-100 dark:border-emerald-900 px-3 py-2.5 rounded-lg text-[11px] font-bold text-emerald-700 dark:text-emerald-400 flex items-start gap-2 animate-in fade-in duration-150">
+                              <Info className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                              <span className="leading-snug">{sheetsFeedback}</span>
                             </div>
-                          ) : roomSyncStatus === 'saved' ? (
-                            <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-450 font-black">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                              <span>Комната синхронизирована ✓</span>
-                            </div>
-                          ) : roomSyncStatus === 'error' ? (
-                            <div className="flex items-center gap-1.5 text-rose-600 dark:text-rose-450 font-black">
-                              <span className="w-2 h-2 rounded-full bg-rose-500" />
-                              <span>Ошибка обмена</span>
-                            </div>
-                          ) : (
-                            <span className="text-slate-500 dark:text-slate-400 font-bold">Готов</span>
                           )}
-                        </div>
-                      </div>
 
-                      {roomSyncFeedback && (
-                        <div className="bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/60 p-3 rounded-lg text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed font-semibold">
-                          {roomSyncFeedback}
+                          {/* Troubleshooting list for separate accounts */}
+                          <div className="bg-slate-100/50 dark:bg-slate-900/40 p-3 rounded-lg space-y-1.5">
+                            <p className="font-extrabold text-[10px] text-slate-600 dark:text-slate-400">⚠️ Важное примечание по безопасности:</p>
+                            <ul className="list-disc list-inside space-y-1.5 text-slate-500 dark:text-slate-450 text-[10px] leading-relaxed">
+                              <li>
+                                <span className="font-bold text-slate-700 dark:text-slate-300">Прямой доступ в Диск:</span> Приложение использует скоуп <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[9px]">drive.file</code>, что означает доступ исключительно к таблицам, созданным этой программой. Безопасность ваших личных файлов полностью гарантирована!
+                              </li>
+                              <li>
+                                <span className="font-bold text-slate-700 dark:text-slate-300">Совместимость девайсов:</span> Для бесшовной синхронизации используйте один и тот же Google аккаунт на всех ПК и смартфонах.
+                              </li>
+                            </ul>
+                          </div>
                         </div>
                       )}
 
-                      <div className="grid grid-cols-2 gap-3 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => saveStateToSyncRoom()}
-                          className="py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-extrabold cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-sm animate-in zoom-in-95 duration-100"
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Выгрузить в комнату</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => loadStateFromSyncRoom()}
-                          className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-extrabold cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-sm animate-in zoom-in-95 duration-100"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>Загрузить из комнаты</span>
-                        </button>
-                      </div>
+                      {/* Unauthorized Domain Error Advice */}
+                      {authError && (
+                        <div className="bg-red-50 dark:bg-rose-950/20 border border-red-200 dark:border-red-900 shadow-sm rounded-xl p-4 text-xs space-y-3">
+                          <div className="flex items-center gap-1.5 text-red-650 dark:text-red-400 font-bold">
+                            <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+                            <span>Ошибка авторизации (Unauthorized Domain)</span>
+                          </div>
+                          
+                          {authError === 'unauthorized-domain' ? (
+                            <div className="space-y-3 text-slate-600 dark:text-slate-350">
+                              <p className="leading-relaxed">
+                                Домен этой страницы не добавлен в список разрешённых для OAuth-авторизации в настройках вашего Firebase-проекта.
+                              </p>
+                              
+                              <div className="bg-white dark:bg-slate-900 border border-red-105 dark:border-red-950 p-3 rounded-lg space-y-1.5">
+                                <p className="font-bold text-slate-700 dark:text-slate-205">Как исправить за 1 минуту:</p>
+                                <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400 text-[11px]">
+                                  <li>Перейдите в <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-650 dark:text-indigo-400 underline font-semibold">Консоль Firebase</a>.</li>
+                                  <li>Откройте проект <b>"Default Gemini Project"</b>.</li>
+                                  <li>Перейдите в раздел <b>Authentication</b> → вкладка <b>Settings</b> → <b>Authorized domains</b> (Разрешенные домены).</li>
+                                  <li>Нажмите кнопку <b>Add domain</b> и добавьте этот домен:</li>
+                                </ol>
+                                <div className="mt-2 flex items-center justify-between bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded border border-slate-200 dark:border-slate-800 font-mono text-[10px]">
+                                  <span className="select-all truncate">{window.location.hostname}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-red-655 dark:text-red-400 leading-relaxed font-semibold">
+                              {authError}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
                 )}
 
               </div>
