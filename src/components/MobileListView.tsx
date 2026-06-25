@@ -26,7 +26,8 @@ import {
   CalendarCheck,
   GripVertical,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Target
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { generateId } from '../utils';
@@ -46,6 +47,7 @@ interface MobileListViewProps {
   onUpdateTagCategory?: (id: string, name: string, color: string, tags: string[]) => void;
   onDeleteTagCategory?: (id: string) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
+  onFocusTaskOnCanvas?: (id: string) => void;
 }
 
 interface TaskTreeItem {
@@ -67,6 +69,7 @@ export default function MobileListView({
   onUpdateTagCategory,
   onDeleteTagCategory,
   onFullScreenChange,
+  onFocusTaskOnCanvas,
 }: MobileListViewProps) {
   // Inbox / State filters
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed' | 'today' | 'overdue'>('active');
@@ -826,6 +829,19 @@ export default function MobileListView({
                     title={confirmDeleteNodeId === node.id ? "Подтвердите удаление" : "Удалить задачу"}
                   >
                     {confirmDeleteNodeId === node.id ? "Удалить?" : <Trash2 className="w-3.5 h-3.5" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onFocusTaskOnCanvas) {
+                        onFocusTaskOnCanvas(node.id);
+                      }
+                    }}
+                    className="p-1 text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 rounded-md hover:bg-slate-55/40 dark:hover:bg-slate-800 cursor-pointer"
+                    title="Фокусировать эту задачу на холсте"
+                  >
+                    <Target className="w-3.5 h-3.5" />
                   </button>
 
                   <button

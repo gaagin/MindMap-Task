@@ -1530,10 +1530,10 @@ export default function TaskDetailsPanel({
               </div>
             </div>
 
-            {/* Trigger disabled checkbox/switch block */}
+            {/* Auto-tag disabled checkbox/switch block */}
             <label className="flex items-center justify-between cursor-pointer select-none">
               <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Отключить триггер зоны:
+                Отключить авто-тег:
               </span>
               <div className="relative flex items-center">
                 <input
@@ -2007,8 +2007,8 @@ export default function TaskDetailsPanel({
         {/* Subtasks Section */}
         <div className="space-y-2 bg-[#FAFBFD]/40 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Подзадачи ({allNodes.filter(n => n.parentId === node.id).length})
+            <label className="text-xs font-bold text-slate-400 dark:text-slate-505 uppercase tracking-wider">
+              Подзадачи ({allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length})
             </label>
             {onAddChildNode && (
               <button
@@ -2022,7 +2022,7 @@ export default function TaskDetailsPanel({
           </div>
 
           {(() => {
-            const subtasks = allNodes.filter(n => n.parentId === node.id);
+            const subtasks = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
             if (subtasks.length > 0) {
               return (
                 <div className="space-y-1.5 mt-1.5 max-h-48 overflow-y-auto pr-1">

@@ -41,7 +41,8 @@ import {
   ToggleRight,
   Square,
   Hexagon,
-  Bell
+  Bell,
+  Target
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue } from '../utils';
@@ -86,6 +87,8 @@ interface MindMapCanvasProps {
   onClearLastCreatedNodeId?: () => void;
   onContainerFocusChange?: (isFocused: boolean) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
+  focusedTaskId?: string | null;
+  onFocusedTaskIdChange?: (id: string | null) => void;
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -291,7 +294,9 @@ export default function MindMapCanvas({
   lastCreatedNodeId,
   onClearLastCreatedNodeId,
   onContainerFocusChange,
-  onFullScreenChange
+  onFullScreenChange,
+  focusedTaskId = null,
+  onFocusedTaskIdChange
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -678,8 +683,9 @@ export default function MindMapCanvas({
     return { days, ganttTasks };
   };
 
-  const renderContainerBody = (node: TaskNode, containerChildren: TaskNode[], isFullScreen = false) => {
+  const renderContainerBody = (node: TaskNode, rawChildren: TaskNode[], isFullScreen = false) => {
     const viewMode = containerViewModes[node.id] || 'canvas';
+    const containerChildren = viewMode === 'canvas' ? rawChildren : rawChildren.filter(n => !n.isWorkflowRectangle);
 
     if (viewMode === 'canvas') {
       if (containerChildren.length === 0) {
@@ -4438,6 +4444,37 @@ export default function MindMapCanvas({
   const visibleNodes = nodes.filter(node => {
     if (node.parentId === 'inbox') return false;
 
+    // Filter by task focus mode: if a specific task is focused, show only that task and its descendants/subtasks
+    if (focusedTaskId) {
+      if (node.id === focusedTaskId) return true;
+      
+      let isDescendantOfFocused = false;
+      let currentParentId = node.parentId;
+      while (currentParentId !== null) {
+        if (currentParentId === focusedTaskId) {
+          isDescendantOfFocused = true;
+          break;
+        }
+        const findParent = nodes.find(n => n.id === currentParentId);
+        if (!findParent) break;
+        currentParentId = findParent.parentId;
+      }
+      
+      if (!isDescendantOfFocused) return false;
+      
+      // Since it is a descendant, it must not have collapsed ancestors between itself and the focusedTaskId
+      currentParentId = node.parentId;
+      while (currentParentId !== null && currentParentId !== focusedTaskId) {
+        const parent = nodes.find(n => n.id === currentParentId);
+        if (!parent) break;
+        if (parent.collapsed) {
+          return false;
+        }
+        currentParentId = parent.parentId;
+      }
+      return true;
+    }
+
     // Hide child nodes from main canvas view if parent is a container in list/kanban/calendar/gantt/table view (unless focused)
     if (node.parentId) {
       const parentNode = nodes.find(n => n.id === node.parentId);
@@ -4536,6 +4573,33 @@ export default function MindMapCanvas({
       onTouchEnd={handleTouchEnd}
       onDoubleClick={handleDoubleClick}
     >
+      {/* Immersive Task Focus Banner */}
+      {focusedTaskId && (() => {
+        const focusedTask = nodes.find(n => n.id === focusedTaskId);
+        return (
+          <div className="absolute top-4 left-4 z-50 flex items-center gap-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3.5 py-2 border border-rose-250 dark:border-rose-900/40 rounded-xl shadow-[0_8px_20px_-6px_rgba(239,68,68,0.25)] select-none animate-in fade-in slide-in-from-top-2">
+            <span className="flex h-2.5 w-2.5 relative shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-450 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+            </span>
+            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 font-sans truncate max-w-[200px]">
+              Фокус: <strong className="font-extrabold text-rose-600 dark:text-rose-400">{focusedTask?.text || 'Задача'}</strong>
+            </span>
+            <button
+              onClick={() => {
+                if (onFocusedTaskIdChange) {
+                  onFocusedTaskIdChange(null);
+                }
+              }}
+              className="text-[10px] font-black text-rose-500 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-200 uppercase tracking-wider hover:scale-105 transition-transform px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/40 rounded-md cursor-pointer border border-rose-100 dark:border-rose-900/30"
+              title="Сбросить режим фокуса задачи"
+            >
+              Сбросить
+            </button>
+          </div>
+        );
+      })()}
+
       {/* Floating Full Screen Control on Top Right */}
       {!focusedContainerId && (
         <div className="absolute top-4 right-4 z-50">
@@ -4696,7 +4760,6 @@ export default function MindMapCanvas({
                 
                 <button
                   onClick={() => {
-                    autoFitContainer(focusedContainerId);
                     const targetZoom = 0.85;
                     setZoom(targetZoom);
                     setPanX(-focusedContainer.x * targetZoom);
@@ -4786,7 +4849,6 @@ export default function MindMapCanvas({
                   {/* Quick Exit back button */}
                   <button
                     onClick={() => {
-                      autoFitContainer(focusedContainerId);
                       const targetZoom = 0.85;
                       setZoom(targetZoom);
                       setPanX(-focusedContainer.x * targetZoom);
@@ -5087,8 +5149,8 @@ export default function MindMapCanvas({
           transition: isTransitioningTransform ? 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)' : 'none'
         }}
       >
-        {/* SVG connection lines render */}
-        <svg className="absolute inset-0 pointer-events-none overflow-visible w-1 h-1">
+        {/* SVG connection lines global defs container */}
+        <svg className="absolute inset-0 pointer-events-none overflow-visible w-1 h-1" style={{ zIndex: 0 }}>
           <defs>
             <marker
               id="flow-arrow"
@@ -5102,8 +5164,9 @@ export default function MindMapCanvas({
               <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="currentColor" />
             </marker>
           </defs>
+        </svg>
 
-          {/* Render Flowchart Workflow connections */}
+        {/* Render Flowchart Workflow connections */}
           {visibleNodes.map(node => {
             if (!node.workflowConnections) return null;
             return node.workflowConnections.map(conn => {
@@ -5152,8 +5215,24 @@ export default function MindMapCanvas({
 
               const pathD = getCustomWorkflowPath(x1, y1, conn.fromSide, mid.x, mid.y, x2, y2, conn.toSide);
 
+              const ancestorContainer = getAncestorContainer(node.parentId);
+              let containerZ = 0;
+              let hasContainer = false;
+              if (ancestorContainer) {
+                hasContainer = true;
+                const isAncestorSelected = selectedNodeId === ancestorContainer.id;
+                const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
+                containerZ = isAncestorSelected ? 1000 : (isAncestorLastActive ? 30 : 10);
+              }
+              const connectionZIndex = hasContainer ? containerZ + 4 : 6;
+
               return (
-                <g key={`flow-${node.id}-${conn.id}`} className="group/line" style={{ color: pathColor }}>
+                <svg
+                  key={`flow-svg-${node.id}-${conn.id}`}
+                  className="absolute inset-0 pointer-events-none overflow-visible w-1 h-1"
+                  style={{ zIndex: connectionZIndex }}
+                >
+                  <g key={`flow-${node.id}-${conn.id}`} className="group/line" style={{ color: pathColor }}>
                   {/* Thick glow under selected path */}
                   {isSelected && (
                     <path
@@ -5284,84 +5363,120 @@ export default function MindMapCanvas({
                     </div>
                   </foreignObject>
                 </g>
+              </svg>
               );
             });
           })}
 
           {/* Flowchart Connector Connection Preview Path */}
-          {activeConnector && mousePos && (
-            <path
-              d={
-                hoveredNodeId && hoveredSide
-                  ? getFlowchartPath(
-                      activeConnector.startX,
-                      activeConnector.startY,
-                      activeConnector.side,
-                      mousePos.x,
-                      mousePos.y,
-                      hoveredSide
-                    )
-                  : getDraggingPreviewPath(
-                      activeConnector.startX,
-                      activeConnector.startY,
-                      activeConnector.side,
-                      mousePos.x,
-                      mousePos.y
-                    )
-              }
-              fill="none"
-              stroke="#6366f1"
-              strokeWidth={3}
-              strokeDasharray="5,5"
-              markerEnd="url(#flow-arrow)"
-              className="opacity-95"
-            />
-          )}
+          {activeConnector && mousePos && (() => {
+            const ancestorContainer = getAncestorContainer(activeConnector.nodeId);
+            let containerZ = 0;
+            let hasContainer = false;
+            if (ancestorContainer) {
+              hasContainer = true;
+              const isAncestorSelected = selectedNodeId === ancestorContainer.id;
+              const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
+              containerZ = isAncestorSelected ? 1000 : (isAncestorLastActive ? 30 : 10);
+            }
+            const connectionZIndex = hasContainer ? containerZ + 4 : 6;
+            
+            return (
+              <svg
+                className="absolute inset-0 pointer-events-none overflow-visible w-1 h-1"
+                style={{ zIndex: connectionZIndex }}
+              >
+                <path
+                  d={
+                    hoveredNodeId && hoveredSide
+                      ? getFlowchartPath(
+                          activeConnector.startX,
+                          activeConnector.startY,
+                          activeConnector.side,
+                          mousePos.x,
+                          mousePos.y,
+                          hoveredSide
+                        )
+                      : getDraggingPreviewPath(
+                          activeConnector.startX,
+                          activeConnector.startY,
+                          activeConnector.side,
+                          mousePos.x,
+                          mousePos.y
+                        )
+                  }
+                  fill="none"
+                  stroke="#6366f1"
+                  strokeWidth={3}
+                  strokeDasharray="5,5"
+                  markerEnd="url(#flow-arrow)"
+                  className="opacity-95"
+                />
+              </svg>
+            );
+          })()}
 
           {connections.map(({ child, parent }) => {
             const pathColor = child.color || parent.color || '#818cf8';
             const isSelected = selectedNodeId === child.id || selectedNodeId === parent.id;
             const isConnectionDimmed = isAnyFilterActive && (!isNodeMatched(child) || !isNodeMatched(parent));
+            
+            const ancestorContainer = getAncestorContainer(child.parentId);
+            let containerZ = 0;
+            let hasContainer = false;
+            if (ancestorContainer) {
+              hasContainer = true;
+              const isAncestorSelected = selectedNodeId === ancestorContainer.id;
+              const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
+              containerZ = isAncestorSelected ? 1000 : (isAncestorLastActive ? 30 : 10);
+            }
+            const connectionZIndex = hasContainer ? containerZ + 4 : 6;
+
             return (
-              <g 
-                key={`conn-${child.id}`}
-                style={{ opacity: isConnectionDimmed ? 0.15 : 1 }}
-                className="transition-opacity duration-300"
+              <svg
+                key={`conn-svg-${child.id}`}
+                className="absolute inset-0 pointer-events-none overflow-visible w-1 h-1"
+                style={{ zIndex: connectionZIndex }}
               >
-                {/* Thick glow under the connection when selected */}
-                {isSelected && (
+                <g 
+                  key={`conn-${child.id}`}
+                  style={{ opacity: isConnectionDimmed ? 0.15 : 1 }}
+                  className="transition-opacity duration-300"
+                >
+                  {/* Thick glow under the connection when selected */}
+                  {isSelected && (
+                    <path
+                      d={getBezierPath(parent.x, parent.y, child.x, child.y)}
+                      fill="none"
+                      stroke={pathColor}
+                      strokeWidth={6}
+                      strokeLinecap="round"
+                      className="opacity-20 blur-[1px] transition-all duration-200"
+                    />
+                  )}
+                  
+                  {/* Regular connection path */}
                   <path
                     d={getBezierPath(parent.x, parent.y, child.x, child.y)}
                     fill="none"
                     stroke={pathColor}
-                    strokeWidth={6}
+                    strokeWidth={isSelected ? 3 : 2}
                     strokeLinecap="round"
-                    className="opacity-20 blur-[1px] transition-all duration-200"
+                    className="transition-all duration-200"
                   />
-                )}
-                
-                {/* Regular connection path */}
-                <path
-                  d={getBezierPath(parent.x, parent.y, child.x, child.y)}
-                  fill="none"
-                  stroke={pathColor}
-                  strokeWidth={isSelected ? 3 : 2}
-                  strokeLinecap="round"
-                  className="transition-all duration-200"
-                />
-                
-                {/* Fancy connector indicator arrow / circle */}
-                <circle
-                  cx={child.x}
-                  cy={child.y}
-                  r={4}
-                  fill={pathColor}
-                  className="transition-all"
-                />
-              </g>
+                  
+                  {/* Fancy connector indicator arrow / circle */}
+                  <circle
+                    cx={child.x}
+                    cy={child.y}
+                    r={4}
+                    fill={pathColor}
+                    className="transition-all"
+                  />
+                </g>
+              </svg>
             );
           })}
-        </svg>
 
         {/* Task Nodes Render */}
         {visibleNodes.map((node) => {
@@ -5390,7 +5505,7 @@ export default function MindMapCanvas({
                   left: node.x,
                   top: node.y,
                   transform: 'translate(-50%, -50%)',
-                  zIndex: isContainerSelected ? 50 : (lastActiveContainerId === node.id ? 30 : 10), 
+                  zIndex: isContainerSelected ? 1000 : (lastActiveContainerId === node.id ? 30 : 10), 
                   width: isContainerCollapsed ? '220px' : `${node.width || 520}px`,
                   height: isContainerCollapsed ? '100px' : `${node.height || 400}px`,
                 }}
@@ -5927,11 +6042,11 @@ export default function MindMapCanvas({
             if (ancestorContainer) {
               const isAncestorSelected = selectedNodeId === ancestorContainer.id;
               const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
-              containerZ = isAncestorSelected ? 50 : (isAncestorLastActive ? 30 : 10);
+              containerZ = isAncestorSelected ? 1000 : (isAncestorLastActive ? 30 : 10);
             }
-            const cardZIndex = ancestorContainer
-              ? containerZ + (isSelected ? 12 : 8)
-              : (isSelected ? 70 : 8);
+            const cardZIndex = isSelected 
+              ? 1000 
+              : (ancestorContainer ? containerZ + 8 : 8);
 
             const matches = isNodeMatched(node);
             const isDimmed = isAnyFilterActive && !matches;
@@ -5994,7 +6109,7 @@ export default function MindMapCanvas({
                         width: `${zoneW}px`,
                         height: `${zoneH}px`
                       }}
-                      className={`rounded-2xl border-2 border-dashed transition-all pointer-events-none ${
+                      className={`rounded-2xl border border-dashed transition-all pointer-events-none ${
                         node.isZoneTriggerDisabled
                           ? 'border-gray-300 dark:border-gray-800 bg-gray-50/5 dark:bg-slate-900/5 opacity-40'
                           : isAnyDraggingNodeOverlapping
@@ -6005,15 +6120,15 @@ export default function MindMapCanvas({
                       }`}
                     >
                       {/* Title label at the top center of the zone */}
-                      <div className={`absolute -top-5 left-1/2 transform -translate-x-1/2 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-xs pointer-events-none border select-none transition-all duration-150 whitespace-nowrap ${
-                        node.isZoneTriggerDisabled
-                          ? 'bg-gray-105 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-750 dark:text-gray-500'
-                          : isAnyDraggingNodeOverlapping
-                            ? 'bg-emerald-500 text-white border-emerald-600'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                      }`}>
-                        {node.isZoneTriggerDisabled ? '⛔ Триггер выключен' : isAnyDraggingNodeOverlapping ? `🔗 Авто-тег: ${node.text || 'Шаг_Workflow'}` : 'Зона Триггера'}
-                      </div>
+                      {(node.isZoneTriggerDisabled || isAnyDraggingNodeOverlapping) && (
+                        <div className={`absolute -top-5 left-1/2 transform -translate-x-1/2 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-xs pointer-events-none border select-none transition-all duration-150 whitespace-nowrap ${
+                          node.isZoneTriggerDisabled
+                            ? 'bg-gray-105 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-750 dark:text-gray-500'
+                            : 'bg-emerald-500 text-white border-emerald-600'
+                        }`}>
+                          {node.isZoneTriggerDisabled ? '⛔ Выключен' : `🔗 Авто-тег: ${node.text || 'Шаг_Workflow'}`}
+                        </div>
+                      )}
 
                       {/* Resize Handles of trigger zone - visible only when active workflow step is selected */}
                       {isSelected && (
@@ -6111,12 +6226,12 @@ export default function MindMapCanvas({
                   } ${
                     node.workflowShape === 'rhomb'
                       ? ''
-                      : `rounded-xl border-2 shadow-md ${
+                      : `rounded-md border-2 shadow-sm ${
                           isOpponentHovered
-                            ? 'bg-indigo-50/15 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500/25 scale-[1.025] shadow-lg'
+                            ? 'bg-indigo-50/15 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500/25 scale-[1.025] shadow-md'
                             : isSelected
-                              ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-400 ring-4 ring-indigo-120 dark:ring-indigo-950/40 shadow-lg'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
+                              ? 'bg-white dark:bg-slate-900 border-indigo-600 dark:border-indigo-400 ring-4 ring-indigo-120/50 dark:ring-indigo-950/40 shadow-md'
+                              : 'bg-white dark:bg-slate-900 border-slate-350 dark:border-slate-650 hover:border-slate-500 dark:hover:border-slate-500'
                         }`
                   }`}
                 >
@@ -6302,7 +6417,7 @@ export default function MindMapCanvas({
                           isZoneTriggerDisabled: !node.isZoneTriggerDisabled
                         });
                       }}
-                      title={node.isZoneTriggerDisabled ? "Включить триггер зоны авто-тегов" : "Выключить триггер зоны авто-тегов"}
+                      title={node.isZoneTriggerDisabled ? "Включить зону авто-тегов" : "Выключить зону авто-тегов"}
                       className="flex items-center justify-center w-8 h-8 text-indigo-650 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                     >
                       {node.isZoneTriggerDisabled ? (
@@ -6368,11 +6483,11 @@ export default function MindMapCanvas({
           if (ancestorContainer) {
             const isAncestorSelected = selectedNodeId === ancestorContainer.id;
             const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
-            containerZ = isAncestorSelected ? 50 : (isAncestorLastActive ? 30 : 10);
+            containerZ = isAncestorSelected ? 1000 : (isAncestorLastActive ? 30 : 10);
           }
-          const cardZIndex = ancestorContainer
-            ? containerZ + (isSelected ? 5 : 2)
-            : (isSelected ? 60 : 5);
+          const cardZIndex = isSelected 
+            ? 1000 
+            : (ancestorContainer ? containerZ + 2 : 5);
             
           return (
             <div
@@ -7021,7 +7136,7 @@ export default function MindMapCanvas({
 
                     {/* Subtasks inline list */}
                     {(() => {
-                      const subtasks = nodes.filter(n => n.parentId === node.id && !n.isContainer && !n.archived);
+                      const subtasks = nodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle && !n.archived);
                       if (subtasks.length === 0) return null;
                       const isExpanded = expandedCardSubtasks[node.id] || false;
                       const completedCount = subtasks.filter(s => s.completed).length;
@@ -7238,6 +7353,26 @@ export default function MindMapCanvas({
                     className="flex items-center justify-center w-8 h-8 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                   >
                     <Paperclip className="w-4 h-4" />
+                  </button>
+
+                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                  {/* Button 3.5: Фокусировка */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onFocusedTaskIdChange) {
+                        onFocusedTaskIdChange(focusedTaskId === node.id ? null : node.id);
+                      }
+                    }}
+                    title={focusedTaskId === node.id ? "Сбросить фокус" : "Фокусировка на задаче (показать только ее и подзадачи)"}
+                    className={`flex items-center justify-center w-8 h-8 rounded-full cursor-pointer transition-colors ${
+                      focusedTaskId === node.id
+                        ? 'text-rose-600 bg-rose-50 dark:bg-rose-955/40 dark:text-rose-400'
+                        : 'text-amber-600 hover:bg-amber-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <Target className="w-4 h-4" />
                   </button>
 
                   {true && (

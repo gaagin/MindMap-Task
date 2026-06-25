@@ -25,7 +25,7 @@ interface EisenhowerMatrixProps {
   onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
-  onCreateTask?: (text: string, initialTags: string[], priority?: Priority, parentId?: string | null) => void;
+  onCreateTask?: (text: string, initialTags: string[], priority?: Priority, parentId?: string | null, dueDate?: string) => void;
   selectedNodeIds?: string[];
   searchQuery?: string;
   onFullScreenChange?: (isFullScreen: boolean) => void;
@@ -352,23 +352,27 @@ export default function EisenhowerMatrixView({
     const selectedQuad = quadrants.find(q => q.id === newTaskQuadrant);
     const targetPriority = selectedQuad ? selectedQuad.targetPriority : 'low';
 
-    const newNodeId = 'node-' + Math.random().toString(36).substring(2, 9);
-    const newTask: TaskNode = {
-      id: newNodeId,
-      projectId: activeProjectId,
-      text,
-      x: 150,
-      y: 150,
-      parentId: null,
-      priority: targetPriority,
-      tags: [],
-      notes: '',
-      completed: false,
-      files: [],
-      dueDate: calcedDueDate,
-      updatedAt: new Date().toISOString()
-    };
-    onUpdateNode(newTask);
+    if (onCreateTask) {
+      onCreateTask(text, [], targetPriority, null, calcedDueDate);
+    } else {
+      const newNodeId = 'node-' + Math.random().toString(36).substring(2, 9);
+      const newTask: TaskNode = {
+        id: newNodeId,
+        projectId: activeProjectId,
+        text,
+        x: 150,
+        y: 150,
+        parentId: null,
+        priority: targetPriority,
+        tags: [],
+        notes: '',
+        completed: false,
+        files: [],
+        dueDate: calcedDueDate,
+        updatedAt: new Date().toISOString()
+      };
+      onUpdateNode(newTask);
+    }
 
     // Clean states
     setNewTasksTitle('');

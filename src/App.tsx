@@ -220,26 +220,6 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
         }
       }
 
-      // Smart heuristic: if we have an ADIB project, and the current project is NOT ADIB,
-      // we filter out categories whose tags are not used in this project.
-      // This cleans up foreign categories from non-ADIB projects.
-      const isAdib = typeof p.name === 'string' && p.name.toLowerCase().includes('adib');
-      if (hasAdibProject && !isAdib && p.id) {
-        const pNodes = Array.isArray(nodes[p.id]) ? nodes[p.id]! : [];
-        const usedTags = new Set<string>();
-        pNodes.forEach(n => {
-          if (n && Array.isArray(n.tags)) {
-            n.tags.forEach(t => {
-              if (t) usedTags.add(t);
-            });
-          }
-        });
-        pCats = pCats.filter(cat => {
-          if (!cat) return false;
-          return Array.isArray(cat.tags) && cat.tags.some(t => usedTags.has(t));
-        });
-      }
-
       return {
         ...p,
         tagCategories: pCats
@@ -931,6 +911,7 @@ export default function App() {
 
   // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'
   const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'>('canvas');
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [isMobileViewSwitcherOpen, setIsMobileViewSwitcherOpen] = useState(false);
   const [isContainerFocused, setIsContainerFocused] = useState(false);
   const [isViewFullScreen, setIsViewFullScreen] = useState(false);
@@ -1764,6 +1745,7 @@ export default function App() {
     setSelectedNodeIds([]);
     setIsMultiSelectMode(false);
     setSearchQuery('');
+    setFocusedTaskId(null);
     
     // Automatically close the sidebar overlay drawer on mobile/tablet screen widths
     if (window.innerWidth < 1024) {
@@ -1983,6 +1965,10 @@ export default function App() {
 
   const displayedNodesForViews = useMemo(() => {
     return activeNodes.filter(node => {
+      if (viewMode !== 'canvas' && node.isWorkflowRectangle) {
+        return false;
+      }
+
       if (filterStatus === "archived") {
         return !!node.archived;
       }
@@ -2535,7 +2521,7 @@ export default function App() {
   };
 
   // Create a new task originating from the Kanban Board view
-  const handleCreateKanbanTask = (text: string, initialTags: string[], initialPriority: Priority = 'none', parentId: string | null = null) => {
+  const handleCreateKanbanTask = (text: string, initialTags: string[], initialPriority: Priority = 'none', parentId: string | null = null, dueDate?: string) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
@@ -2559,6 +2545,7 @@ export default function App() {
       notes: '',
       completed: false,
       files: [],
+      dueDate,
       color: '#6366f1'
     };
 
@@ -2986,76 +2973,79 @@ export default function App() {
                   </span>
                 )}
               </h2>
-              {viewMode !== 'mobile-list' && (
-                <div className="hidden sm:flex items-center gap-3.5 text-[11px] text-slate-500 dark:text-slate-400 font-sans select-none relative group z-30">
-                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 rounded-2xl border border-slate-150 dark:border-slate-800/60 shadow-xs cursor-pointer hover:border-indigo-200 dark:hover:border-indigo-950 transition-all duration-200">
-                    {/* Symmetrical SVG Pie/Donut Chart */}
-                    <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
-                      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 32 32">
-                        {/* Background total / pending circle */}
-                        <circle
-                          cx="16"
-                          cy="16"
-                          r="12"
-                          className="text-slate-205 dark:text-slate-800"
-                          strokeWidth="3.5"
-                          stroke="currentColor"
-                          fill="transparent"
-                        />
-                        {/* Completed tasks sector circle */}
-                        <circle
-                          cx="16"
-                          cy="16"
-                          r="12"
-                          className="text-emerald-500 dark:text-emerald-400 transition-all duration-500"
-                          strokeWidth="3.5"
-                          strokeDasharray={2 * Math.PI * 12}
-                          strokeDashoffset={2 * Math.PI * 12 * (1 - (activeNodes.length > 0 ? activeNodes.filter(n => n.completed).length / activeNodes.length : 0))}
-                          strokeLinecap="round"
-                          stroke="currentColor"
-                          fill="transparent"
-                        />
-                      </svg>
-                      <span className="absolute text-[8px] font-extrabold text-slate-700 dark:text-slate-300 font-mono">
-                        {activeNodes.length > 0 ? Math.round((activeNodes.filter(n => n.completed).length / activeNodes.length) * 100) : 0}%
-                      </span>
+              {viewMode !== 'mobile-list' && (() => {
+                const actualTasks = activeNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
+                return (
+                  <div className="hidden sm:flex items-center gap-3.5 text-[11px] text-slate-500 dark:text-slate-400 font-sans select-none relative group z-30">
+                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 rounded-2xl border border-slate-150 dark:border-slate-800/60 shadow-xs cursor-pointer hover:border-indigo-200 dark:hover:border-indigo-950 transition-all duration-200">
+                      {/* Symmetrical SVG Pie/Donut Chart */}
+                      <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
+                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 32 32">
+                          {/* Background total / pending circle */}
+                          <circle
+                            cx="16"
+                            cy="16"
+                            r="12"
+                            className="text-slate-205 dark:text-slate-800"
+                            strokeWidth="3.5"
+                            stroke="currentColor"
+                            fill="transparent"
+                          />
+                          {/* Completed tasks sector circle */}
+                          <circle
+                            cx="16"
+                            cy="16"
+                            r="12"
+                            className="text-emerald-500 dark:text-emerald-400 transition-all duration-500"
+                            strokeWidth="3.5"
+                            strokeDasharray={2 * Math.PI * 12}
+                            strokeDashoffset={2 * Math.PI * 12 * (1 - (actualTasks.length > 0 ? actualTasks.filter(n => n.completed).length / actualTasks.length : 0))}
+                            strokeLinecap="round"
+                            stroke="currentColor"
+                            fill="transparent"
+                          />
+                        </svg>
+                        <span className="absolute text-[8px] font-extrabold text-slate-700 dark:text-slate-300 font-mono">
+                          {actualTasks.length > 0 ? Math.round((actualTasks.filter(n => n.completed).length / actualTasks.length) * 100) : 0}%
+                        </span>
+                      </div>
+
+                      {/* Stats Texts */}
+                      <div className="flex flex-col text-[10px] leading-tight font-serif">
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-400 dark:text-slate-500">Задач:</span>
+                          <span className="font-extrabold text-slate-700 dark:text-slate-300 font-mono">{actualTasks.length}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-400 dark:text-slate-500">Выполнено:</span>
+                          <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">{actualTasks.filter(n => n.completed).length}</span>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Stats Texts */}
-                    <div className="flex flex-col text-[10px] leading-tight font-serif">
-                      <div className="flex items-center gap-1">
-                        <span className="text-slate-400 dark:text-slate-500">Задач:</span>
-                        <span className="font-extrabold text-slate-700 dark:text-slate-300 font-mono">{activeNodes.length}</span>
+                    {/* Elegant Tooltip Popover on Hover */}
+                    <div className="absolute top-12 left-0 z-50 hidden group-hover:block bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 p-3 rounded-xl shadow-2xl min-w-[180px] text-xs pointer-events-none select-none">
+                      <div className="font-bold text-slate-800 dark:text-slate-200 mb-1.5 border-b pb-1 border-slate-100 dark:border-slate-800">
+                        Статистика прогресса
                       </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-slate-400 dark:text-slate-500">Выполнено:</span>
-                        <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">{activeNodes.filter(n => n.completed).length}</span>
+                      <div className="space-y-1 font-mono text-[11px] text-slate-605 dark:text-slate-400">
+                        <div className="flex justify-between">
+                          <span>Всего задач:</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">{actualTasks.length}</span>
+                        </div>
+                        <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                          <span>Выполнено:</span>
+                          <span className="font-bold">{actualTasks.filter(n => n.completed).length} ({actualTasks.length > 0 ? Math.round((actualTasks.filter(n => n.completed).length / actualTasks.length) * 100) : 0}%)</span>
+                        </div>
+                        <div className="flex justify-between text-amber-500 dark:text-amber-400">
+                          <span>В процессе:</span>
+                          <span className="font-bold">{actualTasks.length - actualTasks.filter(n => n.completed).length} ({actualTasks.length > 0 ? Math.round(((actualTasks.length - actualTasks.filter(n => n.completed).length) / actualTasks.length) * 100) : 0}%)</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-
-                  {/* Elegant Tooltip Popover on Hover */}
-                  <div className="absolute top-12 left-0 z-50 hidden group-hover:block bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 p-3 rounded-xl shadow-2xl min-w-[180px] text-xs pointer-events-none select-none">
-                    <div className="font-bold text-slate-800 dark:text-slate-200 mb-1.5 border-b pb-1 border-slate-100 dark:border-slate-800">
-                      Статистика прогресса
-                    </div>
-                    <div className="space-y-1 font-mono text-[11px] text-slate-605 dark:text-slate-400">
-                      <div className="flex justify-between">
-                        <span>Всего задач:</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">{activeNodes.length}</span>
-                      </div>
-                      <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-                        <span>Выполнено:</span>
-                        <span className="font-bold">{activeNodes.filter(n => n.completed).length} ({activeNodes.length > 0 ? Math.round((activeNodes.filter(n => n.completed).length / activeNodes.length) * 100) : 0}%)</span>
-                      </div>
-                      <div className="flex justify-between text-amber-500 dark:text-amber-400">
-                        <span>В процессе:</span>
-                        <span className="font-bold">{activeNodes.length - activeNodes.filter(n => n.completed).length} ({activeNodes.length > 0 ? Math.round(((activeNodes.length - activeNodes.filter(n => n.completed).length) / activeNodes.length) * 100) : 0}%)</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </div>
 
@@ -3645,6 +3635,10 @@ export default function App() {
                 onUpdateTagCategory={handleUpdateTagCategory}
                 onDeleteTagCategory={handleDeleteTagCategory}
                 onFullScreenChange={setIsViewFullScreen}
+                onFocusTaskOnCanvas={(taskId) => {
+                  setFocusedTaskId(taskId);
+                  setViewMode('canvas');
+                }}
               />
             ) : viewMode === 'kanban' ? (
               <KanbanView
@@ -3767,6 +3761,8 @@ export default function App() {
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 onContainerFocusChange={setIsContainerFocused}
                 onFullScreenChange={setIsViewFullScreen}
+                focusedTaskId={focusedTaskId}
+                onFocusedTaskIdChange={setFocusedTaskId}
               />
             )
           ) : (

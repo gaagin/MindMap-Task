@@ -1287,7 +1287,7 @@ export default function KanbanView({
 
         {/* Subtasks inline list */}
         {(() => {
-          const subtasks = nodes.filter(n => n.parentId === node.id && !n.isContainer && !n.archived);
+          const subtasks = nodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle && !n.archived);
           if (subtasks.length === 0) return null;
           const isExpanded = expandedCardSubtasks[node.id] || false;
           const completedCount = subtasks.filter(s => s.completed).length;

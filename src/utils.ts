@@ -193,7 +193,7 @@ export function calculateProgress(nodeId: string, allNodes: TaskNode[]): number 
   const node = allNodes.find(n => n.id === nodeId);
   if (!node) return null;
 
-  const children = allNodes.filter(n => n.parentId === nodeId);
+  const children = allNodes.filter(n => n.parentId === nodeId && !n.isWorkflowRectangle);
   if (children.length === 0) {
     if (node.completed) return 100;
     return node.progress !== undefined ? node.progress : 0;
@@ -210,7 +210,7 @@ export function calculateProgress(nodeId: string, allNodes: TaskNode[]): number 
     if (!currNode) return 0;
     if (currNode.completed) return 100;
 
-    const subChildren = allNodes.filter(n => n.parentId === id);
+    const subChildren = allNodes.filter(n => n.parentId === id && !n.isWorkflowRectangle);
     if (subChildren.length === 0) {
       return currNode.progress !== undefined ? currNode.progress : 0;
     }
@@ -233,7 +233,7 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
     changed = false;
     current = current.map(node => {
       // Find direct children
-      const children = current.filter(n => n.parentId === node.id);
+      const children = current.filter(n => n.parentId === node.id && !n.isWorkflowRectangle);
       let nextNode = { ...node };
       let nodeChanged = false;
 
