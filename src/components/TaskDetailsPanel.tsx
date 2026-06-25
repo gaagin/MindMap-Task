@@ -93,6 +93,7 @@ export default function TaskDetailsPanel({
   // Drag and touch sorting states for subtasks
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [activeTouchIndex, setActiveTouchIndex] = useState<number | null>(null);
+  const lastSwapTimeRef = React.useRef<number>(0);
 
   // Image Lightbox zoom and rotation states
   const [lightboxImage, setLightboxImage] = useState<AttachmentFile | null>(null);
@@ -2084,6 +2085,9 @@ export default function TaskDetailsPanel({
               e.preventDefault();
               if (draggedIndex === null || draggedIndex === index) return;
 
+              const now = Date.now();
+              if (now - lastSwapTimeRef.current < 200) return;
+
               const rect = e.currentTarget.getBoundingClientRect();
               const mouseY = e.clientY - rect.top;
               const threshold = rect.height / 2;
@@ -2105,6 +2109,7 @@ export default function TaskDetailsPanel({
               draggedItem.subtaskOrder = targetItem.subtaskOrder!;
               targetItem.subtaskOrder = tempOrder;
 
+              lastSwapTimeRef.current = now;
               onUpdateNode({ ...draggedItem });
               onUpdateNode({ ...targetItem });
               setDraggedIndex(index);
@@ -2120,6 +2125,10 @@ export default function TaskDetailsPanel({
 
             const handleTouchMove = (e: React.TouchEvent) => {
               if (activeTouchIndex === null) return;
+              
+              const now = Date.now();
+              if (now - lastSwapTimeRef.current < 200) return;
+
               const touch = e.touches[0];
               const element = document.elementFromPoint(touch.clientX, touch.clientY);
               if (!element) return;
@@ -2150,6 +2159,7 @@ export default function TaskDetailsPanel({
                     draggedItem.subtaskOrder = targetItem.subtaskOrder!;
                     targetItem.subtaskOrder = tempOrder;
 
+                    lastSwapTimeRef.current = now;
                     onUpdateNode({ ...draggedItem });
                     onUpdateNode({ ...targetItem });
                     setActiveTouchIndex(targetIndex);

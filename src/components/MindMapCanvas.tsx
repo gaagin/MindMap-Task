@@ -371,6 +371,7 @@ export default function MindMapCanvas({
   // Drag and touch sorting states for subtasks in mind map canvas
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [activeTouchIndex, setActiveTouchIndex] = useState<number | null>(null);
+  const lastSwapTimeRef = useRef<number>(0);
 
   const [activeInlineMenu, setActiveInlineMenu] = useState<{
     cardId: string;
@@ -396,6 +397,10 @@ export default function MindMapCanvas({
   const [nestedDragNodeId, setNestedDragNodeId] = useState<string | null>(null);
   // States for trailing tags drag and drop onto nodes on canvas
   const [draggedOverTagNodeId, setDraggedOverTagNodeId] = useState<string | null>(null);
+  
+  // Fullscreen card modal state on mobile
+  const [fullscreenCardId, setFullscreenCardId] = useState<string | null>(null);
+  const [fullscreenSubtaskText, setFullscreenSubtaskText] = useState('');
 
   // States for Flowchart Workflow connectors dragging
   const [activeConnector, setActiveConnector] = useState<{
@@ -6796,13 +6801,37 @@ export default function MindMapCanvas({
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
                       title="Быстро добавить подзадачу"
-                      className={`mt-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-1 rounded hover:bg-slate-150/50 dark:hover:bg-slate-800 cursor-pointer shrink-0 ${
+                      className={`mt-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 transition-opacity p-1 rounded hover:bg-slate-150/50 dark:hover:bg-slate-800 cursor-pointer shrink-0 ${
                         isRoot 
                           ? 'text-indigo-200 hover:text-white hover:bg-indigo-700/50' 
                           : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
                       }`}
                     >
                       <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  {/* Fullscreen card toggle button for mobile/always */}
+                  {!node.isContainer && !node.isWorkflowRectangle && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFullscreenCardId(fullscreenCardId === node.id ? null : node.id);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title={fullscreenCardId === node.id ? "Выйти из полноэкранного режима" : "Раскрыть на весь экран"}
+                      className={`mt-0.5 p-1 rounded hover:bg-slate-150/50 dark:hover:bg-slate-800 cursor-pointer shrink-0 ${
+                        isRoot 
+                          ? 'text-indigo-200 hover:text-white hover:bg-indigo-700/50' 
+                          : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                      }`}
+                    >
+                      {fullscreenCardId === node.id ? (
+                        <Minimize2 className="w-3.5 h-3.5" />
+                      ) : (
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   )}
                 </div>
@@ -7278,6 +7307,9 @@ export default function MindMapCanvas({
                         e.preventDefault();
                         if (draggedIndex === null || draggedIndex === idx) return;
 
+                        const now = Date.now();
+                        if (now - lastSwapTimeRef.current < 200) return;
+
                         const rect = e.currentTarget.getBoundingClientRect();
                         const mouseY = e.clientY - rect.top;
                         const threshold = rect.height / 2;
@@ -7298,6 +7330,7 @@ export default function MindMapCanvas({
                         draggedItem.subtaskOrder = targetItem.subtaskOrder!;
                         targetItem.subtaskOrder = tempOrder;
 
+                        lastSwapTimeRef.current = now;
                         onUpdateNode({ ...draggedItem });
                         onUpdateNode({ ...targetItem });
                         setDraggedIndex(idx);
@@ -7313,6 +7346,10 @@ export default function MindMapCanvas({
 
                       const handleTouchMove = (e: React.TouchEvent) => {
                         if (activeTouchIndex === null) return;
+                        
+                        const now = Date.now();
+                        if (now - lastSwapTimeRef.current < 200) return;
+
                         const touch = e.touches[0];
                         const element = document.elementFromPoint(touch.clientX, touch.clientY);
                         if (!element) return;
@@ -7343,6 +7380,7 @@ export default function MindMapCanvas({
                               draggedItem.subtaskOrder = targetItem.subtaskOrder!;
                               targetItem.subtaskOrder = tempOrder;
 
+                              lastSwapTimeRef.current = now;
                               onUpdateNode({ ...draggedItem });
                               onUpdateNode({ ...targetItem });
                               setActiveTouchIndex(targetIndex);
@@ -8223,6 +8261,190 @@ export default function MindMapCanvas({
                   className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition shadow-sm cursor-pointer"
                 >
                   Готово
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Fullscreen card overlay on mobile */}
+      {fullscreenCardId && (() => {
+        const node = nodes.find(n => n.id === fullscreenCardId);
+        if (!node) return null;
+
+        const subtasks = nodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle && !n.archived);
+
+        const handleAddSubtask = (e: React.FormEvent) => {
+          e.preventDefault();
+          if (!fullscreenSubtaskText.trim()) return;
+          // Add a child node using our excellent helper
+          onAddFloatingNode(node.x + 240, node.y, node.id, fullscreenSubtaskText.trim());
+          setFullscreenSubtaskText('');
+        };
+
+        return (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setFullscreenCardId(null)}>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-lg h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/60">
+                <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5 font-sans">
+                  <Smartphone className="w-4 h-4 text-indigo-500" />
+                  Карточка (Полноэкранный вид)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFullscreenCardId(null)}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors cursor-pointer"
+                  title="Вернуться к стандартному виду"
+                >
+                  <Minimize2 className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* Title Section */}
+                <div className="flex items-start gap-3">
+                  <button
+                    onClick={() => onToggleNodeCompleted(node.id)}
+                    className="mt-1 text-slate-400 dark:text-slate-600 hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors cursor-pointer shrink-0"
+                  >
+                    {node.completed ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 fill-emerald-50 dark:fill-emerald-950/30" />
+                    ) : (
+                      <Circle className="w-5 h-5 text-slate-300 dark:text-slate-700" />
+                    )}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <input
+                      type="text"
+                      value={node.text}
+                      onChange={(e) => onUpdateNode({ ...node, text: e.target.value })}
+                      placeholder="Имя задачи..."
+                      className="w-full text-base font-bold bg-transparent border-0 focus:ring-0 p-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:bg-slate-50 dark:focus:bg-slate-800/40 rounded px-1.5 py-0.5"
+                    />
+                  </div>
+                </div>
+
+                {/* Priority, Due Date & Description Info */}
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-850/30 p-4 rounded-xl border border-slate-150 dark:border-slate-800/60 text-xs">
+                  <div>
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1.5">Приоритет</span>
+                    <select
+                      value={node.priority || 'none'}
+                      onChange={(e) => onUpdateNode({ ...node, priority: e.target.value as Priority })}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-750 dark:text-slate-250 font-semibold"
+                    >
+                      <option value="urgent">🔥 Критический</option>
+                      <option value="high">🟠 Высокий</option>
+                      <option value="medium">🔵 Средний</option>
+                      <option value="low">🟢 Низкий</option>
+                      <option value="none">⚪ Без приоритета</option>
+                    </select>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1.5">Дедлайн</span>
+                    <input
+                      type="date"
+                      value={node.dueDate || ''}
+                      onChange={(e) => onUpdateNode({ ...node, dueDate: e.target.value || undefined })}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-750 dark:text-slate-250 font-semibold"
+                    />
+                  </div>
+                </div>
+
+                {/* Description Textarea */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                    Описание / Заметки
+                  </span>
+                  <textarea
+                    value={node.notes || ''}
+                    onChange={(e) => onUpdateNode({ ...node, notes: e.target.value })}
+                    placeholder="Добавьте подробное описание задачи..."
+                    rows={3}
+                    className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 dark:bg-slate-850/40 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 leading-relaxed font-sans"
+                  />
+                </div>
+
+                {/* Subtasks Section */}
+                <div className="space-y-3">
+                  <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                    Список подзадач ({subtasks.length})
+                  </span>
+
+                  {/* Existing Subtasks */}
+                  <div className="space-y-2">
+                    {subtasks.length > 0 ? (
+                      subtasks.map((sub, idx) => (
+                        <div
+                          key={sub.id}
+                          className="flex items-center justify-between gap-3 p-3 bg-slate-50/50 dark:bg-slate-850/20 border border-slate-150 dark:border-slate-800 rounded-xl hover:bg-slate-100/30 dark:hover:bg-slate-855/40 transition-colors"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <button
+                              type="button"
+                              onClick={() => onToggleNodeCompleted(sub.id)}
+                              className="text-slate-450 hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer animate-fade-in"
+                            >
+                              {sub.completed ? (
+                                <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 dark:text-emerald-450" />
+                              ) : (
+                                <Circle className="w-4.5 h-4.5 text-slate-300 dark:text-slate-700" />
+                              )}
+                            </button>
+                            <span className={`text-xs font-semibold truncate ${sub.completed ? 'line-through text-slate-400 italic' : 'text-slate-700 dark:text-slate-200'}`}>
+                              {sub.text}
+                            </span>
+                          </div>
+                          
+                          {/* Delete subtask button */}
+                          <button
+                            type="button"
+                            onClick={() => onDeleteNode(sub.id)}
+                            className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-955/20 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+                            title="Удалить подзадачу"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-slate-400 dark:text-slate-500 italic p-4 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center font-sans">
+                        Нет подзадач. Создайте первую с помощью формы ниже!
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick Add Subtask Form */}
+                  <form onSubmit={handleAddSubtask} className="flex gap-2 pt-1.5">
+                    <input
+                      type="text"
+                      value={fullscreenSubtaskText}
+                      onChange={(e) => setFullscreenSubtaskText(e.target.value)}
+                      placeholder="Добавить новую подзадачу..."
+                      className="flex-1 bg-slate-50 dark:bg-slate-850/40 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!fullscreenSubtaskText.trim()}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl cursor-pointer transition-all shrink-0 shadow-sm"
+                    >
+                      Добавить
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setFullscreenCardId(null)}
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                >
+                  Вернуться на холст
                 </button>
               </div>
             </div>
