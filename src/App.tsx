@@ -2221,21 +2221,49 @@ export default function App() {
       color: parent.color || ''
     };
 
-    setState(prev => ({
-      ...prev,
-      nodes: {
-        ...prev.nodes,
-        [pid]: [...currentNodes, newChild]
+    setState(prev => {
+      const current = prev.nodes[pid] || [];
+      const parentNodeIndex = current.findIndex(n => n.id === parentId);
+      const nodesCopy = [...current];
+      if (parentNodeIndex !== -1) {
+        nodesCopy[parentNodeIndex] = {
+          ...nodesCopy[parentNodeIndex],
+          isCardCollapsed: false,
+          updatedAt: new Date().toISOString()
+        };
       }
-    }));
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: [...nodesCopy, newChild]
+        }
+      };
+    });
 
-    // Smoothly pan/recenter the viewport around the new node so it is fully visible on screen
-    setPanX(-Math.round(newX) * zoom);
-    setPanY(-Math.round(newY) * zoom);
+    // Check if the parent node or any of its ancestors are collapsed
+    let isParentOrAncestorCollapsed = !!parent.collapsed;
+    let currParentId = parent.parentId;
+    while (currParentId !== null && !isParentOrAncestorCollapsed) {
+      const ancestor = currentNodes.find(n => n.id === currParentId);
+      if (!ancestor) break;
+      if (ancestor.collapsed) {
+        isParentOrAncestorCollapsed = true;
+      }
+      currParentId = ancestor.parentId;
+    }
+
+    // Smoothly pan/recenter the viewport around the new node so it is fully visible on screen,
+    // but ONLY if the parent branch is not collapsed (if collapsed, the child is invisible on the map canvas)
+    if (!isParentOrAncestorCollapsed) {
+      setPanX(-Math.round(newX) * zoom);
+      setPanY(-Math.round(newY) * zoom);
+    }
 
     // Set lastCreatedNodeId so the new child node gets inline editing focused on the map,
-    // but do NOT change selectedNodeId so the parent properties details panel remains open!
+    // and set selectedNodeId to the new child so it is focused/selected
     setLastCreatedNodeId(newChild.id);
+    setSelectedNodeId(newChild.id);
   };
 
   // Add a fully independent task inside the temporary off-canvas INBOX container

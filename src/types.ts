@@ -88,6 +88,7 @@ export interface TaskNode {
   tagCategories?: TagCategory[]; // Optional private card-specific tag categories and tags
   externalLink?: string; // Optional external URL link
   containerPlace?: string; // Optional field for container addition place
+  subtaskOrder?: number; // Optional field for manual sorting of subtasks
 }
 
 export interface Project {

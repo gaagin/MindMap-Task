@@ -14,6 +14,7 @@ import {
   HelpCircle,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   Circle,
   CheckCircle2,
   Loader2,
@@ -31,13 +32,15 @@ import {
   History,
   Search,
   Send,
-  Image
+  Image,
+  GripVertical
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch } from '../utils';
 import { auth, db } from '../lib/firebase';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import GoogleDriveImage from './GoogleDriveImage';
+import { motion } from 'motion/react';
 
 const fetch = proxiedFetch;
 
@@ -86,6 +89,10 @@ export default function TaskDetailsPanel({
   const [fileError, setFileError] = useState<string | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Drag and touch sorting states for subtasks
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [activeTouchIndex, setActiveTouchIndex] = useState<number | null>(null);
 
   // Image Lightbox zoom and rotation states
   const [lightboxImage, setLightboxImage] = useState<AttachmentFile | null>(null);
@@ -2036,15 +2043,162 @@ export default function TaskDetailsPanel({
 
           {(() => {
             const subtasks = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
-            if (subtasks.length > 0) {
+            const sortedSubtasks = [...subtasks].sort((a, b) => {
+              const orderA = a.subtaskOrder !== undefined ? a.subtaskOrder : 1000000;
+              const orderB = b.subtaskOrder !== undefined ? b.subtaskOrder : 1000000;
+              if (orderA !== orderB) return orderA - orderB;
+              return a.id.localeCompare(b.id);
+            });
+
+            const handleMoveSubtask = (subtaskId: string, direction: 'up' | 'down') => {
+              const index = sortedSubtasks.findIndex(s => s.id === subtaskId);
+              if (index === -1) return;
+
+              const targetIndex = direction === 'up' ? index - 1 : index + 1;
+              if (targetIndex < 0 || targetIndex >= sortedSubtasks.length) return;
+
+              const itemA = sortedSubtasks[index];
+              const itemB = sortedSubtasks[targetIndex];
+
+              // Assign explicit orders if undefined
+              sortedSubtasks.forEach((item, idx) => {
+                if (item.subtaskOrder === undefined) {
+                  item.subtaskOrder = idx * 10;
+                }
+              });
+
+              const tempOrder = itemA.subtaskOrder!;
+              itemA.subtaskOrder = itemB.subtaskOrder!;
+              itemB.subtaskOrder = tempOrder;
+
+              onUpdateNode({ ...itemA });
+              onUpdateNode({ ...itemB });
+            };
+
+            const handleDragStart = (e: React.DragEvent, index: number) => {
+              setDraggedIndex(index);
+              e.dataTransfer.effectAllowed = 'move';
+            };
+
+            const handleDragOver = (e: React.DragEvent, index: number) => {
+              e.preventDefault();
+              if (draggedIndex === null || draggedIndex === index) return;
+
+              const rect = e.currentTarget.getBoundingClientRect();
+              const mouseY = e.clientY - rect.top;
+              const threshold = rect.height / 2;
+
+              if (draggedIndex < index && mouseY < threshold) return;
+              if (draggedIndex > index && mouseY > threshold) return;
+
+              const draggedItem = sortedSubtasks[draggedIndex];
+              const targetItem = sortedSubtasks[index];
+
+              // Assign explicit orders if undefined
+              sortedSubtasks.forEach((item, idx) => {
+                if (item.subtaskOrder === undefined) {
+                  item.subtaskOrder = idx * 10;
+                }
+              });
+
+              const tempOrder = draggedItem.subtaskOrder!;
+              draggedItem.subtaskOrder = targetItem.subtaskOrder!;
+              targetItem.subtaskOrder = tempOrder;
+
+              onUpdateNode({ ...draggedItem });
+              onUpdateNode({ ...targetItem });
+              setDraggedIndex(index);
+            };
+
+            const handleDragEnd = () => {
+              setDraggedIndex(null);
+            };
+
+            const handleTouchStart = (e: React.TouchEvent, index: number) => {
+              setActiveTouchIndex(index);
+            };
+
+            const handleTouchMove = (e: React.TouchEvent) => {
+              if (activeTouchIndex === null) return;
+              const touch = e.touches[0];
+              const element = document.elementFromPoint(touch.clientX, touch.clientY);
+              if (!element) return;
+
+              const container = element.closest('[data-subtask-index]');
+              if (container) {
+                const targetIndexStr = container.getAttribute('data-subtask-index');
+                if (targetIndexStr !== null) {
+                  const targetIndex = parseInt(targetIndexStr, 10);
+                  if (targetIndex !== activeTouchIndex && !isNaN(targetIndex)) {
+                    const rect = container.getBoundingClientRect();
+                    const touchY = touch.clientY - rect.top;
+                    const threshold = rect.height / 2;
+
+                    if (activeTouchIndex < targetIndex && touchY < threshold) return;
+                    if (activeTouchIndex > targetIndex && touchY > threshold) return;
+
+                    const draggedItem = sortedSubtasks[activeTouchIndex];
+                    const targetItem = sortedSubtasks[targetIndex];
+
+                    sortedSubtasks.forEach((item, idx) => {
+                      if (item.subtaskOrder === undefined) {
+                        item.subtaskOrder = idx * 10;
+                      }
+                    });
+
+                    const tempOrder = draggedItem.subtaskOrder!;
+                    draggedItem.subtaskOrder = targetItem.subtaskOrder!;
+                    targetItem.subtaskOrder = tempOrder;
+
+                    onUpdateNode({ ...draggedItem });
+                    onUpdateNode({ ...targetItem });
+                    setActiveTouchIndex(targetIndex);
+                  }
+                }
+              }
+            };
+
+            const handleTouchEnd = () => {
+              setActiveTouchIndex(null);
+            };
+
+            if (sortedSubtasks.length > 0) {
               return (
                 <div className="space-y-1.5 mt-1.5 max-h-48 overflow-y-auto pr-1">
-                  {subtasks.map((child) => (
-                    <div 
+                  {sortedSubtasks.map((child, index) => (
+                    <motion.div 
                       key={child.id}
-                      className="flex items-center justify-between gap-1.5 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800/50 group hover:border-slate-200 dark:hover:border-slate-700 transition-colors"
+                      layout
+                      transition={{ type: "spring", stiffness: 500, damping: 45 }}
+                      data-subtask-index={index}
+                      data-subtask-id={child.id}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      className={`flex items-center justify-between gap-1.5 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800/50 group hover:border-slate-200 dark:hover:border-slate-700 transition-colors ${
+                        draggedIndex === index || activeTouchIndex === index 
+                          ? 'opacity-40 border-indigo-500 bg-indigo-50/10' 
+                          : ''
+                      }`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {/* Drag Handle for manual sorting */}
+                        <div
+                          draggable={true}
+                          onDragStart={(e) => handleDragStart(e, index)}
+                          onDragEnd={handleDragEnd}
+                          onTouchStart={(e) => handleTouchStart(e, index)}
+                          onTouchMove={handleTouchMove}
+                          onTouchEnd={handleTouchEnd}
+                          className="p-1 -ml-1 text-slate-300 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-grab active:cursor-grabbing flex-shrink-0 transition-colors rounded hover:bg-slate-50 dark:hover:bg-slate-800"
+                          title="Перетащить для сортировки"
+                        >
+                          <GripVertical className="w-3.5 h-3.5" />
+                        </div>
+
+                        {/* Number indicator */}
+                        <span className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 select-none shrink-0 min-w-[14px]">
+                          {index + 1}.
+                        </span>
+
                         {/* Completed Checkbox */}
                         <button
                           type="button"
@@ -2135,7 +2289,7 @@ export default function TaskDetailsPanel({
                           )}
                         </button>
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               );

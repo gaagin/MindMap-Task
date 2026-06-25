@@ -42,7 +42,8 @@ import {
   Square,
   Hexagon,
   Bell,
-  Target
+  Target,
+  GripVertical
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue } from '../utils';
@@ -366,6 +367,11 @@ export default function MindMapCanvas({
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [expandedCardSubtasks, setExpandedCardSubtasks] = useState<Record<string, boolean>>({});
+  
+  // Drag and touch sorting states for subtasks in mind map canvas
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [activeTouchIndex, setActiveTouchIndex] = useState<number | null>(null);
+
   const [activeInlineMenu, setActiveInlineMenu] = useState<{
     cardId: string;
     type: 'priority' | 'date' | 'tag';
@@ -375,8 +381,15 @@ export default function MindMapCanvas({
   useEffect(() => {
     if (lastCreatedNodeId) {
       setEditingNodeId(lastCreatedNodeId);
+      const newNode = incomingNodes.find(n => n.id === lastCreatedNodeId);
+      if (newNode && newNode.parentId) {
+        setExpandedCardSubtasks(prev => ({
+          ...prev,
+          [newNode.parentId!]: true
+        }));
+      }
     }
-  }, [lastCreatedNodeId]);
+  }, [lastCreatedNodeId, incomingNodes]);
   
   // States for Notes and file upload handling
   const [notesModalNodeId, setNotesModalNodeId] = useState<string | null>(null);
@@ -6722,6 +6735,26 @@ export default function MindMapCanvas({
                           ? 'text-white' 
                           : 'text-slate-800 dark:text-slate-100 font-medium'
                       } ${node.completed ? 'line-through opacity-60 italic' : ''} flex items-center flex-wrap gap-1`}>
+                        {(() => {
+                          if (!node.parentId) return null;
+                          const parent = nodes.find(p => p.id === node.parentId);
+                          if (!parent || parent.isContainer || parent.isWorkflowRectangle) return null;
+
+                          const siblings = nodes.filter(n => n.parentId === node.parentId && !n.isContainer && !n.isWorkflowRectangle && !n.archived);
+                          const sortedSiblings = [...siblings].sort((a, b) => {
+                            const orderA = a.subtaskOrder !== undefined ? a.subtaskOrder : 1000000;
+                            const orderB = b.subtaskOrder !== undefined ? b.subtaskOrder : 1000000;
+                            if (orderA !== orderB) return orderA - orderB;
+                            return a.id.localeCompare(b.id);
+                          });
+                          const idx = sortedSiblings.findIndex(n => n.id === node.id);
+                          if (idx === -1) return null;
+                          return (
+                            <span className="inline-flex items-center justify-center bg-indigo-550/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black rounded px-1.5 py-0.2 shrink-0 mr-1 select-none">
+                              {idx + 1}
+                            </span>
+                          );
+                        })()}
                         <span>{node.text || 'Без названия'}</span>
                         {node.externalLink && (
                           <a
@@ -6752,6 +6785,26 @@ export default function MindMapCanvas({
                       </p>
                     )}
                   </div>
+
+                  {/* Quick add subtask plus button */}
+                  {!node.isContainer && !node.isWorkflowRectangle && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddChildNode(node.id);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title="Быстро добавить подзадачу"
+                      className={`mt-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-1 rounded hover:bg-slate-150/50 dark:hover:bg-slate-800 cursor-pointer shrink-0 ${
+                        isRoot 
+                          ? 'text-indigo-200 hover:text-white hover:bg-indigo-700/50' 
+                          : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                      }`}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 {!node.isCardCollapsed ? (
@@ -7131,7 +7184,7 @@ export default function MindMapCanvas({
                       const progressPercent = calculateProgress(node.id, nodes) || 0;
                       return (
                         <div className="mt-2.5 mb-1 space-y-1" title={`Прогресс подзадач: ${progressPercent}%`}>
-                          <div className="flex justify-between items-center text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                          <div className="flex justify-between items-center text-[9px] font-bold text-slate-400 dark:text-slate-505 uppercase tracking-wide">
                             <span>Прогресс</span>
                             <span className="font-mono">{progressPercent}%</span>
                           </div>
@@ -7185,6 +7238,123 @@ export default function MindMapCanvas({
                       const isExpanded = expandedCardSubtasks[node.id] || false;
                       const completedCount = subtasks.filter(s => s.completed).length;
 
+                      const sortedSubtasks = [...subtasks].sort((a, b) => {
+                        const orderA = a.subtaskOrder !== undefined ? a.subtaskOrder : 1000000;
+                        const orderB = b.subtaskOrder !== undefined ? b.subtaskOrder : 1000000;
+                        if (orderA !== orderB) return orderA - orderB;
+                        return a.id.localeCompare(b.id);
+                      });
+
+                      const handleMoveSubtask = (subtaskId: string, direction: 'up' | 'down') => {
+                        const index = sortedSubtasks.findIndex(s => s.id === subtaskId);
+                        if (index === -1) return;
+
+                        const targetIndex = direction === 'up' ? index - 1 : index + 1;
+                        if (targetIndex < 0 || targetIndex >= sortedSubtasks.length) return;
+
+                        const itemA = sortedSubtasks[index];
+                        const itemB = sortedSubtasks[targetIndex];
+
+                        sortedSubtasks.forEach((item, idx) => {
+                          if (item.subtaskOrder === undefined) {
+                            item.subtaskOrder = idx * 10;
+                          }
+                        });
+
+                        const tempOrder = itemA.subtaskOrder!;
+                        itemA.subtaskOrder = itemB.subtaskOrder!;
+                        itemB.subtaskOrder = tempOrder;
+
+                        onUpdateNode({ ...itemA });
+                        onUpdateNode({ ...itemB });
+                      };
+
+                      const handleDragStart = (e: React.DragEvent, idx: number) => {
+                        setDraggedIndex(idx);
+                        e.dataTransfer.effectAllowed = 'move';
+                      };
+
+                      const handleDragOver = (e: React.DragEvent, idx: number) => {
+                        e.preventDefault();
+                        if (draggedIndex === null || draggedIndex === idx) return;
+
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const mouseY = e.clientY - rect.top;
+                        const threshold = rect.height / 2;
+
+                        if (draggedIndex < idx && mouseY < threshold) return;
+                        if (draggedIndex > idx && mouseY > threshold) return;
+
+                        const draggedItem = sortedSubtasks[draggedIndex];
+                        const targetItem = sortedSubtasks[idx];
+
+                        sortedSubtasks.forEach((item, id) => {
+                          if (item.subtaskOrder === undefined) {
+                            item.subtaskOrder = id * 10;
+                          }
+                        });
+
+                        const tempOrder = draggedItem.subtaskOrder!;
+                        draggedItem.subtaskOrder = targetItem.subtaskOrder!;
+                        targetItem.subtaskOrder = tempOrder;
+
+                        onUpdateNode({ ...draggedItem });
+                        onUpdateNode({ ...targetItem });
+                        setDraggedIndex(idx);
+                      };
+
+                      const handleDragEnd = () => {
+                        setDraggedIndex(null);
+                      };
+
+                      const handleTouchStart = (e: React.TouchEvent, idx: number) => {
+                        setActiveTouchIndex(idx);
+                      };
+
+                      const handleTouchMove = (e: React.TouchEvent) => {
+                        if (activeTouchIndex === null) return;
+                        const touch = e.touches[0];
+                        const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                        if (!element) return;
+
+                        const container = element.closest('[data-subtask-index]');
+                        if (container) {
+                          const targetIndexStr = container.getAttribute('data-subtask-index');
+                          if (targetIndexStr !== null) {
+                            const targetIndex = parseInt(targetIndexStr, 10);
+                            if (targetIndex !== activeTouchIndex && !isNaN(targetIndex)) {
+                              const rect = container.getBoundingClientRect();
+                              const touchY = touch.clientY - rect.top;
+                              const threshold = rect.height / 2;
+
+                              if (activeTouchIndex < targetIndex && touchY < threshold) return;
+                              if (activeTouchIndex > targetIndex && touchY > threshold) return;
+
+                              const draggedItem = sortedSubtasks[activeTouchIndex];
+                              const targetItem = sortedSubtasks[targetIndex];
+
+                              sortedSubtasks.forEach((item, id) => {
+                                if (item.subtaskOrder === undefined) {
+                                  item.subtaskOrder = id * 10;
+                                }
+                              });
+
+                              const tempOrder = draggedItem.subtaskOrder!;
+                              draggedItem.subtaskOrder = targetItem.subtaskOrder!;
+                              targetItem.subtaskOrder = tempOrder;
+
+                              onUpdateNode({ ...draggedItem });
+                              onUpdateNode({ ...targetItem });
+                              setActiveTouchIndex(targetIndex);
+                            }
+                          }
+                        }
+                      };
+
+                      const handleTouchEnd = () => {
+                        setActiveTouchIndex(null);
+                      };
+
                       return (
                         <div 
                           className="border-t border-slate-100 dark:border-slate-805/60 pt-2.5 mt-2 bg-transparent select-none" 
@@ -7215,7 +7385,7 @@ export default function MindMapCanvas({
                             </span>
                             <div className="flex items-center gap-1">
                               <span className="text-[8.5px] font-medium text-slate-400">{isExpanded ? 'Свернуть' : 'Развернуть'}</span>
-                              <ChevronDown className={`w-3 h-3 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                              <ChevronDown className={`w-3 h-3 text-slate-400 dark:text-slate-505 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                             </div>
                           </button>
 
@@ -7227,17 +7397,47 @@ export default function MindMapCanvas({
                                 exit={{ opacity: 0, height: 0 }}
                                 className="mt-2 pl-1.5 border-l-2 border-indigo-100 dark:border-indigo-950/60 space-y-1.5 overflow-hidden text-left"
                               >
-                                {subtasks.map(subtask => (
-                                  <div
+                                {sortedSubtasks.map((subtask, index) => (
+                                  <motion.div
                                     key={subtask.id}
+                                    layout
+                                    transition={{ type: "spring", stiffness: 500, damping: 45 }}
+                                    data-subtask-index={index}
+                                    data-subtask-id={subtask.id}
+                                    onDragOver={(e) => handleDragOver(e, index)}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       onSelectNode(subtask.id, e);
                                       onOpenDrawer();
                                     }}
-                                    className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850/40 flex items-center justify-between gap-2 transition-all text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer"
+                                    className={`group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850/40 flex items-center justify-between gap-2 transition-colors text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer ${
+                                      draggedIndex === index || activeTouchIndex === index 
+                                        ? 'opacity-40 border border-indigo-500 bg-indigo-50/10' 
+                                        : ''
+                                    }`}
                                   >
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                      {/* Drag Handle for manual sorting */}
+                                      <div
+                                        draggable={true}
+                                        onDragStart={(e) => handleDragStart(e, index)}
+                                        onDragEnd={handleDragEnd}
+                                        onTouchStart={(e) => handleTouchStart(e, index)}
+                                        onTouchMove={handleTouchMove}
+                                        onTouchEnd={handleTouchEnd}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="p-1 -ml-1 text-slate-300 dark:text-slate-600 hover:text-indigo-650 dark:hover:text-indigo-400 cursor-grab active:cursor-grabbing flex-shrink-0 transition-colors rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                                        title="Перетащить для сортировки"
+                                      >
+                                        <GripVertical className="w-3 h-3" />
+                                      </div>
+
+                                      {/* Number tag */}
+                                      <span className="text-[10px] font-black text-indigo-650 dark:text-indigo-400 select-none shrink-0 min-w-[14px]">
+                                        {index + 1}.
+                                      </span>
+
                                       <button
                                         type="button"
                                         onClick={(e) => {
@@ -7255,21 +7455,70 @@ export default function MindMapCanvas({
                                           <Circle className="w-3.5 h-3.5 text-slate-300 dark:text-slate-700" />
                                         )}
                                       </button>
-                                      <span className={`truncate leading-normal font-semibold text-[10px] ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}>
-                                        {subtask.text}
-                                      </span>
+                                      {editingNodeId === subtask.id ? (
+                                        <input
+                                          type="text"
+                                          value={subtask.text}
+                                          autoFocus
+                                          onFocus={(e) => e.target.select()}
+                                          onBlur={() => {
+                                            setEditingNodeId(null);
+                                            if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Escape' || e.key === 'Esc') {
+                                              setEditingNodeId(null);
+                                              if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                                              if (!subtask.text.trim() || subtask.id === lastCreatedNodeId) {
+                                                onDeleteNode(subtask.id);
+                                              } else {
+                                                e.currentTarget.blur();
+                                              }
+                                              return;
+                                            }
+                                            e.stopPropagation(); // Avoid triggering global keyboard shortcuts
+                                            if (e.key === 'Enter') {
+                                              setEditingNodeId(null);
+                                              if (onClearLastCreatedNodeId) onClearLastCreatedNodeId();
+                                            }
+                                          }}
+                                          onChange={(e) => {
+                                            onUpdateNode({
+                                              ...subtask,
+                                              text: e.target.value
+                                            });
+                                          }}
+                                          className="w-full text-[10px] font-semibold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-1 py-0.5 rounded border border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          onClick={(e) => e.stopPropagation()}
+                                          onMouseDown={(e) => e.stopPropagation()}
+                                        />
+                                      ) : (
+                                        <div className="flex items-center gap-1 min-w-0 flex-grow">
+                                          <span 
+                                            onDoubleClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingNodeId(subtask.id);
+                                            }}
+                                            className={`truncate leading-normal font-semibold text-[10px] cursor-text ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-555' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}
+                                          >
+                                            {subtask.text}
+                                          </span>
+                                        </div>
+                                      )}
                                     </div>
-                                    {subtask.dueDate && (
-                                      <span className={`shrink-0 flex items-center gap-1 text-[8.5px] px-1.5 py-0.5 rounded-md border font-extrabold shadow-sm leading-none ${
-                                        isNodeOverdue(subtask, nodes) && !subtask.completed
-                                          ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-950/30'
-                                          : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200/50 dark:border-slate-750'
-                                      }`}>
-                                        <Clock className="w-2.5 h-2.5 text-slate-450 dark:text-slate-550" />
-                                        <span>{formatDisplayDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
-                                      </span>
-                                    )}
-                                  </div>
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                      {subtask.dueDate && (
+                                        <span className={`shrink-0 flex items-center gap-1 text-[8.5px] px-1.5 py-0.5 rounded-md border font-extrabold shadow-sm leading-none ${
+                                          isNodeOverdue(subtask, nodes) && !subtask.completed
+                                            ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-950/30'
+                                            : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200/50 dark:border-slate-750'
+                                        }`}>
+                                          <Clock className="w-2.5 h-2.5 text-slate-450 dark:text-slate-550" />
+                                          <span>{formatDisplayDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
+                                        </span>
+                                      )}
+                                    </div>
+                                  </motion.div>
                                 ))}
                               </motion.div>
                             )}
