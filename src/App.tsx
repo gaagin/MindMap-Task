@@ -1228,7 +1228,7 @@ export default function App() {
           lastSyncedStateHashRef.current = getSyncHash(state); // Update hash on successful upload
           setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
         }
-      }, 1500); // 1.5s snapshot rate-limiting debounce
+      }, 10000); // 10s snapshot rate-limiting debounce
       return () => clearTimeout(timer);
     }
   }, [state, currentUser, isInitialSyncComplete]);
@@ -1520,7 +1520,7 @@ export default function App() {
         return; // Already synced! Prevents infinite trigger loops
       }
 
-      const debounceTime = 3000; // Fast responsive 3s debounce after user stops editing the mind map
+      const debounceTime = 10000; // 10s debounce after user stops editing the mind map
       const timer = setTimeout(() => {
         runSheetsSymmetricalSync(googleToken, state);
       }, debounceTime); // Optimized rate-limiting debounce
