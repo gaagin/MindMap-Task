@@ -401,6 +401,10 @@ export default function App() {
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
+  const [syncOnExit, setSyncOnExit] = useState<boolean>(() => {
+    const saved = localStorage.getItem('milli_sync_on_exit');
+    return saved !== null ? saved === 'true' : true;
+  });
   const [forceCloudSyncLoading, setForceCloudSyncLoading] = useState<'upload' | 'download' | null>(null);
   const [forceCloudSyncFeedback, setForceCloudSyncFeedback] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -1026,6 +1030,12 @@ export default function App() {
   const unsyncedEditsCountRef = React.useRef(unsyncedEditsCount);
   unsyncedEditsCountRef.current = unsyncedEditsCount;
 
+  const googleTokenRef = React.useRef(googleToken);
+  googleTokenRef.current = googleToken;
+
+  const syncOnExitRef = React.useRef(syncOnExit);
+  syncOnExitRef.current = syncOnExit;
+
   // Session start time tracking to identify stale client sessions and prevent them from overwriting newer changes
   const sessionStartTimeRef = React.useRef(new Date().toISOString());
 
@@ -1553,18 +1563,56 @@ export default function App() {
     }
   }, [state, googleToken, unsyncedEditsCount, isInitialSyncComplete]);
 
-  // 5. Symmetrical Sheets Sync instantly on window tab switch or pageunload (visibilitychange / pagehide)
+  // 5. Instant Sync on Exit (visibilitychange / pagehide / window backgrounding)
+  // Especially tuned to ensure smartphones (iOS/Android Safari/Chrome) sync immediately when minimized or closed
   useEffect(() => {
+    const triggerInstantSyncOnExit = async () => {
+      if (!syncOnExitRef.current) return;
+      
+      // Save instantly to Firestore (bypassing the 10-second rate-limiting debounce)
+      if (currentUserRef.current && isInitialSyncComplete && unsyncedEditsCountRef.current > 0) {
+        console.log('[Sync] Smartphone exit / background hide detected. Running instant Firestore sync...');
+        const currentWorkspace = stateRef.current;
+        const countSaved = unsyncedEditsCountRef.current;
+        
+        try {
+          const res = await saveToFirebaseDirectly(currentUserRef.current.uid, currentWorkspace, sessionStartTimeRef.current);
+          if (res.success) {
+            lastSyncedStateHashRef.current = getSyncHash(currentWorkspace);
+            setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
+            setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+          }
+        } catch (err) {
+          console.error('[Sync] Instant Firebase exit sync failed:', err);
+        }
+      }
+
+      // Save instantly to Google Sheets
+      if (googleTokenRef.current && isInitialSyncComplete && unsyncedEditsCountRef.current > 0) {
+        console.log('[Sync] Smartphone exit / background hide detected. Running instant Google Sheets sync...');
+        const currentWorkspace = stateRef.current;
+        try {
+          await syncWithGoogleSheets(googleTokenRef.current, currentWorkspace);
+          setSyncStatus(prev => ({
+            ...prev,
+            sheets: 'synced',
+            lastSyncedTime: new Date().toLocaleTimeString() + ', ' + new Date().toLocaleDateString()
+          }));
+          setUnsyncedEditsCount(0);
+        } catch (err) {
+          console.error('[Sync] Instant Google Sheets exit sync failed:', err);
+        }
+      }
+    };
+
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && googleToken && isInitialSyncComplete) {
-        syncWithGoogleSheets(googleToken, state);
+      if (document.visibilityState === 'hidden') {
+        triggerInstantSyncOnExit();
       }
     };
 
     const handlePageHide = () => {
-      if (googleToken && isInitialSyncComplete) {
-        syncWithGoogleSheets(googleToken, state);
-      }
+      triggerInstantSyncOnExit();
     };
 
     window.addEventListener('visibilitychange', handleVisibilityChange);
@@ -1574,7 +1622,7 @@ export default function App() {
       window.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [googleToken, state, isInitialSyncComplete]);
+  }, [isInitialSyncComplete]);
 
   // Synchronize Google Sheets IDs from state to localStorage
   useEffect(() => {
@@ -4021,6 +4069,40 @@ export default function App() {
                       </button>
                     )}
                   </div>
+                </div>
+
+                {/* Instant Sync on Exit Toggle */}
+                <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl flex items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5">
+                      <Smartphone className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-200 leading-tight">
+                        Умная синхронизация при выходе (для Смартфонов)
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                        При сворачивании браузера, блокировке экрана или закрытии вкладки на смартфоне, приложение мгновенно выгрузит все несохраненные изменения в облако, чтобы они сразу появились на ПК.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newValue = !syncOnExit;
+                      setSyncOnExit(newValue);
+                      localStorage.setItem('milli_sync_on_exit', String(newValue));
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      syncOnExit ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                        syncOnExit ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
                 </div>
 
                 {/* 
