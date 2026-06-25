@@ -185,55 +185,42 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
     const folders = Array.isArray(wsState.folders) ? wsState.folders.filter(Boolean) : [];
     const projects = Array.isArray(wsState.projects) ? wsState.projects.filter(p => p && typeof p === 'object') : [];
     const nodes = wsState.nodes && typeof wsState.nodes === 'object' ? wsState.nodes : {};
-    let tagCategories = Array.isArray(wsState.tagCategories) ? wsState.tagCategories.filter(cat => cat && cat.id) : [];
+    const deletions = Array.isArray(wsState.deletions) ? wsState.deletions : [];
 
-    // If root tagCategories are empty but projects have them, extract them
-    if (tagCategories.length === 0) {
-      const projectCats = projects.flatMap(p => Array.isArray(p.tagCategories) ? p.tagCategories : []);
-      const seen = new Set<string>();
-      tagCategories = projectCats.filter(cat => {
-        if (!cat || !cat.id) return false;
-        if (seen.has(cat.id)) return false;
-        seen.add(cat.id);
-        return true;
-      });
-    }
+    const isDeleted = (type: string, id: string) => {
+      return deletions.some(d => d.type === type && d.id === id);
+    };
 
-    // Find if there is any project specifically named "ADIB" (case-insensitive)
-    const hasAdibProject = projects.some(p => p && typeof p.name === 'string' && p.name.toLowerCase().includes('adib'));
+    // Gather all existing tag categories from both the root list and all projects' lists
+    const rootCats = Array.isArray(wsState.tagCategories) ? wsState.tagCategories : [];
+    const projectCats = projects.flatMap(p => p && Array.isArray(p.tagCategories) ? p.tagCategories : []);
+    const allCats = [...rootCats, ...projectCats].filter(cat => cat && cat.id && !isDeleted('tagCategory', cat.id));
 
-    // Hydrate empty projects, and keep tag categories separate
-    const updatedProjects = projects.map(p => {
-      if (!p) return p;
-      // If project-specific categories are completely empty/missing but global exists,
-      // initialize them from global categories so that we don't lose anything (deep copied)
-      let pCats = Array.isArray(p.tagCategories) ? p.tagCategories.filter(Boolean) : [];
-      if (pCats.length === 0) {
-        if (tagCategories && tagCategories.length > 0) {
-          try {
-            pCats = JSON.parse(JSON.stringify(tagCategories));
-          } catch (e) {
-            pCats = [];
-          }
-        } else {
-          pCats = [];
+    // Deduplicate and resolve conflicts using the updatedAt timestamp of each category
+    const latestCategoriesMap = new Map<string, TagCategory>();
+    allCats.forEach(cat => {
+      const existing = latestCategoriesMap.get(cat.id);
+      if (!existing) {
+        latestCategoriesMap.set(cat.id, cat);
+      } else {
+        const existingTime = new Date(existing.updatedAt || 0).getTime();
+        const incomingTime = new Date(cat.updatedAt || 0).getTime();
+        if (incomingTime > existingTime) {
+          latestCategoriesMap.set(cat.id, cat);
         }
       }
-
-      return {
-        ...p,
-        tagCategories: pCats
-      };
     });
 
-    // Re-flatten to root categories to maintain absolute synchronization
-    const finalRootCats = updatedProjects.flatMap(p => p && Array.isArray(p.tagCategories) ? p.tagCategories : []);
-    const seenIds = new Set<string>();
-    const deduplicatedRootCats = finalRootCats.filter(cat => {
-      if (!cat || !cat.id) return false;
-      if (seenIds.has(cat.id)) return false;
-      seenIds.add(cat.id);
-      return true;
+    const finalRootCats = Array.from(latestCategoriesMap.values());
+
+    // Sync all projects with the absolute latest tag categories to ensure complete and correct propagation of added/edited/deleted tags
+    const updatedProjects = projects.map(p => {
+      if (!p) return p;
+      return {
+        ...p,
+        // Deep copy final categories list to prevent reference leakage/mutations
+        tagCategories: JSON.parse(JSON.stringify(finalRootCats))
+      };
     });
 
     return {
@@ -241,8 +228,8 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
       folders,
       projects: updatedProjects,
       nodes,
-      tagCategories: deduplicatedRootCats,
-      deletions: Array.isArray(wsState.deletions) ? wsState.deletions : []
+      tagCategories: finalRootCats,
+      deletions
     };
   } catch (err) {
     console.error('Failed to normalize workspace state, returning loaded state unmodified:', err);
@@ -1908,12 +1895,14 @@ export default function App() {
         id: 'cat-' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
         name,
         color,
-        tags: []
+        tags: [],
+        updatedAt: new Date().toISOString()
       };
 
       const updatedProjects = [...prev.projects];
       const project = { ...updatedProjects[projectIndex] };
       project.tagCategories = [...(project.tagCategories || []), newCat];
+      project.updatedAt = new Date().toISOString();
       updatedProjects[projectIndex] = project;
 
       return {
@@ -1930,7 +1919,8 @@ export default function App() {
         const cats = p.tagCategories || [];
         return {
           ...p,
-          tagCategories: cats.map(c => c.id === id ? { ...c, name, color, tags } : c)
+          updatedAt: new Date().toISOString(),
+          tagCategories: cats.map(c => c.id === id ? { ...c, name, color, tags, updatedAt: new Date().toISOString() } : c)
         };
       });
 
@@ -1948,6 +1938,7 @@ export default function App() {
         if (p.id !== prev.activeProjectId) return p;
         return {
           ...p,
+          updatedAt: new Date().toISOString(),
           tagCategories: (p.tagCategories || []).filter(c => c.id !== id)
         };
       });
@@ -2956,14 +2947,21 @@ export default function App() {
           <div className="flex items-center gap-3.5 min-w-0">
             <button
               onClick={() => setSidebarOpen(true)}
-              className={`p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ${
+              className={`p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 z-30 pointer-events-auto ${
                 sidebarOpen ? 'lg:hidden' : 'flex'
               }`}
             >
               <Menu className="w-5 h-5" />
             </button>
             
-            <div className="min-w-0">
+            <div 
+              className="min-w-0 cursor-pointer lg:cursor-default"
+              onClick={() => {
+                if (window.innerWidth < 1024) {
+                  setSidebarOpen(true);
+                }
+              }}
+            >
               <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-2">
                 {state.projects.find(p => p.id === state.activeProjectId)?.name || 'Карта задач'}
                 {(!currentUser || !googleToken) && (
@@ -3081,20 +3079,20 @@ export default function App() {
             )}
             
             {/* Elegant micro search input */}
-            <div className="relative hidden md:flex items-center gap-1.5">
+            <div className="relative flex items-center gap-1 sm:gap-1.5">
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="Поиск по задачам и тегам..."
+                  placeholder="Поиск..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-56 leading-none py-1.5 pl-8 pr-12 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
+                  className="w-24 sm:w-40 md:w-56 focus:w-36 sm:focus:w-48 md:focus:w-56 transition-all duration-200 leading-none py-1.5 pl-7 sm:pl-8 pr-7 sm:pr-12 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
                 />
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 sm:left-2.5 top-2" />
                 
                 {/* Micro Counter Indicator */}
                 {searchQuery.trim().length > 0 && (
-                  <span className="absolute right-2 top-2 text-[10px] text-slate-400/80 font-mono font-medium select-none pointer-events-none">
+                  <span className="absolute right-1.5 sm:right-2 top-2 text-[10px] text-slate-400/80 font-mono font-medium select-none pointer-events-none">
                     {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
                   </span>
                 )}
@@ -3106,9 +3104,9 @@ export default function App() {
                   type="button"
                   onClick={handleNextSearchMatch}
                   title="Перейти к следующей найденной задаче"
-                  className="flex items-center gap-1 py-1 px-2 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 hover:bg-indigo-150 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold rounded-lg transition-all cursor-pointer shadow-xs"
+                  className="flex items-center gap-0.5 sm:gap-1 py-1 px-1.5 sm:px-2 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 hover:bg-indigo-150 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold rounded-lg transition-all cursor-pointer shadow-xs"
                 >
-                  <span>Следующая</span>
+                  <span className="hidden sm:inline">След.</span>
                   <ChevronRight className="w-3 h-3" />
                 </button>
               )}
@@ -3137,7 +3135,7 @@ export default function App() {
 
             {/* Micro search results list box if search query is set */}
             {searchQuery.trim().length > 0 && (
-              <div className="absolute top-15 right-24 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl p-2 w-72 max-h-56 overflow-y-auto z-50">
+              <div className="absolute top-15 right-2 sm:right-24 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl p-2 w-[calc(100vw-2rem)] sm:w-72 max-h-56 overflow-y-auto z-50">
                 <p className="text-[10px] font-bold text-slate-400 px-2 py-1 uppercase tracking-widest">
                   Найдено результатов ({searchedIds.length})
                 </p>

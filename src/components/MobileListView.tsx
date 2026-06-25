@@ -110,6 +110,21 @@ export default function MobileListView({
   const [addingTagToCatId, setAddingTagToCatId] = useState<string | null>(null);
   const [newTagNameInput, setNewTagNameInput] = useState('');
 
+  const highlightText = (text: string, query: string) => {
+    if (!query.trim()) return <span>{text}</span>;
+    const cleanQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const parts = text.split(new RegExp(`(${cleanQuery})`, 'gi'));
+    return (
+      <span>
+        {parts.map((part, i) => 
+          part.toLowerCase() === query.toLowerCase() 
+            ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800/60 dark:text-yellow-100 px-0.5 rounded-sm font-bold">{part}</mark> 
+            : <span key={i}>{part}</span>
+        )}
+      </span>
+    );
+  };
+
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const query = searchQuery.toLowerCase();
@@ -723,7 +738,7 @@ export default function MobileListView({
                         }}
                       >
                         <span className={node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal font-sans' : 'font-sans'}>
-                          {node.text}
+                          {highlightText(node.text, searchQuery)}
                         </span>
 
                         {node.archived && (
@@ -872,7 +887,7 @@ export default function MobileListView({
                   {node.notes && (
                     <span className="flex items-center gap-1 font-sans italic max-w-[150px] truncate text-[10px]">
                       <FileText className="w-2.5 h-2.5 shrink-0" />
-                      <span className="truncate">{node.notes}</span>
+                      <span className="truncate">{highlightText(node.notes, searchQuery)}</span>
                     </span>
                   )}
                 </div>
@@ -986,7 +1001,7 @@ export default function MobileListView({
                                 ) : null}
                               </button>
                               <span className={`truncate min-w-0 ${child.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-700 dark:text-slate-300 font-medium'}`}>
-                                {child.text}
+                                {highlightText(child.text, searchQuery)}
                               </span>
                               {child.dueDate && (
                                 <span className={`shrink-0 flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-sm border ${
@@ -1149,19 +1164,19 @@ export default function MobileListView({
         <div className="flex items-center gap-1.5">
           <div className="relative flex-1 flex items-center gap-1.5">
             <div className="relative flex-1">
-              <span className="absolute left-2 top-2.5 text-slate-400 pointer-events-none">
-                <Search className="w-3 h-3" />
+              <span className="absolute left-3 top-2 text-slate-400 pointer-events-none">
+                <Search className="w-3.5 h-3.5" />
               </span>
               <input
                 id="mobile-search-input"
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск по названию или тегам..."
-                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-6 pr-14 py-1 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                placeholder="Поиск по задачам и тегам"
+                className="w-full leading-none py-1.5 pl-9 pr-14 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400 transition-colors"
               />
               {searchQuery && (
-                <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
+                <div className="absolute right-2 top-1.5 flex items-center gap-1">
                   {searchResults.length > 0 && (
                     <span className="text-[10px] text-slate-400/80 font-mono font-medium select-none pointer-events-none">
                       {mobileSearchIndex + 1}/{searchResults.length}

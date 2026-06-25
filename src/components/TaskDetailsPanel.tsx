@@ -887,12 +887,17 @@ export default function TaskDetailsPanel({
       id: 'cat-' + generateId(),
       name,
       color,
-      tags: []
+      tags: [],
+      updatedAt: new Date().toISOString()
     };
     onUpdateNode({
-      ...node,
+      ...node!,
+      updatedAt: new Date().toISOString(),
       tagCategories: [...activeCategories, newCat]
     });
+    if (onCreateTagCategory) {
+      onCreateTagCategory(name, color);
+    }
   };
 
   const handleUpdateTagCategory = (id: string, name: string, color: string, tags: string[]) => {
@@ -900,17 +905,25 @@ export default function TaskDetailsPanel({
       c.id === id ? { ...c, name, color, tags, updatedAt: new Date().toISOString() } : c
     );
     onUpdateNode({
-      ...node,
+      ...node!,
+      updatedAt: new Date().toISOString(),
       tagCategories: nextCategories
     });
+    if (onUpdateTagCategory) {
+      onUpdateTagCategory(id, name, color, tags);
+    }
   };
 
   const handleDeleteTagCategory = (id: string) => {
     const nextCategories = activeCategories.filter(c => c.id !== id);
     onUpdateNode({
-      ...node,
+      ...node!,
+      updatedAt: new Date().toISOString(),
       tagCategories: nextCategories
     });
+    if (onDeleteTagCategory) {
+      onDeleteTagCategory(id);
+    }
   };
 
   // Category collapse state, loaded and persisted in localStorage using the same key as Sidebar for 100% synchronization

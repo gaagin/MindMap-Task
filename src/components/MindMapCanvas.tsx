@@ -318,6 +318,50 @@ export default function MindMapCanvas({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isFullScreen]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      if (activeEl) {
+        const tagName = activeEl.tagName.toUpperCase();
+        if (tagName === 'INPUT' || tagName === 'TEXTAREA' || activeEl.hasAttribute('contenteditable')) {
+          return;
+        }
+      }
+
+      if (!selectedNodeId) return;
+      const targetNode = incomingNodes.find(n => n.id === selectedNodeId);
+      if (!targetNode) return;
+
+      let dx = 0;
+      let dy = 0;
+      const step = e.shiftKey ? 10 : 2;
+
+      if (e.key === 'ArrowUp') {
+        dy = -step;
+      } else if (e.key === 'ArrowDown') {
+        dy = step;
+      } else if (e.key === 'ArrowLeft') {
+        dx = -step;
+      } else if (e.key === 'ArrowRight') {
+        dx = step;
+      }
+
+      if (dx !== 0 || dy !== 0) {
+        e.preventDefault();
+        onUpdateNodeCoordinates(
+          selectedNodeId,
+          targetNode.x + dx,
+          targetNode.y + dy
+        );
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedNodeId, incomingNodes, onUpdateNodeCoordinates]);
   
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
@@ -5224,7 +5268,7 @@ export default function MindMapCanvas({
                 const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
                 containerZ = isAncestorSelected ? 1000 : (isAncestorLastActive ? 30 : 10);
               }
-              const connectionZIndex = hasContainer ? containerZ + 4 : 6;
+              const connectionZIndex = hasContainer ? containerZ + 1 : 4;
 
               return (
                 <svg
@@ -5379,7 +5423,7 @@ export default function MindMapCanvas({
               const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
               containerZ = isAncestorSelected ? 1000 : (isAncestorLastActive ? 30 : 10);
             }
-            const connectionZIndex = hasContainer ? containerZ + 4 : 6;
+            const connectionZIndex = hasContainer ? containerZ + 1 : 4;
             
             return (
               <svg
@@ -5430,7 +5474,7 @@ export default function MindMapCanvas({
               const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
               containerZ = isAncestorSelected ? 1000 : (isAncestorLastActive ? 30 : 10);
             }
-            const connectionZIndex = hasContainer ? containerZ + 4 : 6;
+            const connectionZIndex = hasContainer ? containerZ + 1 : 4;
 
             return (
               <svg
