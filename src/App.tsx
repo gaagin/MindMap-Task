@@ -1807,26 +1807,7 @@ export default function App() {
     const projectId = 'p-' + generateId();
     
     // Individual default categories with unique IDs for this project
-    const defaultCategories: TagCategory[] = [
-      {
-        id: 'cat-phase-' + projectId,
-        name: 'Этап разработки',
-        color: '#f59e0b', // Amber
-        tags: ['MVP', 'Разработка', 'Трафик', 'Дизайн', 'Тех-задание']
-      },
-      {
-        id: 'cat-department-' + projectId,
-        name: 'Отдел/Тематика',
-        color: '#3b82f6', // Indigo
-        tags: ['Генеральный-план', 'SMM', 'PR', 'Сайт', 'Юридическое', 'Безопасность', 'Инвесторы', 'Презентация', 'Питч', 'Слайды']
-      },
-      {
-        id: 'cat-personal-' + projectId,
-        name: 'Личное',
-        color: '#10b981', // Emerald
-        tags: ['Стиль-жизни', 'Утро', 'Осознанность', 'Фокус', 'Сон', 'Здоровье']
-      }
-    ];
+    const defaultCategories: TagCategory[] = [];
 
     const newProject: Project = {
       id: projectId,

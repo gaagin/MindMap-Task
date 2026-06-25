@@ -7,26 +7,7 @@ export function generateId(): string {
 
 // Generate the beautiful default empty workspace
 export function createDemoWorkspace(): WorkspaceState {
-  const tagCategories: TagCategory[] = [
-    {
-      id: 'cat-phase',
-      name: 'Этап разработки',
-      color: '#f59e0b', // Amber
-      tags: ['MVP', 'Разработка', 'Трафик', 'Дизайн', 'Тех-задание']
-    },
-    {
-      id: 'cat-department',
-      name: 'Отдел/Тематика',
-      color: '#3b82f6', // Indigo
-      tags: ['Генеральный-план', 'SMM', 'PR', 'Сайт', 'Юридическое', 'Безопасность', 'Инвесторы', 'Презентация', 'Питч', 'Слайды']
-    },
-    {
-      id: 'cat-personal',
-      name: 'Личное',
-      color: '#10b981', // Emerald
-      tags: ['Стиль-жизни', 'Утро', 'Осознанность', 'Фокус', 'Сон', 'Здоровье']
-    }
-  ];
+  const tagCategories: TagCategory[] = [];
 
   return {
     folders: [],
@@ -71,26 +52,7 @@ export function loadWorkspace(): WorkspaceState {
     if (state.nodes['p-habit']) delete state.nodes['p-habit'];
 
     if (state.tagCategories === undefined) {
-      state.tagCategories = [
-        {
-          id: 'cat-phase',
-          name: 'Этап разработки',
-          color: '#f59e0b', // Amber
-          tags: ['MVP', 'Разработка', 'Трафик', 'Дизайн', 'Тех-задание']
-        },
-        {
-          id: 'cat-department',
-          name: 'Отдел/Тематика',
-          color: '#3b82f6', // Indigo
-          tags: ['Генеральный-план', 'SMM', 'PR', 'Сайт', 'Юридическое', 'Безопасность', 'Инвесторы', 'Презентация', 'Питч', 'Слайды']
-        },
-        {
-          id: 'cat-personal',
-          name: 'Личное',
-          color: '#10b981', // Emerald
-          tags: ['Стиль-жизни', 'Утро', 'Осознанность', 'Фокус', 'Сон', 'Здоровье']
-        }
-      ];
+      state.tagCategories = [];
     }
     if ((!state.activeProjectId || !state.projects.some(p => p.id === state.activeProjectId)) && state.projects.length > 0) {
       state.activeProjectId = state.projects[0].id;
