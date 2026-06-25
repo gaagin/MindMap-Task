@@ -1026,6 +1026,31 @@ export default function App() {
   const unsyncedEditsCountRef = React.useRef(unsyncedEditsCount);
   unsyncedEditsCountRef.current = unsyncedEditsCount;
 
+  // Session start time tracking to identify stale client sessions and prevent them from overwriting newer changes
+  const sessionStartTimeRef = React.useRef(new Date().toISOString());
+
+  useEffect(() => {
+    const handleSessionFocus = () => {
+      // If there are no unsynced edits, we can safely advance session start time to now.
+      // Any new edits made after this moment will be considered part of the new active session.
+      if (unsyncedEditsCountRef.current === 0) {
+        sessionStartTimeRef.current = new Date().toISOString();
+        console.log('[Sync] Fresh active session started at:', sessionStartTimeRef.current);
+      }
+    };
+
+    window.addEventListener('focus', handleSessionFocus);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        handleSessionFocus();
+      }
+    });
+
+    return () => {
+      window.removeEventListener('focus', handleSessionFocus);
+    };
+  }, []);
+
   // 3. Real-time Firestore snapshot synchronization for instant Desktop-to-Mobile and Mobile-To-Desktop updates
   useEffect(() => {
     if (!currentUser) return;
@@ -1219,7 +1244,7 @@ export default function App() {
       setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
       const countSaved = unsyncedEditsCount;
       const timer = setTimeout(async () => {
-        const res = await saveToFirebaseDirectly(currentUser.uid, state);
+        const res = await saveToFirebaseDirectly(currentUser.uid, state, sessionStartTimeRef.current);
         setSyncStatus(prev => ({
           ...prev,
           firebase: res.success ? 'saved' : 'error'

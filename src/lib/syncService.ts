@@ -135,11 +135,14 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
  * Fully symmetrical logic for merging two workspace states
  * (local state and cloud state fetched from Firestore).
  * Ensures that updatedAt timestamps and deletions are strictly and authoritatively respected.
+ * If sessionStartTime is provided, stale local elements that are missing from the cloud are not restored
+ * to prevent a device that was inactive/closed from resurrecting elements deleted on other devices.
  */
 export function mergeWorkspaceStates(
   local: WorkspaceState,
   cloud: WorkspaceState,
-  mergedDeletions: DeletionRecord[]
+  mergedDeletions: DeletionRecord[],
+  sessionStartTime?: string
 ): WorkspaceState {
   const isDeleted = (type: string, id: string) => {
     return mergedDeletions.some(d => d.type === type && d.id === id);
@@ -148,9 +151,22 @@ export function mergeWorkspaceStates(
   // 1. Merge Folders
   const mergedFoldersMap = new Map<string, Folder>();
   (local.folders || []).forEach(f => {
-    if (!isDeleted('folder', f.id)) {
-      mergedFoldersMap.set(f.id, { ...f, updatedAt: f.updatedAt || new Date(0).toISOString() });
+    if (isDeleted('folder', f.id)) return;
+
+    // Stale check: if folder is in local but NOT in cloud, and its updatedAt is older than sessionStartTime,
+    // it means another device deleted it while this device was inactive. We should not restore it.
+    if (sessionStartTime && cloud.folders) {
+      const existsInCloud = cloud.folders.some(cf => cf.id === f.id);
+      if (!existsInCloud) {
+        const folderUpdated = f.updatedAt || new Date(0).toISOString();
+        if (new Date(folderUpdated).getTime() < new Date(sessionStartTime).getTime()) {
+          console.log(`[Sync] Discarding stale deleted folder: ${f.name} (${f.id})`);
+          return;
+        }
+      }
     }
+
+    mergedFoldersMap.set(f.id, { ...f, updatedAt: f.updatedAt || new Date(0).toISOString() });
   });
 
   (cloud.folders || []).forEach(sf => {
@@ -170,9 +186,22 @@ export function mergeWorkspaceStates(
   // 2. Merge Projects
   const mergedProjectsMap = new Map<string, Project>();
   (local.projects || []).forEach(p => {
-    if (!isDeleted('project', p.id)) {
-      mergedProjectsMap.set(p.id, { ...p, updatedAt: p.updatedAt || new Date(0).toISOString() });
+    if (isDeleted('project', p.id)) return;
+
+    // Stale check: if project is in local but NOT in cloud, and its updatedAt is older than sessionStartTime,
+    // it means another device deleted it while this device was inactive. We should not restore it.
+    if (sessionStartTime && cloud.projects) {
+      const existsInCloud = cloud.projects.some(cp => cp.id === p.id);
+      if (!existsInCloud) {
+        const projectUpdated = p.updatedAt || new Date(0).toISOString();
+        if (new Date(projectUpdated).getTime() < new Date(sessionStartTime).getTime()) {
+          console.log(`[Sync] Discarding stale deleted project: ${p.name} (${p.id})`);
+          return;
+        }
+      }
     }
+
+    mergedProjectsMap.set(p.id, { ...p, updatedAt: p.updatedAt || new Date(0).toISOString() });
   });
 
   (cloud.projects || []).forEach(sp => {
@@ -191,13 +220,28 @@ export function mergeWorkspaceStates(
 
   // 3. Merge Nodes (flat merge)
   const mergedNodesMap = new Map<string, TaskNode>();
+  const cloudNodesList = Object.values(cloud.nodes || {}).flat().filter(Boolean) as TaskNode[];
+
   Object.values(local.nodes || {}).flat().forEach(node => {
-    if (node && !isDeleted('node', node.id)) {
-      mergedNodesMap.set(node.id, { ...node, updatedAt: node.updatedAt || new Date(0).toISOString() });
+    if (!node || isDeleted('node', node.id)) return;
+
+    // Stale check: if node is in local but NOT in cloud, and its updatedAt is older than sessionStartTime,
+    // it means another device deleted it while this device was inactive. We should not restore it.
+    if (sessionStartTime && cloud.nodes) {
+      const existsInCloud = cloudNodesList.some(cn => cn.id === node.id);
+      if (!existsInCloud) {
+        const nodeUpdated = node.updatedAt || new Date(0).toISOString();
+        if (new Date(nodeUpdated).getTime() < new Date(sessionStartTime).getTime()) {
+          console.log(`[Sync] Discarding stale deleted node: ${node.text} (${node.id})`);
+          return;
+        }
+      }
     }
+
+    mergedNodesMap.set(node.id, { ...node, updatedAt: node.updatedAt || new Date(0).toISOString() });
   });
 
-  Object.values(cloud.nodes || {}).flat().forEach(sn => {
+  cloudNodesList.forEach(sn => {
     if (!sn || isDeleted('node', sn.id)) return;
     const existingN = mergedNodesMap.get(sn.id);
     if (!existingN) {
@@ -239,9 +283,22 @@ export function mergeWorkspaceStates(
   // 4. Merge TagCategories
   const mergedTagCatsMap = new Map<string, TagCategory>();
   (local.tagCategories || []).forEach(tc => {
-    if (!isDeleted('tagCategory', tc.id)) {
-      mergedTagCatsMap.set(tc.id, { ...tc, updatedAt: tc.updatedAt || new Date(0).toISOString() });
+    if (isDeleted('tagCategory', tc.id)) return;
+
+    // Stale check: if tagCategory is in local but NOT in cloud, and its updatedAt is older than sessionStartTime,
+    // it means another device deleted it while this device was inactive. We should not restore it.
+    if (sessionStartTime && cloud.tagCategories) {
+      const existsInCloud = cloud.tagCategories.some(ctc => ctc.id === tc.id);
+      if (!existsInCloud) {
+        const tagCatUpdated = tc.updatedAt || new Date(0).toISOString();
+        if (new Date(tagCatUpdated).getTime() < new Date(sessionStartTime).getTime()) {
+          console.log(`[Sync] Discarding stale deleted tag category: ${tc.name} (${tc.id})`);
+          return;
+        }
+      }
     }
+
+    mergedTagCatsMap.set(tc.id, { ...tc, updatedAt: tc.updatedAt || new Date(0).toISOString() });
   });
 
   (cloud.tagCategories || []).forEach(stc => {
@@ -287,7 +344,11 @@ export function mergeWorkspaceStates(
  * Saves current WorkspaceState snapshot to firestore database dynamically.
  * Features automatic Exponential Backoff and progressive retries to handle unstable connections.
  */
-export async function saveToFirebaseDirectly(userId: string, state: WorkspaceState): Promise<{ success: boolean; isOfflineQueued?: boolean; error?: string }> {
+export async function saveToFirebaseDirectly(
+  userId: string, 
+  state: WorkspaceState,
+  sessionStartTime?: string
+): Promise<{ success: boolean; isOfflineQueued?: boolean; error?: string }> {
   try {
     const docRef = doc(db, 'workspaces', userId);
     
@@ -340,7 +401,7 @@ export async function saveToFirebaseDirectly(userId: string, state: WorkspaceSta
     };
 
     const mergedState = cloudData
-      ? mergeWorkspaceStates(state, cloudState, mergedDeletions)
+      ? mergeWorkspaceStates(state, cloudState, mergedDeletions, sessionStartTime)
       : state;
 
     // Load and include local active pomodoro state if any
