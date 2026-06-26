@@ -5062,135 +5062,100 @@ export default function MindMapCanvas({
       </div>
 
       {!focusedContainerId && (
-        <div className="absolute bottom-4 left-2 right-2 sm:right-auto sm:left-4 z-10 flex flex-wrap items-center justify-center sm:justify-start gap-1 sm:gap-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-1.5 sm:p-2 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md max-w-[calc(100vw-16px)] sm:max-w-none">
+        <div className="absolute bottom-6 right-6 z-40">
           <button
-            onClick={handleZoomIn}
-            title="Приблизить"
-            className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsElementDropdownOpen(!isElementDropdownOpen);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all duration-250 cursor-pointer text-white bg-indigo-600 hover:bg-indigo-700 hover:scale-110 active:scale-95 border-none focus:outline-none`}
+            title="Добавить элемент"
           >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleZoomOut}
-            title="Отдалить"
-            className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
-          <button
-            onClick={handleRecenter}
-            title="По центру"
-            className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium cursor-pointer shrink-0"
-          >
-            <Maximize2 className="w-4 h-4" />
-            <span className="hidden sm:inline">Сбросить</span>
+            <Plus className={`w-7 h-7 transition-transform duration-250 ${isElementDropdownOpen ? 'rotate-45' : ''}`} />
           </button>
 
-          <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-800 mx-0.5 shrink-0" />
-          
-          {/* Elements Selector Dropdown */}
-          <div className="relative">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsElementDropdownOpen(!isElementDropdownOpen);
-              }}
-              className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1 sm:gap-1.5 text-xs font-semibold select-none cursor-pointer border ${
-                isElementDropdownOpen
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                  : 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/40'
-              } shrink-0`}
-              title="Добавить элемент на холст"
+          {isElementDropdownOpen && (
+            <div
+              className="absolute bottom-16 right-0 mb-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-2 w-64 z-50 flex flex-col gap-1 select-text origin-bottom-right"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
             >
-              <PlusCircle className={`w-3.5 h-3.5 ${isElementDropdownOpen ? 'text-white' : 'text-indigo-505'}`} />
-              <span className="hidden sm:inline">Добавить элемент</span>
-              <span className="sm:hidden">Элемент</span>
-              <ChevronUp className={`w-3.5 h-3.5 transition-transform duration-200 ${isElementDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {isElementDropdownOpen && (
-              <div
-                className="absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 sm:left-0 sm:translate-x-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-1.5 w-60 z-50 flex flex-col gap-1 select-text"
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
+              {/* Floating Node Button */}
+              <button
+                onClick={() => {
+                  const x = Math.round(-panX / zoom);
+                  const y = Math.round(-panY / zoom);
+                  onAddFloatingNode(x, y, null);
+                  setIsElementDropdownOpen(false);
+                }}
+                className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"
               >
-                {/* Floating Node Button */}
-                <button
-                  onClick={() => {
-                    const x = Math.round(-panX / zoom);
-                    const y = Math.round(-panY / zoom);
-                    onAddFloatingNode(x, y, null);
-                    setIsElementDropdownOpen(false);
-                  }}
-                  className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2 rounded-lg flex items-center gap-2.5 transition-colors cursor-pointer group"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-emerald-900/20 group-hover:scale-105 transition-transform">
-                    <PlusCircle className="w-4 h-4 text-emerald-500" />
-                  </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Плавающая задача</span>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Свободная карточка на холсте</span>
-                  </div>
-                </button>
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-emerald-900/20 group-hover:scale-105 transition-transform">
+                  <PlusCircle className="w-5 h-5 text-emerald-500" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Плавающая задача</span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Свободная карточка на холсте</span>
+                </div>
+              </button>
 
-                {/* Workflow Rectangle Button */}
-                <button
-                  onClick={() => {
-                    const x = Math.round(-panX / zoom);
-                    const y = Math.round(-panY / zoom);
-                    onAddFloatingNode(x, y, null, 'Workflow Шаг', { isWorkflowRectangle: true });
-                    setIsElementDropdownOpen(false);
-                  }}
-                  className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2 rounded-lg flex items-center gap-2.5 transition-colors cursor-pointer group"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform">
-                    <Network className="w-4 h-4 text-indigo-500" />
-                  </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Workflow шаг</span>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Блок-схема с коннекторами</span>
-                  </div>
-                </button>
+              {/* Workflow Rectangle Button */}
+              <button
+                onClick={() => {
+                  const x = Math.round(-panX / zoom);
+                  const y = Math.round(-panY / zoom);
+                  onAddFloatingNode(x, y, null, 'Workflow Шаг', { isWorkflowRectangle: true });
+                  setIsElementDropdownOpen(false);
+                }}
+                className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform">
+                  <Network className="w-5 h-5 text-indigo-500" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Workflow шаг</span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Блок-схема с коннекторами</span>
+                </div>
+              </button>
 
-                {/* Voice Dictation Button */}
-                <button
-                  onClick={() => {
-                    startCanvasDictation();
-                    setIsElementDropdownOpen(false);
-                  }}
-                  className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2 rounded-lg flex items-center gap-2.5 transition-colors cursor-pointer group"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform">
-                    <Mic className="w-4 h-4 text-indigo-500" />
-                  </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Голосовой ввод</span>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Продиктовать новую задачу</span>
-                  </div>
-                </button>
+              {/* Voice Dictation Button */}
+              <button
+                onClick={() => {
+                  startCanvasDictation();
+                  setIsElementDropdownOpen(false);
+                }}
+                className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform">
+                  <Mic className="w-5 h-5 text-indigo-500" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Голосовой ввод</span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Продиктовать новую задачу</span>
+                </div>
+              </button>
 
-                {/* Container Button */}
-                <button
-                  onClick={() => {
-                    const x = Math.round(-panX / zoom);
-                    const y = Math.round(-panY / zoom);
-                    onAddContainerNode(x, y);
-                    setIsElementDropdownOpen(false);
-                  }}
-                  className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2 rounded-lg flex items-center gap-2.5 transition-colors cursor-pointer group"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center shrink-0 border border-amber-100 dark:border-amber-900/20 group-hover:scale-105 transition-transform text-xs">
-                    📦
-                  </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Контейнер задач</span>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Группировка и свертывание</span>
-                  </div>
-                </button>
-              </div>
-            )}
-          </div>
+              {/* Container Button */}
+              <button
+                onClick={() => {
+                  const x = Math.round(-panX / zoom);
+                  const y = Math.round(-panY / zoom);
+                  onAddContainerNode(x, y);
+                  setIsElementDropdownOpen(false);
+                }}
+                className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center shrink-0 border border-amber-100 dark:border-amber-900/20 group-hover:scale-105 transition-transform text-xs">
+                  📦
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Контейнер задач</span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Группировка и свертывание</span>
+                </div>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

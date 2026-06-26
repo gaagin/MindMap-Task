@@ -437,6 +437,8 @@ export default function App() {
   const [isAutoLoginPopupBlocked, setIsAutoLoginPopupBlocked] = useState(false);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [isMobileViewDropdownOpen, setIsMobileViewDropdownOpen] = useState(false);
   const [syncOnExit, setSyncOnExit] = useState<boolean>(() => {
     const saved = localStorage.getItem('milli_sync_on_exit');
     return saved !== null ? saved === 'true' : true;
@@ -1057,12 +1059,15 @@ export default function App() {
         setCurrentUser(user);
         setGoogleToken(token);
         setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        setHasCheckedInitialAuth(true);
+        setIsAutoLoginPopupBlocked(false);
       },
       () => {
         isFirstSnapshotRef.current = true;
         setCurrentUser(null);
         setGoogleToken(null);
         setSyncStatus(prev => ({ ...prev, firebase: 'idle', sheets: 'idle' }));
+        setHasCheckedInitialAuth(true);
 
         // Automatic anonymous authentication if the user did not explicitly log out
         try {
@@ -1080,6 +1085,8 @@ export default function App() {
     );
     return () => unsubscribe();
   }, []);
+
+  // 1b. Programmatic Google Sign-In is only triggered by user actions (like click) to prevent the browser's popup blocker.
 
   // Keep track of latest state and unsynced counts for real-time listener to avoid resubscription on every character change
   const stateRef = React.useRef(state);
@@ -3081,8 +3088,23 @@ export default function App() {
       {/* Main Workspace Frame */}
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         
+        {isAutoLoginPopupBlocked && (
+          <div className="absolute right-6 top-18 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-200 text-xs font-semibold py-2 px-3 rounded-xl shadow-xl flex items-center gap-2 z-40 animate-bounce">
+            <span className="w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
+            <span>Браузер заблокировал автоматический вход. Нажмите <b>"Синхронизация"</b> для авторизации! 🚀</span>
+            <button 
+              type="button"
+              onClick={() => setIsAutoLoginPopupBlocked(false)}
+              className="ml-2 hover:text-amber-600 dark:hover:text-amber-150 font-extrabold cursor-pointer text-sm"
+              title="Закрыть"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        
         {/* Workspace Top Action Bar Header */}
-        <header className={`${isViewFullScreen ? 'hidden' : (isContainerFocused ? 'hidden md:flex' : 'flex')} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
+        <header className={`${isViewFullScreen ? 'hidden' : (isContainerFocused ? 'hidden md:flex' : 'hidden sm:flex')} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
           (!currentUser || !googleToken)
             ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-900/40'
             : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800'
@@ -3620,11 +3642,194 @@ export default function App() {
               }
             >
               <FileSpreadsheet className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-            </button>
+          </button>
 
 
           </div>
         </header>
+
+      {/* Floating search panel for mobile when toggled */}
+      {isMobileSearchOpen && (
+        <div className="absolute bottom-16 left-3 right-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-2 z-40 flex items-center gap-1.5 sm:hidden animate-in slide-in-from-bottom-2 duration-200">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="Поиск..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full transition-all duration-200 leading-none py-1.5 pl-8 pr-12 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
+            />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+            {searchQuery.trim().length > 0 && (
+              <span className="absolute right-2 top-2 text-[10px] text-slate-400/80 font-mono font-medium">
+                {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
+              </span>
+            )}
+          </div>
+          {searchedIds.length > 1 && (
+            <button
+              type="button"
+              onClick={handleNextSearchMatch}
+              className="p-1.5 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg flex items-center justify-center cursor-pointer"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Mobile Bottom Action Bar Header */}
+      <header className={`${isViewFullScreen ? 'hidden' : (isContainerFocused ? 'hidden' : 'flex sm:hidden')} order-last h-14 border-t border-slate-200 dark:border-slate-800 items-center justify-between px-2.5 backdrop-blur-md z-35 bg-white/90 dark:bg-slate-900/90 transition-all duration-300 relative`}>
+        {/* Left: Hamburger menu & Undo/Cancel without text */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-850 cursor-pointer"
+            title="Меню"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+
+          {state.activeProjectId && (undoStack[state.activeProjectId] || []).length > 0 && (
+            <button
+              type="button"
+              onClick={handleUndo}
+              title="Отменить"
+              className="p-1.5 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-center cursor-pointer"
+            >
+              <Undo2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            </button>
+          )}
+        </div>
+
+        {/* Middle: Dropdown View Selector */}
+        {state.activeProjectId && (() => {
+          const activeView = [
+            { id: 'canvas', name: 'Холст', icon: Network },
+            { id: 'kanban', name: 'Канбан', icon: Kanban },
+            { id: 'mobile-list', name: 'Списки', icon: Smartphone },
+            { id: 'calendar', name: 'Календарь', icon: Calendar },
+            { id: 'gantt', name: 'Ганнт', icon: GanttChart },
+            { id: 'table', name: 'Таблица', icon: Table },
+            { id: 'eisenhower', name: 'Матрица', icon: LayoutGrid },
+          ].find(v => v.id === viewMode) || { id: 'canvas', name: 'Холст', icon: Network };
+
+          const ActiveIcon = activeView.icon;
+
+          return (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMobileViewDropdownOpen(!isMobileViewDropdownOpen);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-indigo-600 dark:text-indigo-400 font-bold text-xs rounded-xl cursor-pointer border border-slate-200/60 dark:border-slate-700 focus:outline-none transition-all shadow-xs"
+              >
+                <ActiveIcon className="w-3.5 h-3.5 text-indigo-500" />
+                <span className="max-w-[70px] truncate">{activeView.name}</span>
+                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isMobileViewDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isMobileViewDropdownOpen && (
+                <div 
+                  className="absolute bottom-11 left-1/2 -translate-x-1/2 mb-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-1 w-44 z-50 flex flex-col gap-0.5 max-h-[280px] overflow-y-auto no-scrollbar"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {[
+                    { id: 'canvas', name: 'Холст', icon: Network },
+                    { id: 'kanban', name: 'Канбан', icon: Kanban },
+                    { id: 'mobile-list', name: 'Списки', icon: Smartphone },
+                    { id: 'calendar', name: 'Календарь', icon: Calendar },
+                    { id: 'gantt', name: 'Ганнт', icon: GanttChart },
+                    { id: 'table', name: 'Таблица', icon: Table },
+                    { id: 'eisenhower', name: 'Матрица', icon: LayoutGrid },
+                  ].map(option => {
+                    const OptionIcon = option.icon;
+                    const isSelected = viewMode === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => {
+                          setViewMode(option.id as any);
+                          setIsMobileViewDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2.5 text-xs transition-colors cursor-pointer font-semibold ${
+                          isSelected
+                            ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold'
+                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <OptionIcon className={`w-3.5 h-3.5 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+                        <span>{option.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Right: Compact buttons for Search, Filters, Sync */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
+            className={`p-1.5 rounded-lg border cursor-pointer transition-all ${
+              searchQuery.trim().length > 0 || isMobileSearchOpen
+                ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
+                : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Поиск"
+          >
+            <Search className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
+            className={`p-1.5 border rounded-lg cursor-pointer transition-all ${
+              isAnyFilterActive
+                ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
+                : isFilterPanelOpen
+                  ? 'border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-850 text-slate-800 dark:text-slate-100'
+                  : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Фильтры"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsSyncMenuOpen(true)}
+            className={`p-1.5 border rounded-lg cursor-pointer transition-all ${
+              isSyncingSheets || syncStatus.firebase === 'syncing'
+                ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
+                : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Синхронизация"
+          >
+            <Database className="w-3.5 h-3.5 text-indigo-500" />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleQuickSheetsSync}
+            className={`p-1.5 border rounded-lg cursor-pointer transition-all ${
+              isSyncingSheets
+                ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse'
+                : 'border-slate-200 dark:border-slate-850 text-emerald-600 dark:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Google Sheets"
+          >
+            <FileSpreadsheet className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </header>
 
 
 
