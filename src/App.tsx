@@ -433,6 +433,8 @@ export default function App() {
   // Google Authentication & Symmetrical Sync statuses
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [hasCheckedInitialAuth, setHasCheckedInitialAuth] = useState(false);
+  const [isAutoLoginPopupBlocked, setIsAutoLoginPopupBlocked] = useState(false);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
   const [syncOnExit, setSyncOnExit] = useState<boolean>(() => {
