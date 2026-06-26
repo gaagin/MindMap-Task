@@ -17,6 +17,8 @@ import {
   Type,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   FolderMinus,
   FolderPlus,
   Menu,
@@ -400,6 +402,7 @@ export default function MindMapCanvas({
   
   // Fullscreen card modal state on mobile
   const [fullscreenCardId, setFullscreenCardId] = useState<string | null>(null);
+  const [fullscreenHistory, setFullscreenHistory] = useState<string[]>([]);
   const [fullscreenSubtaskText, setFullscreenSubtaskText] = useState('');
 
   // States for Flowchart Workflow connectors dragging
@@ -6817,7 +6820,13 @@ export default function MindMapCanvas({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setFullscreenCardId(fullscreenCardId === node.id ? null : node.id);
+                        if (fullscreenCardId === node.id) {
+                          setFullscreenCardId(null);
+                          setFullscreenHistory([]);
+                        } else {
+                          setFullscreenCardId(node.id);
+                          setFullscreenHistory([]);
+                        }
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
                       title={fullscreenCardId === node.id ? "Выйти из полноэкранного режима" : "Раскрыть на весь экран"}
@@ -8283,18 +8292,48 @@ export default function MindMapCanvas({
           setFullscreenSubtaskText('');
         };
 
+        const handleGoBack = () => {
+          if (fullscreenHistory.length > 0) {
+            const previousId = fullscreenHistory[fullscreenHistory.length - 1];
+            setFullscreenHistory(prev => prev.slice(0, -1));
+            setFullscreenCardId(previousId);
+          } else if (node.parentId && nodes.some(n => n.id === node.parentId)) {
+            setFullscreenCardId(node.parentId);
+          } else {
+            setFullscreenCardId(null);
+            setFullscreenHistory([]);
+          }
+        };
+
+        const hasBackOption = fullscreenHistory.length > 0 || (node.parentId && nodes.some(n => n.id === node.parentId));
+
         return (
-          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setFullscreenCardId(null)}>
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setFullscreenCardId(null); setFullscreenHistory([]); }}>
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-lg h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
               {/* Header */}
               <div className="px-6 py-4 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/60">
-                <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5 font-sans">
-                  <Smartphone className="w-4 h-4 text-indigo-500" />
-                  Карточка (Полноэкранный вид)
-                </span>
+                <div className="flex items-center gap-2">
+                  {hasBackOption && (
+                    <button
+                      type="button"
+                      onClick={handleGoBack}
+                      className="mr-1 p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer flex items-center justify-center border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-850 shadow-sm"
+                      title="Назад к предыдущей задаче"
+                    >
+                      <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                    </button>
+                  )}
+                  <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5 font-sans">
+                    <Smartphone className="w-4 h-4 text-indigo-500" />
+                    Карточка (Полноэкранный вид)
+                  </span>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setFullscreenCardId(null)}
+                  onClick={() => {
+                    setFullscreenCardId(null);
+                    setFullscreenHistory([]);
+                  }}
                   className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors cursor-pointer"
                   title="Вернуться к стандартному виду"
                 >
@@ -8382,10 +8421,21 @@ export default function MindMapCanvas({
                           key={sub.id}
                           className="flex items-center justify-between gap-3 p-3 bg-slate-50/50 dark:bg-slate-850/20 border border-slate-150 dark:border-slate-800 rounded-xl hover:bg-slate-100/30 dark:hover:bg-slate-855/40 transition-colors"
                         >
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div
+                            className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer select-none group/subitem"
+                            onClick={() => {
+                              // Save current ID to history
+                              setFullscreenHistory(prev => [...prev, node.id]);
+                              // Navigate to subtask
+                              setFullscreenCardId(sub.id);
+                            }}
+                          >
                             <button
                               type="button"
-                              onClick={() => onToggleNodeCompleted(sub.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleNodeCompleted(sub.id);
+                              }}
                               className="text-slate-450 hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer animate-fade-in"
                             >
                               {sub.completed ? (
@@ -8394,15 +8444,19 @@ export default function MindMapCanvas({
                                 <Circle className="w-4.5 h-4.5 text-slate-300 dark:text-slate-700" />
                               )}
                             </button>
-                            <span className={`text-xs font-semibold truncate ${sub.completed ? 'line-through text-slate-400 italic' : 'text-slate-700 dark:text-slate-200'}`}>
+                            <span className={`text-xs font-semibold truncate flex-1 group-hover/subitem:text-indigo-600 dark:group-hover/subitem:text-indigo-400 transition-colors ${sub.completed ? 'line-through text-slate-400 italic' : 'text-slate-700 dark:text-slate-200'}`}>
                               {sub.text}
                             </span>
+                            <ChevronRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover/subitem:translate-x-0.5 group-hover/subitem:text-indigo-500 transition-all opacity-0 group-hover/subitem:opacity-100" />
                           </div>
                           
                           {/* Delete subtask button */}
                           <button
                             type="button"
-                            onClick={() => onDeleteNode(sub.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteNode(sub.id);
+                            }}
                             className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-955/20 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
                             title="Удалить подзадачу"
                           >
@@ -8441,7 +8495,10 @@ export default function MindMapCanvas({
               <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-800 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setFullscreenCardId(null)}
+                  onClick={() => {
+                    setFullscreenCardId(null);
+                    setFullscreenHistory([]);
+                  }}
                   className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
                 >
                   Вернуться на холст
