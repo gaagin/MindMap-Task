@@ -7448,7 +7448,7 @@ export default function MindMapCanvas({
                                 {sortedSubtasks.map((subtask, index) => (
                                   <motion.div
                                     key={subtask.id}
-                                    layout={!draggingNodeId}
+                                    layout={isTransitioningTransform && !draggingNodeId}
                                     transition={{ type: "spring", stiffness: 500, damping: 45 }}
                                     data-subtask-index={index}
                                     data-subtask-id={subtask.id}
