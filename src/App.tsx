@@ -172,9 +172,13 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
 }
 
 
+// Persistent set of legacy/existing category IDs loaded from the initial workspace state.
+// This allows us to recognize and restrict existing tags/categories to only the ADIB map.
+let legacyCategoryIds: Set<string> | null = null;
+
 /**
- * Keeps global WorkspaceState and all active projects fully in sync regarding tagCategories.
- * This guarantees categories and tags do not disappear when restoring snapshots from Firestore or Google Sheets.
+ * Keeps global WorkspaceState and all active projects fully in sync regarding tagCategories,
+ * but separates them per map/project. Existing tags and categories remain on the ADIB map only.
  */
 function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
   if (!wsState || typeof wsState !== 'object') {
@@ -196,6 +200,11 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
     const projectCats = projects.flatMap(p => p && Array.isArray(p.tagCategories) ? p.tagCategories : []);
     const allCats = [...rootCats, ...projectCats].filter(cat => cat && cat.id && !isDeleted('tagCategory', cat.id));
 
+    // Initialize legacy categories Set on first load
+    if (!legacyCategoryIds) {
+      legacyCategoryIds = new Set(rootCats.map(c => c.id));
+    }
+
     // Deduplicate and resolve conflicts using the updatedAt timestamp of each category
     const latestCategoriesMap = new Map<string, TagCategory>();
     allCats.forEach(cat => {
@@ -213,22 +222,47 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
 
     const finalRootCats = Array.from(latestCategoriesMap.values());
 
-    // Sync all projects with the absolute latest tag categories to ensure complete and correct propagation of added/edited/deleted tags
+    // Sync projects by isolating their tag categories:
+    // 1. Projects with "ADIB" in their name keep/merge all legacy categories
+    // 2. Other projects filter out legacy categories and keep only their project-specific ones
     const updatedProjects = projects.map(p => {
       if (!p) return p;
-      return {
-        ...p,
-        // Deep copy final categories list to prevent reference leakage/mutations
-        tagCategories: JSON.parse(JSON.stringify(finalRootCats))
-      };
+      const isAdib = p.name && (p.name.toUpperCase().includes('ADIB') || p.name.toUpperCase() === 'ADIB');
+      
+      const pCats = Array.isArray(p.tagCategories) ? p.tagCategories : [];
+      
+      if (isAdib) {
+        // ADIB project keeps legacy categories + any other categories explicitly in its list
+        const map = new Map<string, TagCategory>();
+        finalRootCats.filter(c => legacyCategoryIds?.has(c.id)).forEach(c => map.set(c.id, c));
+        pCats.forEach(c => map.set(c.id, c));
+        
+        return {
+          ...p,
+          tagCategories: Array.from(map.values()).filter(c => c && c.id && !isDeleted('tagCategory', c.id))
+        };
+      } else {
+        // Other projects filter out legacy categories to start completely clean and separate
+        const projectSpecificCats = pCats.filter(c => c && c.id && !legacyCategoryIds?.has(c.id) && !isDeleted('tagCategory', c.id));
+        return {
+          ...p,
+          tagCategories: projectSpecificCats
+        };
+      }
     });
+
+    // Gather all active categories from all updated projects for the root state representation
+    const finalAllCats = updatedProjects.flatMap(p => p.tagCategories || []);
+    const finalDeduplicatedRootCatsMap = new Map<string, TagCategory>();
+    finalAllCats.forEach(c => finalDeduplicatedRootCatsMap.set(c.id, c));
+    const finalNormalizedRootCats = Array.from(finalDeduplicatedRootCatsMap.values());
 
     return {
       ...wsState,
       folders,
       projects: updatedProjects,
       nodes,
-      tagCategories: finalRootCats,
+      tagCategories: finalNormalizedRootCats,
       deletions
     };
   } catch (err) {
@@ -2176,7 +2210,7 @@ export default function App() {
   };
 
   // Add child branching node beautifully
-  const handleAddChildNode = (parentId: string) => {
+  const handleAddChildNode = (parentId: string, preventSelection = false) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
@@ -2255,15 +2289,17 @@ export default function App() {
 
     // Smoothly pan/recenter the viewport around the new node so it is fully visible on screen,
     // but ONLY if the parent branch is not collapsed (if collapsed, the child is invisible on the map canvas)
-    if (!isParentOrAncestorCollapsed) {
+    if (!isParentOrAncestorCollapsed && !preventSelection) {
       setPanX(-Math.round(newX) * zoom);
       setPanY(-Math.round(newY) * zoom);
     }
 
     // Set lastCreatedNodeId so the new child node gets inline editing focused on the map,
     // and set selectedNodeId to the new child so it is focused/selected
-    setLastCreatedNodeId(newChild.id);
-    setSelectedNodeId(newChild.id);
+    if (!preventSelection) {
+      setLastCreatedNodeId(newChild.id);
+      setSelectedNodeId(newChild.id);
+    }
   };
 
   // Add a fully independent task inside the temporary off-canvas INBOX container

@@ -12,6 +12,7 @@ import {
   Calendar,
   Layers,
   HelpCircle,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -50,7 +51,7 @@ interface TaskDetailsPanelProps {
   onClose: () => void;
   onUpdateNode: (updatedNode: TaskNode) => void;
   onDeleteNode: (id: string) => void;
-  onAddChildNode?: (parentId: string) => void;
+  onAddChildNode?: (parentId: string, preventSelection?: boolean) => void;
   onSelectNode?: (id: string | null) => void;
   categories?: TagCategory[];
   onCreateTagCategory?: (name: string, color: string) => void;
@@ -119,6 +120,42 @@ export default function TaskDetailsPanel({
       setOriginalNotes(node.notes || '');
     }
   }, [node?.id]);
+
+  // Track and autofocus on newly created subtasks inside TaskDetailsPanel
+  const prevSubtaskIdsRef = React.useRef<string[]>([]);
+  const isFirstRenderRef = React.useRef<boolean>(true);
+
+  React.useEffect(() => {
+    if (!node) {
+      isFirstRenderRef.current = true;
+      prevSubtaskIdsRef.current = [];
+      return;
+    }
+
+    const currentSubtasks = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
+    const currentSubtaskIds = currentSubtasks.map(s => s.id);
+
+    if (isFirstRenderRef.current) {
+      prevSubtaskIdsRef.current = currentSubtaskIds;
+      isFirstRenderRef.current = false;
+      return;
+    }
+
+    // Find if a new subtask has been added
+    const newSubtaskId = currentSubtaskIds.find(id => !prevSubtaskIdsRef.current.includes(id));
+    if (newSubtaskId) {
+      // Focus on the newly created subtask's input
+      setTimeout(() => {
+        const inputElement = document.getElementById(`subtask-input-${newSubtaskId}`);
+        if (inputElement) {
+          (inputElement as HTMLInputElement).focus();
+          (inputElement as HTMLInputElement).select();
+        }
+      }, 50);
+    }
+
+    prevSubtaskIdsRef.current = currentSubtaskIds;
+  }, [allNodes, node?.id]);
 
   // Manual Pomodoro time editing states
   const [isEditingPomoTime, setIsEditingPomoTime] = useState(false);
@@ -1470,6 +1507,24 @@ export default function TaskDetailsPanel({
 
       {activeTab === 'details' && (
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+
+          {node.parentId && (() => {
+            const parentNode = allNodes.find(n => n.id === node.parentId);
+            if (parentNode && onSelectNode) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => onSelectNode(parentNode.id)}
+                  className="w-full flex items-center gap-2 px-3 py-2 bg-indigo-50/50 hover:bg-indigo-100/50 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 text-xs font-bold rounded-lg border border-indigo-100/30 dark:border-indigo-900/30 transition-all cursor-pointer mb-2"
+                  title={`Вернуться к главной задаче: ${parentNode.text}`}
+                >
+                  <ChevronLeft className="w-4 h-4 shrink-0 text-indigo-500" />
+                  <span className="truncate">Назад к: <span className="font-semibold">{parentNode.text}</span></span>
+                </button>
+              );
+            }
+            return null;
+          })()}
         
         {/* Name / Heading */}
         <div className="space-y-2">
@@ -1512,6 +1567,295 @@ export default function TaskDetailsPanel({
             rows={2}
             placeholder="Введите название задачи..."
           />
+        </div>
+
+        {/* Subtasks Section */}
+        <div className="space-y-2 bg-[#FAFBFD]/40 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-400 dark:text-slate-505 uppercase tracking-wider">
+              Подзадачи ({allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length})
+            </label>
+            {onAddChildNode && (
+              <button
+                type="button"
+                onClick={() => onAddChildNode(node.id, true)}
+                className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3 h-3" /> Добавить
+              </button>
+            )}
+          </div>
+
+          {(() => {
+            const subtasks = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
+            const sortedSubtasks = [...subtasks].sort((a, b) => {
+              const orderA = a.subtaskOrder !== undefined ? a.subtaskOrder : 1000000;
+              const orderB = b.subtaskOrder !== undefined ? b.subtaskOrder : 1000000;
+              if (orderA !== orderB) return orderA - orderB;
+              return a.id.localeCompare(b.id);
+            });
+
+            const handleMoveSubtask = (subtaskId: string, direction: 'up' | 'down') => {
+              const index = sortedSubtasks.findIndex(s => s.id === subtaskId);
+              if (index === -1) return;
+
+              const targetIndex = direction === 'up' ? index - 1 : index + 1;
+              if (targetIndex < 0 || targetIndex >= sortedSubtasks.length) return;
+
+              const itemA = sortedSubtasks[index];
+              const itemB = sortedSubtasks[targetIndex];
+
+              // Assign explicit orders if undefined
+              sortedSubtasks.forEach((item, idx) => {
+                if (item.subtaskOrder === undefined) {
+                  item.subtaskOrder = idx * 10;
+                }
+              });
+
+              const tempOrder = itemA.subtaskOrder!;
+              itemA.subtaskOrder = itemB.subtaskOrder!;
+              itemB.subtaskOrder = tempOrder;
+
+              onUpdateNode({ ...itemA });
+              onUpdateNode({ ...itemB });
+            };
+
+            const handleDragStart = (e: React.DragEvent, index: number) => {
+              setDraggedIndex(index);
+              e.dataTransfer.effectAllowed = 'move';
+            };
+
+            const handleDragOver = (e: React.DragEvent, index: number) => {
+              e.preventDefault();
+              if (draggedIndex === null || draggedIndex === index) return;
+
+              const now = Date.now();
+              if (now - lastSwapTimeRef.current < 200) return;
+
+              const rect = e.currentTarget.getBoundingClientRect();
+              const mouseY = e.clientY - rect.top;
+              const threshold = rect.height / 2;
+
+              if (draggedIndex < index && mouseY < threshold) return;
+              if (draggedIndex > index && mouseY > threshold) return;
+
+              const draggedItem = sortedSubtasks[draggedIndex];
+              const targetItem = sortedSubtasks[index];
+
+              // Assign explicit orders if undefined
+              sortedSubtasks.forEach((item, idx) => {
+                if (item.subtaskOrder === undefined) {
+                  item.subtaskOrder = idx * 10;
+                }
+              });
+
+              const tempOrder = draggedItem.subtaskOrder!;
+              draggedItem.subtaskOrder = targetItem.subtaskOrder!;
+              targetItem.subtaskOrder = tempOrder;
+
+              lastSwapTimeRef.current = now;
+              onUpdateNode({ ...draggedItem });
+              onUpdateNode({ ...targetItem });
+              setDraggedIndex(index);
+            };
+
+            const handleDragEnd = () => {
+              setDraggedIndex(null);
+            };
+
+            const handleTouchStart = (e: React.TouchEvent, index: number) => {
+              setActiveTouchIndex(index);
+            };
+
+            const handleTouchMove = (e: React.TouchEvent) => {
+              if (activeTouchIndex === null) return;
+              
+              const now = Date.now();
+              if (now - lastSwapTimeRef.current < 200) return;
+
+              const touch = e.touches[0];
+              const element = document.elementFromPoint(touch.clientX, touch.clientY);
+              if (!element) return;
+
+              const container = element.closest('[data-subtask-index]');
+              if (container) {
+                const targetIndexStr = container.getAttribute('data-subtask-index');
+                if (targetIndexStr !== null) {
+                  const targetIndex = parseInt(targetIndexStr, 10);
+                  if (targetIndex !== activeTouchIndex && !isNaN(targetIndex)) {
+                    const rect = container.getBoundingClientRect();
+                    const touchY = touch.clientY - rect.top;
+                    const threshold = rect.height / 2;
+
+                    if (activeTouchIndex < targetIndex && touchY < threshold) return;
+                    if (activeTouchIndex > targetIndex && touchY > threshold) return;
+
+                    const draggedItem = sortedSubtasks[activeTouchIndex];
+                    const targetItem = sortedSubtasks[targetIndex];
+
+                    sortedSubtasks.forEach((item, idx) => {
+                      if (item.subtaskOrder === undefined) {
+                        item.subtaskOrder = idx * 10;
+                      }
+                    });
+
+                    const tempOrder = draggedItem.subtaskOrder!;
+                    draggedItem.subtaskOrder = targetItem.subtaskOrder!;
+                    targetItem.subtaskOrder = tempOrder;
+
+                    lastSwapTimeRef.current = now;
+                    onUpdateNode({ ...draggedItem });
+                    onUpdateNode({ ...targetItem });
+                    setActiveTouchIndex(targetIndex);
+                  }
+                }
+              }
+            };
+
+            const handleTouchEnd = () => {
+              setActiveTouchIndex(null);
+            };
+
+            if (sortedSubtasks.length > 0) {
+              return (
+                <div className="space-y-1.5 mt-1.5 max-h-48 overflow-y-auto pr-1">
+                  {sortedSubtasks.map((child, index) => (
+                    <motion.div 
+                      key={child.id}
+                      layout
+                      transition={{ type: "spring", stiffness: 500, damping: 45 }}
+                      data-subtask-index={index}
+                      data-subtask-id={child.id}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      className={`flex items-center justify-between gap-1.5 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800/50 group hover:border-slate-200 dark:hover:border-slate-700 transition-colors ${
+                        draggedIndex === index || activeTouchIndex === index 
+                          ? 'opacity-40 border-indigo-500 bg-indigo-50/10' 
+                          : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {/* Drag Handle for manual sorting */}
+                        <div
+                          draggable={true}
+                          onDragStart={(e) => handleDragStart(e, index)}
+                          onDragEnd={handleDragEnd}
+                          onTouchStart={(e) => handleTouchStart(e, index)}
+                          onTouchMove={handleTouchMove}
+                          onTouchEnd={handleTouchEnd}
+                          className="p-1 -ml-1 text-slate-300 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-grab active:cursor-grabbing flex-shrink-0 transition-colors rounded hover:bg-slate-50 dark:hover:bg-slate-800"
+                          title="Перетащить для сортировки"
+                        >
+                          <GripVertical className="w-3.5 h-3.5" />
+                        </div>
+
+                        {/* Number indicator */}
+                        <span className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 select-none shrink-0 min-w-[14px]">
+                          {index + 1}.
+                        </span>
+
+                        {/* Completed Checkbox */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateNode({
+                              ...child,
+                              completed: !child.completed
+                            });
+                          }}
+                          className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex-shrink-0 transition-colors"
+                        >
+                          {child.completed ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-450" />
+                          ) : pomo.isRunning && pomo.nodeId === child.id ? (
+                            <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
+                              <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
+                              <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
+                            </span>
+                          ) : (
+                            <Circle className="w-4 h-4 text-slate-300 dark:text-slate-600" />
+                          )}
+                        </button>
+
+                        {/* Editable Name */}
+                        <input
+                          id={`subtask-input-${child.id}`}
+                          type="text"
+                          value={child.text}
+                          onChange={(e) => {
+                            onUpdateNode({
+                              ...child,
+                              text: e.target.value
+                            });
+                          }}
+                          className={`text-xs font-medium bg-transparent border-0 focus:ring-0 focus:outline-none p-0 w-full text-slate-700 dark:text-slate-200 ${
+                            child.completed ? 'line-through text-slate-400 dark:text-slate-505 italic' : ''
+                          }`}
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-1 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
+                        {/* Open Subtask Details Button */}
+                        {onSelectNode && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectNode(child.id)}
+                            title="Открыть свойства подзадачи"
+                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {/* Edit Subtask Details Button */}
+                        {onSelectNode && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectNode(child.id)}
+                            title="Редактировать подзадачу"
+                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {/* Delete Subtask Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirmDeleteSubtaskId === child.id) {
+                              onDeleteNode(child.id);
+                              setConfirmDeleteSubtaskId(null);
+                            } else {
+                              setConfirmDeleteSubtaskId(child.id);
+                              setTimeout(() => setConfirmDeleteSubtaskId(curr => curr === child.id ? null : curr), 4000);
+                            }
+                          }}
+                          title={confirmDeleteSubtaskId === child.id ? "Нажмите для подтверждения удаления подзадачи" : "Удалить подзадачу"}
+                          className={`p-1 rounded transition-all duration-200 cursor-pointer flex items-center gap-1 text-[10px] uppercase font-bold ${
+                            confirmDeleteSubtaskId === child.id
+                              ? "text-white bg-rose-600 hover:bg-rose-700 px-2 animate-pulse"
+                              : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-955/20"
+                          }`}
+                        >
+                          {confirmDeleteSubtaskId === child.id ? (
+                            <span>Удалить подзадачу?</span>
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              );
+            } else {
+              return (
+                <p className="text-xs text-slate-400 dark:text-slate-505 italic mt-1 pl-1">
+                  Нет дочерних подзадач.
+                </p>
+              );
+            }
+          })()}
         </div>
 
         {node.isWorkflowRectangle && (
@@ -2015,7 +2359,7 @@ export default function TaskDetailsPanel({
                 <button
                   type="button"
                   onClick={handleCompletePomoEarly}
-                  className="w-full py-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/10 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-400 border border-rose-200/50 dark:border-rose-900 text-[10.5px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
+                  className="w-full py-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/10 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-450 border border-rose-200/50 dark:border-rose-900 text-[10.5px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
                   title="Остановить таймер и сохранить накопленное время фокусировки"
                 >
                   💾 Завершить досрочно и сохранить время ({formatTotalPomoTime(pomo.duration - pomo.timeLeft)})
@@ -2024,294 +2368,6 @@ export default function TaskDetailsPanel({
             </div>
           </div>
         )}
-
-        {/* Subtasks Section */}
-        <div className="space-y-2 bg-[#FAFBFD]/40 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-400 dark:text-slate-505 uppercase tracking-wider">
-              Подзадачи ({allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length})
-            </label>
-            {onAddChildNode && (
-              <button
-                type="button"
-                onClick={() => onAddChildNode(node.id)}
-                className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <Plus className="w-3 h-3" /> Добавить
-              </button>
-            )}
-          </div>
-
-          {(() => {
-            const subtasks = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
-            const sortedSubtasks = [...subtasks].sort((a, b) => {
-              const orderA = a.subtaskOrder !== undefined ? a.subtaskOrder : 1000000;
-              const orderB = b.subtaskOrder !== undefined ? b.subtaskOrder : 1000000;
-              if (orderA !== orderB) return orderA - orderB;
-              return a.id.localeCompare(b.id);
-            });
-
-            const handleMoveSubtask = (subtaskId: string, direction: 'up' | 'down') => {
-              const index = sortedSubtasks.findIndex(s => s.id === subtaskId);
-              if (index === -1) return;
-
-              const targetIndex = direction === 'up' ? index - 1 : index + 1;
-              if (targetIndex < 0 || targetIndex >= sortedSubtasks.length) return;
-
-              const itemA = sortedSubtasks[index];
-              const itemB = sortedSubtasks[targetIndex];
-
-              // Assign explicit orders if undefined
-              sortedSubtasks.forEach((item, idx) => {
-                if (item.subtaskOrder === undefined) {
-                  item.subtaskOrder = idx * 10;
-                }
-              });
-
-              const tempOrder = itemA.subtaskOrder!;
-              itemA.subtaskOrder = itemB.subtaskOrder!;
-              itemB.subtaskOrder = tempOrder;
-
-              onUpdateNode({ ...itemA });
-              onUpdateNode({ ...itemB });
-            };
-
-            const handleDragStart = (e: React.DragEvent, index: number) => {
-              setDraggedIndex(index);
-              e.dataTransfer.effectAllowed = 'move';
-            };
-
-            const handleDragOver = (e: React.DragEvent, index: number) => {
-              e.preventDefault();
-              if (draggedIndex === null || draggedIndex === index) return;
-
-              const now = Date.now();
-              if (now - lastSwapTimeRef.current < 200) return;
-
-              const rect = e.currentTarget.getBoundingClientRect();
-              const mouseY = e.clientY - rect.top;
-              const threshold = rect.height / 2;
-
-              if (draggedIndex < index && mouseY < threshold) return;
-              if (draggedIndex > index && mouseY > threshold) return;
-
-              const draggedItem = sortedSubtasks[draggedIndex];
-              const targetItem = sortedSubtasks[index];
-
-              // Assign explicit orders if undefined
-              sortedSubtasks.forEach((item, idx) => {
-                if (item.subtaskOrder === undefined) {
-                  item.subtaskOrder = idx * 10;
-                }
-              });
-
-              const tempOrder = draggedItem.subtaskOrder!;
-              draggedItem.subtaskOrder = targetItem.subtaskOrder!;
-              targetItem.subtaskOrder = tempOrder;
-
-              lastSwapTimeRef.current = now;
-              onUpdateNode({ ...draggedItem });
-              onUpdateNode({ ...targetItem });
-              setDraggedIndex(index);
-            };
-
-            const handleDragEnd = () => {
-              setDraggedIndex(null);
-            };
-
-            const handleTouchStart = (e: React.TouchEvent, index: number) => {
-              setActiveTouchIndex(index);
-            };
-
-            const handleTouchMove = (e: React.TouchEvent) => {
-              if (activeTouchIndex === null) return;
-              
-              const now = Date.now();
-              if (now - lastSwapTimeRef.current < 200) return;
-
-              const touch = e.touches[0];
-              const element = document.elementFromPoint(touch.clientX, touch.clientY);
-              if (!element) return;
-
-              const container = element.closest('[data-subtask-index]');
-              if (container) {
-                const targetIndexStr = container.getAttribute('data-subtask-index');
-                if (targetIndexStr !== null) {
-                  const targetIndex = parseInt(targetIndexStr, 10);
-                  if (targetIndex !== activeTouchIndex && !isNaN(targetIndex)) {
-                    const rect = container.getBoundingClientRect();
-                    const touchY = touch.clientY - rect.top;
-                    const threshold = rect.height / 2;
-
-                    if (activeTouchIndex < targetIndex && touchY < threshold) return;
-                    if (activeTouchIndex > targetIndex && touchY > threshold) return;
-
-                    const draggedItem = sortedSubtasks[activeTouchIndex];
-                    const targetItem = sortedSubtasks[targetIndex];
-
-                    sortedSubtasks.forEach((item, idx) => {
-                      if (item.subtaskOrder === undefined) {
-                        item.subtaskOrder = idx * 10;
-                      }
-                    });
-
-                    const tempOrder = draggedItem.subtaskOrder!;
-                    draggedItem.subtaskOrder = targetItem.subtaskOrder!;
-                    targetItem.subtaskOrder = tempOrder;
-
-                    lastSwapTimeRef.current = now;
-                    onUpdateNode({ ...draggedItem });
-                    onUpdateNode({ ...targetItem });
-                    setActiveTouchIndex(targetIndex);
-                  }
-                }
-              }
-            };
-
-            const handleTouchEnd = () => {
-              setActiveTouchIndex(null);
-            };
-
-            if (sortedSubtasks.length > 0) {
-              return (
-                <div className="space-y-1.5 mt-1.5 max-h-48 overflow-y-auto pr-1">
-                  {sortedSubtasks.map((child, index) => (
-                    <motion.div 
-                      key={child.id}
-                      layout
-                      transition={{ type: "spring", stiffness: 500, damping: 45 }}
-                      data-subtask-index={index}
-                      data-subtask-id={child.id}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      className={`flex items-center justify-between gap-1.5 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800/50 group hover:border-slate-200 dark:hover:border-slate-700 transition-colors ${
-                        draggedIndex === index || activeTouchIndex === index 
-                          ? 'opacity-40 border-indigo-500 bg-indigo-50/10' 
-                          : ''
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        {/* Drag Handle for manual sorting */}
-                        <div
-                          draggable={true}
-                          onDragStart={(e) => handleDragStart(e, index)}
-                          onDragEnd={handleDragEnd}
-                          onTouchStart={(e) => handleTouchStart(e, index)}
-                          onTouchMove={handleTouchMove}
-                          onTouchEnd={handleTouchEnd}
-                          className="p-1 -ml-1 text-slate-300 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-grab active:cursor-grabbing flex-shrink-0 transition-colors rounded hover:bg-slate-50 dark:hover:bg-slate-800"
-                          title="Перетащить для сортировки"
-                        >
-                          <GripVertical className="w-3.5 h-3.5" />
-                        </div>
-
-                        {/* Number indicator */}
-                        <span className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 select-none shrink-0 min-w-[14px]">
-                          {index + 1}.
-                        </span>
-
-                        {/* Completed Checkbox */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onUpdateNode({
-                              ...child,
-                              completed: !child.completed
-                            });
-                          }}
-                          className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex-shrink-0 transition-colors"
-                        >
-                          {child.completed ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-450" />
-                          ) : pomo.isRunning && pomo.nodeId === child.id ? (
-                            <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
-                              <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
-                              <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
-                            </span>
-                          ) : (
-                            <Circle className="w-4 h-4 text-slate-300 dark:text-slate-600" />
-                          )}
-                        </button>
-
-                        {/* Editable Name */}
-                        <input
-                          type="text"
-                          value={child.text}
-                          onChange={(e) => {
-                            onUpdateNode({
-                              ...child,
-                              text: e.target.value
-                            });
-                          }}
-                          className={`text-xs font-medium bg-transparent border-0 focus:ring-0 focus:outline-none p-0 w-full text-slate-700 dark:text-slate-200 ${
-                            child.completed ? 'line-through text-slate-400 dark:text-slate-500 italic' : ''
-                          }`}
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-1 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
-                        {/* Open Subtask Details Button */}
-                        {onSelectNode && (
-                          <button
-                            type="button"
-                            onClick={() => onSelectNode(child.id)}
-                            title="Открыть свойства подзадачи"
-                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-
-                        {/* Edit Subtask Details Button */}
-                        {onSelectNode && (
-                          <button
-                            type="button"
-                            onClick={() => onSelectNode(child.id)}
-                            title="Редактировать подзадачу"
-                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-
-                        {/* Delete Subtask Button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirmDeleteSubtaskId === child.id) {
-                              onDeleteNode(child.id);
-                              setConfirmDeleteSubtaskId(null);
-                            } else {
-                              setConfirmDeleteSubtaskId(child.id);
-                              setTimeout(() => setConfirmDeleteSubtaskId(curr => curr === child.id ? null : curr), 4000);
-                            }
-                          }}
-                          title={confirmDeleteSubtaskId === child.id ? "Нажмите для подтверждения удаления подзадачи" : "Удалить подзадачу"}
-                          className={`p-1 rounded transition-all duration-200 cursor-pointer flex items-center gap-1 text-[10px] uppercase font-bold ${
-                            confirmDeleteSubtaskId === child.id
-                              ? "text-white bg-rose-600 hover:bg-rose-700 px-2 animate-pulse"
-                              : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-955/20"
-                          }`}
-                        >
-                          {confirmDeleteSubtaskId === child.id ? (
-                            <span>Удалить подзадачу?</span>
-                          ) : (
-                            <Trash2 className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              );
-            } else {
-              return (
-                <p className="text-xs text-slate-400 dark:text-slate-500 italic mt-1 pl-1">
-                  Нет дочерних подзадач.
-                </p>
-              );
-            }
-          })()}
-        </div>
 
         {/* Priority buttons */}
         <div className="space-y-2">

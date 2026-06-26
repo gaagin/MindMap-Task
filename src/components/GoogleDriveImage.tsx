@@ -39,17 +39,19 @@ export default function GoogleDriveImage({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Avoid re-fetching if we already have a blob URL
+    // Reset/update src immediately when driveId changes to avoid showing stale image from another card
     if (driveBlobCache[driveId]) {
       setSrc(driveBlobCache[driveId]);
       return;
     }
 
     if (!googleToken) {
-      // No token available, use the cookieless public direct address
       setSrc(fallbackUrl || `https://lh3.googleusercontent.com/d/${driveId}`);
       return;
     }
+
+    // Set immediate fallback/loading source
+    setSrc(fallbackUrl || `https://lh3.googleusercontent.com/d/${driveId}`);
 
     let isMounted = true;
     const fetchImageBlob = async () => {

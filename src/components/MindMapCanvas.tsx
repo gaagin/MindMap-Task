@@ -592,6 +592,7 @@ export default function MindMapCanvas({
   // Wheel zoom smoothness state and ref
   const [isWheeling, setIsWheeling] = useState(false);
   const wheelTimeoutRef = useRef<any>(null);
+  const fullscreenSubtaskInputRef = useRef<HTMLInputElement>(null);
 
   // Drag states for dragging a specific card
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
@@ -7447,7 +7448,7 @@ export default function MindMapCanvas({
                                 {sortedSubtasks.map((subtask, index) => (
                                   <motion.div
                                     key={subtask.id}
-                                    layout
+                                    layout={!draggingNodeId}
                                     transition={{ type: "spring", stiffness: 500, damping: 45 }}
                                     data-subtask-index={index}
                                     data-subtask-id={subtask.id}
@@ -7612,58 +7613,6 @@ export default function MindMapCanvas({
 
                   <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
-                  {/* Button 1.2: Свернуть / Развернуть детали карточки */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onUpdateNode({
-                        ...node,
-                        isCardCollapsed: !node.isCardCollapsed
-                      });
-                    }}
-                    title={node.isCardCollapsed ? "Развернуть детали карточки" : "Свернуть детали карточки"}
-                    className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
-                  >
-                    {node.isCardCollapsed ? (
-                      <FolderPlus className="w-4 h-4 text-indigo-500" />
-                    ) : (
-                      <FolderMinus className="w-4 h-4 text-slate-500" />
-                    )}
-                  </button>
-
-                  {node.parentId !== null && (
-                    <>
-                      <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
-                      {/* Button 1.5: Отсоединить задачу */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onUpdateNodeParent(node.id, null);
-                        }}
-                        title="Отсоединить задачу от родительской (сделать свободной)"
-                        className="flex items-center justify-center w-8 h-8 text-amber-600 dark:text-amber-450 hover:bg-amber-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
-                      >
-                        <Link2Off className="w-4 h-4" />
-                      </button>
-                    </>
-                  )}
-
-                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
-
-                  {/* Button 2: Заметки */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setNotesModalNodeId(node.id);
-                    }}
-                    title="Открыть заметки"
-                    className="flex items-center justify-center w-8 h-8 text-emerald-600 dark:text-emerald-450 hover:bg-emerald-55 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
-                  >
-                    <FileText className="w-4 h-4" />
-                  </button>
-
-                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
-
                   {/* Button 2.5: Открыть всю задачу (Eye) */}
                   <button
                     onClick={(e) => {
@@ -7674,25 +7623,6 @@ export default function MindMapCanvas({
                     className="flex items-center justify-center w-8 h-8 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                   >
                     <Eye className="w-4 h-4" />
-                  </button>
-
-                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
-
-                  {/* Button 3: Добавить файл */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFileUploadNodeId(node.id);
-                      setTimeout(() => {
-                        if (cardFileInputRef.current) {
-                          cardFileInputRef.current.click();
-                        }
-                      }, 50);
-                    }}
-                    title="Прикрепить файл"
-                    className="flex items-center justify-center w-8 h-8 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
-                  >
-                    <Paperclip className="w-4 h-4" />
                   </button>
 
                   <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
@@ -8287,9 +8217,13 @@ export default function MindMapCanvas({
         const handleAddSubtask = (e: React.FormEvent) => {
           e.preventDefault();
           if (!fullscreenSubtaskText.trim()) return;
-          // Add a child node using our excellent helper
+          // Add a child node using our helper
           onAddFloatingNode(node.x + 240, node.y, node.id, fullscreenSubtaskText.trim());
           setFullscreenSubtaskText('');
+          // Re-focus the input element after adding the subtask so the user can continuously type without losing focus
+          setTimeout(() => {
+            fullscreenSubtaskInputRef.current?.focus();
+          }, 60);
         };
 
         const handleGoBack = () => {
@@ -8308,23 +8242,23 @@ export default function MindMapCanvas({
         const hasBackOption = fullscreenHistory.length > 0 || (node.parentId && nodes.some(n => n.id === node.parentId));
 
         return (
-          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setFullscreenCardId(null); setFullscreenHistory([]); }}>
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-lg h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
-              {/* Header */}
-              <div className="px-6 py-4 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/60">
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-fade-in" onClick={() => { setFullscreenCardId(null); setFullscreenHistory([]); }}>
+            <div className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-3xl shadow-2xl w-full max-w-lg h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+              {/* Header with High Contrast */}
+              <div className="px-6 py-4 border-b-2 border-slate-300 dark:border-slate-800 flex items-center justify-between bg-slate-100 dark:bg-slate-950">
                 <div className="flex items-center gap-2">
                   {hasBackOption && (
                     <button
                       type="button"
                       onClick={handleGoBack}
-                      className="mr-1 p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer flex items-center justify-center border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-850 shadow-sm"
+                      className="mr-1.5 p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-950 dark:text-slate-100 transition-colors cursor-pointer flex items-center justify-center border-2 border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 shadow-sm"
                       title="Назад к предыдущей задаче"
                     >
-                      <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                      <ChevronLeft className="w-5 h-5 stroke-[3]" />
                     </button>
                   )}
-                  <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5 font-sans">
-                    <Smartphone className="w-4 h-4 text-indigo-500" />
+                  <span className="text-xs font-black text-indigo-750 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5 font-sans">
+                    <Smartphone className="w-4.5 h-4.5 text-indigo-600 dark:text-indigo-400" />
                     Карточка (Полноэкранный вид)
                   </span>
                 </div>
@@ -8334,25 +8268,25 @@ export default function MindMapCanvas({
                     setFullscreenCardId(null);
                     setFullscreenHistory([]);
                   }}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors cursor-pointer"
+                  className="p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-900 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-300 dark:hover:border-slate-700"
                   title="Вернуться к стандартному виду"
                 >
-                  <Minimize2 className="w-5 h-5" />
+                  <Minimize2 className="w-5.5 h-5.5 stroke-[2.5]" />
                 </button>
               </div>
 
-              {/* Scrollable Content */}
+              {/* Scrollable Content with Subtasks RAISED ABOVE Description for Immediate Visibility */}
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {/* Title Section */}
+                {/* Title Section (Highly contrasting input) */}
                 <div className="flex items-start gap-3">
                   <button
                     onClick={() => onToggleNodeCompleted(node.id)}
-                    className="mt-1 text-slate-400 dark:text-slate-600 hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors cursor-pointer shrink-0"
+                    className="mt-1 text-slate-500 dark:text-slate-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors cursor-pointer shrink-0"
                   >
                     {node.completed ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 fill-emerald-50 dark:fill-emerald-950/30" />
+                      <CheckCircle2 className="w-6 h-6 text-emerald-650 dark:text-emerald-400 fill-emerald-100 dark:fill-emerald-950/50 stroke-[2.5]" />
                     ) : (
-                      <Circle className="w-5 h-5 text-slate-300 dark:text-slate-700" />
+                      <Circle className="w-6 h-6 text-slate-450 dark:text-slate-550 stroke-[2.5]" />
                     )}
                   </button>
                   <div className="flex-1 min-w-0">
@@ -8361,19 +8295,19 @@ export default function MindMapCanvas({
                       value={node.text}
                       onChange={(e) => onUpdateNode({ ...node, text: e.target.value })}
                       placeholder="Имя задачи..."
-                      className="w-full text-base font-bold bg-transparent border-0 focus:ring-0 p-0 text-slate-800 dark:text-slate-100 focus:outline-none focus:bg-slate-50 dark:focus:bg-slate-800/40 rounded px-1.5 py-0.5"
+                      className="w-full text-lg font-black bg-slate-50 dark:bg-slate-950 border-2 border-slate-300 focus:border-indigo-600 dark:border-slate-750 dark:focus:border-indigo-500 focus:ring-0 text-slate-950 dark:text-white rounded-xl px-3 py-2 font-sans shadow-inner"
                     />
                   </div>
                 </div>
 
-                {/* Priority, Due Date & Description Info */}
-                <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-850/30 p-4 rounded-xl border border-slate-150 dark:border-slate-800/60 text-xs">
+                {/* Priority, Due Date Info */}
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border-2 border-slate-300 dark:border-slate-800 text-xs shadow-sm">
                   <div>
-                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1.5">Приоритет</span>
+                    <span className="text-[11px] font-black text-slate-900 dark:text-slate-200 uppercase tracking-wider block mb-1.5">Приоритет</span>
                     <select
                       value={node.priority || 'none'}
                       onChange={(e) => onUpdateNode({ ...node, priority: e.target.value as Priority })}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-750 dark:text-slate-250 font-semibold"
+                      className="w-full bg-white dark:bg-slate-900 border-2 border-slate-350 dark:border-slate-700 rounded-xl px-2.5 py-2.5 focus:outline-none focus:border-indigo-500 text-slate-950 dark:text-white font-extrabold"
                     >
                       <option value="urgent">🔥 Критический</option>
                       <option value="high">🟠 Высокий</option>
@@ -8383,43 +8317,34 @@ export default function MindMapCanvas({
                     </select>
                   </div>
                   <div>
-                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1.5">Дедлайн</span>
+                    <span className="text-[11px] font-black text-slate-900 dark:text-slate-200 uppercase tracking-wider block mb-1.5">Дедлайн</span>
                     <input
                       type="date"
                       value={node.dueDate || ''}
                       onChange={(e) => onUpdateNode({ ...node, dueDate: e.target.value || undefined })}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-750 dark:text-slate-250 font-semibold"
+                      className="w-full bg-white dark:bg-slate-900 border-2 border-slate-350 dark:border-slate-700 rounded-xl px-2.5 py-2.5 focus:outline-none focus:border-indigo-500 text-slate-950 dark:text-white font-extrabold"
                     />
                   </div>
                 </div>
 
-                {/* Description Textarea */}
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                    Описание / Заметки
-                  </span>
-                  <textarea
-                    value={node.notes || ''}
-                    onChange={(e) => onUpdateNode({ ...node, notes: e.target.value })}
-                    placeholder="Добавьте подробное описание задачи..."
-                    rows={3}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 dark:bg-slate-850/40 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 leading-relaxed font-sans"
-                  />
-                </div>
+                {/* Raised Subtasks Section: Visually stunning and immediately visible when card property opens */}
+                <div className="space-y-3 bg-slate-100/40 dark:bg-slate-950/20 p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-slate-900 dark:text-slate-150 uppercase tracking-widest block">
+                      Список подзадач ({subtasks.length})
+                    </span>
+                    <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-900">
+                      Подзадачи
+                    </span>
+                  </div>
 
-                {/* Subtasks Section */}
-                <div className="space-y-3">
-                  <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                    Список подзадач ({subtasks.length})
-                  </span>
-
-                  {/* Existing Subtasks */}
-                  <div className="space-y-2">
+                  {/* Existing Subtasks with Extra Contrast for Smartphones */}
+                  <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
                     {subtasks.length > 0 ? (
                       subtasks.map((sub, idx) => (
                         <div
                           key={sub.id}
-                          className="flex items-center justify-between gap-3 p-3 bg-slate-50/50 dark:bg-slate-850/20 border border-slate-150 dark:border-slate-800 rounded-xl hover:bg-slate-100/30 dark:hover:bg-slate-855/40 transition-colors"
+                          className="flex items-center justify-between gap-3 p-3 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850 transition-all shadow-sm"
                         >
                           <div
                             className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer select-none group/subitem"
@@ -8436,18 +8361,18 @@ export default function MindMapCanvas({
                                 e.stopPropagation();
                                 onToggleNodeCompleted(sub.id);
                               }}
-                              className="text-slate-450 hover:text-indigo-650 dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer animate-fade-in"
+                              className="text-slate-500 dark:text-slate-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors shrink-0 cursor-pointer stroke-[2]"
                             >
                               {sub.completed ? (
-                                <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 dark:text-emerald-450" />
+                                <CheckCircle2 className="w-5 h-5 text-emerald-650 dark:text-emerald-400" />
                               ) : (
-                                <Circle className="w-4.5 h-4.5 text-slate-300 dark:text-slate-700" />
+                                <Circle className="w-5 h-5 text-slate-450 dark:text-slate-550" />
                               )}
                             </button>
-                            <span className={`text-xs font-semibold truncate flex-1 group-hover/subitem:text-indigo-600 dark:group-hover/subitem:text-indigo-400 transition-colors ${sub.completed ? 'line-through text-slate-400 italic' : 'text-slate-700 dark:text-slate-200'}`}>
+                            <span className={`text-xs font-bold truncate flex-1 group-hover/subitem:text-indigo-650 dark:group-hover/subitem:text-indigo-400 transition-colors ${sub.completed ? 'line-through text-slate-400 dark:text-slate-500 italic' : 'text-slate-950 dark:text-slate-50'}`}>
                               {sub.text}
                             </span>
-                            <ChevronRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover/subitem:translate-x-0.5 group-hover/subitem:text-indigo-500 transition-all opacity-0 group-hover/subitem:opacity-100" />
+                            <ChevronRight className="w-4.5 h-4.5 text-slate-500 dark:text-slate-400 group-hover/subitem:translate-x-0.5 group-hover/subitem:text-indigo-500 transition-all opacity-100" />
                           </div>
                           
                           {/* Delete subtask button */}
@@ -8457,49 +8382,64 @@ export default function MindMapCanvas({
                               e.stopPropagation();
                               onDeleteNode(sub.id);
                             }}
-                            className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-955/20 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/40 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors cursor-pointer border border-transparent hover:border-rose-200 dark:hover:border-rose-900"
                             title="Удалить подзадачу"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4 stroke-[2]" />
                           </button>
                         </div>
                       ))
                     ) : (
-                      <div className="text-xs text-slate-400 dark:text-slate-500 italic p-4 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center font-sans">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 font-bold italic p-5 border-2 border-dashed border-slate-300 dark:border-slate-800 rounded-xl text-center bg-white dark:bg-slate-900/60">
                         Нет подзадач. Создайте первую с помощью формы ниже!
                       </div>
                     )}
                   </div>
 
-                  {/* Quick Add Subtask Form */}
+                  {/* Quick Add Subtask Form - Keeps focus when adding subtask */}
                   <form onSubmit={handleAddSubtask} className="flex gap-2 pt-1.5">
                     <input
+                      ref={fullscreenSubtaskInputRef}
                       type="text"
                       value={fullscreenSubtaskText}
                       onChange={(e) => setFullscreenSubtaskText(e.target.value)}
                       placeholder="Добавить новую подзадачу..."
-                      className="flex-1 bg-slate-50 dark:bg-slate-850/40 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
+                      className="flex-1 bg-white dark:bg-slate-950 border-2 border-slate-400 focus:border-indigo-650 dark:border-slate-700 dark:focus:border-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-950 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-0 font-bold font-sans shadow-inner"
                     />
                     <button
                       type="submit"
                       disabled={!fullscreenSubtaskText.trim()}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl cursor-pointer transition-all shrink-0 shadow-sm"
+                      className="px-4.5 py-2.5 bg-indigo-650 dark:bg-indigo-600 hover:bg-indigo-750 dark:hover:bg-indigo-550 disabled:opacity-40 text-white font-black text-xs rounded-xl cursor-pointer transition-all shrink-0 shadow-md active:scale-95"
                     >
                       Добавить
                     </button>
                   </form>
                 </div>
+
+                {/* Description Textarea (Now below subtasks) */}
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-black text-slate-900 dark:text-slate-200 uppercase tracking-wider block">
+                    Описание / Заметки
+                  </span>
+                  <textarea
+                    value={node.notes || ''}
+                    onChange={(e) => onUpdateNode({ ...node, notes: e.target.value })}
+                    placeholder="Добавьте подробное описание задачи..."
+                    rows={3}
+                    className="w-full text-xs font-bold px-3 py-2.5 bg-white dark:bg-slate-950 border-2 border-slate-400 focus:border-indigo-650 dark:border-slate-700 dark:focus:border-indigo-500 rounded-xl focus:outline-none focus:ring-0 text-slate-950 dark:text-white leading-relaxed font-sans shadow-inner"
+                  />
+                </div>
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+              <div className="px-6 py-4 bg-slate-100 dark:bg-slate-950 border-t-2 border-slate-300 dark:border-slate-800 flex justify-end">
                 <button
                   type="button"
                   onClick={() => {
                     setFullscreenCardId(null);
                     setFullscreenHistory([]);
                   }}
-                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                  className="px-5 py-2 bg-indigo-650 hover:bg-indigo-750 dark:bg-indigo-600 dark:hover:bg-indigo-550 text-white rounded-xl text-xs font-black transition-all shadow-md cursor-pointer active:scale-95"
                 >
                   Вернуться на холст
                 </button>
