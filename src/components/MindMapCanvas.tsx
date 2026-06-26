@@ -8241,6 +8241,68 @@ export default function MindMapCanvas({
 
         const hasBackOption = fullscreenHistory.length > 0 || (node.parentId && nodes.some(n => n.id === node.parentId));
 
+        const handleSetFullscreenRelativeReminder = (minutesBefore: number | undefined) => {
+          if (minutesBefore === undefined) {
+            onUpdateNode({
+              ...node,
+              reminderMinutesBefore: undefined,
+              reminderDate: node.reminderDate || node.dueDate || '',
+              reminderTime: node.reminderTime || node.dueTime || '',
+              reminderDismissed: false
+            });
+            return;
+          }
+
+          const dueDateStr = node.dueDate || new Date().toISOString().split('T')[0];
+          const dueTimeStr = node.dueTime || '12:00';
+
+          try {
+            const dueDateTime = new Date(`${dueDateStr}T${dueTimeStr}`);
+            if (isNaN(dueDateTime.getTime())) return;
+
+            const reminderDateTime = new Date(dueDateTime.getTime() - minutesBefore * 60 * 1000);
+            const rDate = reminderDateTime.toISOString().split('T')[0];
+            const rTime = reminderDateTime.toTimeString().split(' ')[0].substring(0, 5);
+
+            onUpdateNode({
+              ...node,
+              reminderMinutesBefore: minutesBefore,
+              reminderDate: rDate,
+              reminderTime: rTime,
+              reminderDismissed: false
+            });
+          } catch (error) {
+            console.error('Failed to calculate reminder time:', error);
+          }
+        };
+
+        const handleFullscreenDueTimeChange = (val: string) => {
+          const updatedNode = {
+            ...node,
+            dueTime: val || undefined
+          };
+
+          if (updatedNode.reminderMinutesBefore !== undefined) {
+            const mBefore = updatedNode.reminderMinutesBefore;
+            if (updatedNode.dueDate) {
+              const dueDateStr = updatedNode.dueDate || new Date().toISOString().split('T')[0];
+              const dueTimeStr = updatedNode.dueTime || '12:00';
+              try {
+                const dueDateTime = new Date(`${dueDateStr}T${dueTimeStr}`);
+                if (!isNaN(dueDateTime.getTime())) {
+                  const reminderDateTime = new Date(dueDateTime.getTime() - mBefore * 60 * 1000);
+                  updatedNode.reminderDate = reminderDateTime.toISOString().split('T')[0];
+                  updatedNode.reminderTime = reminderDateTime.toTimeString().split(' ')[0].substring(0, 5);
+                  updatedNode.reminderDismissed = false;
+                }
+              } catch (e) {
+                console.error(e);
+              }
+            }
+          }
+          onUpdateNode(updatedNode);
+        };
+
         return (
           <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-fade-in" onClick={() => { setFullscreenCardId(null); setFullscreenHistory([]); }}>
             <div className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-3xl shadow-2xl w-full max-w-lg h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
@@ -8300,7 +8362,7 @@ export default function MindMapCanvas({
                   </div>
                 </div>
 
-                {/* Priority, Due Date Info */}
+                {/* Priority, Due Date Info, Time & Reminder */}
                 <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border-2 border-slate-300 dark:border-slate-800 text-xs shadow-sm">
                   <div>
                     <span className="text-[11px] font-black text-slate-900 dark:text-slate-200 uppercase tracking-wider block mb-1.5">Приоритет</span>
@@ -8321,11 +8383,110 @@ export default function MindMapCanvas({
                     <input
                       type="date"
                       value={node.dueDate || ''}
-                      onChange={(e) => onUpdateNode({ ...node, dueDate: e.target.value || undefined })}
+                      onChange={(e) => {
+                        const newDate = e.target.value || undefined;
+                        const updatedNode = { ...node, dueDate: newDate };
+                        if (!newDate) {
+                          updatedNode.dueTime = undefined;
+                          updatedNode.reminderMinutesBefore = undefined;
+                          updatedNode.reminderDate = undefined;
+                          updatedNode.reminderTime = undefined;
+                        }
+                        onUpdateNode(updatedNode);
+                      }}
                       className="w-full bg-white dark:bg-slate-900 border-2 border-slate-350 dark:border-slate-700 rounded-xl px-2.5 py-2.5 focus:outline-none focus:border-indigo-500 text-slate-950 dark:text-white font-extrabold"
                     />
                   </div>
+
+                  <div>
+                    <span className="text-[11px] font-black text-slate-900 dark:text-slate-200 uppercase tracking-wider block mb-1.5">Время дедлайна</span>
+                    <input
+                      type="time"
+                      value={node.dueTime || ''}
+                      onChange={(e) => handleFullscreenDueTimeChange(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900 border-2 border-slate-350 dark:border-slate-700 rounded-xl px-2.5 py-2.5 focus:outline-none focus:border-indigo-500 text-slate-950 dark:text-white font-mono font-extrabold"
+                    />
+                  </div>
+
+                  <div>
+                    <span className="text-[11px] font-black text-slate-900 dark:text-slate-200 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+                      <Bell className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      Напоминание
+                    </span>
+                    <select
+                      value={
+                        node.reminderDate && node.reminderMinutesBefore !== undefined
+                          ? String(node.reminderMinutesBefore)
+                          : node.reminderDate
+                          ? 'custom'
+                          : 'none'
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'none') {
+                          onUpdateNode({
+                            ...node,
+                            reminderMinutesBefore: undefined,
+                            reminderDate: undefined,
+                            reminderTime: undefined,
+                            reminderDismissed: undefined
+                          });
+                        } else if (val === 'custom') {
+                          onUpdateNode({
+                            ...node,
+                            reminderMinutesBefore: undefined,
+                            reminderDate: node.reminderDate || node.dueDate || new Date().toISOString().split('T')[0],
+                            reminderTime: node.reminderTime || node.dueTime || '12:00',
+                            reminderDismissed: false
+                          });
+                        } else {
+                          handleSetFullscreenRelativeReminder(Number(val));
+                        }
+                      }}
+                      className="w-full bg-white dark:bg-slate-900 border-2 border-slate-350 dark:border-slate-700 rounded-xl px-2.5 py-2.5 focus:outline-none focus:border-indigo-500 text-slate-950 dark:text-white font-extrabold"
+                    >
+                      <option value="none">Без напоминания</option>
+                      <option value="0">В момент срока</option>
+                      <option value="5">За 5 минут</option>
+                      <option value="10">За 10 минут</option>
+                      <option value="15">За 15 минут</option>
+                      <option value="30">За 30 минут</option>
+                      <option value="60">За 1 час</option>
+                      <option value="120">За 2 часа</option>
+                      <option value="1440">За 1 день</option>
+                      <option value="custom">Своё время...</option>
+                    </select>
+                  </div>
                 </div>
+
+                {/* Custom Reminder picker inside fullscreen view */}
+                {((node.reminderDate || node.reminderTime) && node.reminderMinutesBefore === undefined) && (
+                  <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border-2 border-slate-300 dark:border-slate-850 text-xs shadow-sm space-y-3">
+                    <span className="text-[11px] font-black text-slate-900 dark:text-slate-200 uppercase tracking-wider block">
+                      Своё время напоминания
+                    </span>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Дата напоминания</span>
+                        <input
+                          type="date"
+                          value={node.reminderDate || ''}
+                          onChange={(e) => onUpdateNode({ ...node, reminderDate: e.target.value || undefined, reminderDismissed: false })}
+                          className="w-full bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-2 focus:outline-none focus:border-indigo-500 text-slate-950 dark:text-white font-extrabold"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Время напоминания</span>
+                        <input
+                          type="time"
+                          value={node.reminderTime || ''}
+                          onChange={(e) => onUpdateNode({ ...node, reminderTime: e.target.value || undefined, reminderDismissed: false })}
+                          className="w-full bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-2 focus:outline-none focus:border-indigo-500 text-slate-950 dark:text-white font-mono font-extrabold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Raised Subtasks Section: Visually stunning and immediately visible when card property opens */}
                 <div className="space-y-3 bg-slate-100/40 dark:bg-slate-950/20 p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800">
