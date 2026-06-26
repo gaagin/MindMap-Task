@@ -685,6 +685,28 @@ export default function App() {
     }
   }, [selectedNodeId]);
 
+  // Sync selectedNodeId with browser URL search parameters for easy sharing and home screen shortcutting
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const currentTask = url.searchParams.get('task') || url.searchParams.get('t');
+      if (selectedNodeId) {
+        if (currentTask !== selectedNodeId) {
+          url.searchParams.set('task', selectedNodeId);
+          window.history.replaceState(null, '', url.toString());
+        }
+      } else {
+        if (currentTask) {
+          url.searchParams.delete('task');
+          url.searchParams.delete('t');
+          window.history.replaceState(null, '', url.toString());
+        }
+      }
+    } catch (err) {
+      console.error('Failed to update URL search parameters:', err);
+    }
+  }, [selectedNodeId]);
+
   const handleSelectNode = (id: string | null, eOrIsMulti?: any) => {
     let isMulti = false;
     
@@ -1718,9 +1740,10 @@ export default function App() {
           return { ...prev, activeProjectId: targetProjectId! };
         });
         
-        // Select the task/node
+        // Select the task/node and switch view to canvas
         setSelectedNodeId(urlTaskId);
-        setIsDrawerOpen(true);
+        setIsDrawerOpen(false); // Do not open properties drawer by default; keep canvas visible
+        setViewMode('canvas'); // Explicitly open the mind map canvas view
 
         // Calculate and set absolute coordinates to recenter the canvas on startup
         if (targetNode.x !== undefined && targetNode.y !== undefined) {
