@@ -60,6 +60,9 @@ interface MindMapCanvasProps {
   isMultiSelectMode?: boolean;
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
+  onSelectNodes?: (ids: string[]) => void;
+  onBulkDelete?: () => void;
+  onBulkToggleCompleted?: (completed: boolean) => void;
   onUpdateNodeCoordinates: (id: string, x: number, y: number) => void;
   onUpdateNodeParent: (id: string, newParentId: string | null, newX?: number, newY?: number) => void;
   onAddChildNode: (parentId: string) => void;
@@ -268,6 +271,9 @@ export default function MindMapCanvas({
   isMultiSelectMode = false,
   activePomodoroNodeId,
   onSelectNode,
+  onSelectNodes,
+  onBulkDelete,
+  onBulkToggleCompleted,
   onUpdateNodeCoordinates,
   onUpdateNodeParent,
   onAddChildNode,
@@ -302,6 +308,14 @@ export default function MindMapCanvas({
   onFocusedTaskIdChange
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Mobile touch multi-selection states
+  const [touchSelectionStart, setTouchSelectionStart] = useState<{ x: number; y: number } | null>(null);
+  const [touchSelectionEnd, setTouchSelectionEnd] = useState<{ x: number; y: number } | null>(null);
+  const [isTouchSelecting, setIsTouchSelecting] = useState(false);
+  const touchSelectionTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isTouchSelectingRef = useRef(false);
+
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   useEffect(() => {
@@ -618,18 +632,34 @@ export default function MindMapCanvas({
       const dy = y - targetNode.y;
       if (dx === 0 && dy === 0) return prev;
 
+      const isMultiDrag = selectedNodeIds && selectedNodeIds.includes(id);
+
       const isDescendant = (candidateId: string): boolean => {
-        if (candidateId === id) return true;
-        let currentId: string | null = candidateId;
-        let iterations = 0;
-        while (currentId !== null && iterations < 100) {
-          iterations++;
-          const current = prev.find(n => n.id === currentId);
-          if (!current) break;
-          if (current.parentId === id) return true;
-          currentId = current.parentId;
+        if (isMultiDrag) {
+          if (selectedNodeIds.includes(candidateId)) return true;
+          let currentId: string | null = candidateId;
+          let iterations = 0;
+          while (currentId !== null && iterations < 100) {
+            iterations++;
+            const current = prev.find(n => n.id === currentId);
+            if (!current) break;
+            if (selectedNodeIds.includes(current.parentId || '')) return true;
+            currentId = current.parentId;
+          }
+          return false;
+        } else {
+          if (candidateId === id) return true;
+          let currentId: string | null = candidateId;
+          let iterations = 0;
+          while (currentId !== null && iterations < 100) {
+            iterations++;
+            const current = prev.find(n => n.id === currentId);
+            if (!current) break;
+            if (current.parentId === id) return true;
+            currentId = current.parentId;
+          }
+          return false;
         }
-        return false;
       };
 
       return prev.map(n => {
@@ -3550,14 +3580,56 @@ export default function MindMapCanvas({
       }
     }
 
-    // Otherwise pan canvas
+    // Otherwise pan canvas (or start touch hold timer for multi-selection)
     onSelectNode(null);
     setSelectedConnectionId(null);
+    
+    if (touchSelectionTimerRef.current) clearTimeout(touchSelectionTimerRef.current);
+    setIsTouchSelecting(false);
+    isTouchSelectingRef.current = false;
+    setTouchSelectionStart(null);
+    setTouchSelectionEnd(null);
+
+    const startX = touch.clientX;
+    const startY = touch.clientY;
+    setTouchSelectionStart({ x: startX, y: startY });
+
+    touchSelectionTimerRef.current = setTimeout(() => {
+      setIsTouchSelecting(true);
+      isTouchSelectingRef.current = true;
+      setTouchSelectionEnd({ x: startX, y: startY });
+      setIsPanning(false); // Stop panning when selecting!
+      
+      if (navigator.vibrate) {
+        try { navigator.vibrate(60); } catch (err) {}
+      }
+    }, 500);
+
     setIsPanning(true);
     setPanStart({ x: touch.clientX - panX, y: touch.clientY - panY });
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    // Check if we are long-pressing to select empty space
+    if (touchSelectionStart && touchSelectionTimerRef.current && !isTouchSelectingRef.current) {
+      const touch = e.touches[0];
+      const dx = touch.clientX - touchSelectionStart.x;
+      const dy = touch.clientY - touchSelectionStart.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      // If moved more than 15px before the timer fired, cancel selection and allow panning
+      if (dist > 15) {
+        clearTimeout(touchSelectionTimerRef.current);
+        touchSelectionTimerRef.current = null;
+      }
+    }
+
+    if (isTouchSelectingRef.current) {
+      const touch = e.touches[0];
+      setTouchSelectionEnd({ x: touch.clientX, y: touch.clientY });
+      e.preventDefault(); // prevent native scrolling and panning
+      return;
+    }
+
     if (draggingConn && e.touches.length === 1) {
       const touch = e.touches[0];
       const deltaX = (touch.clientX - dragStart.x) / zoom;
@@ -3991,6 +4063,52 @@ export default function MindMapCanvas({
   const handleTouchEnd = (e: React.TouchEvent) => {
     setResizingNodeId(null);
     setResizeDirection(null);
+
+    if (touchSelectionTimerRef.current) {
+      clearTimeout(touchSelectionTimerRef.current);
+      touchSelectionTimerRef.current = null;
+    }
+
+    if (isTouchSelecting) {
+      // We finished selecting! Let's calculate which nodes are within the rectangle
+      if (touchSelectionStart && touchSelectionEnd) {
+        const getCanvasCoords = (screenX: number, screenY: number) => {
+          if (!containerRef.current) return { x: 0, y: 0 };
+          const rect = containerRef.current.getBoundingClientRect();
+          const centerX = rect.width / 2;
+          const centerY = rect.height / 2;
+          const cursorX = screenX - rect.left;
+          const cursorY = screenY - rect.top;
+          return {
+            x: (cursorX - centerX - panX) / zoom,
+            y: (cursorY - centerY - panY) / zoom
+          };
+        };
+
+        const startCanvas = getCanvasCoords(touchSelectionStart.x, touchSelectionStart.y);
+        const endCanvas = getCanvasCoords(touchSelectionEnd.x, touchSelectionEnd.y);
+
+        const minX = Math.min(startCanvas.x, endCanvas.x);
+        const maxX = Math.max(startCanvas.x, endCanvas.x);
+        const minY = Math.min(startCanvas.y, endCanvas.y);
+        const maxY = Math.max(startCanvas.y, endCanvas.y);
+
+        // Find all visible nodes whose center is inside the rectangle
+        const selectedIds = visibleNodes
+          .filter(n => n.x >= minX && n.x <= maxX && n.y >= minY && n.y <= maxY)
+          .map(n => n.id);
+
+        if (selectedIds.length > 0 && onSelectNodes) {
+          onSelectNodes(selectedIds);
+        }
+      }
+
+      setIsTouchSelecting(false);
+      isTouchSelectingRef.current = false;
+      setTouchSelectionStart(null);
+      setTouchSelectionEnd(null);
+      return; // prevent other touch-end behaviors
+    }
 
     if (activeConnector) {
       if (hoveredNodeId && hoveredSide) {
@@ -8686,6 +8804,96 @@ export default function MindMapCanvas({
           </div>
         </div>
       )}
+
+      {/* Mobile Touch Selection Box Overlay */}
+      {isTouchSelecting && touchSelectionStart && touchSelectionEnd && (
+        <div 
+          className="absolute border border-indigo-500 bg-indigo-500/10 rounded pointer-events-none animate-pulse"
+          style={{
+            left: Math.min(touchSelectionStart.x, touchSelectionEnd.x) - (containerRef.current?.getBoundingClientRect().left || 0),
+            top: Math.min(touchSelectionStart.y, touchSelectionEnd.y) - (containerRef.current?.getBoundingClientRect().top || 0),
+            width: Math.abs(touchSelectionStart.x - touchSelectionEnd.x),
+            height: Math.abs(touchSelectionStart.y - touchSelectionEnd.y),
+            zIndex: 100
+          }}
+        />
+      )}
+
+      {/* Floating Bulk Action Panel */}
+      <AnimatePresence>
+        {selectedNodeIds.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+            className="absolute bottom-16 left-1/2 -translate-x-1/2 z-[100] flex flex-col md:flex-row items-center gap-3 px-4 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl shadow-[0_12px_40px_-6px_rgba(0,0,0,0.15)] dark:shadow-[0_12px_40px_-6px_rgba(0,0,0,0.5)] select-none text-slate-800 dark:text-slate-100 max-w-[90vw] md:max-w-xl"
+          >
+            <div className="flex items-center gap-2 px-1 shrink-0">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-[10px] font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                {selectedNodeIds.length}
+              </span>
+              <span className="text-xs font-bold tracking-tight">Выделено</span>
+            </div>
+            
+            <div className="h-[1px] w-full md:h-6 md:w-[1px] bg-slate-200 dark:bg-slate-800" />
+            
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onBulkToggleCompleted) {
+                    onBulkToggleCompleted(true);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-slate-100 dark:bg-slate-800 hover:bg-emerald-55/40 dark:hover:bg-emerald-950/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Выполнить</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onBulkToggleCompleted) {
+                    onBulkToggleCompleted(false);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-slate-100 dark:bg-slate-800 hover:bg-slate-250 dark:hover:bg-slate-700 transition-all cursor-pointer"
+              >
+                <Circle className="w-3.5 h-3.5 text-slate-400" />
+                <span>Сбросить статус</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onBulkDelete) {
+                    onBulkDelete();
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-rose-500 hover:bg-rose-600 text-white shadow transition-transform hover:scale-105 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Удалить</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onSelectNodes) {
+                    onSelectNodes([]);
+                  }
+                }}
+                className="flex items-center justify-center p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-250 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                title="Сбросить выделение"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

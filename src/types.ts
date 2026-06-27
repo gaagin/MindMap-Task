@@ -89,6 +89,8 @@ export interface TaskNode {
   externalLink?: string; // Optional external URL link
   containerPlace?: string; // Optional field for container addition place
   subtaskOrder?: number; // Optional field for manual sorting of subtasks
+  googleCalendarEventId?: string; // Optional reference to synced Google Calendar event ID
+  googleCalendarId?: string; // Optional reference to specific Google Calendar ID
 }
 
 export interface Project {
