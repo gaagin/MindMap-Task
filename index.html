@@ -13,21 +13,6 @@
     <meta name="apple-mobile-web-app-title" content="Mind Map Tasks" />
     <link rel="apple-touch-icon" href="/icon.svg" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-
-    <script>
-      // OAuth implicit callback handler for popup
-      if (window.opener && window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('error'))) {
-        try {
-          window.opener.postMessage({ 
-            type: 'GOOGLE_OAUTH_HASH', 
-            hash: window.location.hash 
-          }, window.location.origin);
-          window.close();
-        } catch (e) {
-          console.error('OAuth callback postMessage failed:', e);
-        }
-      }
-    </script>
   </head>
   <body>
     <div id="root"></div>

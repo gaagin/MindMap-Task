@@ -25,10 +25,6 @@ service cloud.firestore {
     match /workspaces/{userId} {
       allow read, delete: if isOwner(userId);
       allow create, update: if isOwner(userId) && isValidWorkspace(request.resource.data);
-
-      match /backups/{backupId} {
-        allow read, write, delete: if isOwner(userId);
-      }
     }
   }
 }

@@ -1,3 +1,5 @@
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, auth } from './firebase';
 import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport, DeletionRecord } from '../types';
 import { proxiedFetch } from '../utils';
 
@@ -54,9 +56,84 @@ export function clearLocalDeletions(uploaded: DeletionRecord[]) {
   }
 }
 
+// ----------------- FIREBASE SYNC -----------------
+
+/**
+ * Recursively removes any undefined fields or converts them to null to prevent Firestore invalid data errors.
+ */
+function sanitizeForFirestore(obj: any): any {
+  if (obj === undefined) {
+    return null;
+  }
+  if (obj === null) {
+    return null;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeForFirestore);
+  }
+  if (typeof obj === 'object') {
+    const res: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        res[key] = sanitizeForFirestore(val);
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 /**
  * Fully symmetrical logic for merging two workspace states
- * (local state and cloud state).
+ * (local state and cloud state fetched from Firestore).
  * Ensures that updatedAt timestamps and deletions are strictly and authoritatively respected.
  * If sessionStartTime is provided, stale local elements that are missing from the cloud are not restored
  * to prevent a device that was inactive/closed from resurrecting elements deleted on other devices.
@@ -261,6 +338,176 @@ export function mergeWorkspaceStates(
     taskSheetsSpreadsheetId: local.taskSheetsSpreadsheetId || cloud.taskSheetsSpreadsheetId,
     deletions: mergedDeletions
   };
+}
+
+/**
+ * Saves current WorkspaceState snapshot to firestore database dynamically.
+ * Features automatic Exponential Backoff and progressive retries to handle unstable connections.
+ */
+export async function saveToFirebaseDirectly(
+  userId: string, 
+  state: WorkspaceState,
+  sessionStartTime?: string
+): Promise<{ success: boolean; isOfflineQueued?: boolean; error?: string }> {
+  try {
+    const docRef = doc(db, 'workspaces', userId);
+    
+    // Fetch existing cloud doc to merge
+    let cloudData: any = null;
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        cloudData = snap.data();
+      }
+    } catch (e) {
+      console.warn('[saveToFirebaseDirectly] Failed to fetch existing cloud doc, proceeding with overwrite/local override:', e);
+    }
+
+    const cloudDeletions: DeletionRecord[] = cloudData?.deletions || [];
+    const localDeletions = getLocalDeletions();
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    
+    // Merge deletions and prune older than 30 days
+    const mergedDeletions: DeletionRecord[] = [];
+    const appendUniqueDeletion = (rec: DeletionRecord) => {
+      try {
+        const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
+        if (deletedAtMs < thirtyDaysAgo) return; // Skip if older than 30 days
+      } catch {
+        // Keep it if parsing fails
+      }
+      if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
+        mergedDeletions.push(rec);
+      }
+    };
+    cloudDeletions.forEach(appendUniqueDeletion);
+    localDeletions.forEach(appendUniqueDeletion);
+
+    // Update local deletion registry to be fully aligned
+    try {
+      localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
+    } catch (e) {
+      console.error(e);
+    }
+
+    const cloudState: WorkspaceState = {
+      folders: cloudData?.folders || [],
+      projects: cloudData?.projects || [],
+      nodes: cloudData?.nodes || {},
+      activeProjectId: cloudData?.activeProjectId || null,
+      tagCategories: cloudData?.tagCategories || [],
+      googleSheetsFileId: cloudData?.googleSheetsFileId || undefined,
+      taskSheetsSpreadsheetId: cloudData?.taskSheetsSpreadsheetId || undefined
+    };
+
+    const mergedState = cloudData
+      ? mergeWorkspaceStates(state, cloudState, mergedDeletions, sessionStartTime)
+      : state;
+
+    // Load and include local active pomodoro state if any
+    let activePomodoro = null;
+    try {
+      const localPomoSaved = localStorage.getItem('task_mindmap_pomodoro');
+      if (localPomoSaved) {
+        activePomodoro = JSON.parse(localPomoSaved);
+      }
+    } catch (e) {
+      console.error('Failed to parse local pomodoro state for Firestore syncer:', e);
+    }
+
+    const rawPayload = {
+      userId,
+      folders: mergedState.folders.map(f => ({ ...f, updatedAt: f.updatedAt || new Date().toISOString() })),
+      projects: mergedState.projects.map(p => ({ ...p, updatedAt: p.updatedAt || new Date().toISOString() })),
+      nodes: Object.keys(mergedState.nodes).reduce((acc, key) => {
+        acc[key] = mergedState.nodes[key].map(n => ({ ...n, updatedAt: n.updatedAt || new Date().toISOString() }));
+        return acc;
+      }, {} as Record<string, TaskNode[]>),
+      activeProjectId: mergedState.activeProjectId,
+      tagCategories: (mergedState.tagCategories || []).map(t => ({ ...t, updatedAt: t.updatedAt || new Date().toISOString() })),
+      googleSheetsFileId: mergedState.googleSheetsFileId || localStorage.getItem('google_sheets_sync_file_id') || null,
+      taskSheetsSpreadsheetId: mergedState.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || null,
+      activePomodoro,
+      deletions: mergedDeletions,
+      updatedAt: new Date().toISOString()
+    };
+    
+    const payload = sanitizeForFirestore(rawPayload);
+    
+    // Estimate payload size in KB
+    const serialized = JSON.stringify(payload);
+    const sizeInKb = Math.round(serialized.length / 1024);
+    if (sizeInKb > 1000) {
+      throw new Error(`Размер вашей карты (${sizeInKb} KB) превышает лимит базы данных Firestore (1000 KB) из-за прикрепленных тяжелых картинок или файлов. Удалите некоторые вложения, чтобы возобновить синхронизацию!`);
+    }
+
+    // We run standard setDoc directly. We add a single generous timeout (e.g. 25s) to notify the user if offline,
+    // but we do NOT run a retry loop that triggers duplicate parallel queued writes, preventing retry storms.
+    const currentTimeoutMs = 25000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Превышено время ожидания сервера (${currentTimeoutMs / 1000}с). Снимок сохранён локально, синхронизация ожидает стабильного подключения.`)), currentTimeoutMs)
+    );
+
+    await Promise.race([
+      setDoc(docRef, payload),
+      timeoutPromise
+    ]);
+
+    console.log(`Firebase cloud sync completed successfully.`);
+    return { success: true };
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
+      handleFirestoreError(error, OperationType.WRITE, `workspaces/${userId}`);
+    }
+    
+    if (error?.message && error.message.includes('Превышено время ожидания сервера')) {
+      console.info('Firebase sync offline queued:', error.message);
+      return { 
+        success: true, 
+        isOfflineQueued: true, 
+        error: error.message 
+      };
+    }
+
+    console.error('Firebase snapshot save error:', error);
+    return { 
+      success: false, 
+      error: error?.message || 'Превышено время ожидания сервера (таймаут 25с). Пожалуйста, обновите страницу или проверьте интернет-соединение.' 
+    };
+  }
+}
+
+/**
+ * Fetch latest WorkspaceState snapshot from firestore database.
+ * Features a clean, single-attempt timeout fallback.
+ */
+export async function loadFromFirebaseDirectly(userId: string): Promise<WorkspaceState | null> {
+  try {
+    const docRef = doc(db, 'workspaces', userId);
+    const currentTimeoutMs = 60000;
+    
+    const snap = await Promise.race([
+      getDoc(docRef),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Превышено время ожидания загрузки (${currentTimeoutMs / 1000}с).`)), currentTimeoutMs)
+      )
+    ]);
+
+    if (snap.exists()) {
+      return snap.data() as WorkspaceState;
+    }
+    return null;
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
+      handleFirestoreError(error, OperationType.GET, `workspaces/${userId}`);
+    }
+    if (error?.message && error.message.includes('Превышено время ожидания')) {
+      console.warn('Firebase snapshot load timeout:', error.message);
+    } else {
+      console.error('Firebase snapshot load error:', error);
+    }
+    throw error || new Error('Превышено время ожидания загрузки. Пожалуйста, проверьте интернет-соединение.');
+  }
 }
 
 // ----------------- GOOGLE SHEETS & DRIVE SYNC -----------------
@@ -992,259 +1239,3 @@ export async function syncWithGoogleSheets(
     return { state: localState, success: false, error: error?.message || String(error) };
   }
 }
-
-/**
- * A robust helper to wrap any promise with a timeout rejection.
- */
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 25000): Promise<T> {
-  let timeoutId: any;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error('Operation timed out')), timeoutMs);
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
-}
-
-
-
-/**
- * Ensures that a "Backups" sheet tab exists inside the user's spreadsheet, creating it if necessary.
- */
-async function ensureBackupsSheetExists(spreadsheetId: string, accessToken: string): Promise<void> {
-  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`;
-  const res = await fetch(getUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch spreadsheet metadata: ${res.statusText}`);
-  }
-  const data = await res.json();
-  const sheets = data.sheets || [];
-  const hasBackupsSheet = sheets.some((s: any) => s.properties?.title === 'Backups');
-  
-  if (!hasBackupsSheet) {
-    console.log('Backups sheet not found. Creating a new Backups sheet...');
-    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
-    const addRes = await fetch(updateUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        requests: [
-          {
-            addSheet: {
-              properties: {
-                title: 'Backups'
-              }
-            }
-          }
-        ]
-      })
-    });
-    if (!addRes.ok) {
-      const errText = await addRes.text().catch(() => '');
-      throw new Error(`Failed to add Backups sheet: ${addRes.statusText}. Info: ${errText}`);
-    }
-    
-    // Write headers
-    const writeHeadersUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent('Backups!A1:C1')}?valueInputOption=RAW`;
-    const headersRes = await fetch(writeHeadersUrl, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        range: 'Backups!A1:C1',
-        values: [['Backup ID', 'Timestamp', 'State (JSON)']]
-      })
-    });
-    if (!headersRes.ok) {
-      throw new Error('Failed to write headers to Backups sheet');
-    }
-  }
-}
-
-/**
- * Saves a backup snapshot to the "Backups" sheet of the Google Spreadsheet.
- */
-export async function saveBackupToGoogleSheets(accessToken: string, backup: any): Promise<void> {
-  try {
-    let fileId = localStorage.getItem(SHEET_FILE_ID_KEY) || await findSpreadsheet(accessToken);
-    if (!fileId) {
-      fileId = await createSpreadsheet(accessToken);
-    }
-    await ensureBackupsSheetExists(fileId, accessToken);
-    
-    // Load existing backups to check for duplicates
-    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent('Backups!A2:A')}`;
-    const getRes = await fetch(getUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    
-    let existingIndex = -1;
-    if (getRes.ok) {
-      const data = await getRes.json();
-      const rows = data.values || [];
-      existingIndex = rows.findIndex((r: any) => r[0] === backup.id);
-    }
-    
-    const stateStr = JSON.stringify(backup.state);
-    
-    if (existingIndex !== -1) {
-      const rowNum = existingIndex + 2;
-      const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent(`Backups!A${rowNum}:C${rowNum}`)}?valueInputOption=RAW`;
-      const updateRes = await withTimeout(fetch(updateUrl, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          range: `Backups!A${rowNum}:C${rowNum}`,
-          values: [[backup.id, backup.timestamp, stateStr]]
-        })
-      }), 25000);
-      
-      if (!updateRes.ok) {
-        const errText = await updateRes.text().catch(() => '');
-        throw new Error(`Failed to update backup row: ${updateRes.status} ${updateRes.statusText}. Details: ${errText}`);
-      }
-      console.log(`[Backup Sheets] Backup ${backup.id} updated in Google Sheets.`);
-    } else {
-      const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent('Backups!A1')}:append?valueInputOption=RAW`;
-      const appendRes = await withTimeout(fetch(appendUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          range: 'Backups!A1',
-          values: [[backup.id, backup.timestamp, stateStr]]
-        })
-      }), 25000);
-      
-      if (!appendRes.ok) {
-        const errText = await appendRes.text().catch(() => '');
-        throw new Error(`Failed to append backup row: ${appendRes.status} ${appendRes.statusText}. Details: ${errText}`);
-      }
-      console.log(`[Backup Sheets] Backup ${backup.id} appended to Google Sheets.`);
-    }
-  } catch (e: any) {
-    console.error(`[Backup Sheets] Failed to save backup ${backup.id} to Google Sheets:`, e?.message || e);
-    throw e;
-  }
-}
-
-/**
- * Loads all backups from the "Backups" sheet of the Google Spreadsheet.
- */
-export async function loadBackupsFromGoogleSheets(accessToken: string): Promise<any[]> {
-  try {
-    let fileId = localStorage.getItem(SHEET_FILE_ID_KEY) || await findSpreadsheet(accessToken);
-    if (!fileId) {
-      console.log('[Backup Sheets] No spreadsheet found, cannot load backups.');
-      return [];
-    }
-    await ensureBackupsSheetExists(fileId, accessToken);
-    
-    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent('Backups!A2:C')}`;
-    const res = await withTimeout(fetch(getUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    }), 25000);
-    
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Google Sheets fetch Backups failed: ${res.status} ${res.statusText}. Info: ${errText}`);
-    }
-    
-    const data = await res.json();
-    const rows = data.values || [];
-    
-    const backups: any[] = [];
-    rows.forEach((r: any) => {
-      if (r[0] && r[1] && r[2]) {
-        try {
-          const stateObj = JSON.parse(r[2]);
-          backups.push({
-            id: r[0],
-            timestamp: r[1],
-            state: stateObj
-          });
-        } catch (parseErr) {
-          console.error(`[Backup Sheets] Failed to parse backup state JSON for ${r[0]}:`, parseErr);
-        }
-      }
-    });
-    return backups;
-  } catch (e: any) {
-    console.error('[Backup Sheets] Failed to load backups from Google Sheets:', e?.message || e);
-    throw e;
-  }
-}
-
-/**
- * Prunes backups in Google Sheets that are older than 30 days.
- */
-export async function pruneGoogleSheetsBackups(accessToken: string): Promise<void> {
-  try {
-    let fileId = localStorage.getItem(SHEET_FILE_ID_KEY) || await findSpreadsheet(accessToken);
-    if (!fileId) return;
-    
-    await ensureBackupsSheetExists(fileId, accessToken);
-    
-    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent('Backups!A2:C')}`;
-    const res = await fetch(getUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (!res.ok) return;
-    
-    const data = await res.json();
-    const rows = data.values || [];
-    if (rows.length === 0) return;
-    
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const keptRows = rows.filter((r: any) => {
-      try {
-        if (!r[1]) return true;
-        return new Date(r[1]).getTime() > thirtyDaysAgo;
-      } catch {
-        return true;
-      }
-    });
-    
-    if (keptRows.length < rows.length) {
-      console.log(`[Backup Sheets] Pruning ${rows.length - keptRows.length} expired backups from Google Sheets...`);
-      
-      // Clear sheet range first
-      const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent('Backups!A2:C1000')}:clear`;
-      await fetch(clearUrl, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      
-      // Write kept rows if any
-      if (keptRows.length > 0) {
-        const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/${encodeURIComponent('Backups!A2')}?valueInputOption=RAW`;
-        await fetch(updateUrl, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            range: 'Backups!A2',
-            values: keptRows
-          })
-        });
-      }
-      console.log('[Backup Sheets] Expired backups pruned successfully.');
-    }
-  } catch (e: any) {
-    console.error('[Backup Sheets] Failed to prune Google Sheets backups:', e?.message || e);
-  }
-}
-
-

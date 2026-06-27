@@ -63,15 +63,13 @@ import {
   logout,
   setAccessToken,
   db,
-  signInGuest,
-  User
+  signInGuest
 } from './lib/firebase';
 import { 
+  saveToFirebaseDirectly, 
+  loadFromFirebaseDirectly, 
   syncWithGoogleSheets, 
-  logDeletion,
-  saveBackupToGoogleSheets,
-  loadBackupsFromGoogleSheets,
-  pruneGoogleSheetsBackups
+  logDeletion 
 } from './lib/syncService';
 import { 
   listGoogleCalendars, 
@@ -79,6 +77,8 @@ import {
   deleteEventFromGoogleCalendar,
   listGoogleCalendarEvents
 } from './lib/calendarService';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { User } from 'firebase/auth';
 
 /**
  * Automatically computes precisely what entities were changed and stamps them with updatedAt.
@@ -415,7 +415,15 @@ export default function App() {
   const hasCheckedUrlParamRef = React.useRef(false);
   const lastStateRef = React.useRef<WorkspaceState | null>(null);
   const isFirstSnapshotRef = React.useRef(true);
-  const [isInitialSyncComplete, setIsInitialSyncComplete] = useState(true);
+  const [isInitialSyncComplete, setIsInitialSyncComplete] = useState(false);
+
+  // 4-second safety timeout for offline boot
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitialSyncComplete(true);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Intercept all state changes, update modification timestamps automatically, ensuring symmetrical sync compatibility
   const setState = (updater: WorkspaceState | ((prev: WorkspaceState) => WorkspaceState)) => {
@@ -445,132 +453,24 @@ export default function App() {
   const [calendarSyncSuccess, setCalendarSyncSuccess] = useState<string | null>(null);
   const [backupsList, setBackupsList] = useState<any[]>([]);
   const [backupRestoreSuccess, setBackupRestoreSuccess] = useState<string | null>(null);
-  const [backupSyncError, setBackupSyncError] = useState<string | null>(null);
   const [backupRestoreConfirmId, setBackupRestoreConfirmId] = useState<string | null>(null);
-  const [isSyncingBackupsList, setIsSyncingBackupsList] = useState(false);
 
-  const triggerBackupSync = async (showLoading = false) => {
-    if (showLoading) {
-      setIsSyncingBackupsList(true);
-    }
-    try {
-      const raw = localStorage.getItem('milli_workspace_backups');
-      let localBackups = [];
-      if (raw) {
-        localBackups = JSON.parse(raw) || [];
-      }
-
-      let remoteBackups: any[] = [];
-      if (googleToken) {
-        try {
-          remoteBackups = await loadBackupsFromGoogleSheets(googleToken);
-          // Prune google sheets backups older than 30 days
-          await pruneGoogleSheetsBackups(googleToken);
-        } catch (loadError: any) {
-          console.error('[Backup Replicator] Failed to fetch remote backups from Google Sheets:', loadError);
-          if (showLoading) {
-            setBackupSyncError('Не удалось подключиться к Google Таблицам для синхронизации копий. Проверьте интернет-соединение.');
-          }
-          // Do not attempt to overwrite or merge if remote read failed, to prevent data mismatch.
-          return;
-        }
-      } else if (showLoading) {
-        setBackupSyncError('Чтобы сохранять резервные копии в облаке, пожалуйста, сначала войдите и подключите Google Таблицы.');
-      }
-
-      // Merge local and remote with timestamp-prioritized symmetrical merge
-      const mergedMap = new Map<string, any>();
-      // Put remote backups first
-      remoteBackups.forEach((b: any) => {
-        if (b && b.id) {
-          mergedMap.set(b.id, b);
-        }
-      });
-      // Merge local backups
-      localBackups.forEach((b: any) => {
-        if (b && b.id) {
-          const existing = mergedMap.get(b.id);
-          if (!existing || new Date(b.timestamp).getTime() > new Date(existing.timestamp).getTime()) {
-            mergedMap.set(b.id, b);
-          }
-        }
-      });
-
-      let mergedList = Array.from(mergedMap.values());
-
-      // Filter older than 30 days
-      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      mergedList = mergedList.filter((b: any) => {
-        try {
-          return new Date(b.timestamp).getTime() > thirtyDaysAgo;
-        } catch {
-          return true;
-        }
-      });
-
-      // Sort descending by timestamp
-      mergedList.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-      localStorage.setItem('milli_workspace_backups', JSON.stringify(mergedList));
-      setBackupsList(mergedList);
-
-      // Upload any backups that are only local to Google Sheets sequentially
-      if (googleToken) {
-        const unsynced = mergedList.filter((backup: any) => !remoteBackups.some((rb: any) => rb.id === backup.id));
-        
-        // Limit auto-upload to the 5 most recent ones to prevent massive uploads
-        const recentUnsynced = unsynced.slice(0, 5);
-        
-        let hasUploadError = false;
-        for (const backup of recentUnsynced) {
-          try {
-            await saveBackupToGoogleSheets(googleToken, backup);
-            // Delay 300ms to let the connection breathe
-            await new Promise(resolve => setTimeout(resolve, 300));
-          } catch (uploadError: any) {
-            console.error(`[Backup Replicator] Failed to upload backup ${backup.id} to Google Sheets:`, uploadError);
-            hasUploadError = true;
-          }
-        }
-
-        if (showLoading) {
-          if (hasUploadError) {
-            setBackupSyncError('Некоторые резервные копии не удалось загрузить в Google Таблицы из-за медленного соединения. Пожалуйста, попробуйте позже.');
-          } else {
-            setBackupRestoreSuccess('Синхронизация резервных копий с Google Таблицами выполнена успешно!');
-            setBackupSyncError(null);
-          }
-        }
-      } else {
-        if (showLoading && !backupSyncError) {
-          setBackupRestoreSuccess('Синхронизация завершена локально. Подключите Google Таблицы для сохранения в облаке.');
-        }
-      }
-    } catch (e: any) {
-      console.error('[Backup Replicator] Error syncing backups:', e);
-      if (showLoading) {
-        setBackupSyncError(`Ошибка синхронизации: ${e?.message || String(e)}`);
-      }
+  useEffect(() => {
+    if (isSyncMenuOpen || syncModalTab === 'backups') {
       try {
         const raw = localStorage.getItem('milli_workspace_backups');
         if (raw) {
           const parsed = JSON.parse(raw) || [];
           parsed.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
           setBackupsList(parsed);
+        } else {
+          setBackupsList([]);
         }
-      } catch {
-        // No-op
-      }
-    } finally {
-      if (showLoading) {
-        setIsSyncingBackupsList(false);
+      } catch (e) {
+        console.error(e);
       }
     }
-  };
-
-  useEffect(() => {
-    triggerBackupSync(false);
-  }, [isSyncMenuOpen, syncModalTab, currentUser, googleToken]);
+  }, [isSyncMenuOpen, syncModalTab]);
 
   const handleRestoreBackup = async (backup: any) => {
     try {
@@ -586,15 +486,22 @@ export default function App() {
       setBackupRestoreSuccess(`Данные успешно восстановлены на состояние от ${new Date(backup.timestamp).toLocaleString('ru-RU')}!`);
       setBackupRestoreConfirmId(null);
 
-      if (googleToken) {
-        runSheetsSymmetricalSync(googleToken, normalized);
+      if (currentUser) {
+        setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+        const res = await saveToFirebaseDirectly(currentUser.uid, normalized, sessionStartTimeRef.current);
+        if (res.success) {
+          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        } else {
+          setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
+          console.error('[Restore Backup] Failed to upload restored state to Firebase:', res.error);
+        }
       }
     } catch (e) {
       console.error('Failed to restore backup:', e);
     }
   };
 
-  const handleCreateManualBackup = async () => {
+  const handleCreateManualBackup = () => {
     try {
       const backupsKey = 'milli_workspace_backups';
       const rawBackups = localStorage.getItem(backupsKey);
@@ -625,14 +532,6 @@ export default function App() {
       localStorage.setItem(backupsKey, JSON.stringify(backups));
       setBackupsList(backups);
       setBackupRestoreSuccess("Точка восстановления успешно создана вручную!");
-
-      if (googleToken) {
-        try {
-          await saveBackupToGoogleSheets(googleToken, newBackup);
-        } catch (sheetsError) {
-          console.error('[Backup Replicator] Failed to save manual backup to Google Sheets:', sheetsError);
-        }
-      }
     } catch (e) {
       console.error('Failed to create manual backup:', e);
     }
@@ -813,6 +712,17 @@ export default function App() {
                 localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextState));
                 setGlobalPomo(nextState);
 
+                // Firestore sync
+                const userObj = currentUserRef.current;
+                if (userObj) {
+                  const userDocRef = doc(db, 'workspaces', userObj.uid);
+                  updateDoc(userDocRef, {
+                    activePomodoro: nextState
+                  }).catch(err => {
+                    console.warn('[Firebase Pomo Sync] Failed to update activePomodoro to break:', err);
+                  });
+                }
+
                 window.dispatchEvent(new Event('task_mindmap_pomo_update'));
                 return;
               } else {
@@ -833,6 +743,17 @@ export default function App() {
                 };
                 localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextState));
                 setGlobalPomo(nextState);
+
+                // Firestore sync
+                const userObj = currentUserRef.current;
+                if (userObj) {
+                  const userDocRef = doc(db, 'workspaces', userObj.uid);
+                  updateDoc(userDocRef, {
+                    activePomodoro: nextState
+                  }).catch(err => {
+                    console.warn('[Firebase Pomo Sync] Failed to clear activePomodoro on break complete:', err);
+                  });
+                }
 
                 window.dispatchEvent(new Event('task_mindmap_pomo_update'));
                 return;
@@ -1330,15 +1251,162 @@ export default function App() {
     };
   }, []);
 
-  // 3. Auto Google Sheets Symmetrical Sync upon token receipt
+  // 3. Real-time Firestore snapshot synchronization for instant Desktop-to-Mobile and Mobile-To-Desktop updates
   useEffect(() => {
-    if (googleToken) {
-      console.log('[Auto Sync] Google OAuth token obtained, running silent symmetrical background sync...');
-      runSheetsSymmetricalSync(googleToken, state);
-    }
-  }, [googleToken]);
+    if (!currentUser) return;
 
-  // 2. Local save upon state modifications (fully offline-first optimized)
+    const docRef = doc(db, 'workspaces', currentUser.uid);
+    const unsubscribe = onSnapshot(docRef, (snap) => {
+      if (!snap.exists()) return;
+      const cloudData = snap.data();
+      if (!cloudData) return;
+
+      // Real-time Pomodoro state synchronization across devices
+      if (cloudData.activePomodoro) {
+        try {
+          const localPomoSaved = localStorage.getItem('task_mindmap_pomodoro');
+          const localPomo = localPomoSaved ? JSON.parse(localPomoSaved) : null;
+          const cloudPomo = cloudData.activePomodoro;
+
+          const isPomoSubstantivelyDifferent = !localPomo || 
+            localPomo.nodeId !== cloudPomo.nodeId ||
+            localPomo.isRunning !== cloudPomo.isRunning ||
+            localPomo.isPaused !== cloudPomo.isPaused ||
+            localPomo.isBreak !== cloudPomo.isBreak ||
+            // Support small clock deviations between devices by checking if endTime difference is larger than 2 seconds
+            Math.abs((localPomo.endTime || 0) - (cloudPomo.endTime || 0)) > 2000 ||
+            localPomo.nodeText !== cloudPomo.nodeText;
+
+          if (isPomoSubstantivelyDifferent) {
+            console.log('[Sync] Received substantive active Pomodoro update from Firestore, updating local state.');
+            localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(cloudPomo));
+            window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+          }
+        } catch (e) {
+          console.error('[Sync] Error syncing active Pomodoro from Firestore snapshot:', e);
+        }
+      } else {
+        try {
+          const localPomoSaved = localStorage.getItem('task_mindmap_pomodoro');
+          if (localPomoSaved) {
+            const localPomo = JSON.parse(localPomoSaved);
+            if (localPomo && localPomo.isRunning) {
+              console.log('[Sync] Pomodoro cleared in cloud, resetting local timer.');
+              localStorage.removeItem('task_mindmap_pomodoro');
+              window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+            }
+          }
+        } catch (e) {
+          console.error('[Sync] Error checking local active Pomodoro when cloud is empty:', e);
+        }
+      }
+
+      const localDeletions = (() => {
+        try {
+          const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
+          return JSON.parse(listJson) || [];
+        } catch {
+          return [];
+        }
+      })();
+      const cloudDeletions = cloudData.deletions || [];
+      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const mergedDeletions: any[] = [];
+      const appendUnique = (rec: any) => {
+        try {
+          const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
+          if (deletedAtMs < thirtyDaysAgo) return; // Prune deletions older than 30 days
+        } catch {
+          // Safeguard
+        }
+        if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
+          mergedDeletions.push(rec);
+        }
+      };
+      (localDeletions || []).forEach(appendUnique);
+      (cloudDeletions || []).forEach(appendUnique);
+
+      // Save them back to local storage
+      try {
+        localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
+      } catch (e) {
+        console.error(e);
+      }
+
+      const isDeleted = (type: string, id: string) => {
+        return mergedDeletions.some(d => d.type === type && d.id === id);
+      };
+
+      const filteredFolders = (cloudData.folders || []).filter((f: any) => !isDeleted('folder', f.id));
+      const filteredProjects = (cloudData.projects || []).filter((p: any) => !isDeleted('project', p.id));
+      const filteredNodes: Record<string, TaskNode[]> = {};
+      Object.keys(cloudData.nodes || {}).forEach(pid => {
+        const list = (cloudData.nodes[pid] || []).filter((n: any) => !isDeleted('node', n.id));
+        if (list.length > 0) {
+          filteredNodes[pid] = list;
+        }
+      });
+      const filteredTagCats = (cloudData.tagCategories || []).filter((tc: any) => !isDeleted('tagCategory', tc.id));
+
+      const cloudState: WorkspaceState = {
+        folders: filteredFolders,
+        projects: filteredProjects,
+        nodes: filteredNodes,
+        activeProjectId: cloudData.activeProjectId || null,
+        tagCategories: filteredTagCats,
+        googleSheetsFileId: cloudData.googleSheetsFileId || undefined,
+        taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined,
+        deletions: mergedDeletions
+      };
+
+      const currentState = stateRef.current;
+      const normalizedCloud = normalizeWorkspaceState(cloudState);
+      const isEquivalent = isStateSemanticallyEqual(currentState, normalizedCloud);
+      const fromCache = !!snap.metadata?.fromCache;
+      if (!fromCache) {
+        setIsInitialSyncComplete(true);
+      }
+
+      const cloudHash = getSyncHash(normalizedCloud);
+      const isCloudSameAsLastSynced = cloudHash === lastSyncedStateHashRef.current;
+
+      if (!isEquivalent) {
+        // If the cloud nodes/projects/folders are identical to what we last successfully synced,
+        // there are no actual new changes in the cloud. It's just lagging behind our local unsynced edits.
+        // We can safely ignore this nodes mismatch.
+        if (isCloudSameAsLastSynced && !isFirstSnapshotRef.current) {
+          console.log('[Sync] Ignoring cloud snapshot because cloud nodes list matches our last successfully synced state.');
+        } else if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
+          if (!fromCache) {
+            isFirstSnapshotRef.current = false;
+          }
+          ignoreNextStateChangeRef.current = true;
+          lastSyncedStateHashRef.current = cloudHash; // Update hash to prevent loops
+          setRawState(normalizedCloud);
+          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+          setUnsyncedEditsCount(0); // Safely clear any stale locally registered counts
+          setHasCloudUpdates(false);
+          setCloudUpdateState(null);
+        } else {
+          // Force notification to user that another device has fresher updates
+          setHasCloudUpdates(true);
+          setCloudUpdateState(cloudState);
+        }
+      } else {
+        if (!fromCache) {
+          isFirstSnapshotRef.current = false;
+        }
+        setHasCloudUpdates(false);
+        setCloudUpdateState(null);
+      }
+    }, (error) => {
+      console.error('[Firebase snapshot listener error]:', error);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // 2. Local save & Automatic Firebase snapshot update upon state modifications (fully offline-first optimized)
   useEffect(() => {
     saveWorkspace(state);
 
@@ -1354,7 +1422,7 @@ export default function App() {
       if (isFirstRender.current) {
         isFirstRender.current = false;
       } else if (ignoreNextStateChangeRef.current) {
-        // Skip incrementing unsynced edits count when the update was caused by Google Sheets sync download/merge
+        // Skip incrementing unsynced edits count when the update was caused by Google Sheets sync download/merge or Firestore snapshot
         ignoreNextStateChangeRef.current = false;
       } else {
         setUnsyncedEditsCount(prev => prev + 1);
@@ -1364,7 +1432,31 @@ export default function App() {
         isFirstRender.current = false;
       }
     }
-  }, [state]);
+    
+    // Only save to Firebase if the state actually changed or there are pending unsynced edits.
+    // This prevents a stale client session from overwriting newer changes in the cloud on auth load.
+    if (currentUser && isInitialSyncComplete && (stateChanged || unsyncedEditsCountRef.current > 0)) {
+      const currentHash = getSyncHash(state);
+      if (currentHash === lastSyncedStateHashRef.current) {
+        return; // Already synced! Prevents infinite trigger loops
+      }
+
+      setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+      const countSaved = unsyncedEditsCount;
+      const timer = setTimeout(async () => {
+        const res = await saveToFirebaseDirectly(currentUser.uid, state, sessionStartTimeRef.current);
+        setSyncStatus(prev => ({
+          ...prev,
+          firebase: res.success ? 'saved' : 'error'
+        }));
+        if (res.success) {
+          lastSyncedStateHashRef.current = getSyncHash(state); // Update hash on successful upload
+          setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
+        }
+      }, 10000); // 10s snapshot rate-limiting debounce
+      return () => clearTimeout(timer);
+    }
+  }, [state, currentUser, isInitialSyncComplete]);
 
   // Symmetrical Google Sheets merge trigger method
   const runSheetsSymmetricalSync = async (token: string, currentWorkspace: WorkspaceState) => {
@@ -1751,6 +1843,19 @@ export default function App() {
 
     localStorage.removeItem('task_mindmap_pomodoro');
     window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+
+    if (currentUser) {
+      try {
+        const docRef = doc(db, 'workspaces', currentUser.uid);
+        updateDoc(docRef, {
+          activePomodoro: null
+        }).catch(err => {
+          console.warn('[Firebase Pomo Sync] Failed to clear activePomodoro on close:', err);
+        });
+      } catch (err) {
+        console.error('[Firebase Pomo Sync] Error building Firestore path for clear activePomodoro:', err);
+      }
+    }
   };
 
   // Quick single-button Google Sheets sync handler
@@ -1780,34 +1885,107 @@ export default function App() {
 
   // Manual forced cloud sync actions to solve multi-device desynchronizations immediately
   const forceUploadToCloud = async (currentWorkspace: WorkspaceState) => {
-    if (!googleToken) {
-      setForceCloudSyncFeedback('Для синхронизации необходимо войти в Google аккаунт и подключить Google Таблицы.');
-      return;
-    }
+    if (!currentUser) return;
     setForceCloudSyncLoading('upload');
     setForceCloudSyncFeedback(null);
     try {
-      await runSheetsSymmetricalSync(googleToken, currentWorkspace);
-      setForceCloudSyncFeedback('Данные успешно синхронизированы с Google Таблицами!');
+      const res = await saveToFirebaseDirectly(currentUser.uid, currentWorkspace);
+      if (res.success) {
+        lastSyncedStateHashRef.current = getSyncHash(currentWorkspace); // Update hash to prevent reflection loops
+        setUnsyncedEditsCount(0);
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        if (res.isOfflineQueued) {
+          setForceCloudSyncFeedback('Снимок успешно сохранен локально! Синхронизация с облаком произойдет автоматически при восстановлении стабильного интернет-соединения.');
+        } else {
+          setForceCloudSyncFeedback('Успешно выгружено в облако! Теперь откройте это приложение на другом устройстве и нажмите кнопку "Загрузить из облака".');
+        }
+      } else {
+        setForceCloudSyncFeedback(`Ошибка выгрузки: ${res.error || 'Проверьте интернет-соединение или права доступа.'}`);
+      }
     } catch (e: any) {
-      setForceCloudSyncFeedback(`Ошибка синхронизации: ${e?.message || String(e)}`);
+      setForceCloudSyncFeedback(`Ошибка: ${e?.message || String(e)}`);
     } finally {
       setForceCloudSyncLoading(null);
     }
   };
 
   const forceDownloadFromCloud = async () => {
-    if (!googleToken) {
-      setForceCloudSyncFeedback('Для синхронизации необходимо войти в Google аккаунт и подключить Google Таблицы.');
-      return;
-    }
+    if (!currentUser) return;
     setForceCloudSyncLoading('download');
     setForceCloudSyncFeedback(null);
     try {
-      await runSheetsSymmetricalSync(googleToken, state);
-      setForceCloudSyncFeedback('Данные успешно синхронизированы с Google Таблицами!');
+      const cloudData = await loadFromFirebaseDirectly(currentUser.uid);
+      if (cloudData) {
+        const localDeletions = (() => {
+          try {
+            const listJson = localStorage.getItem('milli_deleted_registry') || '[]';
+            return JSON.parse(listJson) || [];
+          } catch {
+            return [];
+          }
+        })();
+        const cloudDeletions = cloudData.deletions || [];
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        const mergedDeletions: any[] = [];
+        const appendUnique = (rec: any) => {
+          try {
+            const deletedAtMs = new Date(rec.deletedAt || 0).getTime();
+            if (deletedAtMs < thirtyDaysAgo) return; // Prune deletions older than 30 days
+          } catch {
+            // Safeguard
+          }
+          if (!mergedDeletions.some(m => m.id === rec.id && m.type === rec.type)) {
+            mergedDeletions.push(rec);
+          }
+        };
+        (localDeletions || []).forEach(appendUnique);
+        (cloudDeletions || []).forEach(appendUnique);
+
+        try {
+          localStorage.setItem('milli_deleted_registry', JSON.stringify(mergedDeletions));
+        } catch (e) {
+          console.error(e);
+        }
+
+        const isDeleted = (type: string, id: string) => {
+          return mergedDeletions.some(d => d.type === type && d.id === id);
+        };
+
+        const filteredFolders = (cloudData.folders || []).filter((f: any) => !isDeleted('folder', f.id));
+        const filteredProjects = (cloudData.projects || []).filter((p: any) => !isDeleted('project', p.id));
+        const filteredNodes: Record<string, TaskNode[]> = {};
+        Object.keys(cloudData.nodes || {}).forEach(pid => {
+          const list = (cloudData.nodes[pid] || []).filter((n: any) => !isDeleted('node', n.id));
+          if (list.length > 0) {
+            filteredNodes[pid] = list;
+          }
+        });
+        const filteredTagCats = (cloudData.tagCategories || []).filter((tc: any) => !isDeleted('tagCategory', tc.id));
+
+        const cloudState: WorkspaceState = {
+          folders: filteredFolders,
+          projects: filteredProjects,
+          nodes: filteredNodes,
+          activeProjectId: cloudData.activeProjectId || null,
+          tagCategories: filteredTagCats,
+          googleSheetsFileId: cloudData.googleSheetsFileId || undefined,
+          taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined,
+          deletions: mergedDeletions
+        };
+        ignoreNextStateChangeRef.current = true;
+        const normalized = normalizeWorkspaceState(cloudState);
+        lastSyncedStateHashRef.current = getSyncHash(normalized); // Update hash to prevent reflection loops
+        setRawState(normalized);
+        setUnsyncedEditsCount(0);
+        setHasCloudUpdates(false);
+        setCloudUpdateState(null);
+        setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        setForceCloudSyncFeedback('Успешно загружено! Данные на этом устройстве полностью заменены версией из вашего облака.');
+      } else {
+        setForceCloudSyncFeedback('В облаке не найдено сохраненных данных. Пожалуйста, сначала сделайте "Выгрузить в облако" на первом устройстве!');
+      }
     } catch (e: any) {
-      setForceCloudSyncFeedback(`Ошибка синхронизации: ${e?.message || String(e)}`);
+      setForceCloudSyncFeedback(`Ошибка загрузки: ${e?.message || String(e)}`);
     } finally {
       setForceCloudSyncLoading(null);
     }
@@ -1843,6 +2021,24 @@ export default function App() {
     const triggerInstantSyncOnExit = async () => {
       if (!syncOnExitRef.current) return;
       
+      // Save instantly to Firestore (bypassing the 10-second rate-limiting debounce)
+      if (currentUserRef.current && isInitialSyncComplete && unsyncedEditsCountRef.current > 0) {
+        console.log('[Sync] Smartphone exit / background hide detected. Running instant Firestore sync...');
+        const currentWorkspace = stateRef.current;
+        const countSaved = unsyncedEditsCountRef.current;
+        
+        try {
+          const res = await saveToFirebaseDirectly(currentUserRef.current.uid, currentWorkspace, sessionStartTimeRef.current);
+          if (res.success) {
+            lastSyncedStateHashRef.current = getSyncHash(currentWorkspace);
+            setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
+            setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+          }
+        } catch (err) {
+          console.error('[Sync] Instant Firebase exit sync failed:', err);
+        }
+      }
+
       // Save instantly to Google Sheets
       if (googleTokenRef.current && isInitialSyncComplete && unsyncedEditsCountRef.current > 0) {
         console.log('[Sync] Smartphone exit / background hide detected. Running instant Google Sheets sync...');
@@ -3816,7 +4012,7 @@ export default function App() {
               type="button"
               onClick={() => setIsSyncMenuOpen(true)}
               className={`flex items-center gap-1.5 py-1.5 px-3 border rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:scale-[1.01] shrink-0 ${
-                isSyncingSheets
+                isSyncingSheets || syncStatus.firebase === 'syncing'
                   ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
                   : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
               }`}
@@ -4015,7 +4211,7 @@ export default function App() {
             type="button"
             onClick={() => setIsSyncMenuOpen(true)}
             className={`p-1.5 border rounded-lg cursor-pointer transition-all ${
-              isSyncingSheets
+              isSyncingSheets || syncStatus.firebase === 'syncing'
                 ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
                 : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
@@ -4773,22 +4969,22 @@ export default function App() {
                     {authError === 'unauthorized-domain' ? (
                       <div className="space-y-3 text-slate-600 dark:text-slate-350">
                         <p className="leading-relaxed">
-                          Домен этой страницы не добавлен в список разрешённых Authorized JavaScript origins или Authorized redirect URIs в настройках вашего Google OAuth Client ID.
+                          Домен этой страницы не добавлен в список разрешённых для OAuth-авторизации в настройках вашего Firebase-проекта.
                         </p>
                         
                         <div className="bg-white dark:bg-slate-900 border border-red-105 dark:border-red-950 p-3 rounded-lg space-y-1.5">
                           <p className="font-bold text-slate-700 dark:text-slate-200">Как исправить за 1 минуту:</p>
                           <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400 text-[11px]">
-                            <li>Перейдите в <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-650 dark:text-indigo-400 underline font-semibold">Консоль Google Cloud</a>.</li>
-                            <li>Откройте раздел <b>APIs & Services</b> → <b>Credentials</b>.</li>
-                            <li>Отредактируйте ваш существующий <b>OAuth 2.0 Client ID</b>.</li>
-                            <li>Добавьте этот домен в список <b>Authorized JavaScript origins</b> и <b>Authorized redirect URIs</b>:</li>
+                            <li>Перейдите в <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-650 dark:text-indigo-400 underline font-semibold">Консоль Firebase</a>.</li>
+                            <li>Откройте проект <b>"Default Gemini Project"</b>.</li>
+                            <li>Перейдите в раздел <b>Authentication</b> → вкладка <b>Settings</b> → <b>Authorized domains</b> (Разрешенные домены).</li>
+                            <li>Нажмите кнопку <b>Add domain</b> и добавьте этот домен:</li>
                           </ol>
                           <div className="mt-2 flex items-center justify-between bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded border border-slate-200 dark:border-slate-800 font-mono text-[10px]">
-                            <span className="select-all truncate">{window.location.origin}</span>
+                            <span className="select-all truncate">{window.location.hostname}</span>
                             <button 
                               onClick={() => {
-                                navigator.clipboard.writeText(window.location.origin);
+                                navigator.clipboard.writeText(window.location.hostname);
                                 alert('Скопировано!');
                               }}
                               className="text-indigo-600 dark:text-indigo-455 hover:underline cursor-pointer ml-1 text-[9px] font-bold"
@@ -5212,38 +5408,11 @@ export default function App() {
                   </div>
                 )}
 
-                {backupSyncError && (
-                  <div className="bg-rose-50 dark:bg-rose-950/25 border border-rose-200 dark:border-rose-900 rounded-xl p-3.5 text-xs text-rose-700 dark:text-rose-400 font-bold flex items-center justify-between gap-2 animate-in fade-in duration-150">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
-                      <span>{backupSyncError}</span>
-                    </div>
-                    <button 
-                      type="button" 
-                      onClick={() => setBackupSyncError(null)}
-                      className="text-rose-500 hover:text-rose-700 dark:hover:text-rose-350 font-bold text-[10px] uppercase cursor-pointer"
-                    >
-                      Ок
-                    </button>
-                  </div>
-                )}
-
                 {/* Backups List */}
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-slate-550 dark:text-slate-450 text-[10px] tracking-wider uppercase">
-                      Доступные снимки и резервные копии ({backupsList.length})
-                    </h4>
-                    <button
-                      type="button"
-                      onClick={() => triggerBackupSync(true)}
-                      disabled={isSyncingBackupsList}
-                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1 cursor-pointer disabled:opacity-50 transition-all"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isSyncingBackupsList ? 'animate-spin' : ''}`} />
-                      {isSyncingBackupsList ? 'Синхронизация...' : 'Синхронизировать с облаком'}
-                    </button>
-                  </div>
+                  <h4 className="font-bold text-slate-550 dark:text-slate-450 text-[10px] tracking-wider uppercase">
+                    Доступные снимки и резервные копии ({backupsList.length})
+                  </h4>
 
                   {backupsList.length === 0 ? (
                     <div className="border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-8 text-center text-slate-400 dark:text-slate-500 italic">

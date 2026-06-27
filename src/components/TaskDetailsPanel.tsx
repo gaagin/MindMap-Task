@@ -38,7 +38,8 @@ import {
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch, pruneTaskNodeHistory } from '../utils';
-import { auth } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
+import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import GoogleDriveImage from './GoogleDriveImage';
 import { motion } from 'motion/react';
 
@@ -692,6 +693,37 @@ export default function TaskDetailsPanel({
     setPomo(newState);
     localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(newState));
     window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+
+    // Sync active Pomodoro state to Cloud Firestore (real-time cross-device syncer)
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        const docRef = doc(db, 'workspaces', user.uid);
+        updateDoc(docRef, {
+          activePomodoro: newState
+        }).catch(async (err) => {
+          console.warn('[Firebase Pomo Sync] Failed to update activePomodoro using updateDoc (document may not exist):', err);
+          
+          // Fallback if the user document does not exist yet.
+          // Create a minimally schema-compliant empty workspace that satisfies isValidWorkspace security rules
+          const emptyWorkspace = {
+            userId: user.uid,
+            folders: [],
+            projects: [],
+            nodes: {},
+            updatedAt: new Date().toISOString(),
+            activePomodoro: newState
+          };
+          try {
+            await setDoc(docRef, emptyWorkspace, { merge: true });
+          } catch (setErr) {
+            console.error('[Firebase Pomo Sync] Failed to merge/create empty workspace with activePomodoro:', setErr);
+          }
+        });
+      } catch (err) {
+        console.error('[Firebase Pomo Sync] Error building Firestore path for Pomodoro sync:', err);
+      }
+    }
   };
 
   const handleChangeCustomMinutes = (mins: number) => {
