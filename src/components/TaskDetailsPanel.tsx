@@ -37,7 +37,7 @@ import {
   GripVertical
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
-import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch } from '../utils';
+import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch, pruneTaskNodeHistory } from '../utils';
 import { auth, db } from '../lib/firebase';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import GoogleDriveImage from './GoogleDriveImage';
@@ -1033,7 +1033,7 @@ export default function TaskDetailsPanel({
 
     onUpdateNode({
       ...node,
-      history: [newVersion, ...currentHistory].slice(0, 30)
+      history: pruneTaskNodeHistory([newVersion, ...currentHistory])
     });
   };
 
@@ -1049,7 +1049,7 @@ export default function TaskDetailsPanel({
     };
     onUpdateNode({
       ...node,
-      history: [newVersion, ...currentHistory].slice(0, 30)
+      history: pruneTaskNodeHistory([newVersion, ...currentHistory])
     });
   };
 
@@ -1070,7 +1070,7 @@ export default function TaskDetailsPanel({
       ...node,
       text: version.text,
       notes: version.notes,
-      history: [backupVersion, ...currentHistory.filter(h => h.id !== version.id)].slice(0, 30)
+      history: pruneTaskNodeHistory([backupVersion, ...currentHistory.filter(h => h.id !== version.id)])
     });
 
     // Sync original text / notes to prevent immediate back-trigger on blur

@@ -48,7 +48,7 @@ import {
   GripVertical
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
-import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue } from '../utils';
+import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, pruneTaskNodeHistory } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface MindMapCanvasProps {
@@ -550,7 +550,7 @@ export default function MindMapCanvas({
 
     onUpdateNode({
       ...targetNode,
-      history: [newVersion, ...currentHistory].slice(0, 30)
+      history: pruneTaskNodeHistory([newVersion, ...currentHistory])
     });
   };
 

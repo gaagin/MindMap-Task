@@ -150,3 +150,9 @@ export interface SyncReport {
   tagCategoriesUpdated: number;
 }
 
+export interface WorkspaceBackup {
+  id: string;
+  timestamp: string;
+  state: WorkspaceState;
+}
+

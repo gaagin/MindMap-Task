@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport, DeletionRecord } from '../types';
 import { proxiedFetch } from '../utils';
@@ -1239,3 +1239,66 @@ export async function syncWithGoogleSheets(
     return { state: localState, success: false, error: error?.message || String(error) };
   }
 }
+
+/**
+ * Saves a workspace backup directly to Firestore.
+ */
+export async function saveBackupToFirebase(userId: string, backup: any): Promise<void> {
+  try {
+    const backupRef = doc(db, 'workspaces', userId, 'backups', backup.id);
+    const sanitizedBackup = sanitizeForFirestore(backup);
+    await setDoc(backupRef, sanitizedBackup);
+    console.log(`[Backup Sync] Backup ${backup.id} saved to Firestore successfully.`);
+  } catch (e) {
+    console.error(`[Backup Sync] Failed to save backup ${backup.id} to Firestore:`, e);
+  }
+}
+
+/**
+ * Loads all workspace backups from Firestore.
+ */
+export async function loadBackupsFromFirebase(userId: string): Promise<any[]> {
+  try {
+    const backupsColRef = collection(db, 'workspaces', userId, 'backups');
+    const snapshot = await getDocs(backupsColRef);
+    const backups: any[] = [];
+    snapshot.forEach(docSnap => {
+      if (docSnap.exists()) {
+        backups.push(docSnap.data());
+      }
+    });
+    return backups;
+  } catch (e) {
+    console.error('[Backup Sync] Failed to load backups from Firestore:', e);
+    return [];
+  }
+}
+
+/**
+ * Prunes backups in Firestore that are older than 30 days.
+ */
+export async function pruneFirebaseBackups(userId: string): Promise<void> {
+  try {
+    const backupsColRef = collection(db, 'workspaces', userId, 'backups');
+    const snapshot = await getDocs(backupsColRef);
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+    snapshot.forEach(async docSnap => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        try {
+          const timestamp = new Date(data.timestamp).getTime();
+          if (timestamp < thirtyDaysAgo) {
+            await deleteDoc(docSnap.ref);
+            console.log(`[Backup Sync] Pruned expired backup from Firestore: ${docSnap.id}`);
+          }
+        } catch (err) {
+          console.error(`[Backup Sync] Failed to parse/prune backup ${docSnap.id}:`, err);
+        }
+      }
+    });
+  } catch (e) {
+    console.error('[Backup Sync] Failed to prune Firestore backups:', e);
+  }
+}
+

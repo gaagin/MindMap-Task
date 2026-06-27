@@ -27,7 +27,8 @@ import {
   GripVertical,
   Maximize2,
   Minimize2,
-  Target
+  Target,
+  X
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { generateId } from '../utils';
@@ -48,6 +49,15 @@ interface MobileListViewProps {
   onDeleteTagCategory?: (id: string) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
   onFocusTaskOnCanvas?: (id: string) => void;
+  
+  // Multi-select properties
+  selectedNodeIds?: string[];
+  isMultiSelectMode?: boolean;
+  onToggleSelectNode?: (id: string) => void;
+  onSelectNodes?: (ids: string[]) => void;
+  onBulkDelete?: () => void;
+  onBulkToggleCompleted?: (completed: boolean) => void;
+  setIsMultiSelectMode?: (val: boolean) => void;
 }
 
 interface TaskTreeItem {
@@ -70,6 +80,15 @@ export default function MobileListView({
   onDeleteTagCategory,
   onFullScreenChange,
   onFocusTaskOnCanvas,
+  
+  // Multi-select properties
+  selectedNodeIds = [],
+  isMultiSelectMode = false,
+  onToggleSelectNode,
+  onSelectNodes,
+  onBulkDelete,
+  onBulkToggleCompleted,
+  setIsMultiSelectMode,
 }: MobileListViewProps) {
   // Inbox / State filters
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed' | 'today' | 'overdue'>('active');
@@ -196,6 +215,107 @@ export default function MobileListView({
 
   // Local subtask creation input states mapping parentTaskId -> input text
   const [newSubtaskTexts, setNewSubtaskTexts] = useState<Record<string, string>>({});
+
+  // --- Long Press / Click-and-Hold Detection for Multi-Selection ---
+  const longPressTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const pointerStartPosRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const didLongPressTriggerRef = React.useRef<boolean>(false);
+
+  const isInteractiveElement = (target: HTMLElement): boolean => {
+    let el: HTMLElement | null = target;
+    while (el && el !== document.body) {
+      const tagName = el.tagName.toLowerCase();
+      if (
+        tagName === 'button' || 
+        tagName === 'input' || 
+        tagName === 'textarea' || 
+        tagName === 'select' || 
+        tagName === 'a' ||
+        el.getAttribute('contenteditable') === 'true' ||
+        el.getAttribute('data-drag-ignore') === 'true' ||
+        el.classList.contains('cursor-pointer') ||
+        el.classList.contains('cursor-grab')
+      ) {
+        return true;
+      }
+      el = el.parentElement;
+    }
+    return false;
+  };
+
+  const handleCardPointerDown = (e: React.PointerEvent, nodeId: string) => {
+    if (editingNodeId || e.button !== 0) return;
+    
+    if (isInteractiveElement(e.target as HTMLElement)) {
+      return;
+    }
+
+    pointerStartPosRef.current = { x: e.clientX, y: e.clientY };
+    didLongPressTriggerRef.current = false;
+
+    if (longPressTimeoutRef.current) {
+      clearTimeout(longPressTimeoutRef.current);
+    }
+
+    longPressTimeoutRef.current = setTimeout(() => {
+      didLongPressTriggerRef.current = true;
+      if (setIsMultiSelectMode) {
+        setIsMultiSelectMode(true);
+      }
+      if (onToggleSelectNode) {
+        onToggleSelectNode(nodeId);
+      }
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+    }, 600);
+  };
+
+  const handleCardPointerMove = (e: React.PointerEvent) => {
+    if (longPressTimeoutRef.current) {
+      const dx = Math.abs(e.clientX - pointerStartPosRef.current.x);
+      const dy = Math.abs(e.clientY - pointerStartPosRef.current.y);
+      if (dx > 8 || dy > 8) {
+        clearTimeout(longPressTimeoutRef.current);
+        longPressTimeoutRef.current = null;
+      }
+    }
+  };
+
+  const handleCardPointerUp = (e: React.PointerEvent, nodeId: string) => {
+    if (longPressTimeoutRef.current) {
+      clearTimeout(longPressTimeoutRef.current);
+      longPressTimeoutRef.current = null;
+    }
+
+    if (didLongPressTriggerRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    if (isInteractiveElement(e.target as HTMLElement)) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (isMultiSelectMode) {
+      if (onToggleSelectNode) {
+        onToggleSelectNode(nodeId);
+      }
+    } else {
+      onSelectNode(nodeId === selectedNodeId ? null : nodeId);
+    }
+  };
+
+  const handleCardPointerCancel = () => {
+    if (longPressTimeoutRef.current) {
+      clearTimeout(longPressTimeoutRef.current);
+      longPressTimeoutRef.current = null;
+    }
+  };
 
   // Drag and drop states
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
@@ -611,9 +731,24 @@ export default function MobileListView({
     const isEditing = editingNodeId === node.id;
     const isCollapsed = !!collapsedParents[node.id];
     const allDirectChildren = childrenByParentId[node.id] || [];
+    const isSelectedInMulti = selectedNodeIds && selectedNodeIds.includes(node.id);
 
     // Subtask styling offset and container card margin
     const mlClass = depth > 0 ? 'ml-3 mt-1' : 'mt-1.5';
+
+    const cardBgBorderClass = draggedNodeId === node.id
+      ? 'pointer-events-none opacity-30 border-dashed border-indigo-400 bg-slate-50 dark:bg-slate-950'
+      : dragOverNodeId === node.id
+        ? 'border-dashed border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/30 ring-2 ring-indigo-500/30 shadow-md'
+        : isMultiSelectMode
+          ? isSelectedInMulti
+            ? 'border-indigo-500 dark:border-indigo-500 bg-indigo-50/15 dark:bg-indigo-950/25 shadow-[0_0_8px_rgba(99,102,241,0.15)]'
+            : 'bg-white border-slate-200 dark:bg-slate-900/30 dark:border-slate-800 opacity-85'
+          : isSelected 
+            ? 'bg-indigo-55/10 border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900/40' 
+            : node.archived
+              ? 'bg-amber-50/5 border-dashed border-amber-300 dark:bg-amber-955/2 dark:border-amber-900/40 opacity-60 saturate-60'
+              : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800';
 
     return (
       <div key={node.id} className={`${mlClass} flex flex-col`}>
@@ -625,17 +760,11 @@ export default function MobileListView({
           onDragLeave={handleDragLeaveCard}
           onDragEnd={handleDragEnd}
           onDrop={(e) => handleDropOnCard(e, node.id)}
-          className={`border rounded-xl p-1.5 px-2.5 transition-[background-color,border-color,opacity,box-shadow] duration-150 flex flex-col gap-1 relative select-none ${
-            draggedNodeId === node.id
-              ? 'pointer-events-none opacity-30 border-dashed border-indigo-400 bg-slate-50 dark:bg-slate-950'
-              : dragOverNodeId === node.id
-                ? 'border-dashed border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/30 ring-2 ring-indigo-500/30 shadow-md'
-                : isSelected 
-                  ? 'bg-indigo-55/10 border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900/40' 
-                  : node.archived
-                    ? 'bg-amber-50/5 border-dashed border-amber-300 dark:bg-amber-955/2 dark:border-amber-900/40 opacity-60 saturate-60'
-                    : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800'
-          } ${node.completed ? 'opacity-70' : ''}`}
+          onPointerDown={(e) => handleCardPointerDown(e, node.id)}
+          onPointerMove={handleCardPointerMove}
+          onPointerUp={(e) => handleCardPointerUp(e, node.id)}
+          onPointerCancel={handleCardPointerCancel}
+          className={`border rounded-xl p-1.5 px-2.5 transition-[background-color,border-color,opacity,box-shadow] duration-150 flex flex-col gap-1 relative select-none ${cardBgBorderClass} ${node.completed ? 'opacity-70' : ''}`}
         >
           {/* Connector guide line for nested subtasks */}
           {depth > 0 && (
@@ -653,19 +782,39 @@ export default function MobileListView({
 
           {/* Flex Container linking Drag handle with card content */}
           <div className="flex items-start gap-1 w-full relative">
-            {/* Grip handle outside the pointer-events-none area */}
+            {/* Multi-select checkbox or Grip handle */}
             {!isEditing && (
-              <div
-                onPointerDown={(e) => handlePointerDown(e, node.id)}
-                onPointerMove={(e) => handlePointerMove(e, node.id)}
-                onPointerUp={(e) => handlePointerUp(e, node.id)}
-                onPointerCancel={(e) => handlePointerCancel(e, node.id)}
-                className="p-1 text-slate-350 dark:text-slate-650 hover:text-indigo-500 dark:hover:text-indigo-400 cursor-grab active:cursor-grabbing transition-colors shrink-0 mt-0.5 select-none touch-none"
-                style={{ touchAction: 'none' }}
-                title="Удерживайте для перемещения"
-              >
-                <GripVertical className="w-3.5 h-3.5" />
-              </div>
+              isMultiSelectMode ? (
+                <div 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onToggleSelectNode) {
+                      onToggleSelectNode(node.id);
+                    }
+                  }}
+                  className="p-1 shrink-0 mt-0.5 cursor-pointer select-none"
+                >
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                    isSelectedInMulti
+                      ? 'bg-indigo-600 border-indigo-600 dark:bg-indigo-500 dark:border-indigo-500 text-white'
+                      : 'border-slate-300 dark:border-slate-700 hover:border-indigo-500 bg-white dark:bg-slate-900'
+                  }`}>
+                    {isSelectedInMulti && <Check className="w-2.5 h-2.5 stroke-[3] text-white" />}
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onPointerDown={(e) => handlePointerDown(e, node.id)}
+                  onPointerMove={(e) => handlePointerMove(e, node.id)}
+                  onPointerUp={(e) => handlePointerUp(e, node.id)}
+                  onPointerCancel={(e) => handleCardPointerCancel()}
+                  className="p-1 text-slate-350 dark:text-slate-650 hover:text-indigo-500 dark:hover:text-indigo-400 cursor-grab active:cursor-grabbing transition-colors shrink-0 mt-0.5 select-none touch-none"
+                  style={{ touchAction: 'none' }}
+                  title="Удерживайте для перемещения"
+                >
+                  <GripVertical className="w-3.5 h-3.5" />
+                </div>
+              )
             )}
 
             {/* Pointer Events Wrapper to prevent drag-flicker on inner children */}
@@ -689,7 +838,10 @@ export default function MobileListView({
                   {/* Checkbox button */}
                   <button
                     type="button"
-                    onClick={() => handleToggleCompleted(node)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleCompleted(node);
+                    }}
                     className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 cursor-pointer transition-all ${
                       node.completed
                         ? 'bg-emerald-500 border-emerald-500 text-white'
@@ -733,9 +885,6 @@ export default function MobileListView({
                     ) : (
                       <div 
                         className="text-[12.5px] font-semibold text-slate-800 dark:text-slate-200 cursor-pointer pr-1.5 break-words flex items-center flex-wrap gap-1.5"
-                        onClick={(e) => {
-                          onSelectNode(node.id, e);
-                        }}
                       >
                         <span className={node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal font-sans' : 'font-sans'}>
                           {highlightText(node.text, searchQuery)}
@@ -1758,6 +1907,82 @@ export default function MobileListView({
           </div>
         </div>
       )}
+
+      {/* Floating bulk action selection panel at bottom */}
+      <AnimatePresence>
+        {isMultiSelectMode && selectedNodeIds && selectedNodeIds.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.95 }}
+            className="fixed bottom-16 left-1/2 -translate-x-1/2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-2xl shadow-2xl z-50 flex items-center justify-between gap-4 max-w-[calc(100vw-2rem)] w-auto shrink-0 select-none"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse shrink-0" />
+              <p className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider shrink-0">
+                Выбрано: <strong className="text-slate-800 dark:text-slate-100 font-black">{selectedNodeIds.length}</strong>
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onBulkToggleCompleted) {
+                    onBulkToggleCompleted(true);
+                  }
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Готово</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onBulkToggleCompleted) {
+                    onBulkToggleCompleted(false);
+                  }
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                <Circle className="w-3.5 h-3.5 text-slate-400" />
+                <span>Сбросить</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onBulkDelete) {
+                    onBulkDelete();
+                  }
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-bold bg-rose-500 hover:bg-rose-600 text-white shadow-xs transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Удалить</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onSelectNodes) {
+                    onSelectNodes([]);
+                  }
+                  if (setIsMultiSelectMode) {
+                    setIsMultiSelectMode(false);
+                  }
+                }}
+                className="flex items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                title="Сбросить выделение"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

@@ -1,4 +1,4 @@
-import { Folder, Project, TaskNode, Priority, WorkspaceState, TagCategory } from './types';
+import { Folder, Project, TaskNode, Priority, WorkspaceState, TagCategory, WorkspaceBackup } from './types';
 
 // Helper to generate UUIDs
 export function generateId(): string {
@@ -499,6 +499,98 @@ export function isContainerOverdue(containerNode: TaskNode, allNodes: TaskNode[]
     n.id !== containerNode.id &&
     isNodeOverdue(n)
   );
+}
+
+// Filters task history versions to keep only those from the last 30 days
+export function pruneWorkspaceTaskHistories(state: WorkspaceState): WorkspaceState {
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const updatedNodes = { ...state.nodes };
+  let changed = false;
+
+  Object.keys(updatedNodes).forEach(projectId => {
+    const projectNodes = updatedNodes[projectId] || [];
+    const updatedProjectNodes = projectNodes.map(node => {
+      if (node.history && node.history.length > 0) {
+        const filteredHistory = node.history.filter(version => {
+          try {
+            return new Date(version.timestamp).getTime() > thirtyDaysAgo;
+          } catch {
+            return true; // Keep invalid formats as fallback
+          }
+        });
+        if (filteredHistory.length !== node.history.length) {
+          changed = true;
+          return { ...node, history: filteredHistory };
+        }
+      }
+      return node;
+    });
+
+    if (changed) {
+      updatedNodes[projectId] = updatedProjectNodes;
+    }
+  });
+
+  if (changed) {
+    return { ...state, nodes: updatedNodes };
+  }
+  return state;
+}
+
+// Prunes a single node's version history to keep only versions from the last 30 days
+export function pruneTaskNodeHistory(history: any[] | undefined): any[] {
+  if (!history) return [];
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  return history.filter(v => {
+    try {
+      return new Date(v.timestamp).getTime() > thirtyDaysAgo;
+    } catch {
+      return true; // Keep invalid formats as fallback
+    }
+  });
+}
+
+// Automatically create a daily backup snapshot of the workspace in localStorage
+export function runAutomatedBackup(state: WorkspaceState): void {
+  try {
+    const backupsKey = 'milli_workspace_backups';
+    const rawBackups = localStorage.getItem(backupsKey);
+    let backups: any[] = [];
+    if (rawBackups) {
+      backups = JSON.parse(rawBackups) || [];
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0]; // e.g. "2026-06-27"
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+    // Prune backups/snapshots older than 30 days
+    backups = backups.filter(b => {
+      try {
+        return new Date(b.timestamp).getTime() > thirtyDaysAgo;
+      } catch {
+        return true;
+      }
+    });
+
+    // Check if we already have a backup for today
+    const hasTodayBackup = backups.some(b => b.id === `backup_${todayStr}`);
+    
+    // Create new backup if missing and there is actual data in the workspace
+    const hasData = state.folders.length > 0 || state.projects.length > 0;
+    if (!hasTodayBackup && hasData) {
+      const newBackup = {
+        id: `backup_${todayStr}`,
+        timestamp: new Date().toISOString(),
+        // Clone state to prevent reference issues
+        state: JSON.parse(JSON.stringify(state))
+      };
+      backups.push(newBackup);
+    }
+
+    localStorage.setItem(backupsKey, JSON.stringify(backups));
+  } catch (e) {
+    console.error('Failed to run automated workspace backup:', e);
+  }
 }
 
 

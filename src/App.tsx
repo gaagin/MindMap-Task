@@ -39,10 +39,12 @@ import {
   Clock,
   LayoutGrid,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Shield,
+  Plus
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
-import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime } from './utils';
+import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup } from './utils';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
@@ -67,7 +69,10 @@ import {
   saveToFirebaseDirectly, 
   loadFromFirebaseDirectly, 
   syncWithGoogleSheets, 
-  logDeletion 
+  logDeletion,
+  saveBackupToFirebase,
+  loadBackupsFromFirebase,
+  pruneFirebaseBackups
 } from './lib/syncService';
 import { 
   listGoogleCalendars, 
@@ -443,12 +448,166 @@ export default function App() {
   const [isAutoLoginPopupBlocked, setIsAutoLoginPopupBlocked] = useState(false);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
-  const [syncModalTab, setSyncModalTab] = useState<'sheets' | 'calendar'>('sheets');
+  const [syncModalTab, setSyncModalTab] = useState<'sheets' | 'calendar' | 'backups'>('sheets');
   const [calendars, setCalendars] = useState<any[]>([]);
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>(() => localStorage.getItem('google_calendar_id') || 'primary');
   const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
   const [calendarSyncError, setCalendarSyncError] = useState<string | null>(null);
   const [calendarSyncSuccess, setCalendarSyncSuccess] = useState<string | null>(null);
+  const [backupsList, setBackupsList] = useState<any[]>([]);
+  const [backupRestoreSuccess, setBackupRestoreSuccess] = useState<string | null>(null);
+  const [backupRestoreConfirmId, setBackupRestoreConfirmId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadAndSyncBackups = async () => {
+      try {
+        const raw = localStorage.getItem('milli_workspace_backups');
+        let localBackups = [];
+        if (raw) {
+          localBackups = JSON.parse(raw) || [];
+        }
+
+        let remoteBackups: any[] = [];
+        if (currentUser) {
+          remoteBackups = await loadBackupsFromFirebase(currentUser.uid);
+          // Prune firestore backups older than 30 days
+          await pruneFirebaseBackups(currentUser.uid);
+        }
+
+        // Merge local and remote
+        const mergedMap = new Map<string, any>();
+        // Put remote backups first
+        remoteBackups.forEach((b: any) => {
+          if (b && b.id) {
+            mergedMap.set(b.id, b);
+          }
+        });
+        // Merge local backups
+        localBackups.forEach((b: any) => {
+          if (b && b.id) {
+            mergedMap.set(b.id, b);
+          }
+        });
+
+        let mergedList = Array.from(mergedMap.values());
+
+        // Filter older than 30 days
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        mergedList = mergedList.filter((b: any) => {
+          try {
+            return new Date(b.timestamp).getTime() > thirtyDaysAgo;
+          } catch {
+            return true;
+          }
+        });
+
+        // Sort descending by timestamp
+        mergedList.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        if (!active) return;
+
+        localStorage.setItem('milli_workspace_backups', JSON.stringify(mergedList));
+        setBackupsList(mergedList);
+
+        // Upload any backups that are only local to Firestore
+        if (currentUser) {
+          for (const backup of mergedList) {
+            if (!remoteBackups.some((rb: any) => rb.id === backup.id)) {
+              await saveBackupToFirebase(currentUser.uid, backup);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[Backup Replicator] Error syncing backups:', e);
+        try {
+          const raw = localStorage.getItem('milli_workspace_backups');
+          if (raw) {
+            const parsed = JSON.parse(raw) || [];
+            parsed.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            if (active) setBackupsList(parsed);
+          }
+        } catch {
+          // No-op
+        }
+      }
+    };
+
+    loadAndSyncBackups();
+
+    return () => {
+      active = false;
+    };
+  }, [isSyncMenuOpen, syncModalTab, currentUser]);
+
+  const handleRestoreBackup = async (backup: any) => {
+    try {
+      const restoredState = JSON.parse(JSON.stringify(backup.state));
+      const normalized = normalizeWorkspaceState(restoredState);
+      
+      ignoreNextStateChangeRef.current = true;
+      lastSyncedStateHashRef.current = getSyncHash(normalized);
+      setUnsyncedEditsCount(0);
+      setRawState(normalized);
+      saveWorkspace(normalized);
+
+      setBackupRestoreSuccess(`Данные успешно восстановлены на состояние от ${new Date(backup.timestamp).toLocaleString('ru-RU')}!`);
+      setBackupRestoreConfirmId(null);
+
+      if (currentUser) {
+        setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+        const res = await saveToFirebaseDirectly(currentUser.uid, normalized, sessionStartTimeRef.current);
+        if (res.success) {
+          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+        } else {
+          setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
+          console.error('[Restore Backup] Failed to upload restored state to Firebase:', res.error);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to restore backup:', e);
+    }
+  };
+
+  const handleCreateManualBackup = async () => {
+    try {
+      const backupsKey = 'milli_workspace_backups';
+      const rawBackups = localStorage.getItem(backupsKey);
+      let backups = [];
+      if (rawBackups) {
+        backups = JSON.parse(rawBackups) || [];
+      }
+      
+      const newId = `manual_${Date.now()}`;
+      const newBackup = {
+        id: newId,
+        timestamp: new Date().toISOString(),
+        state: JSON.parse(JSON.stringify(state))
+      };
+      
+      backups.unshift(newBackup);
+      
+      // Prune list to 30 days
+      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      backups = backups.filter((b: any) => {
+        try {
+          return new Date(b.timestamp).getTime() > thirtyDaysAgo;
+        } catch {
+          return true;
+        }
+      });
+      
+      localStorage.setItem(backupsKey, JSON.stringify(backups));
+      setBackupsList(backups);
+      setBackupRestoreSuccess("Точка восстановления успешно создана вручную!");
+
+      if (currentUser) {
+        await saveBackupToFirebase(currentUser.uid, newBackup);
+      }
+    } catch (e) {
+      console.error('Failed to create manual backup:', e);
+    }
+  };
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isMobileViewDropdownOpen, setIsMobileViewDropdownOpen] = useState(false);
   const [syncOnExit, setSyncOnExit] = useState<boolean>(() => {
@@ -1033,6 +1192,17 @@ export default function App() {
     } catch (e) {
       console.error('Failed to log version update:', e);
     }
+  }, []);
+
+  // Run automated 30-day task history pruning and daily backup snapshot on boot
+  useEffect(() => {
+    // 1. Prune task histories older than 30 days
+    setRawState(prevState => {
+      const pruned = pruneWorkspaceTaskHistories(prevState);
+      // 2. Save automated workspace-level daily backup snapshot
+      runAutomatedBackup(pruned);
+      return pruned;
+    });
   }, []);
 
   useEffect(() => {
@@ -4291,6 +4461,16 @@ export default function App() {
                   setFocusedTaskId(taskId);
                   setViewMode('canvas');
                 }}
+                selectedNodeIds={selectedNodeIds}
+                isMultiSelectMode={isMultiSelectMode}
+                onToggleSelectNode={handleToggleSelectNode}
+                onSelectNodes={(ids) => {
+                  setSelectedNodeIds(ids);
+                  setIsMultiSelectMode(ids.length > 0);
+                }}
+                onBulkDelete={handleBulkDelete}
+                onBulkToggleCompleted={handleBulkToggleCompleted}
+                setIsMultiSelectMode={setIsMultiSelectMode}
               />
             ) : viewMode === 'kanban' ? (
               <KanbanView
@@ -4574,7 +4754,7 @@ export default function App() {
                       : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100/50 dark:hover:bg-slate-800'
                   }`}
                 >
-                  📁 Google Таблицы (Задачи)
+                  📁 Google Таблицы
                 </button>
                 <button 
                   type="button"
@@ -4586,6 +4766,17 @@ export default function App() {
                   }`}
                 >
                   📅 Google Календарь
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setSyncModalTab('backups')}
+                  className={`flex-1 py-3 text-center text-xs font-extrabold border-b-2 transition-all cursor-pointer ${
+                    syncModalTab === 'backups' 
+                      ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 font-bold' 
+                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100/50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  🛡️ Восстановление данных
                 </button>
               </div>
 
@@ -5236,6 +5427,147 @@ export default function App() {
                   {isSyncingCalendar && (
                     <div className="text-[10px] text-indigo-500 font-bold animate-pulse">
                       Выполняется синхронизация с Google Календарем... Пожалуйста, подождите.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {syncModalTab === 'backups' && (
+              <div className="space-y-5 animate-in fade-in duration-200">
+                {/* Explainer / Header */}
+                <div className="bg-indigo-50/45 dark:bg-indigo-950/15 border border-indigo-100/50 dark:border-indigo-900/35 p-4 rounded-xl space-y-2">
+                  <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 leading-none text-xs sm:text-sm">
+                    <Shield className="w-4 h-4 text-indigo-500" />
+                    Резервное копирование и автоматическая очистка (30 дней)
+                  </h4>
+                  <p className="text-slate-500 dark:text-slate-400 leading-relaxed font-normal text-[11px]">
+                    Система автоматически создает снимок всего вашего рабочего пространства раз в день при запуске приложения. 
+                    В соответствии с вашей политикой безопасности, <b>все резервные копии и история изменений задач старше 30 дней автоматически удаляются</b> для оптимизации хранилища и защиты данных.
+                  </p>
+                </div>
+
+                {/* Create manual checkpoint */}
+                <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-900/40 border border-slate-150 dark:border-slate-855 rounded-xl">
+                  <div>
+                    <h5 className="font-bold text-slate-700 dark:text-slate-300">Создать копию вручную</h5>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Сохранить текущее состояние экрана прямо сейчас</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCreateManualBackup}
+                    className="py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg cursor-pointer transition-colors shadow-sm flex items-center gap-1 shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Создать снимок
+                  </button>
+                </div>
+
+                {/* Notifications */}
+                {backupRestoreSuccess && (
+                  <div className="bg-emerald-50 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-900 rounded-xl p-3.5 text-xs text-emerald-700 dark:text-emerald-400 font-bold flex items-center justify-between gap-2 animate-in fade-in duration-150">
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>{backupRestoreSuccess}</span>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => setBackupRestoreSuccess(null)}
+                      className="text-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-350 font-bold text-[10px] uppercase cursor-pointer"
+                    >
+                      Ок
+                    </button>
+                  </div>
+                )}
+
+                {/* Backups List */}
+                <div className="space-y-3">
+                  <h4 className="font-bold text-slate-550 dark:text-slate-450 text-[10px] tracking-wider uppercase">
+                    Доступные снимки и резервные копии ({backupsList.length})
+                  </h4>
+
+                  {backupsList.length === 0 ? (
+                    <div className="border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-8 text-center text-slate-400 dark:text-slate-500 italic">
+                      Нет доступных резервных копий. Резервная копия создастся автоматически при дальнейших изменениях.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                      {backupsList.map((b) => {
+                        const date = new Date(b.timestamp);
+                        const isManual = b.id.startsWith('manual');
+                        const foldersCount = b.state?.folders?.length || 0;
+                        const projectsCount = b.state?.projects?.length || 0;
+                        const tasksCount = Object.values(b.state?.nodes || {}).reduce(
+                          (acc: number, list: any) => acc + (Array.isArray(list) ? list.length : 0), 0
+                        );
+
+                        return (
+                          <div 
+                            key={b.id} 
+                            className="p-3.5 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700 rounded-xl flex items-center justify-between gap-4 transition-all"
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
+                                  {date.toLocaleString('ru-RU', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                                <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-md ${
+                                  isManual 
+                                    ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30' 
+                                    : 'bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/30'
+                                }`}>
+                                  {isManual ? 'Вручную' : 'Авто'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                                <span>📁 Папок: <b>{foldersCount}</b></span>
+                                <span>📂 Проектов: <b>{projectsCount}</b></span>
+                                <span>📝 Задач: <b>{tasksCount}</b></span>
+                              </div>
+                            </div>
+
+                            <div className="shrink-0">
+                              {backupRestoreConfirmId === b.id ? (
+                                <div className="flex items-center gap-1.5 bg-rose-50/50 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/20 p-1.5 rounded-lg animate-in slide-in-from-right-2 duration-150">
+                                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-450 px-1">Восстановить?</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRestoreBackup(b)}
+                                    className="py-1 px-2.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] rounded cursor-pointer transition-colors"
+                                  >
+                                    Да
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setBackupRestoreConfirmId(null)}
+                                    className="py-1 px-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold text-[10px] rounded cursor-pointer transition-colors"
+                                  >
+                                    Нет
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBackupRestoreConfirmId(b.id);
+                                    setBackupRestoreSuccess(null);
+                                  }}
+                                  className="py-1.5 px-3 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 text-indigo-600 dark:text-indigo-400 font-extrabold text-xs rounded-lg cursor-pointer transition-all flex items-center gap-1"
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                  Восстановить
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
