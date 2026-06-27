@@ -119,10 +119,142 @@ export default function CalendarView({
     return '';
   };
   const [calendarSubMode, setCalendarSubMode] = useState<'month' | 'week' | 'day'>('month');
+  const [layoutType, setLayoutType] = useState<'grid' | 'list'>('grid');
   const [showFilter, setShowFilter] = useState(false);
   const [calendarSearchQuery, setCalendarSearchQuery] = useState('');
   
   const [activeDayAddInput, setActiveDayAddInput] = useState<string | null>(null); // ISO string 'YYYY-MM-DD'
+
+  const HOUR_HEIGHT = 60;
+
+  const timeToMinutes = (timeStr: string): number => {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    if (parts.length < 2) return 0;
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (isNaN(h) || isNaN(m)) return 0;
+    return h * 60 + m;
+  };
+
+  const minutesToTime = (mins: number): string => {
+    const h = Math.floor(mins / 60) % 24;
+    const m = mins % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  interface TimedTaskBlock {
+    task: TaskNode;
+    top: number;
+    height: number;
+    startMin: number;
+    endMin: number;
+    left?: string;
+    width?: string;
+  }
+
+  const computeBlocksForTasks = (timedTasks: TaskNode[]): TimedTaskBlock[] => {
+    const blocks: TimedTaskBlock[] = timedTasks.map(task => {
+      const startStr = task.startTime || task.dueTime || "09:00";
+      let endStr = task.dueTime || task.startTime || "10:00";
+      
+      if (task.startTime && !task.dueTime) {
+        const startMin = timeToMinutes(task.startTime);
+        endStr = minutesToTime(startMin + 60);
+      }
+      if (task.dueTime && !task.startTime) {
+        const endMin = timeToMinutes(task.dueTime);
+        const startMin = Math.max(0, endMin - 60);
+        return {
+          task,
+          top: (startMin / 60) * HOUR_HEIGHT,
+          height: HOUR_HEIGHT,
+          startMin,
+          endMin
+        };
+      }
+      
+      let startMin = timeToMinutes(startStr);
+      let endMin = timeToMinutes(endStr);
+      
+      if (endMin <= startMin) {
+        endMin = startMin + 60;
+      }
+      
+      const top = (startMin / 60) * HOUR_HEIGHT;
+      const height = ((endMin - startMin) / 60) * HOUR_HEIGHT;
+      
+      return {
+        task,
+        top,
+        height,
+        startMin,
+        endMin
+      };
+    });
+
+    const groups: TimedTaskBlock[][] = [];
+    blocks.forEach(block => {
+      let placed = false;
+      for (const group of groups) {
+        const overlaps = group.some(gBlock => 
+          block.startMin < gBlock.endMin && block.endMin > gBlock.startMin
+        );
+        if (overlaps) {
+          group.push(block);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        groups.push([block]);
+      }
+    });
+
+    groups.forEach(group => {
+      group.sort((a, b) => a.startMin - b.startMin);
+      
+      const columns: TimedTaskBlock[][] = [];
+      group.forEach(block => {
+        let colIdx = 0;
+        while (colIdx < columns.length) {
+          const lastInCol = columns[colIdx][columns[colIdx].length - 1];
+          if (block.startMin >= lastInCol.endMin) {
+            break;
+          }
+          colIdx++;
+        }
+        if (colIdx === columns.length) {
+          columns.push([block]);
+        } else {
+          columns[colIdx].push(block);
+        }
+        (block as any).colIdx = colIdx;
+      });
+      
+      const totalCols = columns.length;
+      group.forEach(block => {
+        const colIdx = (block as any).colIdx;
+        block.width = `${100 / totalCols}%`;
+        block.left = `${(colIdx * 100) / totalCols}%`;
+      });
+    });
+
+    return blocks;
+  };
+
+  useEffect(() => {
+    if (layoutType === 'grid') {
+      const dailyScroll = document.getElementById('daily-time-blocking-scroll');
+      if (dailyScroll) {
+        dailyScroll.scrollTop = 7 * HOUR_HEIGHT; // Scroll to 07:00
+      }
+      const weeklyScroll = document.getElementById('weekly-time-blocking-scroll');
+      if (weeklyScroll) {
+        weeklyScroll.scrollTop = 7 * HOUR_HEIGHT; // Scroll to 07:00
+      }
+    }
+  }, [calendarSubMode, layoutType]);
   const [newDayTaskText, setNewDayTaskText] = useState('');
   const [activeHourAddInput, setActiveHourAddInput] = useState<string | null>(null); // e.g. '09:00'
   const [newHourTaskText, setNewHourTaskText] = useState('');
@@ -648,6 +780,34 @@ export default function CalendarView({
                 </button>
               </div>
 
+              {/* Switch layout type for Day/Week modes */}
+              {(calendarSubMode === 'day' || calendarSubMode === 'week') && (
+                <div className="flex bg-slate-100/95 dark:bg-slate-800/80 rounded-lg p-0.5 border border-slate-200/60 dark:border-slate-705 shrink-0 select-none animate-fade-in">
+                  <button
+                    type="button"
+                    onClick={() => setLayoutType('grid')}
+                    className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-all cursor-pointer ${
+                      layoutType === 'grid'
+                        ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-3xs border border-slate-200/30'
+                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Блочный вид
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLayoutType('list')}
+                    className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-all cursor-pointer ${
+                      layoutType === 'list'
+                        ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-3xs border border-slate-200/30'
+                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Список
+                  </button>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={setToday}
@@ -889,71 +1049,938 @@ export default function CalendarView({
 
               {/* 2. Weekly Layout Mode */}
               {calendarSubMode === 'week' && (
-                <div id="calendar-week-scroll-container" className="flex-1 grid grid-cols-7 gap-3 h-full overflow-y-auto pr-1 custom-scrollbar">
-                  {weeklySlots.map((slot) => {
-                    const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
-                    const isDragOver = draggedOverDate === slot.dateString;
+                layoutType === 'list' ? (
+                  <div id="calendar-week-scroll-container" className="flex-1 grid grid-cols-7 gap-3 h-full overflow-y-auto pr-1 custom-scrollbar">
+                    {weeklySlots.map((slot) => {
+                      const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
+                      const isDragOver = draggedOverDate === slot.dateString;
 
-                    return (
-                      <div
-                        key={slot.dateString}
+                      return (
+                        <div
+                          key={slot.dateString}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDragEnter={() => setDraggedOverDate(slot.dateString)}
+                          onDragLeave={() => {
+                            if (draggedOverDate === slot.dateString) {
+                              setDraggedOverDate(null);
+                            }
+                          }}
+                          onDrop={(e) => {
+                            const taskId = e.dataTransfer.getData('text/plain');
+                            handleTaskDrop(taskId, slot.dateString);
+                          }}
+                          onClick={(e) => {
+                            const target = e.target as HTMLElement;
+                            if (target.closest('[draggable="true"]') || target.closest('button') || target.closest('.task-item')) {
+                              return;
+                            }
+                            setActiveDayAddInput(slot.dateString);
+                            setNewDayTaskText('');
+                          }}
+                          className={`min-h-[440px] border rounded-2xl p-3 flex flex-col justify-start transition-all duration-200 group relative bg-white dark:bg-slate-900 cursor-pointer ${
+                            slot.isToday 
+                              ? 'border-indigo-400 ring-2 ring-indigo-500/10' 
+                              : 'border-slate-150 dark:border-slate-800'
+                          } ${
+                            isDragOver ? 'ring-2 ring-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/20 border-indigo-505 scale-[1.01]' : ''
+                          }`}
+                        >
+                          {/* Day Header */}
+                          <div className="flex items-center justify-between mb-3 shrink-0 select-none pb-2 border-b border-slate-100 dark:border-slate-800">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-505 tracking-wider">
+                                {slot.dayName}
+                              </span>
+                              <span className={`text-base font-extrabold ${
+                                slot.isToday ? 'text-indigo-650 dark:text-indigo-400' : 'text-slate-705 dark:text-slate-205'
+                              }`}>
+                                {slot.dayNumber}
+                              </span>
+                            </div>
+
+                            {/* Inline plus button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveDayAddInput(activeDayAddInput === slot.dateString ? null : slot.dateString);
+                                setNewDayTaskText('');
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded-md transition-all cursor-pointer"
+                              title="Создать задачу"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Day Tasks List */}
+                          <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
+                            {dayTasks.map(task => (
+                              <div
+                                key={task.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectNode(task.id, e);
+                                }}
+                                draggable={true}
+                                onDragStart={(e) => {
+                                  e.stopPropagation();
+                                  e.dataTransfer.setData('text/plain', task.id);
+                                  setDraggingTaskId(task.id);
+                                }}
+                                onDragEnd={(e) => {
+                                  e.stopPropagation();
+                                  setDraggingTaskId(null);
+                                }}
+                                className={`task-item group/task border text-[11px] leading-snug p-2 rounded-xl flex items-start gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative ${getPriorityColor(task.priority)} ${
+                                  draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-350' : ''
+                                }`}
+                              >
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onUpdateNode({
+                                      ...task,
+                                      completed: !task.completed
+                                    });
+                                  }}
+                                  className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform duration-100 shrink-0 ${
+                                    task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
+                                  }`}
+                                >
+                                  {task.completed ? (
+                                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                  ) : activePomodoroNodeId === task.id ? (
+                                    <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                                      <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                                      <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                    </span>
+                                  ) : (
+                                    <Circle className="w-3.5 h-3.5 shrink-0" />
+                                  )}
+                                </button>
+                                <div className="flex-1 flex flex-col min-w-0">
+                                  <span className={`truncate font-semibold ${task.completed ? 'line-through opacity-55' : 'text-slate-850 dark:text-slate-100'}`}>
+                                    {task.text}
+                                  </span>
+                                  {(task.startTime || task.dueTime) && (
+                                    <div className="flex items-center gap-1 text-[9px] text-indigo-650 dark:text-indigo-400 mt-0.5 font-bold font-mono">
+                                      <span>🕒 {formatTaskTime(task)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Inline custom task input */}
+                            {activeDayAddInput === slot.dateString && (
+                              <div 
+                                className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/50"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  placeholder="Новая задача..."
+                                  value={newDayTaskText}
+                                  onChange={(e) => setNewDayTaskText(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    e.stopPropagation();
+                                    if (e.key === 'Enter') handleAddDayTaskSubmit(slot.dateString);
+                                    if (e.key === 'Escape') setActiveDayAddInput(null);
+                                  }}
+                                  className="w-full text-xs p-1.5 bg-white dark:bg-slate-900 text-slate-850 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500"
+                                />
+                                <div className="flex gap-1 mt-1.5 justify-end">
+                                  <button
+                                    onClick={() => setActiveDayAddInput(null)}
+                                    className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 px-2 py-0.5 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+                                  >
+                                    Отмена
+                                  </button>
+                                  <button
+                                    onClick={() => handleAddDayTaskSubmit(slot.dateString)}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer"
+                                  >
+                                    Да
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div id="weekly-time-blocking-scroll" className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-805 p-4 shadow-xs font-sans">
+                    {/* Sticky Day Headers */}
+                    <div className="flex border-b border-slate-200 dark:border-slate-800 pb-2 mb-1 shrink-0 select-none">
+                      <div className="w-12 shrink-0"></div>
+                      <div className="flex-1 grid grid-cols-7 gap-1">
+                        {weeklySlots.map((slot) => (
+                          <div key={slot.dateString} className="flex flex-col items-center py-1">
+                            <span className="text-[9px] uppercase font-bold text-slate-400 dark:text-slate-550 tracking-wider">
+                              {slot.dayName}
+                            </span>
+                            <span className={`text-xs font-extrabold flex items-center justify-center w-6 h-6 rounded-full ${
+                              slot.isToday 
+                                ? 'bg-indigo-600 text-white shadow-3xs' 
+                                : 'text-slate-700 dark:text-slate-200'
+                            }`}>
+                              {slot.dayNumber}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Scrollable area */}
+                    <div className="flex-1 overflow-y-auto relative custom-scrollbar flex min-h-0" style={{ height: '480px' }}>
+                      {/* Hour markers background and labels */}
+                      <div className="w-12 shrink-0 flex flex-col relative select-none">
+                        {Array.from({ length: 24 }).map((_, h) => (
+                          <div key={h} className="h-[60px] border-b border-slate-100/35 dark:border-slate-800/25 flex justify-end pr-2 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-semibold pt-1">
+                            {String(h).padStart(2, '0')}:00
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 7 columns for days */}
+                      <div className="flex-1 grid grid-cols-7 gap-1 relative border-l border-slate-150 dark:border-slate-800">
+                        {weeklySlots.map((slot) => {
+                          const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
+                          const timedTasks = dayTasks.filter(task => task.startTime || task.dueTime);
+                          const timedBlocks = computeBlocksForTasks(timedTasks);
+                          const isDragOver = draggedOverDate === slot.dateString;
+
+                          return (
+                            <div
+                              key={slot.dateString}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDragEnter={() => setDraggedOverDate(slot.dateString)}
+                              onDragLeave={() => {
+                                if (draggedOverDate === slot.dateString) {
+                                  setDraggedOverDate(null);
+                                }
+                              }}
+                              onDrop={(e) => {
+                                const taskId = e.dataTransfer.getData('text/plain');
+                                if (taskId) {
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const dropY = e.clientY - rect.top;
+                                  const hourVal = Math.max(0, Math.min(23, Math.floor(dropY / 60)));
+                                  const timeStr = `${String(hourVal).padStart(2, '0')}:00`;
+                                  
+                                  const taskToDrop = scheduledTasks.find(t => t.id === taskId);
+                                  if (taskToDrop) {
+                                    onUpdateNode({
+                                      ...taskToDrop,
+                                      dueDate: slot.dateString,
+                                      startTime: timeStr,
+                                      dueTime: undefined
+                                    });
+                                  }
+                                }
+                                setDraggedOverDate(null);
+                              }}
+                              onClick={(e) => {
+                                const target = e.target as HTMLElement;
+                                if (target.closest('[draggable="true"]') || target.closest('button')) {
+                                  return;
+                                }
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const clickY = e.clientY - rect.top;
+                                const hourVal = Math.max(0, Math.min(23, Math.floor(clickY / 60)));
+                                const timeStr = `${String(hourVal).padStart(2, '0')}:00`;
+                                setActiveHourAddInput(`${slot.dateString}-${timeStr}`);
+                                setNewHourTaskText('');
+                              }}
+                              className={`h-[1440px] relative border-r border-slate-100 dark:border-slate-800 transition-colors duration-150 cursor-pointer ${
+                                slot.isToday ? 'bg-indigo-50/5 dark:bg-indigo-950/5' : ''
+                              } ${
+                                isDragOver ? 'bg-indigo-50/25 dark:bg-indigo-950/15' : ''
+                              }`}
+                            >
+                              {/* Horizontal hour helper lines */}
+                              {Array.from({ length: 24 }).map((_, h) => (
+                                <div key={h} className="absolute left-0 right-0 border-b border-slate-100/70 dark:border-slate-800/30" style={{ top: `${h * 60}px`, height: '60px' }}></div>
+                              ))}
+
+                              {/* Timed task blocks */}
+                              {timedBlocks.map(({ task, top, height, left, width }) => (
+                                <div
+                                  key={task.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectNode(task.id, e);
+                                  }}
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.setData('text/plain', task.id);
+                                    setDraggingTaskId(task.id);
+                                  }}
+                                  onDragEnd={(e) => {
+                                    e.stopPropagation();
+                                    setDraggingTaskId(null);
+                                  }}
+                                  className={`absolute rounded-xl p-1.5 border text-[10px] leading-tight cursor-grab active:cursor-grabbing transition-all hover:brightness-95 hover:shadow-xs group/task flex flex-col justify-between overflow-hidden shadow-3xs ${getPillStyles(task)} ${
+                                    draggingTaskId === task.id ? 'opacity-30 border-dashed border-indigo-300' : ''
+                                  }`}
+                                  style={{
+                                    top: `${top}px`,
+                                    height: `${Math.max(26, height)}px`,
+                                    left: left || '0%',
+                                    width: width || '100%',
+                                    zIndex: 10
+                                  }}
+                                  title={`${task.text} (${formatTaskTime(task)})`}
+                                >
+                                  <div className="flex flex-col min-w-0 flex-1">
+                                    <div className="flex items-start gap-1 font-semibold truncate leading-tight">
+                                      <span>{getTaskIcon(task)}</span>
+                                      <span className={task.completed ? 'line-through opacity-55' : ''}>{task.text}</span>
+                                    </div>
+                                    {height >= 40 && (
+                                      <span className="text-[8px] font-mono font-bold mt-0.5 opacity-80">
+                                        {formatTaskTime(task)}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center justify-between mt-1 shrink-0">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onUpdateNode({
+                                          ...task,
+                                          completed: !task.completed
+                                        });
+                                      }}
+                                      className="text-slate-400 hover:text-indigo-650 transition-colors p-0.5 rounded"
+                                    >
+                                      {task.completed ? (
+                                        <CheckCircle2 className="w-3 h-3 text-indigo-500" />
+                                      ) : (
+                                        <Circle className="w-3 h-3" />
+                                      )}
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onUpdateNode({
+                                          ...task,
+                                          startTime: undefined,
+                                          dueTime: undefined
+                                        });
+                                      }}
+                                      className="opacity-0 group-hover/task:opacity-100 hover:text-rose-500 text-[8px] px-1 bg-white/40 dark:bg-slate-800/40 rounded transition-opacity"
+                                      title="Убрать время"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+
+                              {/* Inline add input overlay */}
+                              {activeHourAddInput && activeHourAddInput.startsWith(`${slot.dateString}-`) && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/50 rounded-xl p-2 shadow-lg z-20 w-[120px]"
+                                  style={{
+                                    top: `${Math.max(10, Math.min(1300, parseInt(activeHourAddInput.split('-')[3].split(':')[0], 10) * 60))}px`,
+                                    left: '50%',
+                                    transform: 'translateX(-50%)'
+                                  }}
+                                >
+                                  <input
+                                    type="text"
+                                    autoFocus
+                                    placeholder="Задача..."
+                                    value={newHourTaskText}
+                                    onChange={(e) => setNewHourTaskText(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        const hourStr = activeHourAddInput.split('-')[3];
+                                        handleAddDayTaskSubmit(slot.dateString, hourStr);
+                                        setActiveHourAddInput(null);
+                                      }
+                                      if (e.key === 'Escape') setActiveHourAddInput(null);
+                                    }}
+                                    className="w-full text-[10px] p-1 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded border border-slate-200 outline-none focus:border-indigo-500 font-medium"
+                                  />
+                                  <div className="flex gap-1 mt-1.5 justify-end">
+                                    <button
+                                      onClick={() => setActiveHourAddInput(null)}
+                                      className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-[8px] px-1 py-0.5 rounded font-bold"
+                                    >
+                                      Отмена
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const hourStr = activeHourAddInput.split('-')[3];
+                                        handleAddDayTaskSubmit(slot.dateString, hourStr);
+                                        setActiveHourAddInput(null);
+                                      }}
+                                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-[8px] px-1 py-0.5 rounded font-bold"
+                                    >
+                                      Ок
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              )}
+
+              {/* 3. Daily Hourly Layout Mode */}
+              {calendarSubMode === 'day' && (
+                layoutType === 'list' ? (
+                  <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-805 p-4 shadow-xs font-sans">
+                    {/* All day tasks card - Click to add */}
+                    <div 
+                      onClick={() => {
+                        setActiveDayAddInput(currentDateStr);
+                        setNewDayTaskText('');
+                      }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
+                      onDragLeave={() => {
+                        if (draggedOverDate === `allday-${currentDateStr}`) {
+                          setDraggedOverDate(null);
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.stopPropagation();
+                        const taskId = e.dataTransfer.getData('text/plain');
+                        if (taskId) {
+                          handleTaskDropToHour(taskId, currentDateStr, null);
+                        }
+                      }}
+                      className={`mb-4 p-4 rounded-2xl border transition-all group/allday cursor-pointer ${
+                        draggedOverDate === `allday-${currentDateStr}`
+                          ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20'
+                          : 'border-slate-100 dark:border-slate-800 bg-slate-50/45 dark:bg-slate-950/20 hover:border-indigo-300 dark:hover:border-indigo-900 hover:bg-indigo-50/5 dark:hover:bg-indigo-950/5'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-slate-550 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                          <span>📌</span> Задача на весь день
+                        </span>
+                        <span className="text-[11px] text-slate-400 group-hover/allday:text-indigo-650 dark:group-hover/allday:text-indigo-400 font-bold transition-all">
+                          Кликните, чтобы добавить
+                        </span>
+                      </div>
+
+                      {/* Inline list of all-day tasks */}
+                      {(() => {
+                        const allDayTasks = scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.dueTime);
+                        if (allDayTasks.length > 0) {
+                          return (
+                            <div className="flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
+                              {allDayTasks.map(task => (
+                                <div
+                                  key={task.id}
+                                  onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSelectNode(task.id, e);
+                                  }}
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.setData('text/plain', task.id);
+                                    setDraggingTaskId(task.id);
+                                  }}
+                                  onDragEnd={(e) => {
+                                    e.stopPropagation();
+                                    setDraggingTaskId(null);
+                                  }}
+                                  className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative cursor-grab active:cursor-grabbing ${getPriorityColor(task.priority)} ${
+                                    draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
+                                  }`}
+                                >
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onUpdateNode({
+                                        ...task,
+                                        completed: !task.completed
+                                      });
+                                    }}
+                                    className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0 ${
+                                      task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
+                                    }`}
+                                  >
+                                    {task.completed ? (
+                                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                    ) : activePomodoroNodeId === task.id ? (
+                                      <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                                        <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                                        <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                      </span>
+                                    ) : (
+                                      <Circle className="w-3.5 h-3.5 shrink-0" />
+                                    )}
+                                  </button>
+                                  <div className="flex flex-col min-w-0 font-sans">
+                                    <span className={`font-semibold truncate max-w-[150px] ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-205'}`}>
+                                      {task.text}
+                                    </span>
+                                    <span className="text-[8px] font-bold text-indigo-600 dark:text-indigo-400 font-mono mt-0.5 flex items-center gap-0.5">
+                                      📅 {task.dueDate ? task.dueDate.split('-').reverse().join('.') : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      {/* Inline add for All Day tasks */}
+                      {activeDayAddInput === currentDateStr && (
+                        <div 
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-2.5 max-w-sm p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md"
+                        >
+                          <input
+                            type="text"
+                            autoFocus
+                            placeholder="Какую задачу запланировать на этот день?"
+                            value={newDayTaskText}
+                            onChange={(e) => setNewDayTaskText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr);
+                              if (e.key === 'Escape') setActiveDayAddInput(null);
+                            }}
+                            className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
+                          />
+                          <div className="flex gap-1.5 mt-2 justify-end">
+                            <button
+                              onClick={() => setActiveDayAddInput(null)}
+                              className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
+                            >
+                              Отмена
+                            </button>
+                            <button
+                              onClick={() => handleAddDayTaskSubmit(currentDateStr)}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
+                            >
+                              Добавить
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Scrollable Hourly Timeline list */}
+                    <div id="calendar-day-scroll-container" className="flex-1 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar animate-fade-in">
+                      {HOURS.map((hour) => {
+                        const isDragOver = draggedOverDate === `hour-${hour}`;
+
+                        return (
+                          <div 
+                            key={hour}
+                            onClick={(e) => {
+                              const target = e.target as HTMLElement;
+                              if (target.closest('[draggable="true"]') || target.closest('button') || target.closest('.task-item')) {
+                                return;
+                              }
+                              setActiveHourAddInput(hour);
+                              setNewHourTaskText('');
+                            }}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDragEnter={() => setDraggedOverDate(`hour-${hour}`)}
+                            onDragLeave={() => {
+                              if (draggedOverDate === `hour-${hour}`) {
+                                setDraggedOverDate(null);
+                              }
+                            }}
+                            onDrop={(e) => {
+                              const taskId = e.dataTransfer.getData('text/plain');
+                              if (taskId) {
+                                handleTaskDropToHour(taskId, currentDateStr, hour);
+                              }
+                            }}
+                            className={`flex items-stretch border-b border-dashed border-slate-100 dark:border-slate-800 min-h-[58px] transition-all duration-150 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/20 group/row ${
+                              isDragOver ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''
+                            }`}
+                          >
+                            {/* Hour column */}
+                            <div className="w-16 flex items-center justify-center shrink-0 border-r border-slate-100 dark:border-slate-800 pr-3 text-right">
+                              <span className="font-mono text-xs font-bold text-slate-400 dark:text-slate-500">
+                                {hour}
+                              </span>
+                            </div>
+
+                            {/* Content area */}
+                            <div className="flex-1 flex flex-wrap gap-2 items-center px-4 py-1.5 relative">
+                              {/* Render hour tasks or inline box */}
+                              {(() => {
+                                const hourTasks = scheduledTasks.filter(task => {
+                                  if (task.dueDate !== currentDateStr) return false;
+                                  const timeStr = task.dueTime || task.startTime;
+                                  if (!timeStr) return false;
+                                  
+                                  const parts = timeStr.split(':');
+                                  if (parts.length === 0) return false;
+                                  const taskHourVal = parseInt(parts[0], 10);
+                                  if (isNaN(taskHourVal)) return false;
+                                  
+                                  const rowHourVal = parseInt(hour.split(':')[0], 10);
+                                  if (isNaN(rowHourVal)) return false;
+
+                                  if (rowHourVal === 7) {
+                                    return taskHourVal <= 7;
+                                  }
+                                  if (rowHourVal === 22) {
+                                    return taskHourVal >= 22;
+                                  }
+                                  return taskHourVal === rowHourVal;
+                                });
+                                if (hourTasks.length > 0) {
+                                  return (
+                                    <div className="flex flex-wrap gap-2 items-center flex-1" onClick={(e) => e.stopPropagation()}>
+                                      {hourTasks.map(task => (
+                                        <div
+                                          key={task.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onSelectNode(task.id, e);
+                                          }}
+                                          draggable={true}
+                                          onDragStart={(e) => {
+                                            e.stopPropagation();
+                                            e.dataTransfer.setData('text/plain', task.id);
+                                            setDraggingTaskId(task.id);
+                                          }}
+                                          onDragEnd={(e) => {
+                                            e.stopPropagation();
+                                            setDraggingTaskId(null);
+                                          }}
+                                          className={`group/task border text-[11px] leading-snug py-1.5 px-2.5 rounded-xl flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative shadow-xs shrink-0 max-w-[240px] ${getPriorityColor(task.priority)} ${
+                                            draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
+                                          }`}
+                                        >
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              onUpdateNode({
+                                                ...task,
+                                                completed: !task.completed
+                                              });
+                                            }}
+                                            className="text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0"
+                                          >
+                                            {task.completed ? (
+                                              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                            ) : activePomodoroNodeId === task.id ? (
+                                              <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                                                <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                                                <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                              </span>
+                                            ) : (
+                                              <Circle className="w-3.5 h-3.5 shrink-0" />
+                                            )}
+                                          </button>
+                                          <div className="flex flex-col min-w-0 flex-1">
+                                            <span className={`font-semibold truncate ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-100'}`}>
+                                              {task.text}
+                                            </span>
+                                            <span className="text-[8.5px] font-bold text-indigo-600 dark:text-indigo-400 font-mono mt-0.5 flex items-center gap-1">
+                                              <span>🕒 {task.dueTime || task.startTime}</span>
+                                              {task.dueDate && <span className="text-slate-400">({task.dueDate.split('-').reverse().slice(0, 2).join('.')})</span>}
+                                            </span>
+                                          </div>
+                                          {/* Quick cross to remove hour */}
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              onUpdateNode({
+                                                ...task,
+                                                dueTime: undefined,
+                                                startTime: undefined
+                                              });
+                                            }}
+                                            className="opacity-0 group-hover/task:opacity-100 ml-1 hover:text-rose-500 text-[10px] font-bold bg-slate-100/40 dark:bg-slate-800/20 px-1 rounded cursor-pointer"
+                                            title="Убрать время"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      ))}
+                                      {/* Plus icon to add another task */}
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveHourAddInput(hour);
+                                          setNewHourTaskText('');
+                                        }}
+                                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer"
+                                        title="Добавить еще задачу"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                if (activeHourAddInput === hour) {
+                                  return (
+                                    <div 
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="p-1 px-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/45 flex items-center gap-2 max-w-sm flex-1"
+                                    >
+                                      <input
+                                        type="text"
+                                        autoFocus
+                                        placeholder={`Задача на ${hour}...`}
+                                        value={newHourTaskText}
+                                        onChange={(e) => setNewHourTaskText(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr, hour);
+                                          if (e.key === 'Escape') setActiveHourAddInput(null);
+                                        }}
+                                        className="flex-1 text-xs px-2 py-0.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
+                                      />
+                                      <button
+                                        onClick={() => handleAddDayTaskSubmit(currentDateStr, hour)}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-2 py-0.5 text-[10px] font-bold cursor-pointer"
+                                      >
+                                        Ок
+                                      </button>
+                                      <button
+                                        onClick={() => setActiveHourAddInput(null)}
+                                        className="text-slate-400 hover:text-slate-600 text-[10px]"
+                                      >
+                                        Отмена
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div className="text-[11px] text-slate-300 dark:text-slate-700 italic group-hover/row:text-indigo-400 transition-colors">
+                                    Кликните, чтобы добавить задачу на {hour}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-805 p-4 shadow-xs font-sans">
+                    {/* All day tasks card */}
+                    <div 
+                      onClick={() => {
+                        setActiveDayAddInput(currentDateStr);
+                        setNewDayTaskText('');
+                      }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
+                      onDragLeave={() => {
+                        if (draggedOverDate === `allday-${currentDateStr}`) {
+                          setDraggedOverDate(null);
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.stopPropagation();
+                        const taskId = e.dataTransfer.getData('text/plain');
+                        if (taskId) {
+                          handleTaskDropToHour(taskId, currentDateStr, null);
+                        }
+                      }}
+                      className={`mb-4 p-4 rounded-2xl border transition-all group/allday cursor-pointer ${
+                        draggedOverDate === `allday-${currentDateStr}`
+                          ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20'
+                          : 'border-slate-100 dark:border-slate-800 bg-slate-50/45 dark:bg-slate-950/20 hover:border-indigo-300 dark:hover:border-indigo-900 hover:bg-indigo-50/5 dark:hover:bg-indigo-950/5'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-slate-550 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                          <span>📌</span> Задача на весь день
+                        </span>
+                        <span className="text-[11px] text-slate-400 group-hover/allday:text-indigo-650 dark:group-hover/allday:text-indigo-400 font-bold transition-all">
+                          Кликните, чтобы добавить
+                        </span>
+                      </div>
+
+                      {/* Inline list of all-day tasks */}
+                      {(() => {
+                        const allDayTasks = scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.dueTime);
+                        if (allDayTasks.length > 0) {
+                          return (
+                            <div className="flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
+                              {allDayTasks.map(task => (
+                                <div
+                                  key={task.id}
+                                  onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSelectNode(task.id, e);
+                                  }}
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.setData('text/plain', task.id);
+                                    setDraggingTaskId(task.id);
+                                  }}
+                                  onDragEnd={(e) => {
+                                    e.stopPropagation();
+                                    setDraggingTaskId(null);
+                                  }}
+                                  className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative cursor-grab active:cursor-grabbing ${getPriorityColor(task.priority)} ${
+                                    draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
+                                  }`}
+                                >
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onUpdateNode({
+                                        ...task,
+                                        completed: !task.completed
+                                      });
+                                    }}
+                                    className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0 ${
+                                      task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
+                                    }`}
+                                  >
+                                    {task.completed ? (
+                                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                    ) : activePomodoroNodeId === task.id ? (
+                                      <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                                        <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                                        <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                      </span>
+                                    ) : (
+                                      <Circle className="w-3.5 h-3.5 shrink-0" />
+                                    )}
+                                  </button>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className={`font-semibold truncate max-w-[150px] ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-205'}`}>
+                                      {task.text}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      {/* Inline add for All Day tasks */}
+                      {activeDayAddInput === currentDateStr && (
+                        <div 
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-2.5 max-w-sm p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md"
+                        >
+                          <input
+                            type="text"
+                            autoFocus
+                            placeholder="Какую задачу запланировать на этот день?"
+                            value={newDayTaskText}
+                            onChange={(e) => setNewDayTaskText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr);
+                              if (e.key === 'Escape') setActiveDayAddInput(null);
+                            }}
+                            className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
+                          />
+                          <div className="flex gap-1.5 mt-2 justify-end">
+                            <button
+                              onClick={() => setActiveDayAddInput(null)}
+                              className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
+                            >
+                              Отмена
+                            </button>
+                            <button
+                              onClick={() => handleAddDayTaskSubmit(currentDateStr)}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
+                            >
+                              Добавить
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Scrollable Time blocking timeline */}
+                    <div id="daily-time-blocking-scroll" className="flex-1 overflow-y-auto relative custom-scrollbar flex min-h-0" style={{ height: '480px' }}>
+                      {/* Hour indicators labels */}
+                      <div className="w-16 shrink-0 flex flex-col relative select-none pr-3">
+                        {Array.from({ length: 24 }).map((_, h) => (
+                          <div key={h} className="h-[60px] border-b border-slate-100/35 dark:border-slate-800/25 flex justify-end text-[10px] text-slate-400 dark:text-slate-500 font-mono font-semibold pt-1">
+                            {String(h).padStart(2, '0')}:00
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Content column with time blocks */}
+                      <div 
                         onDragOver={(e) => e.preventDefault()}
-                        onDragEnter={() => setDraggedOverDate(slot.dateString)}
+                        onDragEnter={() => setDraggedOverDate(currentDateStr)}
                         onDragLeave={() => {
-                          if (draggedOverDate === slot.dateString) {
+                          if (draggedOverDate === currentDateStr) {
                             setDraggedOverDate(null);
                           }
                         }}
                         onDrop={(e) => {
                           const taskId = e.dataTransfer.getData('text/plain');
-                          handleTaskDrop(taskId, slot.dateString);
+                          if (taskId) {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const dropY = e.clientY - rect.top;
+                            const hourVal = Math.max(0, Math.min(23, Math.floor(dropY / 60)));
+                            const timeStr = `${String(hourVal).padStart(2, '0')}:00`;
+                            
+                            const taskToDrop = scheduledTasks.find(t => t.id === taskId);
+                            if (taskToDrop) {
+                              onUpdateNode({
+                                ...taskToDrop,
+                                dueDate: currentDateStr,
+                                startTime: timeStr,
+                                dueTime: undefined
+                              });
+                            }
+                          }
+                          setDraggedOverDate(null);
                         }}
                         onClick={(e) => {
                           const target = e.target as HTMLElement;
-                          if (target.closest('[draggable="true"]') || target.closest('button') || target.closest('.task-item')) {
+                          if (target.closest('[draggable="true"]') || target.closest('button')) {
                             return;
                           }
-                          setActiveDayAddInput(slot.dateString);
-                          setNewDayTaskText('');
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const clickY = e.clientY - rect.top;
+                          const hourVal = Math.max(0, Math.min(23, Math.floor(clickY / 60)));
+                          const timeStr = `${String(hourVal).padStart(2, '0')}:00`;
+                          setActiveHourAddInput(timeStr);
+                          setNewHourTaskText('');
                         }}
-                        className={`min-h-[440px] border rounded-2xl p-3 flex flex-col justify-start transition-all duration-200 group relative bg-white dark:bg-slate-900 cursor-pointer ${
-                          slot.isToday 
-                            ? 'border-indigo-400 ring-2 ring-indigo-500/10' 
-                            : 'border-slate-150 dark:border-slate-800'
-                        } ${
-                          isDragOver ? 'ring-2 ring-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/20 border-indigo-505 scale-[1.01]' : ''
+                        className={`flex-1 h-[1440px] relative border-l border-slate-150 dark:border-slate-800 transition-colors cursor-pointer ${
+                          draggedOverDate === currentDateStr ? 'bg-indigo-50/15 dark:bg-indigo-950/10' : ''
                         }`}
                       >
-                        {/* Day Header */}
-                        <div className="flex items-center justify-between mb-3 shrink-0 select-none pb-2 border-b border-slate-100 dark:border-slate-800">
-                          <div className="flex flex-col">
-                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-505 tracking-wider">
-                              {slot.dayName}
-                            </span>
-                            <span className={`text-base font-extrabold ${
-                              slot.isToday ? 'text-indigo-650 dark:text-indigo-400' : 'text-slate-705 dark:text-slate-205'
-                            }`}>
-                              {slot.dayNumber}
-                            </span>
-                          </div>
+                        {/* Horizontal guide lines */}
+                        {Array.from({ length: 24 }).map((_, h) => (
+                          <div key={h} className="absolute left-0 right-0 border-b border-slate-100/70 dark:border-slate-800/30" style={{ top: `${h * 60}px`, height: '60px' }}></div>
+                        ))}
 
-                          {/* Inline plus button */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveDayAddInput(activeDayAddInput === slot.dateString ? null : slot.dateString);
-                              setNewDayTaskText('');
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded-md transition-all cursor-pointer"
-                            title="Создать задачу"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        </div>
+                        {/* Rendering blocks */}
+                        {(() => {
+                          const dayTimedTasks = scheduledTasks.filter(task => task.dueDate === currentDateStr && (task.startTime || task.dueTime));
+                          const timedBlocks = computeBlocksForTasks(dayTimedTasks);
 
-                        {/* Day Tasks List */}
-                        <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
-                          {dayTasks.map(task => (
+                          return timedBlocks.map(({ task, top, height, left, width }) => (
                             <div
                               key={task.id}
                               onClick={(e) => {
@@ -970,153 +1997,31 @@ export default function CalendarView({
                                 e.stopPropagation();
                                 setDraggingTaskId(null);
                               }}
-                              className={`task-item group/task border text-[11px] leading-snug p-2 rounded-xl flex items-start gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative ${getPriorityColor(task.priority)} ${
-                                draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-350' : ''
+                              className={`absolute rounded-2xl p-3 border text-xs leading-snug cursor-grab active:cursor-grabbing transition-all hover:brightness-95 hover:shadow-xs group/task flex flex-col justify-between overflow-hidden shadow-2xs ${getPillStyles(task)} ${
+                                draggingTaskId === task.id ? 'opacity-30 border-dashed border-indigo-300' : ''
                               }`}
+                              style={{
+                                top: `${top}px`,
+                                height: `${Math.max(34, height)}px`,
+                                left: left || '0%',
+                                width: width || '100%',
+                                zIndex: 10
+                              }}
+                              title={`${task.text} (${formatTaskTime(task)})`}
                             >
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onUpdateNode({
-                                    ...task,
-                                    completed: !task.completed
-                                  });
-                                }}
-                                className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform duration-100 shrink-0 ${
-                                  task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
-                                }`}
-                              >
-                                {task.completed ? (
-                                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                ) : activePomodoroNodeId === task.id ? (
-                                  <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                                    <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                                    <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                              <div className="flex flex-col min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 font-bold truncate text-slate-850 dark:text-slate-100">
+                                  <span className="text-sm shrink-0">{getTaskIcon(task)}</span>
+                                  <span className={task.completed ? 'line-through opacity-55' : ''}>{task.text}</span>
+                                </div>
+                                {height >= 45 && (
+                                  <span className="text-[10px] font-mono font-bold mt-1 text-indigo-650 dark:text-indigo-350">
+                                    🕒 {formatTaskTime(task)}
                                   </span>
-                                ) : (
-                                  <Circle className="w-3.5 h-3.5 shrink-0" />
-                                )}
-                              </button>
-                              <div className="flex-1 flex flex-col min-w-0">
-                                <span className={`truncate font-semibold ${task.completed ? 'line-through opacity-55' : 'text-slate-850 dark:text-slate-100'}`}>
-                                  {task.text}
-                                </span>
-                                {(task.startTime || task.dueTime) && (
-                                  <div className="flex items-center gap-1 text-[9px] text-indigo-650 dark:text-indigo-400 mt-0.5 font-bold font-mono">
-                                    <span>🕒 {formatTaskTime(task)}</span>
-                                  </div>
                                 )}
                               </div>
-                            </div>
-                          ))}
 
-                          {/* Inline custom task input */}
-                          {activeDayAddInput === slot.dateString && (
-                            <div 
-                              className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/50"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <input
-                                type="text"
-                                autoFocus
-                                placeholder="Новая задача..."
-                                value={newDayTaskText}
-                                onChange={(e) => setNewDayTaskText(e.target.value)}
-                                onKeyDown={(e) => {
-                                  e.stopPropagation();
-                                  if (e.key === 'Enter') handleAddDayTaskSubmit(slot.dateString);
-                                  if (e.key === 'Escape') setActiveDayAddInput(null);
-                                }}
-                                className="w-full text-xs p-1.5 bg-white dark:bg-slate-900 text-slate-850 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500"
-                              />
-                              <div className="flex gap-1 mt-1.5 justify-end">
-                                <button
-                                  onClick={() => setActiveDayAddInput(null)}
-                                  className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 px-2 py-0.5 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
-                                >
-                                  Отмена
-                                </button>
-                                <button
-                                  onClick={() => handleAddDayTaskSubmit(slot.dateString)}
-                                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer"
-                                >
-                                  Да
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* 3. Daily Hourly Layout Mode */}
-              {calendarSubMode === 'day' && (
-                <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-805 p-4 shadow-xs font-sans">
-                  {/* All day tasks card - Click to add */}
-                  <div 
-                    onClick={() => {
-                      setActiveDayAddInput(currentDateStr);
-                      setNewDayTaskText('');
-                    }}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
-                    onDragLeave={() => {
-                      if (draggedOverDate === `allday-${currentDateStr}`) {
-                        setDraggedOverDate(null);
-                      }
-                    }}
-                    onDrop={(e) => {
-                      e.stopPropagation();
-                      const taskId = e.dataTransfer.getData('text/plain');
-                      if (taskId) {
-                        handleTaskDropToHour(taskId, currentDateStr, null);
-                      }
-                    }}
-                    className={`mb-4 p-4 rounded-2xl border transition-all group/allday cursor-pointer ${
-                      draggedOverDate === `allday-${currentDateStr}`
-                        ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20'
-                        : 'border-slate-100 dark:border-slate-800 bg-slate-50/45 dark:bg-slate-950/20 hover:border-indigo-300 dark:hover:border-indigo-900 hover:bg-indigo-50/5 dark:hover:bg-indigo-950/5'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-slate-550 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                        <span>📌</span> Задача на весь день
-                      </span>
-                      <span className="text-[11px] text-slate-400 group-hover/allday:text-indigo-650 dark:group-hover/allday:text-indigo-400 font-bold transition-all">
-                        Кликните, чтобы добавить
-                      </span>
-                    </div>
-
-                    {/* Inline list of all-day tasks */}
-                    {(() => {
-                      const allDayTasks = scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.dueTime);
-                      if (allDayTasks.length > 0) {
-                        return (
-                          <div className="flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
-                            {allDayTasks.map(task => (
-                              <div
-                                key={task.id}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onSelectNode(task.id, e);
-                                }}
-                                draggable={true}
-                                onDragStart={(e) => {
-                                  e.stopPropagation();
-                                  e.dataTransfer.setData('text/plain', task.id);
-                                  setDraggingTaskId(task.id);
-                                }}
-                                onDragEnd={(e) => {
-                                  e.stopPropagation();
-                                  setDraggingTaskId(null);
-                                }}
-                                className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative cursor-grab active:cursor-grabbing ${getPriorityColor(task.priority)} ${
-                                  draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                                }`}
-                              >
+                              <div className="flex items-center justify-between mt-2 shrink-0">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1125,271 +2030,83 @@ export default function CalendarView({
                                       completed: !task.completed
                                     });
                                   }}
-                                  className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0 ${
-                                    task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
-                                  }`}
+                                  className="text-slate-400 hover:text-indigo-650 transition-colors p-1 bg-white/50 dark:bg-slate-800/30 rounded-lg"
                                 >
                                   {task.completed ? (
-                                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                  ) : activePomodoroNodeId === task.id ? (
-                                    <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                                      <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                                      <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                                    </span>
+                                    <CheckCircle2 className="w-4 h-4 text-indigo-500" />
                                   ) : (
-                                    <Circle className="w-3.5 h-3.5 shrink-0" />
+                                    <Circle className="w-4 h-4" />
                                   )}
                                 </button>
-                                <div className="flex flex-col min-w-0">
-                                  <span className={`font-semibold truncate max-w-[150px] ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-205'}`}>
-                                    {task.text}
-                                  </span>
-                                  <span className="text-[8px] font-bold text-indigo-600 dark:text-indigo-400 font-mono mt-0.5 flex items-center gap-0.5">
-                                    📅 {task.dueDate ? task.dueDate.split('-').reverse().join('.') : ''}
-                                  </span>
-                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onUpdateNode({
+                                      ...task,
+                                      startTime: undefined,
+                                      dueTime: undefined
+                                    });
+                                  }}
+                                  className="opacity-0 group-hover/task:opacity-100 hover:text-rose-500 text-[10px] font-extrabold px-2 py-0.5 bg-white/60 dark:bg-slate-800/50 rounded-lg transition-opacity"
+                                  title="Убрать время"
+                                >
+                                  ✕
+                                </button>
                               </div>
-                            ))}
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
+                            </div>
+                          ));
+                        })()}
 
-                    {/* Inline add for All Day tasks */}
-                    {activeDayAddInput === currentDateStr && (
-                      <div 
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-2.5 max-w-sm p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md"
-                      >
-                        <input
-                          type="text"
-                          autoFocus
-                          placeholder="Какую задачу запланировать на этот день?"
-                          value={newDayTaskText}
-                          onChange={(e) => setNewDayTaskText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr);
-                            if (e.key === 'Escape') setActiveDayAddInput(null);
-                          }}
-                          className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
-                        />
-                        <div className="flex gap-1.5 mt-2 justify-end">
-                          <button
-                            onClick={() => setActiveDayAddInput(null)}
-                            className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
+                        {/* Quick create prompt overlay */}
+                        {activeHourAddInput && !activeHourAddInput.includes('-') && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl p-3 shadow-xl z-20 w-[180px] sm:w-[220px]"
+                            style={{
+                              top: `${Math.max(10, Math.min(1300, parseInt(activeHourAddInput.split(':')[0], 10) * 60))}px`,
+                              left: '50%',
+                              transform: 'translateX(-50%)'
+                            }}
                           >
-                            Отмена
-                          </button>
-                          <button
-                            onClick={() => handleAddDayTaskSubmit(currentDateStr)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
-                          >
-                            Добавить
-                          </button>
-                        </div>
+                            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block mb-1">Добавить на {activeHourAddInput}</span>
+                            <input
+                              type="text"
+                              autoFocus
+                              placeholder="Название задачи..."
+                              value={newHourTaskText}
+                              onChange={(e) => setNewHourTaskText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleAddDayTaskSubmit(currentDateStr, activeHourAddInput);
+                                  setActiveHourAddInput(null);
+                                }
+                                if (e.key === 'Escape') setActiveHourAddInput(null);
+                              }}
+                              className="w-full text-xs p-1.5 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 outline-none focus:border-indigo-500 font-medium"
+                            />
+                            <div className="flex gap-1.5 mt-2 justify-end">
+                              <button
+                                onClick={() => setActiveHourAddInput(null)}
+                                className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold"
+                              >
+                                Отмена
+                              </button>
+                              <button
+                                onClick={() => {
+                                  handleAddDayTaskSubmit(currentDateStr, activeHourAddInput);
+                                  setActiveHourAddInput(null);
+                                }}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] px-2.5 py-1 rounded-lg font-bold"
+                              >
+                                Ок
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
-
-                  {/* Scrollable Hourly Timeline list */}
-                  <div id="calendar-day-scroll-container" className="flex-1 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar animate-fade-in">
-                    {HOURS.map((hour) => {
-                      const isDragOver = draggedOverDate === `hour-${hour}`;
-
-                      return (
-                        <div 
-                          key={hour}
-                          onClick={(e) => {
-                            const target = e.target as HTMLElement;
-                            if (target.closest('[draggable="true"]') || target.closest('button') || target.closest('.task-item')) {
-                              return;
-                            }
-                            setActiveHourAddInput(hour);
-                            setNewHourTaskText('');
-                          }}
-                          onDragOver={(e) => e.preventDefault()}
-                          onDragEnter={() => setDraggedOverDate(`hour-${hour}`)}
-                          onDragLeave={() => {
-                            if (draggedOverDate === `hour-${hour}`) {
-                              setDraggedOverDate(null);
-                            }
-                          }}
-                          onDrop={(e) => {
-                            const taskId = e.dataTransfer.getData('text/plain');
-                            if (taskId) {
-                              handleTaskDropToHour(taskId, currentDateStr, hour);
-                            }
-                          }}
-                          className={`flex items-stretch border-b border-dashed border-slate-100 dark:border-slate-800 min-h-[58px] transition-all duration-150 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/20 group/row ${
-                            isDragOver ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''
-                          }`}
-                        >
-                          {/* Hour column */}
-                          <div className="w-16 flex items-center justify-center shrink-0 border-r border-slate-100 dark:border-slate-800 pr-3 text-right">
-                            <span className="font-mono text-xs font-bold text-slate-400 dark:text-slate-500">
-                              {hour}
-                            </span>
-                          </div>
-
-                          {/* Content area */}
-                          <div className="flex-1 flex flex-wrap gap-2 items-center px-4 py-1.5 relative">
-                            {/* Render hour tasks or inline box */}
-                            {(() => {
-                              const hourTasks = scheduledTasks.filter(task => {
-                                if (task.dueDate !== currentDateStr) return false;
-                                const timeStr = task.dueTime || task.startTime;
-                                if (!timeStr) return false;
-                                
-                                const parts = timeStr.split(':');
-                                if (parts.length === 0) return false;
-                                const taskHourVal = parseInt(parts[0], 10);
-                                if (isNaN(taskHourVal)) return false;
-                                
-                                const rowHourVal = parseInt(hour.split(':')[0], 10);
-                                if (isNaN(rowHourVal)) return false;
-
-                                if (rowHourVal === 7) {
-                                  return taskHourVal <= 7;
-                                }
-                                if (rowHourVal === 22) {
-                                  return taskHourVal >= 22;
-                                }
-                                return taskHourVal === rowHourVal;
-                              });
-                              if (hourTasks.length > 0) {
-                                return (
-                                  <div className="flex flex-wrap gap-2 items-center flex-1" onClick={(e) => e.stopPropagation()}>
-                                    {hourTasks.map(task => (
-                                      <div
-                                        key={task.id}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          onSelectNode(task.id, e);
-                                        }}
-                                        draggable={true}
-                                        onDragStart={(e) => {
-                                          e.stopPropagation();
-                                          e.dataTransfer.setData('text/plain', task.id);
-                                          setDraggingTaskId(task.id);
-                                        }}
-                                        onDragEnd={(e) => {
-                                          e.stopPropagation();
-                                          setDraggingTaskId(null);
-                                        }}
-                                        className={`group/task border text-[11px] leading-snug py-1.5 px-2.5 rounded-xl flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative shadow-xs shrink-0 max-w-[240px] ${getPriorityColor(task.priority)} ${
-                                          draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                                        }`}
-                                      >
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onUpdateNode({
-                                              ...task,
-                                              completed: !task.completed
-                                            });
-                                          }}
-                                          className="text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0"
-                                        >
-                                          {task.completed ? (
-                                            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                          ) : activePomodoroNodeId === task.id ? (
-                                            <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                                              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                                              <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                                            </span>
-                                          ) : (
-                                            <Circle className="w-3.5 h-3.5 shrink-0" />
-                                          )}
-                                        </button>
-                                        <div className="flex flex-col min-w-0 flex-1">
-                                          <span className={`font-semibold truncate ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-100'}`}>
-                                            {task.text}
-                                          </span>
-                                          <span className="text-[8.5px] font-bold text-indigo-600 dark:text-indigo-400 font-mono mt-0.5 flex items-center gap-1">
-                                            <span>🕒 {task.dueTime || task.startTime}</span>
-                                            {task.dueDate && <span className="text-slate-400">({task.dueDate.split('-').reverse().slice(0, 2).join('.')})</span>}
-                                          </span>
-                                        </div>
-                                        {/* Quick cross to remove hour */}
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onUpdateNode({
-                                              ...task,
-                                              dueTime: undefined,
-                                              startTime: undefined
-                                            });
-                                          }}
-                                          className="opacity-0 group-hover/task:opacity-100 ml-1 hover:text-rose-500 text-[10px] font-bold bg-slate-100/40 dark:bg-slate-800/20 px-1 rounded cursor-pointer"
-                                          title="Убрать время"
-                                        >
-                                          ✕
-                                        </button>
-                                      </div>
-                                    ))}
-                                    {/* Plus icon to add another task */}
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setActiveHourAddInput(hour);
-                                        setNewHourTaskText('');
-                                      }}
-                                      className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer"
-                                      title="Добавить еще задачу"
-                                    >
-                                      <Plus className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                );
-                              }
-
-                              if (activeHourAddInput === hour) {
-                                return (
-                                  <div 
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="p-1 px-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/45 flex items-center gap-2 max-w-sm flex-1"
-                                  >
-                                    <input
-                                      type="text"
-                                      autoFocus
-                                      placeholder={`Задача на ${hour}...`}
-                                      value={newHourTaskText}
-                                      onChange={(e) => setNewHourTaskText(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr, hour);
-                                        if (e.key === 'Escape') setActiveHourAddInput(null);
-                                      }}
-                                      className="flex-1 text-xs px-2 py-0.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
-                                    />
-                                    <button
-                                      onClick={() => handleAddDayTaskSubmit(currentDateStr, hour)}
-                                      className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-2 py-0.5 text-[10px] font-bold cursor-pointer"
-                                    >
-                                      Ок
-                                    </button>
-                                    <button
-                                      onClick={() => setActiveHourAddInput(null)}
-                                      className="text-slate-400 hover:text-slate-600 text-[10px]"
-                                    >
-                                      Отмена
-                                    </button>
-                                  </div>
-                                );
-                              }
-
-                              return (
-                                <div className="text-[11px] text-slate-300 dark:text-slate-700 italic group-hover/row:text-indigo-400 transition-colors">
-                                  Кликните, чтобы добавить задачу на {hour}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                )
               )}
 
             </div>
