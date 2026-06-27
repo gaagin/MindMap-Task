@@ -457,87 +457,88 @@ export default function App() {
   const [backupsList, setBackupsList] = useState<any[]>([]);
   const [backupRestoreSuccess, setBackupRestoreSuccess] = useState<string | null>(null);
   const [backupRestoreConfirmId, setBackupRestoreConfirmId] = useState<string | null>(null);
+  const [isSyncingBackupsList, setIsSyncingBackupsList] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    const loadAndSyncBackups = async () => {
-      try {
-        const raw = localStorage.getItem('milli_workspace_backups');
-        let localBackups = [];
-        if (raw) {
-          localBackups = JSON.parse(raw) || [];
+  const triggerBackupSync = async (showLoading = false) => {
+    if (showLoading) {
+      setIsSyncingBackupsList(true);
+    }
+    try {
+      const raw = localStorage.getItem('milli_workspace_backups');
+      let localBackups = [];
+      if (raw) {
+        localBackups = JSON.parse(raw) || [];
+      }
+
+      let remoteBackups: any[] = [];
+      if (currentUser) {
+        remoteBackups = await loadBackupsFromFirebase(currentUser.uid);
+        // Prune firestore backups older than 30 days
+        await pruneFirebaseBackups(currentUser.uid);
+      }
+
+      // Merge local and remote
+      const mergedMap = new Map<string, any>();
+      // Put remote backups first
+      remoteBackups.forEach((b: any) => {
+        if (b && b.id) {
+          mergedMap.set(b.id, b);
         }
-
-        let remoteBackups: any[] = [];
-        if (currentUser) {
-          remoteBackups = await loadBackupsFromFirebase(currentUser.uid);
-          // Prune firestore backups older than 30 days
-          await pruneFirebaseBackups(currentUser.uid);
+      });
+      // Merge local backups
+      localBackups.forEach((b: any) => {
+        if (b && b.id) {
+          mergedMap.set(b.id, b);
         }
+      });
 
-        // Merge local and remote
-        const mergedMap = new Map<string, any>();
-        // Put remote backups first
-        remoteBackups.forEach((b: any) => {
-          if (b && b.id) {
-            mergedMap.set(b.id, b);
-          }
-        });
-        // Merge local backups
-        localBackups.forEach((b: any) => {
-          if (b && b.id) {
-            mergedMap.set(b.id, b);
-          }
-        });
+      let mergedList = Array.from(mergedMap.values());
 
-        let mergedList = Array.from(mergedMap.values());
-
-        // Filter older than 30 days
-        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-        mergedList = mergedList.filter((b: any) => {
-          try {
-            return new Date(b.timestamp).getTime() > thirtyDaysAgo;
-          } catch {
-            return true;
-          }
-        });
-
-        // Sort descending by timestamp
-        mergedList.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-        if (!active) return;
-
-        localStorage.setItem('milli_workspace_backups', JSON.stringify(mergedList));
-        setBackupsList(mergedList);
-
-        // Upload any backups that are only local to Firestore
-        if (currentUser) {
-          for (const backup of mergedList) {
-            if (!remoteBackups.some((rb: any) => rb.id === backup.id)) {
-              await saveBackupToFirebase(currentUser.uid, backup);
-            }
-          }
-        }
-      } catch (e) {
-        console.error('[Backup Replicator] Error syncing backups:', e);
+      // Filter older than 30 days
+      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      mergedList = mergedList.filter((b: any) => {
         try {
-          const raw = localStorage.getItem('milli_workspace_backups');
-          if (raw) {
-            const parsed = JSON.parse(raw) || [];
-            parsed.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-            if (active) setBackupsList(parsed);
-          }
+          return new Date(b.timestamp).getTime() > thirtyDaysAgo;
         } catch {
-          // No-op
+          return true;
+        }
+      });
+
+      // Sort descending by timestamp
+      mergedList.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      localStorage.setItem('milli_workspace_backups', JSON.stringify(mergedList));
+      setBackupsList(mergedList);
+
+      // Upload any backups that are only local to Firestore
+      if (currentUser) {
+        for (const backup of mergedList) {
+          if (!remoteBackups.some((rb: any) => rb.id === backup.id)) {
+            await saveBackupToFirebase(currentUser.uid, backup);
+          }
         }
       }
-    };
+    } catch (e) {
+      console.error('[Backup Replicator] Error syncing backups:', e);
+      try {
+        const raw = localStorage.getItem('milli_workspace_backups');
+        if (raw) {
+          const parsed = JSON.parse(raw) || [];
+          parsed.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          setBackupsList(parsed);
+        }
+      } catch {
+        // No-op
+      }
+    } finally {
+      if (showLoading) {
+        setIsSyncingBackupsList(false);
+      }
+    }
+  };
 
-    loadAndSyncBackups();
-
-    return () => {
-      active = false;
-    };
+  useEffect(() => {
+    triggerBackupSync(false);
   }, [isSyncMenuOpen, syncModalTab, currentUser]);
 
   const handleRestoreBackup = async (backup: any) => {
@@ -5482,9 +5483,22 @@ export default function App() {
 
                 {/* Backups List */}
                 <div className="space-y-3">
-                  <h4 className="font-bold text-slate-550 dark:text-slate-450 text-[10px] tracking-wider uppercase">
-                    Доступные снимки и резервные копии ({backupsList.length})
-                  </h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-slate-550 dark:text-slate-450 text-[10px] tracking-wider uppercase">
+                      Доступные снимки и резервные копии ({backupsList.length})
+                    </h4>
+                    {currentUser && (
+                      <button
+                        type="button"
+                        onClick={() => triggerBackupSync(true)}
+                        disabled={isSyncingBackupsList}
+                        className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1 cursor-pointer disabled:opacity-50 transition-all"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isSyncingBackupsList ? 'animate-spin' : ''}`} />
+                        {isSyncingBackupsList ? 'Синхронизация...' : 'Синхронизировать с облаком'}
+                      </button>
+                    )}
+                  </div>
 
                   {backupsList.length === 0 ? (
                     <div className="border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-8 text-center text-slate-400 dark:text-slate-500 italic">
