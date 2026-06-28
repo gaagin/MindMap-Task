@@ -28,6 +28,7 @@ import {
   Maximize2,
   Minimize2,
   Target,
+  Timer,
   X
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
@@ -958,6 +959,16 @@ export default function MobileListView({
                               {nodeChildrenCompletedCountMap[node.id] || 0}/{nodeChildrenCountMap[node.id]}
                             </span>
                           )}
+
+                          {node.estimatedTime !== undefined && node.estimatedTime !== null && (
+                            <span 
+                              className="flex items-center gap-1 px-1 rounded-sm border bg-indigo-50/70 border-indigo-150/40 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 text-[9px] font-bold"
+                              title={`Ориентировочное время: ${node.estimatedTime} ч`}
+                            >
+                              <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
+                              <span>{node.estimatedTime}ч</span>
+                            </span>
+                          )}
                         </div>
                       </div>
                     )}
@@ -1161,6 +1172,12 @@ export default function MobileListView({
                                 }`}>
                                   <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                                   <span>{child.dueDate}{child.dueTime ? ` ${child.dueTime}` : ''}</span>
+                                </span>
+                              )}
+                              {child.estimatedTime !== undefined && child.estimatedTime !== null && (
+                                <span className="shrink-0 flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-sm border bg-indigo-50 border-indigo-100 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 font-bold">
+                                  <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
+                                  <span>{child.estimatedTime}ч</span>
                                 </span>
                               )}
                               {child.externalLink && (

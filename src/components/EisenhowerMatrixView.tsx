@@ -11,7 +11,8 @@ import {
   HelpCircle,
   MoreVertical,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Timer
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
@@ -628,6 +629,13 @@ export default function EisenhowerMatrixView({
                               {taskDays && (
                                 <div className="text-[10px] md:text-[11px] font-bold text-[#FF4A55] mt-0.5 tracking-tight font-sans">
                                   {taskDays}
+                                </div>
+                              )}
+
+                              {task.estimatedTime !== undefined && task.estimatedTime !== null && (
+                                <div className="text-[10px] md:text-[11px] font-bold text-indigo-605 dark:text-indigo-400 mt-1 tracking-tight font-sans flex items-center gap-1">
+                                  <Timer className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                  <span>{task.estimatedTime} ч</span>
                                 </div>
                               )}
                             </div>

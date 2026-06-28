@@ -91,6 +91,7 @@ export interface TaskNode {
   subtaskOrder?: number; // Optional field for manual sorting of subtasks
   googleCalendarEventId?: string; // Optional reference to synced Google Calendar event ID
   googleCalendarId?: string; // Optional reference to specific Google Calendar ID
+  estimatedTime?: number; // Optional estimated time of work (in hours)
 }
 
 export interface Project {

@@ -182,6 +182,7 @@ export async function saveStateToGoogleSheets(
     'ID Родителя',
     'Плавающая',
     'Архивирована',
+    'Ориентировочное время (ч)',
   ];
 
   const safeCellString = (val: any): any => {
@@ -214,6 +215,7 @@ export async function saveStateToGoogleSheets(
         node.parentId || '',
         node.isFloating ? 'Да' : 'Нет',
         node.archived ? 'Да' : 'Нет',
+        node.estimatedTime !== undefined && node.estimatedTime !== null ? node.estimatedTime : '',
       ]);
     });
   });

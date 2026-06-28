@@ -229,6 +229,16 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
             nodeChanged = true;
           }
         }
+
+        // Calculate estimated work time if at least one subtask has a set estimated time
+        const subtasksWithTime = children.filter(c => c.estimatedTime !== undefined && c.estimatedTime !== null && !c.archived);
+        if (subtasksWithTime.length > 0) {
+          const sumTime = children.reduce((acc, c) => acc + (c.archived ? 0 : (c.estimatedTime || 0)), 0);
+          if (nextNode.estimatedTime !== sumTime) {
+            nextNode.estimatedTime = sumTime;
+            nodeChanged = true;
+          }
+        }
       }
 
       if (nodeChanged) {

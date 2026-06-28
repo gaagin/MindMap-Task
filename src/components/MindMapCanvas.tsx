@@ -39,6 +39,7 @@ import {
   Link as LinkIcon,
   Clock,
   Tag,
+  Timer,
   ToggleLeft,
   ToggleRight,
   Square,
@@ -7469,6 +7470,20 @@ export default function MindMapCanvas({
                         >
                           <Paperclip className="w-2.5 h-2.5" />
                           {node.files.length}
+                        </span>
+                      )}
+
+                      {node.estimatedTime !== undefined && node.estimatedTime !== null && (
+                        <span 
+                          className={`inline-flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                            isRoot 
+                              ? 'bg-indigo-700/60 text-indigo-100 border-indigo-500/30' 
+                              : 'bg-indigo-50 text-indigo-600 border-indigo-150/40 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400'
+                          }`}
+                          title={`Ориентировочное время: ${node.estimatedTime} ч`}
+                        >
+                          <Timer className="w-2.5 h-2.5 shrink-0" />
+                          {node.estimatedTime}ч
                         </span>
                       )}
                     </div>

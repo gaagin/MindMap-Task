@@ -1003,6 +1003,10 @@ export default function TaskDetailsPanel({
   // Check if it is the central workspace core node
   const isCentralRootNode = node.parentId === null && !node.isFloating && !node.isContainer;
 
+  // Filter subtasks to determine if any has estimatedTime set
+  const subtasksListForTime = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
+  const hasSubtaskWithTime = subtasksListForTime.some(c => c.estimatedTime !== undefined && c.estimatedTime !== null && !c.archived);
+
   // Generic modification helper
   const handlePropChange = <K extends keyof TaskNode>(key: K, value: TaskNode[K]) => {
     onUpdateNode({
@@ -1791,6 +1795,16 @@ export default function TaskDetailsPanel({
                             child.completed ? 'line-through text-slate-400 dark:text-slate-505 italic' : ''
                           }`}
                         />
+
+                        {child.estimatedTime !== undefined && child.estimatedTime !== null && (
+                          <span 
+                            className="text-[9px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0" 
+                            title={`Ориентировочное время: ${child.estimatedTime} ч`}
+                          >
+                            <Timer className="w-2.5 h-2.5 text-slate-400" />
+                            {child.estimatedTime}ч
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
@@ -2416,6 +2430,52 @@ export default function TaskDetailsPanel({
             <Calendar className="w-4 h-4 text-indigo-500" />
             Временные рамки и часы
           </span>
+
+          {/* Ориентировочное время работы */}
+          <div className="space-y-1.5 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
+            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-450 uppercase flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Timer className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                Ориентировочное время работы (ч)
+              </span>
+              {node.estimatedTime !== undefined && node.estimatedTime !== null && !hasSubtaskWithTime && (
+                <button
+                  type="button"
+                  onClick={() => handlePropChange('estimatedTime', undefined)}
+                  className="text-[10px] text-rose-550 dark:text-rose-400 font-bold hover:underline"
+                >
+                  Сбросить
+                </button>
+              )}
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                placeholder={hasSubtaskWithTime ? "Рассчитывается из подзадач" : "Например: 2.5"}
+                disabled={hasSubtaskWithTime}
+                value={node.estimatedTime !== undefined && node.estimatedTime !== null ? node.estimatedTime : ''}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                  handlePropChange('estimatedTime', val);
+                }}
+                className={`w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 ${
+                  hasSubtaskWithTime ? 'bg-slate-100/50 dark:bg-slate-900/60 cursor-not-allowed font-semibold text-indigo-600 dark:text-indigo-400' : ''
+                }`}
+              />
+              {hasSubtaskWithTime && (
+                <span className="absolute right-2.5 top-1.5 text-[10px] font-bold text-indigo-500 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded">
+                  Σ подзадач
+                </span>
+              )}
+            </div>
+            {hasSubtaskWithTime && (
+              <p className="text-[10px] text-indigo-500 dark:text-indigo-400 font-semibold">
+                Рассчитано автоматически как сумма подзадач
+              </p>
+            )}
+          </div>
           
           {/* Дата и время начала */}
           <div className="space-y-1.5">

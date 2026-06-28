@@ -795,7 +795,8 @@ export async function syncWithGoogleSheets(
           reminderDismissed: r[26] === 'TRUE' || r[26] === 'true',
           isWorkflowRectangle: r[28] === 'TRUE' || r[28] === 'true',
           workflowConnections: workflowConnections.length > 0 ? workflowConnections : undefined,
-          archived: r[30] === 'TRUE' || r[30] === 'true'
+          archived: r[30] === 'TRUE' || r[30] === 'true',
+          estimatedTime: r[31] && r[31] !== 'NULL' ? Number(r[31]) : undefined
         };
       });
     };
@@ -1187,7 +1188,8 @@ export async function syncWithGoogleSheets(
         safeCellString(JSON.stringify(n.comments || [])),
         n.isWorkflowRectangle ? 'TRUE' : 'FALSE',
         safeCellString(workflowConnectionsJson),
-        n.archived ? 'TRUE' : 'FALSE'
+        n.archived ? 'TRUE' : 'FALSE',
+        n.estimatedTime !== undefined && n.estimatedTime !== null ? n.estimatedTime : 'NULL'
       ];
     });
 

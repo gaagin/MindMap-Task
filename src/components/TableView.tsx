@@ -17,7 +17,8 @@ import {
   FileText,
   Link as LinkIcon,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Timer
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
@@ -655,6 +656,15 @@ export default function TableView({
                               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
                             </span>
                             <span>🍅</span>
+                          </span>
+                        )}
+                        {task.estimatedTime !== undefined && task.estimatedTime !== null && (
+                          <span 
+                            className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded border border-indigo-150/20"
+                            title={`Ориентировочное время: ${task.estimatedTime} ч`}
+                          >
+                            <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
+                            <span>{task.estimatedTime}ч</span>
                           </span>
                         )}
                       </div>
