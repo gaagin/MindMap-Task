@@ -617,13 +617,13 @@ async function writeHeaders(spreadsheetId: string, accessToken: string) {
       values: [['Project ID', 'Name', 'Folder ID', 'Created At', 'Updated At']]
     },
     {
-      range: 'Nodes!A1:AE1',
+      range: 'Nodes!A1:AF1',
       values: [[
         'Node ID', 'Project ID', 'Text', 'X', 'Y', 'Parent ID', 'Priority', 'Tags', 'Notes',
         'Completed', 'Color', 'Collapsed', 'Due Date', 'Progress', 'Is Floating', 'Is Container',
         'Width', 'Height', 'Files (JSON)', 'Updated At',
         'Due Time', 'Start Date', 'Start Time', 'Reminder Date', 'Reminder Time', 'Reminder Minutes Before', 'Reminder Dismissed', 'Comments (JSON)',
-        'Is Workflow Rectangle', 'Workflow Connections (JSON)', 'Archived'
+        'Is Workflow Rectangle', 'Workflow Connections (JSON)', 'Archived', 'Estimated Time'
       ]]
     },
     {
@@ -669,7 +669,7 @@ export async function syncWithGoogleSheets(
     }
 
     // 1. Fetch values from Google Sheet
-    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchGet?ranges=Folders!A1:D&ranges=Projects!A1:E&ranges=Nodes!A1:AE&ranges=TagCategories!A1:E&ranges=Deletions!A1:C`;
+    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchGet?ranges=Folders!A1:D&ranges=Projects!A1:E&ranges=Nodes!A1:AF&ranges=TagCategories!A1:E&ranges=Deletions!A1:C`;
     const getRes = await fetch(getUrl, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -689,11 +689,11 @@ export async function syncWithGoogleSheets(
     const sheetTagCatsRows = valueRanges[3]?.values || [];
     const sheetDeletionsRows = valueRanges[4]?.values || [];
 
-    // Auto-upgrade existing Sheets without the AE Columns (Archived)
-    if (sheetNodesRows.length > 0 && sheetNodesRows[0] && sheetNodesRows[0].length < 31) {
-      console.log('Upgrading existing spreadsheet with archived tasks column');
+    // Auto-upgrade existing Sheets without the AF Columns (Estimated Time)
+    if (sheetNodesRows.length > 0 && sheetNodesRows[0] && sheetNodesRows[0].length < 32) {
+      console.log('Upgrading existing spreadsheet with estimated time column');
       try {
-        const updateHeadersUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Nodes!A1:AE1?valueInputOption=RAW`;
+        const updateHeadersUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Nodes!A1:AF1?valueInputOption=RAW`;
         await fetch(updateHeadersUrl, {
           method: 'PUT',
           headers: {
@@ -701,13 +701,13 @@ export async function syncWithGoogleSheets(
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            range: 'Nodes!A1:AE1',
+            range: 'Nodes!A1:AF1',
             values: [[
               'Node ID', 'Project ID', 'Text', 'X', 'Y', 'Parent ID', 'Priority', 'Tags', 'Notes',
               'Completed', 'Color', 'Collapsed', 'Due Date', 'Progress', 'Is Floating', 'Is Container',
               'Width', 'Height', 'Files (JSON)', 'Updated At',
               'Due Time', 'Start Date', 'Start Time', 'Reminder Date', 'Reminder Time', 'Reminder Minutes Before', 'Reminder Dismissed', 'Comments (JSON)',
-              'Is Workflow Rectangle', 'Workflow Connections (JSON)', 'Archived'
+              'Is Workflow Rectangle', 'Workflow Connections (JSON)', 'Archived', 'Estimated Time'
             ]]
           })
         });
@@ -1083,7 +1083,7 @@ export async function syncWithGoogleSheets(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:AE', 'TagCategories!A2:E', 'Deletions!A2:C']
+        ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:AF', 'TagCategories!A2:E', 'Deletions!A2:C']
       })
     });
     if (!clearRes.ok) {
@@ -1212,7 +1212,7 @@ export async function syncWithGoogleSheets(
     const dataToWrite = [];
     if (folderRows.length > 0) dataToWrite.push({ range: `Folders!A2:D${folderRows.length + 1}`, values: folderRows });
     if (projectRows.length > 0) dataToWrite.push({ range: `Projects!A2:E${projectRows.length + 1}`, values: projectRows });
-    if (nodeRows.length > 0) dataToWrite.push({ range: `Nodes!A2:AE${nodeRows.length + 1}`, values: nodeRows });
+    if (nodeRows.length > 0) dataToWrite.push({ range: `Nodes!A2:AF${nodeRows.length + 1}`, values: nodeRows });
     if (tagCatRows.length > 0) dataToWrite.push({ range: `TagCategories!A2:E${tagCatRows.length + 1}`, values: tagCatRows });
     if (deletionRows.length > 0) dataToWrite.push({ range: `Deletions!A2:C${deletionRows.length + 1}`, values: deletionRows });
 

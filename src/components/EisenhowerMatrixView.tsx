@@ -440,18 +440,18 @@ export default function EisenhowerMatrixView({
           <h2 className="text-sm md:text-base font-extrabold text-slate-800 dark:text-slate-100 font-sans tracking-tight">
             Матрица Эйзенхауэра
           </h2>
-          
+        </div>
+
+        <div className="flex items-center justify-end gap-2 relative">
           {/* Estimated Time Badge */}
           <div 
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/30 text-xs font-bold shadow-xs"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/30 text-xs font-bold shadow-xs mr-1"
             title="Сумма ориентировочного времени работы для квадрантов 'Важно и срочно' и 'Важно, но несрочно'"
           >
             <Timer className="w-3.5 h-3.5" />
             <span>Время важных дел (I + II): <span className="font-extrabold">{totalImportantHours} ч</span></span>
           </div>
-        </div>
 
-        <div className="flex items-center justify-end gap-1.5 relative">
           {/* Toggle Button for Full Screen */}
           <button
             type="button"
