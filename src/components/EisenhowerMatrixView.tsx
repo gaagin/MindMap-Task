@@ -186,11 +186,33 @@ export default function EisenhowerMatrixView({
 
   // Group tasks by quadrant priority list
   const getTasksForQuadrant = (quad: QuadrantConfig) => {
+    const todayStr = (() => {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    })();
+
     return filteredTasks.filter(task => {
       if (task.priority) {
-        return quad.priorities.includes(task.priority);
+        if (!quad.priorities.includes(task.priority)) return false;
+      } else {
+        if (!quad.priorities.includes('none')) return false;
       }
-      return quad.priorities.includes('none');
+
+      // Filter by date for other quadrants (q1, q2, q3) - leave q4 as is
+      if (quad.id !== 'q4') {
+        if (task.dueDate) {
+          const isToday = task.dueDate === todayStr;
+          const isPastUnfinished = task.dueDate < todayStr && !task.completed;
+          if (!isToday && !isPastUnfinished) {
+            return false;
+          }
+        }
+      }
+
+      return true;
     });
   };
 
