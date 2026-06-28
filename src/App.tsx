@@ -2721,12 +2721,95 @@ export default function App() {
 
     const isInsideContainer = parentId !== null;
 
+    let targetX = Math.round(x);
+    let targetY = Math.round(y);
+
+    if (parentId) {
+      const parentNode = currentNodes.find(n => n.id === parentId);
+      if (parentNode) {
+        // Find a beautiful non-overlapping position radially on the appropriate side
+        let bestX = parentNode.x;
+        let bestY = parentNode.y;
+        let found = false;
+
+        let preferredDirection: 'left' | 'right' = 'right';
+        if (parentNode.parentId) {
+          const grandparentNode = currentNodes.find(n => n.id === parentNode.parentId);
+          if (grandparentNode) {
+            preferredDirection = parentNode.x < grandparentNode.x ? 'left' : 'right';
+          }
+        } else {
+          // For root nodes, balance children left and right based on existing count
+          const existingChildren = currentNodes.filter(n => n.parentId === parentNode.id && !n.archived);
+          preferredDirection = existingChildren.length % 2 === 0 ? 'right' : 'left';
+        }
+
+        // Generate fan of angles in front of the parent node's direction
+        const angles: number[] = [];
+        const numAngles = 18;
+        const maxAngleSpread = (80 * Math.PI) / 180; // +/- 80 degrees from horizontal
+
+        if (preferredDirection === 'right') {
+          for (let i = 0; i < numAngles; i++) {
+            const angle = -maxAngleSpread + (i * 2 * maxAngleSpread) / (numAngles - 1);
+            angles.push(angle);
+          }
+        } else {
+          for (let i = 0; i < numAngles; i++) {
+            const angle = Math.PI - maxAngleSpread + (i * 2 * maxAngleSpread) / (numAngles - 1);
+            angles.push(angle);
+          }
+        }
+
+        // Try radiuses from 220 to 1020 in steps of 80 to keep it compact but clean
+        for (let r = 220; r <= 1020 && !found; r += 80) {
+          for (const angle of angles) {
+            const candX = Math.round(parentNode.x + r * Math.cos(angle));
+            const candY = Math.round(parentNode.y + r * Math.sin(angle));
+
+            // Check if candX, candY overlaps with any existing non-archived node in currentNodes
+            const overlap = currentNodes.some(n => {
+              if (n.archived) return false;
+              // determine width and height
+              const w1 = 210; // candidate width
+              const h1 = 70;  // candidate height
+              const w2 = n.width || (n.isContainer ? 520 : (n.isWorkflowRectangle ? 170 : 210));
+              const h2 = n.height || (n.isContainer ? 400 : (n.isWorkflowRectangle ? 70 : 70));
+
+              // Check bounding box overlap with extra padding/gap
+              const horizontalGap = 40;
+              const verticalGap = 30;
+              const isOverlapping = 
+                Math.abs(candX - n.x) < (w1 + w2) / 2 + horizontalGap &&
+                Math.abs(candY - n.y) < (h1 + h2) / 2 + verticalGap;
+              return isOverlapping;
+            });
+
+            if (!overlap) {
+              bestX = candX;
+              bestY = candY;
+              found = true;
+              break;
+            }
+          }
+        }
+
+        if (!found) {
+          bestX = Math.round(parentNode.x + (preferredDirection === 'right' ? 220 : -220));
+          bestY = Math.round(parentNode.y);
+        }
+
+        targetX = bestX;
+        targetY = bestY;
+      }
+    }
+
     const newFloatingNode: TaskNode = {
       id: 'node-' + generateId(),
       projectId: pid,
       text: customText?.trim() || (isInsideContainer ? 'Новая подзадача' : 'Плавающая задача'),
-      x: Math.round(x),
-      y: Math.round(y),
+      x: targetX,
+      y: targetY,
       parentId: parentId, // can be a container or branch root
       isFloating: !isInsideContainer,
       priority: 'low',

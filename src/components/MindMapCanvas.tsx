@@ -317,6 +317,7 @@ export default function MindMapCanvas({
   const isTouchSelectingRef = useRef(false);
 
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isAutoArranging, setIsAutoArranging] = useState(false);
 
   useEffect(() => {
     if (onFullScreenChange) {
@@ -4355,6 +4356,208 @@ export default function MindMapCanvas({
     setHoveredSide(null);
   };
 
+  const handleArrangeChildrenRadial = (parentId: string) => {
+    setIsAutoArranging(true);
+    
+    const parent = nodes.find(n => n.id === parentId);
+    if (!parent) {
+      setIsAutoArranging(false);
+      return;
+    }
+
+    // Define tree interface internally for strict type safety
+    interface MindMapNode {
+      id: string;
+      width: number;
+      height: number;
+      node: TaskNode;
+      children: MindMapNode[];
+      vSpan: number;
+    }
+
+    // Recursive helper to build subtrees of descendants
+    const buildSubtree = (pId: string): MindMapNode[] => {
+      const childTasks = nodes.filter(n => 
+        n.parentId === pId && 
+        !n.archived && 
+        !n.isContainer && 
+        !n.isWorkflowRectangle
+      );
+      
+      return childTasks.map(t => {
+        const nodeWidth = t.width || 210;
+        const nodeHeight = t.height || 70;
+        return {
+          id: t.id,
+          width: nodeWidth,
+          height: nodeHeight,
+          node: t,
+          children: buildSubtree(t.id),
+          vSpan: 0
+        };
+      });
+    };
+
+    const rootChildren = buildSubtree(parentId);
+    if (rootChildren.length === 0) {
+      setIsAutoArranging(false);
+      return;
+    }
+
+    // Recursive helper to compute vertical spans of each subtree
+    const computeVSpan = (mNode: MindMapNode): number => {
+      if (mNode.children.length === 0) {
+        mNode.vSpan = mNode.height;
+      } else {
+        mNode.children.forEach(child => computeVSpan(child));
+        const childrenSum = mNode.children.reduce((sum, child) => sum + child.vSpan, 0);
+        const spacing = 24; // beautiful vertical gap
+        const totalSpacing = (mNode.children.length - 1) * spacing;
+        mNode.vSpan = Math.max(mNode.height, childrenSum + totalSpacing);
+      }
+      return mNode.vSpan;
+    };
+
+    // Split immediate children into Left and Right groups symmetrically
+    const leftGroup: MindMapNode[] = [];
+    const rightGroup: MindMapNode[] = [];
+    
+    rootChildren.forEach((child, index) => {
+      if (index % 2 === 0) {
+        rightGroup.push(child);
+      } else {
+        leftGroup.push(child);
+      }
+    });
+
+    // Compute vertical spans for both groups
+    leftGroup.forEach(child => computeVSpan(child));
+    rightGroup.forEach(child => computeVSpan(child));
+
+    const horizontalStep = 300; // Spacious horizontal distance between levels
+    const spacing = 24; // Sibling separation gap
+
+    const plannedCoords: { [id: string]: { x: number; y: number } } = {};
+    const movedNodeIds = new Set<string>();
+
+    const setPosition = (id: string, x: number, y: number) => {
+      plannedCoords[id] = { x, y };
+      movedNodeIds.add(id);
+    };
+
+    // Recursive helper to assign coordinates to descendants
+    const layoutSubtree = (parentNode: MindMapNode, parentX: number, parentY: number, direction: 1 | -1) => {
+      if (parentNode.children.length === 0) return;
+      
+      const totalVSpan = parentNode.children.reduce((sum, child) => sum + child.vSpan, 0) + (parentNode.children.length - 1) * spacing;
+      let currentY = parentY - totalVSpan / 2;
+      const childX = parentX + direction * horizontalStep;
+
+      parentNode.children.forEach(child => {
+        const childY = currentY + child.vSpan / 2;
+        setPosition(child.id, childX, childY);
+        
+        // Recursively position sub-children outward in the same direction
+        layoutSubtree(child, childX, childY, direction);
+        
+        currentY += child.vSpan + spacing;
+      });
+    };
+
+    // Position Right Group
+    if (rightGroup.length > 0) {
+      const rightTotalVSpan = rightGroup.reduce((sum, n) => sum + n.vSpan, 0) + (rightGroup.length - 1) * spacing;
+      let currentY = parent.y - rightTotalVSpan / 2;
+      const childX = parent.x + horizontalStep;
+
+      rightGroup.forEach(child => {
+        const childY = currentY + child.vSpan / 2;
+        setPosition(child.id, childX, childY);
+        layoutSubtree(child, childX, childY, 1);
+        currentY += child.vSpan + spacing;
+      });
+    }
+
+    // Position Left Group
+    if (leftGroup.length > 0) {
+      const leftTotalVSpan = leftGroup.reduce((sum, n) => sum + n.vSpan, 0) + (leftGroup.length - 1) * spacing;
+      let currentY = parent.y - leftTotalVSpan / 2;
+      const childX = parent.x - horizontalStep;
+
+      leftGroup.forEach(child => {
+        const childY = currentY + child.vSpan / 2;
+        setPosition(child.id, childX, childY);
+        layoutSubtree(child, childX, childY, -1);
+        currentY += child.vSpan + spacing;
+      });
+    }
+
+    // Collision resolution loop to prevent ANY overlaps
+    const numIterations = 100;
+    const horizontalGap = 45;
+    const verticalGap = 35;
+
+    for (let iter = 0; iter < numIterations; iter++) {
+      let hasOverlap = false;
+
+      for (let i = 0; i < nodes.length; i++) {
+        const nodeA = nodes[i];
+        if (nodeA.archived) continue;
+
+        const isAMoved = movedNodeIds.has(nodeA.id);
+        const posA = isAMoved ? plannedCoords[nodeA.id] : { x: nodeA.x, y: nodeA.y };
+        const wA = nodeA.width || (nodeA.isContainer ? 520 : (nodeA.isWorkflowRectangle ? 170 : 210));
+        const hA = nodeA.height || (nodeA.isContainer ? 400 : (nodeA.isWorkflowRectangle ? 70 : 70));
+
+        for (let j = i + 1; j < nodes.length; j++) {
+          const nodeB = nodes[j];
+          if (nodeB.archived) continue;
+
+          const isBMoved = movedNodeIds.has(nodeB.id);
+          // If neither node is being moved, their positions are fixed
+          if (!isAMoved && !isBMoved) continue;
+
+          const posB = isBMoved ? plannedCoords[nodeB.id] : { x: nodeB.x, y: nodeB.y };
+          const wB = nodeB.width || (nodeB.isContainer ? 520 : (nodeB.isWorkflowRectangle ? 170 : 210));
+          const hB = nodeB.height || (nodeB.isContainer ? 400 : (nodeB.isWorkflowRectangle ? 70 : 70));
+
+          const dx = posA.x - posB.x;
+          const dy = posA.y - posB.y;
+
+          const minX = (wA + wB) / 2 + horizontalGap;
+          const minY = (hA + hB) / 2 + verticalGap;
+
+          if (Math.abs(dx) < minX && Math.abs(dy) < minY) {
+            hasOverlap = true;
+
+            const overlapY = minY - Math.abs(dy);
+            const dirY = dy === 0 ? (i % 2 === 0 ? 1 : -1) : Math.sign(dy);
+
+            if (isAMoved && isBMoved) {
+              plannedCoords[nodeA.id].y += (overlapY / 2) * dirY;
+              plannedCoords[nodeB.id].y -= (overlapY / 2) * dirY;
+            } else if (isAMoved) {
+              plannedCoords[nodeA.id].y += overlapY * dirY;
+            } else if (isBMoved) {
+              plannedCoords[nodeB.id].y -= overlapY * dirY;
+            }
+          }
+        }
+      }
+
+      if (!hasOverlap) break;
+    }
+
+    // Apply finalized coordinate changes
+    Object.keys(plannedCoords).forEach(id => {
+      onUpdateNodeCoordinates(id, Math.round(plannedCoords[id].x), Math.round(plannedCoords[id].y));
+    });
+
+    setTimeout(() => {
+      setIsAutoArranging(false);
+    }, 850);
+  };
+
   // Start dragging a node from Mouse Down
   const startDragNode = (e: React.MouseEvent, node: TaskNode) => {
     if (isButtonOrCardInput(e)) return;
@@ -5622,6 +5825,7 @@ export default function MindMapCanvas({
                   zIndex: isContainerSelected ? 1000 : (lastActiveContainerId === node.id ? 30 : 10), 
                   width: isContainerCollapsed ? '220px' : `${node.width || 520}px`,
                   height: isContainerCollapsed ? '100px' : `${node.height || 400}px`,
+                  transition: isAutoArranging ? 'left 0.8s cubic-bezier(0.16, 1, 0.3, 1), top 0.8s cubic-bezier(0.16, 1, 0.3, 1)' : undefined,
                 }}
                 onDragOver={(e) => {
                   const types = e.dataTransfer && e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
@@ -6221,7 +6425,8 @@ export default function MindMapCanvas({
                         transform: 'translate(-50%, -50%)',
                         zIndex: cardZIndex - 1,
                         width: `${zoneW}px`,
-                        height: `${zoneH}px`
+                        height: `${zoneH}px`,
+                        transition: isAutoArranging ? 'left 0.8s cubic-bezier(0.16, 1, 0.3, 1), top 0.8s cubic-bezier(0.16, 1, 0.3, 1)' : undefined,
                       }}
                       className={`rounded-2xl border border-dashed transition-all pointer-events-none ${
                         node.isZoneTriggerDisabled
@@ -6316,7 +6521,8 @@ export default function MindMapCanvas({
                     transform: 'translate(-50%, -50%)',
                     zIndex: cardZIndex,
                     width: `${w}px`,
-                    height: `${h}px`
+                    height: `${h}px`,
+                    transition: isAutoArranging ? 'left 0.8s cubic-bezier(0.16, 1, 0.3, 1), top 0.8s cubic-bezier(0.16, 1, 0.3, 1)' : undefined,
                   }}
                   onMouseDown={(e) => {
                     const target = e.target as HTMLElement;
@@ -6613,6 +6819,7 @@ export default function MindMapCanvas({
                 transform: 'translate(-50%, -50%)',
                 zIndex: cardZIndex,
                 width: node.width ? `${node.width}px` : '210px',
+                transition: isAutoArranging ? 'left 0.8s cubic-bezier(0.16, 1, 0.3, 1), top 0.8s cubic-bezier(0.16, 1, 0.3, 1)' : undefined,
               }}
               onDragOver={(e) => {
                 const types = e.dataTransfer && e.dataTransfer.types ? Array.from(e.dataTransfer.types) : [];
@@ -7658,6 +7865,24 @@ export default function MindMapCanvas({
                   >
                     <Plus className="w-4 h-4" />
                   </button>
+
+                  {hasChildren && (
+                    <>
+                      <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                      {/* Button 1.5: Красиво распределить подзадачи вокруг */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleArrangeChildrenRadial(node.id);
+                        }}
+                        title="Красиво распределить подзадачи вокруг"
+                        className="flex items-center justify-center w-8 h-8 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                      >
+                        <Network className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
 
                   <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
 
