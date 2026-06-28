@@ -580,6 +580,7 @@ export default function EisenhowerMatrixView({
                       return (
                         <div
                           key={task.id}
+                          data-task-id={task.id}
                           draggable="true"
                           onDragStart={(e) => handleDragStart(e, task.id)}
                           onTouchStart={(e) => handleTouchStart(e, task.id, task.text)}

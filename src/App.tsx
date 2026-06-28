@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Menu, 
   Layers,
@@ -20,6 +21,7 @@ import {
   RefreshCw,
   LogOut,
   CheckCircle2,
+  Circle,
   AlertTriangle,
   Sparkles,
   Calendar,
@@ -71,12 +73,7 @@ import {
   syncWithGoogleSheets, 
   logDeletion 
 } from './lib/syncService';
-import { 
-  listGoogleCalendars, 
-  syncTaskToGoogleCalendar, 
-  deleteEventFromGoogleCalendar,
-  listGoogleCalendarEvents
-} from './lib/calendarService';
+
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 
@@ -445,12 +442,7 @@ export default function App() {
   const [isAutoLoginPopupBlocked, setIsAutoLoginPopupBlocked] = useState(false);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
-  const [syncModalTab, setSyncModalTab] = useState<'sheets' | 'calendar' | 'backups'>('sheets');
-  const [calendars, setCalendars] = useState<any[]>([]);
-  const [selectedCalendarId, setSelectedCalendarId] = useState<string>(() => localStorage.getItem('google_calendar_id') || 'primary');
-  const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
-  const [calendarSyncError, setCalendarSyncError] = useState<string | null>(null);
-  const [calendarSyncSuccess, setCalendarSyncSuccess] = useState<string | null>(null);
+  const [syncModalTab, setSyncModalTab] = useState<'sheets' | 'backups'>('sheets');
   const [backupsList, setBackupsList] = useState<any[]>([]);
   const [backupRestoreSuccess, setBackupRestoreSuccess] = useState<string | null>(null);
   const [backupRestoreConfirmId, setBackupRestoreConfirmId] = useState<string | null>(null);
@@ -619,20 +611,7 @@ export default function App() {
     localStorage.setItem('task_mindmap_sidebar_open', String(sidebarOpen));
   }, [sidebarOpen]);
 
-  // Load Google Calendars when googleToken updates
-  useEffect(() => {
-    if (googleToken) {
-      listGoogleCalendars(googleToken)
-        .then(list => {
-          setCalendars(list);
-        })
-        .catch(err => {
-          console.error('[Google Calendar] Failed to load calendars:', err);
-        });
-    } else {
-      setCalendars([]);
-    }
-  }, [googleToken]);
+
   
   // Synchronized global state for active Pomodoro session
   const [globalPomo, setGlobalPomo] = useState<{
@@ -825,6 +804,122 @@ export default function App() {
     }
   }, [selectedNodeId]);
 
+  // Global drag-selection states
+  const [globalSelectionStart, setGlobalSelectionStart] = useState<{ x: number; y: number } | null>(null);
+  const [globalSelectionEnd, setGlobalSelectionEnd] = useState<{ x: number; y: number } | null>(null);
+  const [isGlobalDragSelecting, setIsGlobalDragSelecting] = useState(false);
+
+  const handleGlobalMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    // If NOT Ctrl + Left click, check if we should clear multi-selection when clicking on empty space
+    if (!(e.ctrlKey && e.button === 0)) {
+      if (e.button === 0) {
+        const target = e.target as HTMLElement;
+        // Do not clear if clicking on form elements, interactive items, or actual task cards
+        if (target.closest('button, input, textarea, select, a, [role="button"], [data-drag-ignore], .modal, .dropdown, [data-task-id], [data-node-id], [id^="kanban-card-"], [id^="mobile-task-card-"]')) {
+          return;
+        }
+        // Deselect everything
+        setSelectedNodeIds([]);
+        setIsMultiSelectMode(false);
+      }
+      return;
+    }
+
+    // Do not start if clicking inside buttons, inputs, dropdowns, etc.
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, textarea, select, a, [role="button"], [data-drag-ignore], .modal, .dropdown')) {
+      return;
+    }
+
+    // Prevent default browser behaviors (like text selection or panning)
+    e.preventDefault();
+
+    // Reset current selection
+    setSelectedNodeIds([]);
+    setIsMultiSelectMode(false);
+
+    // Record the starting point of the mouse click relative to the container
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    setGlobalSelectionStart({ x, y });
+    setGlobalSelectionEnd({ x, y });
+    setIsGlobalDragSelecting(true);
+  };
+
+  const handleGlobalMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isGlobalDragSelecting || !globalSelectionStart) return;
+
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    setGlobalSelectionEnd({ x, y });
+
+    // Calculate selection bounds in viewport coordinates
+    // because we need to compare with element.getBoundingClientRect()
+    const startViewportX = globalSelectionStart.x + rect.left;
+    const startViewportY = globalSelectionStart.y + rect.top;
+    const currentViewportX = e.clientX;
+    const currentViewportY = e.clientY;
+
+    const x1 = Math.min(startViewportX, currentViewportX);
+    const y1 = Math.min(startViewportY, currentViewportY);
+    const x2 = Math.max(startViewportX, currentViewportX);
+    const y2 = Math.max(startViewportY, currentViewportY);
+
+    // Only start selecting if drag box has a minimal size
+    if (Math.abs(x1 - x2) > 4 || Math.abs(y1 - y2) > 4) {
+      if (!isMultiSelectMode) {
+        setIsMultiSelectMode(true);
+      }
+
+      // Query all elements representing tasks/nodes on screen
+      const elements = document.querySelectorAll('[data-task-id], [data-node-id], [id^="kanban-card-"], [id^="mobile-task-card-"]');
+      const selectedIds: string[] = [];
+
+      elements.forEach(el => {
+        const elRect = el.getBoundingClientRect();
+
+        // Check intersection between element bounding rect and selection marquee bounds
+        const intersects = !(
+          elRect.right < x1 ||
+          elRect.left > x2 ||
+          elRect.bottom < y1 ||
+          elRect.top > y2
+        );
+
+        if (intersects) {
+          let nodeId = el.getAttribute('data-task-id') || el.getAttribute('data-node-id');
+          if (!nodeId) {
+            const idAttr = el.getAttribute('id');
+            if (idAttr) {
+              if (idAttr.startsWith('kanban-card-')) {
+                nodeId = idAttr.replace('kanban-card-', '');
+              } else if (idAttr.startsWith('mobile-task-card-')) {
+                nodeId = idAttr.replace('mobile-task-card-', '');
+              }
+            }
+          }
+          if (nodeId && !selectedIds.includes(nodeId)) {
+            selectedIds.push(nodeId);
+          }
+        }
+      });
+
+      setSelectedNodeIds(selectedIds);
+    }
+  };
+
+  const handleGlobalMouseUp = () => {
+    setIsGlobalDragSelecting(false);
+    setGlobalSelectionStart(null);
+    setGlobalSelectionEnd(null);
+  };
+
   const handleSelectNode = (id: string | null, eOrIsMulti?: any) => {
     let isMulti = false;
     
@@ -842,6 +937,7 @@ export default function App() {
       if (!isMulti) {
         setSelectedNodeId(null);
         setSelectedNodeIds([]);
+        setIsMultiSelectMode(false);
         setIsDrawerOpen(false);
       }
       return;
@@ -849,7 +945,22 @@ export default function App() {
 
     if (isMulti) {
       setIsMultiSelectMode(true);
-      handleToggleSelectNode(id);
+      setSelectedNodeIds(prev => {
+        let next = [...prev];
+        if (selectedNodeId && !next.includes(selectedNodeId)) {
+          next.push(selectedNodeId);
+        }
+        if (next.includes(id)) {
+          next = next.filter(nid => nid !== id);
+        } else {
+          next.push(id);
+        }
+        if (next.length === 0) {
+          setTimeout(() => setIsMultiSelectMode(false), 0);
+        }
+        return next;
+      });
+      setSelectedNodeId(null);
     } else {
       setSelectedNodeId(id);
       setIsDrawerOpen(true);
@@ -873,6 +984,7 @@ export default function App() {
       if (!isMulti) {
         setSelectedNodeId(null);
         setSelectedNodeIds([]);
+        setIsMultiSelectMode(false);
         setIsDrawerOpen(false);
       }
       return;
@@ -880,7 +992,22 @@ export default function App() {
 
     if (isMulti) {
       setIsMultiSelectMode(true);
-      handleToggleSelectNode(id);
+      setSelectedNodeIds(prev => {
+        let next = [...prev];
+        if (selectedNodeId && !next.includes(selectedNodeId)) {
+          next.push(selectedNodeId);
+        }
+        if (next.includes(id)) {
+          next = next.filter(nid => nid !== id);
+        } else {
+          next.push(id);
+        }
+        if (next.length === 0) {
+          setTimeout(() => setIsMultiSelectMode(false), 0);
+        }
+        return next;
+      });
+      setSelectedNodeId(null);
     } else {
       setSelectedNodeId(id);
     }
@@ -1092,6 +1219,26 @@ export default function App() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
+
+  // Auto-center on focused task change
+  useEffect(() => {
+    if (focusedTaskId) {
+      let targetNode: TaskNode | undefined;
+      for (const [projectId, nodeList] of Object.entries(state.nodes)) {
+        const found = (nodeList as TaskNode[]).find(n => n.id === focusedTaskId);
+        if (found) {
+          targetNode = found;
+          break;
+        }
+      }
+      if (targetNode && targetNode.x !== undefined && targetNode.y !== undefined) {
+        const targetZoom = 1.05;
+        setPanX(-targetNode.x * targetZoom);
+        setPanY(-targetNode.y * targetZoom);
+        setZoom(targetZoom);
+      }
+    }
+  }, [focusedTaskId, state.nodes]);
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
@@ -1537,267 +1684,7 @@ export default function App() {
     }
   };
 
-  // Google Calendar integration synchronization trigger method
-  const runCalendarSync = async (token: string) => {
-    if (isSyncingCalendar) return;
-    setIsSyncingCalendar(true);
-    setCalendarSyncError(null);
-    setCalendarSyncSuccess(null);
 
-    // Get all nodes across all projects
-    const allProjectsNodes = state.nodes as Record<string, TaskNode[]>;
-    const tasksToSync: { projectId: string; taskIndex: number; task: TaskNode }[] = [];
-
-    Object.entries(allProjectsNodes).forEach(([projectId, taskList]) => {
-      taskList.forEach((task, idx) => {
-        // Sync tasks that have startDate or dueDate and are not archived
-        if ((task.startDate || task.dueDate) && !task.archived) {
-          tasksToSync.push({ projectId, taskIndex: idx, task });
-        }
-      });
-    });
-
-    if (tasksToSync.length === 0) {
-      setCalendarSyncError('Нет задач с датой (дата начала или срок) для синхронизации.');
-      setIsSyncingCalendar(false);
-      return;
-    }
-
-    let successCount = 0;
-    let failCount = 0;
-    const updatedTasksMap: Record<string, Record<number, string>> = {}; // projectId -> { taskIndex: newEventId }
-
-    for (const item of tasksToSync) {
-      try {
-        const newEventId = await syncTaskToGoogleCalendar(token, item.task, selectedCalendarId);
-        if (!updatedTasksMap[item.projectId]) {
-          updatedTasksMap[item.projectId] = {};
-        }
-        updatedTasksMap[item.projectId][item.taskIndex] = newEventId;
-        successCount++;
-      } catch (err: any) {
-        console.error('Failed to sync task to calendar:', item.task.text, err);
-        failCount++;
-      }
-    }
-
-    // Apply updates to the state
-    if (successCount > 0) {
-      setState(prev => {
-        const nextNodes = { ...prev.nodes };
-        Object.entries(updatedTasksMap).forEach(([projectId, updates]) => {
-          if (nextNodes[projectId]) {
-            const list = [...nextNodes[projectId]];
-            Object.entries(updates).forEach(([idxStr, eventId]) => {
-              const idx = parseInt(idxStr, 10);
-              if (list[idx]) {
-                list[idx] = {
-                  ...list[idx],
-                  googleCalendarEventId: eventId,
-                  googleCalendarId: selectedCalendarId
-                };
-              }
-            });
-            nextNodes[projectId] = list;
-          }
-        });
-        return {
-          ...prev,
-          nodes: nextNodes
-        };
-      });
-    }
-
-    setIsSyncingCalendar(false);
-    if (failCount === 0) {
-      setCalendarSyncSuccess(`Успешно синхронизировано ${successCount} задач с вашим Google Календарем.`);
-    } else {
-      setCalendarSyncSuccess(`Синхронизировано ${successCount} задач. Не удалось синхронизировать ${failCount} задач.`);
-    }
-  };
-
-  // Bidirectional (Two-way) Google Calendar Synchronization
-  const runCalendarBidirectionalSync = async (token: string) => {
-    if (isSyncingCalendar) return;
-    setIsSyncingCalendar(true);
-    setCalendarSyncError(null);
-    setCalendarSyncSuccess(null);
-
-    try {
-      // 1. First, push local changes to Google Calendar (so any local new/edited tasks are sent to GCal first)
-      const allProjectsNodes = state.nodes as Record<string, TaskNode[]>;
-      const localTasksToSync: { projectId: string; taskIndex: number; task: TaskNode }[] = [];
-
-      Object.entries(allProjectsNodes).forEach(([projectId, taskList]) => {
-        taskList.forEach((task, idx) => {
-          if ((task.startDate || task.dueDate) && !task.archived) {
-            localTasksToSync.push({ projectId, taskIndex: idx, task });
-          }
-        });
-      });
-
-      // Track mapped event IDs to update locally after push
-      const updatedLocalEventIds: Record<string, Record<number, string>> = {};
-
-      for (const item of localTasksToSync) {
-        try {
-          const eventId = await syncTaskToGoogleCalendar(token, item.task, selectedCalendarId);
-          if (!updatedLocalEventIds[item.projectId]) {
-            updatedLocalEventIds[item.projectId] = {};
-          }
-          updatedLocalEventIds[item.projectId][item.taskIndex] = eventId;
-        } catch (err) {
-          console.error('[Calendar Sync] Failed pushing local task:', item.task.text, err);
-        }
-      }
-
-      // Update state with newly created event IDs before pull so we can match them correctly
-      let intermediateState = { ...state };
-      if (Object.keys(updatedLocalEventIds).length > 0) {
-        const nextNodes = { ...intermediateState.nodes } as Record<string, TaskNode[]>;
-        Object.entries(updatedLocalEventIds).forEach(([projectId, updates]) => {
-          if (nextNodes[projectId]) {
-            const list = [...nextNodes[projectId]];
-            Object.entries(updates).forEach(([idxStr, eventId]) => {
-              const idx = parseInt(idxStr, 10);
-              if (list[idx]) {
-                list[idx] = {
-                  ...list[idx],
-                  googleCalendarEventId: eventId,
-                  googleCalendarId: selectedCalendarId
-                };
-              }
-            });
-            nextNodes[projectId] = list;
-          }
-        });
-        intermediateState = {
-          ...intermediateState,
-          nodes: nextNodes
-        };
-      }
-
-      // 2. Fetch events from Google Calendar
-      const gcalEvents = await listGoogleCalendarEvents(token, selectedCalendarId);
-
-      // 3. Match Google Calendar events with local tasks
-      const currentNodes = { ...intermediateState.nodes } as Record<string, TaskNode[]>;
-      let updatedCount = 0;
-      let createdCount = 0;
-
-      // Find first available project ID or use activeProjectId
-      const targetProjectId = intermediateState.activeProjectId || Object.keys(currentNodes)[0] || 'default';
-
-      if (!currentNodes[targetProjectId]) {
-        currentNodes[targetProjectId] = [];
-      }
-
-      gcalEvents.forEach(event => {
-        // Skip cancelled events or those without summary/start
-        if (event.status === 'cancelled' || !event.start) return;
-
-        // Try to find local task with this event ID
-        let found = false;
-        Object.entries(currentNodes).forEach(([projectId, taskList]) => {
-          const idx = taskList.findIndex(t => t.googleCalendarEventId === event.id);
-          if (idx !== -1) {
-            found = true;
-            // Update local task with GCal changes
-            const originalTask = taskList[idx];
-            const updatedTask = { ...originalTask };
-
-            let changed = false;
-
-            // Sync Summary
-            if (event.summary && event.summary !== originalTask.text) {
-              updatedTask.text = event.summary;
-              changed = true;
-            }
-
-            // Sync Dates
-            if (event.start.dateTime) {
-              const [datePart, timePart] = event.start.dateTime.split('T');
-              const timeFormatted = timePart ? timePart.substring(0, 5) : undefined;
-              
-              if (originalTask.startDate !== datePart || originalTask.startTime !== timeFormatted) {
-                updatedTask.startDate = datePart;
-                updatedTask.startTime = timeFormatted;
-                changed = true;
-              }
-            } else if (event.start.date) {
-              if (originalTask.startDate !== event.start.date || originalTask.startTime !== undefined) {
-                updatedTask.startDate = event.start.date;
-                updatedTask.startTime = undefined;
-                changed = true;
-              }
-            }
-
-            // Sync notes/description if changed
-            if (event.description && event.description !== originalTask.notes && !event.description.includes('Синхронизировано из приложения')) {
-              updatedTask.notes = event.description;
-              changed = true;
-            }
-
-            if (changed) {
-              const newList = [...taskList];
-              newList[idx] = updatedTask;
-              currentNodes[projectId] = newList;
-              updatedCount++;
-            }
-          }
-        });
-
-        // If no local task found for this GCal event, create a new one!
-        if (!found) {
-          let parsedStartDate: string | undefined;
-          let parsedStartTime: string | undefined;
-
-          if (event.start.dateTime) {
-            const [datePart, timePart] = event.start.dateTime.split('T');
-            parsedStartDate = datePart;
-            parsedStartTime = timePart ? timePart.substring(0, 5) : undefined;
-          } else if (event.start.date) {
-            parsedStartDate = event.start.date;
-          }
-
-          const newTask: TaskNode = {
-            id: `gcal-${event.id}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            projectId: targetProjectId,
-            text: event.summary || 'Без названия',
-            x: 100 + Math.random() * 200, // random offset for mindmap visualization
-            y: 100 + Math.random() * 200,
-            parentId: null,
-            completed: event.status === 'confirmed',
-            notes: event.description && !event.description.includes('Синхронизировано из приложения') ? event.description : '',
-            startDate: parsedStartDate,
-            startTime: parsedStartTime,
-            dueDate: parsedStartDate, // match due date as start date by default
-            priority: 'none',
-            tags: [],
-            files: [],
-            googleCalendarEventId: event.id,
-            googleCalendarId: selectedCalendarId
-          };
-
-          currentNodes[targetProjectId] = [...currentNodes[targetProjectId], newTask];
-          createdCount++;
-        }
-      });
-
-      // Update state with all pull updates
-      setState({
-        ...intermediateState,
-        nodes: currentNodes
-      });
-
-      setCalendarSyncSuccess(`Двусторонняя синхронизация завершена успешно! Обновлено локальных задач: ${updatedCount}, импортировано новых: ${createdCount}.`);
-    } catch (err: any) {
-      console.error('[Google Calendar] Bidirectional sync failed:', err);
-      setCalendarSyncError(`Ошибка синхронизации: ${err.message || err}`);
-    } finally {
-      setIsSyncingCalendar(false);
-    }
-  };
 
   // Close / stop the active Pomodoro session
   const handleClosePomo = () => {
@@ -2567,13 +2454,67 @@ export default function App() {
       const parent = currentNodes.find(p => p.id === newParentId);
       const parentColor = parent ? parent.color : '';
 
+      const isOverlapping = (tx: number, ty: number, nodeId: string) => {
+        return currentNodes.some(other => {
+          if (other.id === nodeId) return false;
+          if (other.isContainer) {
+            const halfW = (other.width || 520) / 2;
+            const halfH = (other.height || 400) / 2;
+            const dx = Math.abs(tx - other.x);
+            const dy = Math.abs(ty - other.y);
+            return dx < (halfW + 110) && dy < (halfH + 45);
+          } else {
+            const dx = Math.abs(tx - other.x);
+            const dy = Math.abs(ty - other.y);
+            return dx < 240 && dy < 90;
+          }
+        });
+      };
+
       const updatedList = currentNodes.map(n => {
         if (n.id === id) {
           // Calculate non-overlapping coordinates if re-parented to a non-container task node
           let targetX = newX !== undefined ? newX : n.x;
           let targetY = newY !== undefined ? newY : n.y;
           
-          if (newX === undefined && newY === undefined) {
+          const isNewParent = n.parentId !== newParentId;
+
+          if (newParentId !== null && parent && !parent.isContainer && isNewParent) {
+            // New attachment of child task to parent task node!
+            // Let's find an empty slot around the parent to prevent overlap/intersection
+            const isLeft = parent.x < 0;
+            const baseDx = isLeft ? -250 : 250;
+            
+            let foundX = parent.x + baseDx;
+            let foundY = parent.y;
+            let found = false;
+            
+            const yMultiplier = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7, 8, -8];
+            const xOffsets = [0, 40, -40, 80, -80, 120, -120];
+            
+            for (const xOff of xOffsets) {
+              const tx = parent.x + baseDx + (isLeft ? -xOff : xOff);
+              for (const ym of yMultiplier) {
+                const ty = parent.y + ym * 100;
+                if (!isOverlapping(tx, ty, id)) {
+                  foundX = tx;
+                  foundY = ty;
+                  found = true;
+                  break;
+                }
+              }
+              if (found) break;
+            }
+            
+            if (!found) {
+              const siblingCount = currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id).length;
+              foundX = parent.x + baseDx;
+              foundY = parent.y + (siblingCount + 1) * 100;
+            }
+            
+            targetX = foundX;
+            targetY = foundY;
+          } else if (newX === undefined && newY === undefined) {
             if (parent && !parent.isContainer) {
               const isLeft = parent.x < 0 || (parent.x === 0 && (currentNodes.filter(sib => sib.parentId === parent.id && sib.id !== id).length % 2 !== 0));
               targetX = parent.x + (isLeft ? -250 : 250);
@@ -4367,7 +4308,26 @@ export default function App() {
         )}
 
         {/* The Mind Map Interactive Canvas Frame. Occupies 100% space! */}
-        <div className="flex-1 w-full min-h-0 relative bg-[#FAFBFD] dark:bg-slate-950/20">
+        <div 
+          className="flex-1 w-full min-h-0 relative bg-[#FAFBFD] dark:bg-slate-950/20"
+          onMouseDown={handleGlobalMouseDown}
+          onMouseMove={handleGlobalMouseMove}
+          onMouseUp={handleGlobalMouseUp}
+          onMouseLeave={handleGlobalMouseUp}
+        >
+          {/* Global Selection Marquee */}
+          {isGlobalDragSelecting && globalSelectionStart && globalSelectionEnd && (
+            <div
+              className="absolute border-2 border-dashed border-indigo-500 bg-indigo-500/10 dark:border-indigo-400 dark:bg-indigo-400/10 pointer-events-none rounded-sm transition-all duration-[10ms]"
+              style={{
+                left: Math.min(globalSelectionStart.x, globalSelectionEnd.x),
+                top: Math.min(globalSelectionStart.y, globalSelectionEnd.y),
+                width: Math.abs(globalSelectionStart.x - globalSelectionEnd.x),
+                height: Math.abs(globalSelectionStart.y - globalSelectionEnd.y),
+                zIndex: 9999
+              }}
+            />
+          )}
           
           {state.activeProjectId ? (
             viewMode === 'mobile-list' ? (
@@ -4683,17 +4643,6 @@ export default function App() {
                   }`}
                 >
                   📁 Google Таблицы
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => setSyncModalTab('calendar')}
-                  className={`flex-1 py-3 text-center text-xs font-extrabold border-b-2 transition-all cursor-pointer ${
-                    syncModalTab === 'calendar' 
-                      ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 font-bold' 
-                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100/50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  📅 Google Календарь
                 </button>
                 <button 
                   type="button"
@@ -5230,136 +5179,7 @@ export default function App() {
               </>
             )}
 
-            {syncModalTab === 'calendar' && (
-              <div className="space-y-5.5">
-                {/* Calendar Selector */}
-                <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4.5 rounded-xl space-y-3.5">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1 px-1.5 bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400 rounded font-extrabold text-[10px]">
-                      КАЛЕНДАРЬ
-                    </div>
-                    <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-200">
-                      Выберите Google Календарь для синхронизации
-                    </h4>
-                  </div>
 
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Все задачи, у которых указана дата начала или крайний срок, будут выгружены как события в выбранный календарь.
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                    <select
-                      value={selectedCalendarId}
-                      onChange={(e) => {
-                        setSelectedCalendarId(e.target.value);
-                        localStorage.setItem('google_calendar_id', e.target.value);
-                      }}
-                      disabled={!googleToken}
-                      className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg py-1.5 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer text-slate-700 dark:text-slate-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-                    >
-                      {calendars.length > 0 ? (
-                        calendars.map(cal => (
-                          <option key={cal.id} value={cal.id}>
-                            {cal.summary} {cal.primary ? '(Основной)' : ''}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="primary">Основной календарь (primary)</option>
-                      )}
-                    </select>
-                    
-                    {googleToken && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          listGoogleCalendars(googleToken)
-                            .then(list => setCalendars(list))
-                            .catch(err => {
-                              console.error(err);
-                              setCalendarSyncError('Не удалось обновить список календарей.');
-                            });
-                        }}
-                        className="py-1.5 px-3 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs rounded-lg font-medium cursor-pointer flex items-center justify-center gap-1 shrink-0 transition-colors"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        Обновить список
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Explainer section */}
-                <div className="bg-indigo-50/45 dark:bg-indigo-950/15 border border-indigo-100/50 dark:border-indigo-900/35 p-4 rounded-xl space-y-2">
-                  <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 leading-none">
-                    <Calendar className="w-3.5 h-3.5 text-indigo-500" />
-                    Как работает синхронизация календаря?
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1.5 text-slate-550 dark:text-slate-400 leading-relaxed font-normal text-[11px]">
-                    <li>
-                      <span className="font-semibold text-slate-700 dark:text-slate-350">Умная привязка</span>: Все задачи, у которых заполнено поле <b>Даты начала (startDate)</b> или <b>Срок (dueDate)</b>, будут созданы в вашем Google Календаре.
-                    </li>
-                    <li>
-                      <span className="font-semibold text-slate-700 dark:text-slate-350">Двусторонняя сверка</span>: Каждой задаче присваивается уникальный ID события Google Календаря, что исключает дублирование при последующих синхронизациях.
-                    </li>
-                    <li>
-                      <span className="font-semibold text-slate-700 dark:text-slate-350">Поддержка времени</span>: Если у задачи указано время начала или срок, событие в календаре будет запланировано на конкретный час, иначе — на весь день.
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Sync Success/Error notifications */}
-                {calendarSyncError && (
-                  <div className="bg-rose-50 dark:bg-rose-950/25 border border-rose-200 dark:border-rose-900 rounded-xl p-3.5 text-xs text-rose-700 dark:text-rose-400 font-bold flex items-center gap-2 animate-in fade-in duration-150">
-                    <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
-                    <span>{calendarSyncError}</span>
-                  </div>
-                )}
-
-                {calendarSyncSuccess && (
-                  <div className="bg-emerald-50 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-900 rounded-xl p-3.5 text-xs text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-2 animate-in fade-in duration-150">
-                    <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-                    <span>{calendarSyncSuccess}</span>
-                  </div>
-                )}
-
-                {/* Sync Buttons */}
-                <div className="flex flex-col items-center gap-3 py-4 border-t border-slate-100 dark:border-slate-800">
-                  {googleToken ? (
-                    <div className="w-full max-w-md space-y-2.5">
-                      <button
-                        type="button"
-                        disabled={isSyncingCalendar}
-                        onClick={() => runCalendarBidirectionalSync(googleToken)}
-                        className="w-full bg-indigo-600 hover:bg-indigo-750 disabled:bg-indigo-600/55 text-white font-extrabold text-xs tracking-wider uppercase py-3.5 px-6 rounded-xl border border-indigo-600 cursor-pointer shadow-md transition-all hover:scale-[1.015] flex items-center justify-center gap-2"
-                      >
-                        <RefreshCw className={`w-4 h-4 ${isSyncingCalendar ? 'animate-spin' : ''}`} />
-                        <span>🔄 ДВУСТОРОННЯЯ СИНХРОНИЗАЦИЯ (РЕКОМЕНДУЕТСЯ)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={isSyncingCalendar}
-                        onClick={() => runCalendarSync(googleToken)}
-                        className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-xs tracking-wider uppercase py-3 px-6 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer transition-all flex items-center justify-center gap-2"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>⬆️ ТОЛЬКО ЭКСПОРТ ИЗ ПРИЛОЖЕНИЯ В КАЛЕНДАРЬ</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="w-full max-w-md text-center p-3 border border-dashed border-slate-205 dark:border-slate-800 text-slate-400 rounded-xl bg-slate-50/30 italic">
-                      Авторизуйтесь, чтобы запустить синхронизацию с Google Календарем
-                    </div>
-                  )}
-
-                  {isSyncingCalendar && (
-                    <div className="text-[10px] text-indigo-500 font-bold animate-pulse">
-                      Выполняется синхронизация с Google Календарем... Пожалуйста, подождите.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
             {syncModalTab === 'backups' && (
               <div className="space-y-5 animate-in fade-in duration-200">
@@ -5871,6 +5691,75 @@ export default function App() {
           </div>
         );
       })()}
+
+      {/* Floating Global Bulk Action Panel for Desktop */}
+      <AnimatePresence>
+        {selectedNodeIds.length > 0 && viewMode !== 'mobile-list' && viewMode !== 'canvas' && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[9999] flex flex-row items-center gap-3 px-4 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl shadow-[0_12px_40px_-6px_rgba(0,0,0,0.15)] dark:shadow-[0_12px_40px_-6px_rgba(0,0,0,0.5)] select-none text-slate-800 dark:text-slate-100 max-w-xl shrink-0"
+          >
+            <div className="flex items-center gap-2 px-1 shrink-0">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-[10px] font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                {selectedNodeIds.length}
+              </span>
+              <span className="text-xs font-bold tracking-tight text-slate-700 dark:text-slate-300">Выделено</span>
+            </div>
+            
+            <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-800" />
+            
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBulkToggleCompleted(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Выполнить</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBulkToggleCompleted(false);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
+              >
+                <Circle className="w-3.5 h-3.5 text-slate-400" />
+                <span>Сбросить статус</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBulkDelete();
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-rose-500 hover:bg-rose-600 text-white shadow-sm transition-all cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Удалить</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedNodeIds([]);
+                  setIsMultiSelectMode(false);
+                }}
+                className="flex items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                title="Сбросить выделение"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

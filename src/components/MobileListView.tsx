@@ -754,6 +754,7 @@ export default function MobileListView({
       <div key={node.id} className={`${mlClass} flex flex-col`}>
         <div
           id={`mobile-task-card-${node.id}`}
+          data-task-id={node.id}
           draggable={!isEditing}
           onDragStart={(e) => handleDragStart(e, node.id)}
           onDragOver={(e) => handleDragOverCard(e, node.id)}

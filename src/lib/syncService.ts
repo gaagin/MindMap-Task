@@ -177,7 +177,9 @@ export function mergeWorkspaceStates(
     } else {
       const localTime = new Date(existingF.updatedAt || 0).getTime();
       const remoteTime = new Date(sf.updatedAt || 0).getTime();
-      if (remoteTime > localTime) {
+      const isLocalEditedInSession = sessionStartTime && existingF.updatedAt && 
+        (new Date(existingF.updatedAt).getTime() >= new Date(sessionStartTime).getTime());
+      if (remoteTime > localTime && !isLocalEditedInSession) {
         mergedFoldersMap.set(sf.id, sf);
       }
     }
@@ -212,7 +214,9 @@ export function mergeWorkspaceStates(
     } else {
       const localTime = new Date(existingP.updatedAt || 0).getTime();
       const remoteTime = new Date(sp.updatedAt || 0).getTime();
-      if (remoteTime > localTime) {
+      const isLocalEditedInSession = sessionStartTime && existingP.updatedAt && 
+        (new Date(existingP.updatedAt).getTime() >= new Date(sessionStartTime).getTime());
+      if (remoteTime > localTime && !isLocalEditedInSession) {
         mergedProjectsMap.set(sp.id, sp);
       }
     }
@@ -249,7 +253,9 @@ export function mergeWorkspaceStates(
     } else {
       const localTime = new Date(existingN.updatedAt || 0).getTime();
       const remoteTime = new Date(sn.updatedAt || 0).getTime();
-      if (remoteTime > localTime) {
+      const isLocalEditedInSession = sessionStartTime && existingN.updatedAt && 
+        (new Date(existingN.updatedAt).getTime() >= new Date(sessionStartTime).getTime());
+      if (remoteTime > localTime && !isLocalEditedInSession) {
         // REMOTE wins! Restore full local base64 dataUrl if Google Sheets or remote cloud has placeholder string
         const mergedFiles = (sn.files || []).map(remoteFile => {
           if (remoteFile.dataUrl?.startsWith('_OMITTED_DUE_TO_SIZE_')) {
@@ -309,7 +315,9 @@ export function mergeWorkspaceStates(
     } else {
       const localTime = new Date(existingTC.updatedAt || 0).getTime();
       const remoteTime = new Date(stc.updatedAt || 0).getTime();
-      if (remoteTime > localTime) {
+      const isLocalEditedInSession = sessionStartTime && existingTC.updatedAt && 
+        (new Date(existingTC.updatedAt).getTime() >= new Date(sessionStartTime).getTime());
+      if (remoteTime > localTime && !isLocalEditedInSession) {
         mergedTagCatsMap.set(stc.id, stc);
       }
     }

@@ -558,6 +558,7 @@ export default function TableView({
                 return (
                   <tr
                     key={task.id}
+                    data-task-id={task.id}
                     onClick={(e) => onSelectNode(task.id, e)}
                     className={`group/row transition-all h-12 text-xs hover:bg-slate-50/55 dark:hover:bg-slate-800/45 cursor-pointer ${
                       isSelected ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : ''

@@ -431,6 +431,7 @@ export default function GanttView({
                 tasks.map(task => (
                   <div
                     key={task.id}
+                    data-task-id={task.id}
                     onClick={(e) => onSelectNode(task.id, e)}
                     className={`h-11 px-3.5 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors border-l-4 ${
                       selectedNodeId === task.id 

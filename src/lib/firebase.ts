@@ -14,8 +14,6 @@ export const googleProvider = new GoogleAuthProvider();
 // Enable Google Drive file access and Google Sheets access
 googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
 googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
-googleProvider.addScope('https://www.googleapis.com/auth/calendar');
-googleProvider.addScope('https://www.googleapis.com/auth/calendar.events');
 // Prioritize user's account and avoid showing "Choose your account" screen
 googleProvider.setCustomParameters({
   login_hint: 'adibavtomatika@gmail.com'

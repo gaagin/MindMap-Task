@@ -702,6 +702,7 @@ export default function KanbanView({
       <motion.div
         key={node.id}
         id={`kanban-card-${node.id}`}
+        data-task-id={node.id}
         draggable="true"
         onDragStart={(e) => handleDragStart(e, node.id)}
         onClick={(e) => onSelectNode(node.id, e)}

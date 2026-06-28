@@ -1038,7 +1038,7 @@ export default function MindMapCanvas({
                   </div>
 
                   {/* Quick Action buttons for selected list task inside container */}
-                  {selectedNodeId === child.id && (
+                  {selectedNodeId === child.id && (!selectedNodeIds || selectedNodeIds.length <= 1) && (
                     <div 
                       data-drag-ignore
                       onClick={(e) => e.stopPropagation()}
@@ -1468,7 +1468,7 @@ export default function MindMapCanvas({
                         </div>
 
                         {/* Quick action buttons for selected task card inside container Kanban board */}
-                        {selectedNodeId === child.id && (
+                        {selectedNodeId === child.id && (!selectedNodeIds || selectedNodeIds.length <= 1) && (
                           <div 
                             data-drag-ignore
                             onClick={(e) => e.stopPropagation()}
@@ -2989,6 +2989,7 @@ export default function MindMapCanvas({
 
   // Background Canvas Drag/Panning Handlers
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.ctrlKey) return; // Prevent panning when Ctrl is held for multi-selection
     if (isButtonOrCardInput(e)) return;
     
     // Close dropdowns
@@ -3458,32 +3459,7 @@ export default function MindMapCanvas({
               }
             }
           } else {
-            // Dragged away from standard parent by more than 330px on empty space -> auto detach!
-            const dx = node.x - currentParent.x;
-            const dy = node.y - currentParent.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist > 330) {
-              if (focusedContainerId) {
-                onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
-              } else {
-                // Check if release position is inside any container
-                const container = visibleNodes.find(otherNode => {
-                  if (otherNode.id === node.id) return false;
-                  if (!otherNode.isContainer) return false;
-                  const cdx = Math.abs(node.x - otherNode.x);
-                  const cdy = Math.abs(node.y - otherNode.y);
-                  const isCollapsed = !!otherNode.collapsed;
-                  const halfW = (isCollapsed ? 220 : (otherNode.width || 520)) / 2;
-                  const halfH = (isCollapsed ? 100 : (otherNode.height || 400)) / 2;
-                  return cdx < halfW && cdy < halfH;
-                });
-                if (container) {
-                  onUpdateNodeParent(node.id, container.id, node.x, node.y);
-                } else {
-                  onUpdateNodeParent(node.id, null, node.x, node.y);
-                }
-              }
-            }
+            // Dragged away from standard parent -> do not auto-detach on drag (only via detach button)
           }
         }
       }
@@ -3567,7 +3543,9 @@ export default function MindMapCanvas({
             setNodeOffsetStart(potentialNodeOffsetRef.current);
             setHasDraggedNode(false); // Do not mark as dragged unless they actually move their finger
             didDragRef.current = false;
-            onSelectNode(nodeId);
+            if (!selectedNodeIds || !selectedNodeIds.includes(nodeId)) {
+              onSelectNode(nodeId);
+            }
 
             if (navigator.vibrate) {
               try { navigator.vibrate(60); } catch (err) {}
@@ -4231,32 +4209,7 @@ export default function MindMapCanvas({
                 }
               }
             } else {
-              // Dragged away from standard parent by more than 330px on empty space -> auto detach!
-              const dx = node.x - currentParent.x;
-              const dy = node.y - currentParent.y;
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              if (dist > 330) {
-                if (focusedContainerId) {
-                  onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
-                } else {
-                  // Check if release position is inside any container
-                  const container = visibleNodes.find(otherNode => {
-                    if (otherNode.id === node.id) return false;
-                    if (!otherNode.isContainer) return false;
-                    const cdx = Math.abs(node.x - otherNode.x);
-                    const cdy = Math.abs(node.y - otherNode.y);
-                    const isCollapsed = !!otherNode.collapsed;
-                    const halfW = (isCollapsed ? 220 : (otherNode.width || 520)) / 2;
-                    const halfH = (isCollapsed ? 100 : (otherNode.height || 400)) / 2;
-                    return cdx < halfW && cdy < halfH;
-                  });
-                  if (container) {
-                    onUpdateNodeParent(node.id, container.id, node.x, node.y);
-                  } else {
-                    onUpdateNodeParent(node.id, null, node.x, node.y);
-                  }
-                }
-              }
+              // Dragged away from standard parent -> do not auto-detach on drag (only via detach button)
             }
           }
         }
@@ -4405,10 +4358,22 @@ export default function MindMapCanvas({
   // Start dragging a node from Mouse Down
   const startDragNode = (e: React.MouseEvent, node: TaskNode) => {
     if (isButtonOrCardInput(e)) return;
+    
+    // If Ctrl is held, prevent node drag and let onClick handle selection
+    if (e.ctrlKey) {
+      e.stopPropagation();
+      return;
+    }
+    
     if (node.id === focusedContainerId) return; // Disable dragging the container if it's currently focused in fullscreen
     
     e.stopPropagation();
-    onSelectNode(node.id);
+    
+    // If the node is NOT already in selectedNodeIds, reset selection to just this node
+    if (!selectedNodeIds || !selectedNodeIds.includes(node.id)) {
+      onSelectNode(node.id, e);
+    }
+    
     setDraggingNodeId(node.id);
     setDragStart({ x: e.clientX, y: e.clientY });
     setNodeOffsetStart({ x: node.x, y: node.y });
@@ -4772,13 +4737,13 @@ export default function MindMapCanvas({
             <button
               onClick={() => {
                 if (onFocusedTaskIdChange) {
-                  onFocusedTaskIdChange(null);
+                  onFocusedTaskIdChange(focusedTask?.parentId || null);
                 }
               }}
               className="text-[10px] font-black text-rose-500 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-200 uppercase tracking-wider hover:scale-105 transition-transform px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/40 rounded-md cursor-pointer border border-rose-100 dark:border-rose-900/30"
-              title="Сбросить режим фокуса задачи"
+              title={focusedTask?.parentId ? "Вернуться к родительской задаче" : "Выйти из режима фокуса"}
             >
-              Сбросить
+              Назад
             </button>
           </div>
         );
@@ -5629,7 +5594,7 @@ export default function MindMapCanvas({
 
         {/* Task Nodes Render */}
         {visibleNodes.map((node) => {
-          const isSelected = selectedNodeId === node.id;
+          const isSelected = selectedNodeId === node.id || (selectedNodeIds && selectedNodeIds.includes(node.id));
 
           if (node.isContainer) {
             const isSelfFocused = focusedContainerId === node.id;
@@ -5717,7 +5682,7 @@ export default function MindMapCanvas({
                 onClick={(e) => {
                   if (hasDraggedNode || didDragRef.current) return;
                   e.stopPropagation();
-                  onSelectNode(node.id);
+                  onSelectNode(node.id, e);
                 }}
               >
                 {/* Floating Figma-like Container Title: Always visible, zoom-independent scale */}
@@ -5732,7 +5697,7 @@ export default function MindMapCanvas({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSelectNode(node.id);
+                    onSelectNode(node.id, e);
                   }}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
@@ -6622,8 +6587,8 @@ export default function MindMapCanvas({
                 return dx > maxW || dy > maxH;
               }
             } else {
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              return dist > 330;
+              // Standard parent nodes do not auto-detach on drag
+              return false;
             }
           })();
 
@@ -7673,7 +7638,7 @@ export default function MindMapCanvas({
               </div>
 
               {/* Action Buttons appearing on task selection/click - "Добавить дочернюю задачу", "Заметки", "добавить файл", "Удалить" */}
-              {isSelected && draggingNodeId === null && potentialDragNodeIdRef.current === null && (
+              {isSelected && (!selectedNodeIds || selectedNodeIds.length <= 1) && draggingNodeId === null && potentialDragNodeIdRef.current === null && (
                 <div 
                   data-drag-ignore
                   className="absolute -bottom-11 left-1/2 flex items-center gap-1.5 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-[0_8px_25px_-4px_rgba(99,102,241,0.25)] dark:shadow-[0_8px_25px_-4px_rgba(0,0,0,0.6)] z-50 pointer-events-auto whitespace-nowrap animate-fade-in"
@@ -7718,7 +7683,7 @@ export default function MindMapCanvas({
                         onFocusedTaskIdChange(focusedTaskId === node.id ? null : node.id);
                       }
                     }}
-                    title={focusedTaskId === node.id ? "Сбросить фокус" : "Фокусировка на задаче (показать только ее и подзадачи)"}
+                    title={focusedTaskId === node.id ? "Выйти из режима фокуса" : "Фокусировка на задаче (показать только ее и подзадачи)"}
                     className={`flex items-center justify-center w-8 h-8 rounded-full cursor-pointer transition-colors ${
                       focusedTaskId === node.id
                         ? 'text-rose-600 bg-rose-50 dark:bg-rose-955/40 dark:text-rose-400'
@@ -7727,6 +7692,24 @@ export default function MindMapCanvas({
                   >
                     <Target className="w-4 h-4" />
                   </button>
+
+                  {node.parentId && !currentParentForNode?.isContainer && (
+                    <>
+                      <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                      {/* Button 3.7: Отсоединить от родительской задачи */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUpdateNodeParent(node.id, null, node.x, node.y);
+                        }}
+                        title="Отсоединить от родительской задачи"
+                        className="flex items-center justify-center w-8 h-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                      >
+                        <Link2Off className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
 
                   {true && (
                     <>
