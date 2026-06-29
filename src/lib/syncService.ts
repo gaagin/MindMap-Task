@@ -1011,6 +1011,9 @@ export async function syncWithGoogleSheets(
           });
           mergedNodesMap.set(sn.id, {
             ...sn,
+            pomodoroTotalTime: local.pomodoroTotalTime,
+            pomodoroSessionsCount: local.pomodoroSessionsCount,
+            history: local.history,
             files: mergedFiles
           });
         }

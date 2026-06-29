@@ -71,7 +71,8 @@ import {
   saveToFirebaseDirectly, 
   loadFromFirebaseDirectly, 
   syncWithGoogleSheets, 
-  logDeletion 
+  logDeletion,
+  mergeWorkspaceStates
 } from './lib/syncService';
 
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
@@ -688,12 +689,19 @@ export default function App() {
                 const durationSaved = parsed.duration;
 
                 setState(prev => {
-                  const pid = prev.activeProjectId;
-                  if (!pid) return prev;
+                  let foundProjectId: string | null = null;
+                  let targetNode: TaskNode | undefined = undefined;
 
-                  const currentNodes = prev.nodes[pid] || [];
-                  const targetNode = currentNodes.find(n => n.id === nodeId);
-                  if (!targetNode) return prev;
+                  for (const [pid, nodeList] of Object.entries(prev.nodes)) {
+                    const found = (nodeList as TaskNode[]).find(n => n.id === nodeId);
+                    if (found) {
+                      foundProjectId = pid;
+                      targetNode = found;
+                      break;
+                    }
+                  }
+
+                  if (!targetNode || !foundProjectId) return prev;
 
                   const updatedNode = {
                     ...targetNode,
@@ -702,13 +710,13 @@ export default function App() {
                     updatedAt: new Date().toISOString()
                   };
 
-                  const updatedList = currentNodes.map(n => n.id === nodeId ? updatedNode : n);
+                  const updatedList = prev.nodes[foundProjectId].map(n => n.id === nodeId ? updatedNode : n);
                   const syncedNodes = syncCompletion(updatedList);
                   return {
                     ...prev,
                     nodes: {
                       ...prev.nodes,
-                      [pid]: syncedNodes
+                      [foundProjectId]: syncedNodes
                     }
                   };
                 });
@@ -1531,7 +1539,28 @@ export default function App() {
         // We can safely ignore this nodes mismatch.
         if (isCloudSameAsLastSynced && !isFirstSnapshotRef.current) {
           console.log('[Sync] Ignoring cloud snapshot because cloud nodes list matches our last successfully synced state.');
-        } else if (unsyncedEditsCountRef.current === 0 || isFirstSnapshotRef.current) {
+        } else if (isFirstSnapshotRef.current) {
+          if (!fromCache) {
+            isFirstSnapshotRef.current = false;
+          }
+          // Merge local (currentState) and cloud (normalizedCloud) states symmetrically
+          const merged = mergeWorkspaceStates(currentState, normalizedCloud, mergedDeletions);
+          const mergedHash = getSyncHash(merged);
+
+          ignoreNextStateChangeRef.current = true;
+          lastSyncedStateHashRef.current = mergedHash; // Update hash to prevent loops
+          setRawState(merged);
+          setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+
+          // If the merged state is different from cloud, we have local changes (e.g. startup pomo completion) that need syncing back to the cloud
+          if (mergedHash !== cloudHash) {
+            setUnsyncedEditsCount(1);
+          } else {
+            setUnsyncedEditsCount(0);
+          }
+          setHasCloudUpdates(false);
+          setCloudUpdateState(null);
+        } else if (unsyncedEditsCountRef.current === 0) {
           if (!fromCache) {
             isFirstSnapshotRef.current = false;
           }
