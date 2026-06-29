@@ -433,7 +433,7 @@ export default function EisenhowerMatrixView({
     }
   };
 
-  const totalImportantHours = useMemo(() => {
+  const totalImportantText = useMemo(() => {
     const q1 = quadrants.find(q => q.id === 'q1');
     const q2 = quadrants.find(q => q.id === 'q2');
     
@@ -449,7 +449,13 @@ export default function EisenhowerMatrixView({
       return sum + (et !== undefined && et !== null && !isNaN(et) ? et : 0);
     }, 0);
     
-    return Number((sumQ1 + sumQ2).toFixed(1));
+    const totalMinutes = sumQ1 + sumQ2;
+    if (totalMinutes < 60) {
+      return `${totalMinutes} мин`;
+    } else {
+      const hours = Number((totalMinutes / 60).toFixed(1));
+      return `${hours} ч`;
+    }
   }, [filteredTasks]);
 
   return (
@@ -477,7 +483,7 @@ export default function EisenhowerMatrixView({
             title="Сумма ориентировочного времени работы для квадрантов 'Важно и срочно' и 'Важно, но несрочно'"
           >
             <Timer className="w-3.5 h-3.5" />
-            <span>Время важных дел (I + II): <span className="font-extrabold">{totalImportantHours} ч</span></span>
+            <span>Время важных дел (I + II): <span className="font-extrabold">{totalImportantText}</span></span>
           </div>
 
           {/* Toggle Button for Full Screen */}
