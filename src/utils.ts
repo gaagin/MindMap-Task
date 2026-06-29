@@ -231,9 +231,13 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
         }
 
         // Calculate estimated work time if at least one subtask has a set estimated time
-        const subtasksWithTime = children.filter(c => c.estimatedTime !== undefined && c.estimatedTime !== null && !c.archived);
+        const subtasksWithTime = children.filter(c => c.estimatedTime !== undefined && c.estimatedTime !== null && !isNaN(c.estimatedTime) && !c.archived);
         if (subtasksWithTime.length > 0) {
-          const sumTime = children.reduce((acc, c) => acc + (c.archived ? 0 : (c.estimatedTime || 0)), 0);
+          const sumTime = children.reduce((acc, c) => {
+            const val = c.estimatedTime;
+            const validVal = (val !== undefined && val !== null && !isNaN(val) && !c.archived) ? val : 0;
+            return acc + validVal;
+          }, 0);
           if (nextNode.estimatedTime !== sumTime) {
             nextNode.estimatedTime = sumTime;
             nodeChanged = true;

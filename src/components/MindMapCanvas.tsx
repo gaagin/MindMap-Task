@@ -7473,7 +7473,7 @@ export default function MindMapCanvas({
                         </span>
                       )}
 
-                      {node.estimatedTime !== undefined && node.estimatedTime !== null && (
+                      {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) && (
                         <span 
                           className={`inline-flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded border ${
                             isRoot 

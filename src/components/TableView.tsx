@@ -658,7 +658,7 @@ export default function TableView({
                             <span>🍅</span>
                           </span>
                         )}
-                        {task.estimatedTime !== undefined && task.estimatedTime !== null && (
+                        {task.estimatedTime !== undefined && task.estimatedTime !== null && !isNaN(task.estimatedTime) && (
                           <span 
                             className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded border border-indigo-150/20"
                             title={`Ориентировочное время: ${task.estimatedTime} ч`}

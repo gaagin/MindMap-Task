@@ -215,7 +215,7 @@ export async function saveStateToGoogleSheets(
         node.parentId || '',
         node.isFloating ? 'Да' : 'Нет',
         node.archived ? 'Да' : 'Нет',
-        node.estimatedTime !== undefined && node.estimatedTime !== null ? node.estimatedTime : '',
+        node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) ? node.estimatedTime : '',
       ]);
     });
   });

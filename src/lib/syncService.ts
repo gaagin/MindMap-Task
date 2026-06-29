@@ -796,7 +796,7 @@ export async function syncWithGoogleSheets(
           isWorkflowRectangle: r[28] === 'TRUE' || r[28] === 'true',
           workflowConnections: workflowConnections.length > 0 ? workflowConnections : undefined,
           archived: r[30] === 'TRUE' || r[30] === 'true',
-          estimatedTime: r[31] && r[31] !== 'NULL' ? Number(r[31]) : undefined
+          estimatedTime: r[31] && r[31] !== 'NULL' && !isNaN(Number(r[31])) ? Number(r[31]) : undefined
         };
       });
     };
@@ -1189,7 +1189,7 @@ export async function syncWithGoogleSheets(
         n.isWorkflowRectangle ? 'TRUE' : 'FALSE',
         safeCellString(workflowConnectionsJson),
         n.archived ? 'TRUE' : 'FALSE',
-        n.estimatedTime !== undefined && n.estimatedTime !== null ? n.estimatedTime : 'NULL'
+        n.estimatedTime !== undefined && n.estimatedTime !== null && !isNaN(n.estimatedTime) ? n.estimatedTime : 'NULL'
       ];
     });
 

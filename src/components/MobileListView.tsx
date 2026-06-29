@@ -960,7 +960,7 @@ export default function MobileListView({
                             </span>
                           )}
 
-                          {node.estimatedTime !== undefined && node.estimatedTime !== null && (
+                          {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) && (
                             <span 
                               className="flex items-center gap-1 px-1 rounded-sm border bg-indigo-50/70 border-indigo-150/40 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 text-[9px] font-bold"
                               title={`Ориентировочное время: ${node.estimatedTime} ч`}
@@ -1174,7 +1174,7 @@ export default function MobileListView({
                                   <span>{child.dueDate}{child.dueTime ? ` ${child.dueTime}` : ''}</span>
                                 </span>
                               )}
-                              {child.estimatedTime !== undefined && child.estimatedTime !== null && (
+                              {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) && (
                                 <span className="shrink-0 flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-sm border bg-indigo-50 border-indigo-100 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 font-bold">
                                   <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
                                   <span>{child.estimatedTime}ч</span>

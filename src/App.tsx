@@ -262,11 +262,46 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
     finalAllCats.forEach(c => finalDeduplicatedRootCatsMap.set(c.id, c));
     const finalNormalizedRootCats = Array.from(finalDeduplicatedRootCatsMap.values());
 
+    // Normalize all nodes to fix any NaN values
+    const normalizedNodes: Record<string, TaskNode[]> = {};
+    Object.entries(nodes).forEach(([pid, nodeList]) => {
+      if (Array.isArray(nodeList)) {
+        normalizedNodes[pid] = nodeList.map(n => {
+          let estTime = n.estimatedTime;
+          if (estTime !== undefined && estTime !== null) {
+            if (typeof estTime === 'string') {
+              const parsed = parseFloat(estTime);
+              estTime = isNaN(parsed) ? undefined : parsed;
+            } else if (typeof estTime === 'number') {
+              estTime = isNaN(estTime) ? undefined : estTime;
+            } else {
+              estTime = undefined;
+            }
+          } else {
+            estTime = undefined;
+          }
+
+          return {
+            ...n,
+            text: n.text || '',
+            x: Number(n.x) || 0,
+            y: Number(n.y) || 0,
+            estimatedTime: estTime,
+            completed: !!n.completed,
+            archived: !!n.archived,
+            parentId: n.parentId || null
+          };
+        });
+      } else {
+        normalizedNodes[pid] = [];
+      }
+    });
+
     return {
       ...wsState,
       folders,
       projects: updatedProjects,
-      nodes,
+      nodes: normalizedNodes,
       tagCategories: finalNormalizedRootCats,
       deletions
     };
@@ -325,7 +360,7 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         reminderDismissed: !!n.reminderDismissed,
         pomodoroTotalTime: n.pomodoroTotalTime !== undefined ? n.pomodoroTotalTime : null,
         pomodoroSessionsCount: n.pomodoroSessionsCount !== undefined ? n.pomodoroSessionsCount : null,
-        estimatedTime: n.estimatedTime !== undefined ? n.estimatedTime : null,
+        estimatedTime: n.estimatedTime !== undefined && n.estimatedTime !== null && !isNaN(n.estimatedTime) ? n.estimatedTime : null,
         archived: !!n.archived,
         externalLink: n.externalLink || '',
         isCardCollapsed: !!n.isCardCollapsed,

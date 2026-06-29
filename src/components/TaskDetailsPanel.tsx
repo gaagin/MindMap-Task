@@ -1005,7 +1005,7 @@ export default function TaskDetailsPanel({
 
   // Filter subtasks to determine if any has estimatedTime set
   const subtasksListForTime = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
-  const hasSubtaskWithTime = subtasksListForTime.some(c => c.estimatedTime !== undefined && c.estimatedTime !== null && !c.archived);
+  const hasSubtaskWithTime = subtasksListForTime.some(c => c.estimatedTime !== undefined && c.estimatedTime !== null && !isNaN(c.estimatedTime) && !c.archived);
 
   // Generic modification helper
   const handlePropChange = <K extends keyof TaskNode>(key: K, value: TaskNode[K]) => {
@@ -1796,7 +1796,7 @@ export default function TaskDetailsPanel({
                           }`}
                         />
 
-                        {child.estimatedTime !== undefined && child.estimatedTime !== null && (
+                        {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) && (
                           <span 
                             className="text-[9px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0" 
                             title={`Ориентировочное время: ${child.estimatedTime} ч`}

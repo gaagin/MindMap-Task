@@ -440,8 +440,14 @@ export default function EisenhowerMatrixView({
     const q1Tasks = q1 ? filteredTasks.filter(t => q1.priorities.includes(t.priority || 'none')) : [];
     const q2Tasks = q2 ? filteredTasks.filter(t => q2.priorities.includes(t.priority || 'none')) : [];
     
-    const sumQ1 = q1Tasks.reduce((sum, task) => sum + (task.estimatedTime || 0), 0);
-    const sumQ2 = q2Tasks.reduce((sum, task) => sum + (task.estimatedTime || 0), 0);
+    const sumQ1 = q1Tasks.reduce((sum, task) => {
+      const et = task.estimatedTime;
+      return sum + (et !== undefined && et !== null && !isNaN(et) ? et : 0);
+    }, 0);
+    const sumQ2 = q2Tasks.reduce((sum, task) => {
+      const et = task.estimatedTime;
+      return sum + (et !== undefined && et !== null && !isNaN(et) ? et : 0);
+    }, 0);
     
     return Number((sumQ1 + sumQ2).toFixed(1));
   }, [filteredTasks]);
@@ -616,7 +622,10 @@ export default function EisenhowerMatrixView({
                   </span>
                   {(quad.id === 'q1' || quad.id === 'q2') && (
                     (() => {
-                      const quadEstimatedTime = quadTasks.reduce((sum, task) => sum + (task.estimatedTime || 0), 0);
+                      const quadEstimatedTime = quadTasks.reduce((sum, task) => {
+                        const et = task.estimatedTime;
+                        return sum + (et !== undefined && et !== null && !isNaN(et) ? et : 0);
+                      }, 0);
                       if (quadEstimatedTime > 0) {
                         return (
                           <span className="ml-auto text-[10.5px] md:text-[11.5px] font-extrabold text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -698,7 +707,7 @@ export default function EisenhowerMatrixView({
                                 </div>
                               )}
 
-                              {task.estimatedTime !== undefined && task.estimatedTime !== null && (
+                              {task.estimatedTime !== undefined && task.estimatedTime !== null && !isNaN(task.estimatedTime) && (
                                 <div className="text-[10px] md:text-[11px] font-bold text-indigo-605 dark:text-indigo-400 mt-1 tracking-tight font-sans flex items-center gap-1">
                                   <Timer className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                                   <span>{task.estimatedTime} ч</span>
