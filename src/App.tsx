@@ -665,6 +665,11 @@ export default function App() {
   const currentUserRef = React.useRef(currentUser);
   currentUserRef.current = currentUser;
 
+  const stateRef = React.useRef(state);
+  stateRef.current = state;
+
+  const sessionStartTimeRef = React.useRef(new Date().toISOString());
+
   useEffect(() => {
     const checkPomo = () => {
       try {
@@ -683,26 +688,45 @@ export default function App() {
             if (parsed.endTime && !parsed.isPaused && remaining <= 0) {
               playNotificationChime();
 
-              // Completed work session! Record full focus duration
+              let customMins = 25;
+              try {
+                const savedCustom = localStorage.getItem('task_mindmap_pomo_custom_minutes');
+                if (savedCustom) customMins = parseInt(savedCustom, 10);
+              } catch (err) {}
+
+              const nextPomoState = {
+                ...parsed,
+                isRunning: false,
+                isBreak: false,
+                duration: customMins * 60,
+                endTime: null,
+                timeLeft: customMins * 60
+              };
+
+              // 1. First save the next pomodoro state synchronously to localStorage
+              localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextPomoState));
+              setGlobalPomo(nextPomoState);
+
+              // 2. Compute the next workspace state with the node's updated pomodoro statistics
+              let updatedWorkspaceState: WorkspaceState | null = null;
               if (parsed.nodeId) {
                 const nodeId = parsed.nodeId;
                 const durationSaved = parsed.duration;
+                const prev = stateRef.current;
 
-                setState(prev => {
-                  let foundProjectId: string | null = null;
-                  let targetNode: TaskNode | undefined = undefined;
+                let foundProjectId: string | null = null;
+                let targetNode: TaskNode | undefined = undefined;
 
-                  for (const [pid, nodeList] of Object.entries(prev.nodes)) {
-                    const found = (nodeList as TaskNode[]).find(n => n.id === nodeId);
-                    if (found) {
-                      foundProjectId = pid;
-                      targetNode = found;
-                      break;
-                    }
+                for (const [pid, nodeList] of Object.entries(prev.nodes)) {
+                  const found = (nodeList as TaskNode[]).find(n => n.id === nodeId);
+                  if (found) {
+                    foundProjectId = pid;
+                    targetNode = found;
+                    break;
                   }
+                }
 
-                  if (!targetNode || !foundProjectId) return prev;
-
+                if (targetNode && foundProjectId) {
                   const updatedNode = {
                     ...targetNode,
                     pomodoroTotalTime: (targetNode.pomodoroTotalTime || 0) + durationSaved,
@@ -712,43 +736,47 @@ export default function App() {
 
                   const updatedList = prev.nodes[foundProjectId].map(n => n.id === nodeId ? updatedNode : n);
                   const syncedNodes = syncCompletion(updatedList);
-                  return {
+                  
+                  updatedWorkspaceState = {
                     ...prev,
                     nodes: {
                       ...prev.nodes,
                       [foundProjectId]: syncedNodes
                     }
                   };
-                });
+                }
               }
 
-              // Reset to IDLE/RESET state (no break)
-              let customMins = 25;
-              try {
-                const savedCustom = localStorage.getItem('task_mindmap_pomo_custom_minutes');
-                if (savedCustom) customMins = parseInt(savedCustom, 10);
-              } catch (err) {}
+              // 3. Apply state change locally
+              if (updatedWorkspaceState) {
+                // Synchronously save workspace to localStorage first to prevent data loss on immediate refresh
+                saveWorkspace(updatedWorkspaceState);
+                setState(updatedWorkspaceState);
+              }
 
-              const nextState = {
-                ...parsed,
-                isRunning: false,
-                isBreak: false,
-                duration: customMins * 60,
-                endTime: null,
-                timeLeft: customMins * 60
-              };
-              localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextState));
-              setGlobalPomo(nextState);
-
-              // Firestore sync
+              // 4. Symmetrically sync to Firestore immediately
               const userObj = currentUserRef.current;
               if (userObj) {
-                const userDocRef = doc(db, 'workspaces', userObj.uid);
-                updateDoc(userDocRef, {
-                  activePomodoro: nextState
-                }).catch(err => {
-                  console.warn('[Firebase Pomo Sync] Failed to clear activePomodoro on complete:', err);
-                });
+                const finalStateToSave = updatedWorkspaceState || stateRef.current;
+                
+                // Set syncing status
+                setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
+                
+                // Save both updated workspace nodes and next idle pomodoro state in a single atomic snapshot write
+                saveToFirebaseDirectly(userObj.uid, finalStateToSave, sessionStartTimeRef.current)
+                  .then(res => {
+                    if (res.success) {
+                      lastSyncedStateHashRef.current = getSyncHash(finalStateToSave);
+                      setUnsyncedEditsCount(0);
+                      setSyncStatus(prev => ({ ...prev, firebase: 'saved' }));
+                    } else {
+                      setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
+                    }
+                  })
+                  .catch(err => {
+                    console.error('[Firebase Pomo Sync] Failed to save updated workspace on complete:', err);
+                    setSyncStatus(prev => ({ ...prev, firebase: 'error' }));
+                  });
               }
 
               window.dispatchEvent(new Event('task_mindmap_pomo_update'));
@@ -1377,7 +1405,6 @@ export default function App() {
   // 1b. Programmatic Google Sign-In is only triggered by user actions (like click) to prevent the browser's popup blocker.
 
   // Keep track of latest state and unsynced counts for real-time listener to avoid resubscription on every character change
-  const stateRef = React.useRef(state);
   stateRef.current = state;
   
   const unsyncedEditsCountRef = React.useRef(unsyncedEditsCount);
@@ -1388,9 +1415,6 @@ export default function App() {
 
   const syncOnExitRef = React.useRef(syncOnExit);
   syncOnExitRef.current = syncOnExit;
-
-  // Session start time tracking to identify stale client sessions and prevent them from overwriting newer changes
-  const sessionStartTimeRef = React.useRef(new Date().toISOString());
 
   useEffect(() => {
     const handleSessionFocus = () => {
