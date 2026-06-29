@@ -238,6 +238,12 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
             nextNode.estimatedTime = sumTime;
             nodeChanged = true;
           }
+        } else if (children.length > 0) {
+          // If the parent previously had an estimatedTime, but now no subtasks have estimatedTime, we should clear it
+          if (nextNode.estimatedTime !== undefined && nextNode.estimatedTime !== null) {
+            nextNode.estimatedTime = undefined;
+            nodeChanged = true;
+          }
         }
       }
 

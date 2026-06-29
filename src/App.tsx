@@ -325,6 +325,7 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         reminderDismissed: !!n.reminderDismissed,
         pomodoroTotalTime: n.pomodoroTotalTime !== undefined ? n.pomodoroTotalTime : null,
         pomodoroSessionsCount: n.pomodoroSessionsCount !== undefined ? n.pomodoroSessionsCount : null,
+        estimatedTime: n.estimatedTime !== undefined ? n.estimatedTime : null,
         archived: !!n.archived,
         externalLink: n.externalLink || '',
         isCardCollapsed: !!n.isCardCollapsed,
@@ -2581,7 +2582,7 @@ export default function App() {
       ...prev,
       nodes: {
         ...prev.nodes,
-        [pid]: [...currentNodes, ...newNodes]
+        [pid]: syncCompletion([...currentNodes, ...newNodes])
       }
     }));
   };
@@ -2647,7 +2648,7 @@ export default function App() {
         ...prev,
         nodes: {
           ...prev.nodes,
-          [pid]: [...nodesCopy, newChild]
+          [pid]: syncCompletion([...nodesCopy, newChild])
         }
       };
     });
@@ -3122,7 +3123,7 @@ export default function App() {
       ...prev,
       nodes: {
         ...prev.nodes,
-        [pid]: [...currentNodes, newTargetNode]
+        [pid]: syncCompletion([...currentNodes, newTargetNode])
       }
     }));
     
@@ -3163,7 +3164,7 @@ export default function App() {
       ...prev,
       nodes: {
         ...prev.nodes,
-        [pid]: [...currentNodes, newTargetNode]
+        [pid]: syncCompletion([...currentNodes, newTargetNode])
       }
     }));
   };
