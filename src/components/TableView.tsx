@@ -661,10 +661,10 @@ export default function TableView({
                         {task.estimatedTime !== undefined && task.estimatedTime !== null && !isNaN(task.estimatedTime) && (
                           <span 
                             className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded border border-indigo-150/20"
-                            title={`Ориентировочное время: ${task.estimatedTime} ч`}
+                            title={`Ориентировочное время: ${task.estimatedTime} мин`}
                           >
                             <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
-                            <span>{task.estimatedTime}ч</span>
+                            <span>{task.estimatedTime} мин</span>
                           </span>
                         )}
                       </div>

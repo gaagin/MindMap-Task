@@ -1799,10 +1799,10 @@ export default function TaskDetailsPanel({
                         {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) && (
                           <span 
                             className="text-[9px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0" 
-                            title={`Ориентировочное время: ${child.estimatedTime} ч`}
+                            title={`Ориентировочное время: ${child.estimatedTime} мин`}
                           >
                             <Timer className="w-2.5 h-2.5 text-slate-400" />
-                            {child.estimatedTime}ч
+                            {child.estimatedTime} мин
                           </span>
                         )}
                       </div>
@@ -2428,7 +2428,7 @@ export default function TaskDetailsPanel({
         <div className="space-y-4 bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-150 dark:border-slate-800">
           <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
             <Calendar className="w-4 h-4 text-indigo-500" />
-            Временные рамки и часы
+            Временные рамки и минуты
           </span>
 
           {/* Ориентировочное время работы */}
@@ -2436,7 +2436,7 @@ export default function TaskDetailsPanel({
             <label className="text-[11px] font-bold text-slate-500 dark:text-slate-450 uppercase flex items-center justify-between">
               <span className="flex items-center gap-1.5">
                 <Timer className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                Ориентировочное время работы (ч)
+                Ориентировочное время работы (мин)
               </span>
               {node.estimatedTime !== undefined && node.estimatedTime !== null && !hasSubtaskWithTime && (
                 <button
@@ -2452,8 +2452,8 @@ export default function TaskDetailsPanel({
               <input
                 type="number"
                 min="0"
-                step="0.1"
-                placeholder={hasSubtaskWithTime ? "Рассчитывается из подзадач" : "Например: 2.5"}
+                step="1"
+                placeholder={hasSubtaskWithTime ? "Рассчитывается из подзадач" : "Например: 30"}
                 disabled={hasSubtaskWithTime}
                 value={node.estimatedTime !== undefined && node.estimatedTime !== null ? node.estimatedTime : ''}
                 onChange={(e) => {

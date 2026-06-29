@@ -182,7 +182,7 @@ export async function saveStateToGoogleSheets(
     'ID Родителя',
     'Плавающая',
     'Архивирована',
-    'Ориентировочное время (ч)',
+    'Ориентировочное время (мин)',
   ];
 
   const safeCellString = (val: any): any => {

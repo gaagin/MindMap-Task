@@ -1264,10 +1264,10 @@ export default function KanbanView({
           {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) && (
             <span 
               className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-150/40 dark:border-indigo-900/35 text-indigo-600 dark:text-indigo-405 font-bold" 
-              title={`Ориентировочное время: ${node.estimatedTime} ч`}
+              title={`Ориентировочное время: ${node.estimatedTime} мин`}
             >
               <Timer className="w-3 h-3 text-indigo-500 shrink-0" />
-              <span>{node.estimatedTime} ч</span>
+              <span>{node.estimatedTime} мин</span>
             </span>
           )}
         </div>

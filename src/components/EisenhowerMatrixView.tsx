@@ -630,7 +630,7 @@ export default function EisenhowerMatrixView({
                         return (
                           <span className="ml-auto text-[10.5px] md:text-[11.5px] font-extrabold text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 px-2 py-0.5 rounded-full flex items-center gap-1">
                             <Timer className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
-                            <span>{quadEstimatedTime.toFixed(1)} ч</span>
+                            <span>{quadEstimatedTime} мин</span>
                           </span>
                         );
                       }
@@ -710,7 +710,7 @@ export default function EisenhowerMatrixView({
                               {task.estimatedTime !== undefined && task.estimatedTime !== null && !isNaN(task.estimatedTime) && (
                                 <div className="text-[10px] md:text-[11px] font-bold text-indigo-605 dark:text-indigo-400 mt-1 tracking-tight font-sans flex items-center gap-1">
                                   <Timer className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                  <span>{task.estimatedTime} ч</span>
+                                  <span>{task.estimatedTime} мин</span>
                                 </div>
                               )}
                             </div>

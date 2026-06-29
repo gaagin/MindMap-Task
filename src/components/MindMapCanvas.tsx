@@ -7480,10 +7480,10 @@ export default function MindMapCanvas({
                               ? 'bg-indigo-700/60 text-indigo-100 border-indigo-500/30' 
                               : 'bg-indigo-50 text-indigo-600 border-indigo-150/40 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400'
                           }`}
-                          title={`Ориентировочное время: ${node.estimatedTime} ч`}
+                          title={`Ориентировочное время: ${node.estimatedTime} мин`}
                         >
                           <Timer className="w-2.5 h-2.5 shrink-0" />
-                          {node.estimatedTime}ч
+                          {node.estimatedTime} мин
                         </span>
                       )}
                     </div>
