@@ -731,11 +731,12 @@ export default function TaskDetailsPanel({
     setCustomPomoMinutes(val);
     localStorage.setItem('task_mindmap_pomo_custom_minutes', String(val));
     if (!pomo.isRunning) {
-      setPomo(prev => ({
-        ...prev,
+      const newState = {
+        ...pomo,
         duration: val * 60,
         timeLeft: val * 60
-      }));
+      };
+      savePomoState(newState);
     }
   };
 
@@ -2114,12 +2115,8 @@ export default function TaskDetailsPanel({
                 Фокусировка Pomodoro
               </span>
               {pomo.isRunning && (
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                  pomo.isBreak 
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' 
-                    : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-450'
-                }`}>
-                  {pomo.isBreak ? 'Фокус окончен / Перерыв' : 'Фокус'}
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-450">
+                  Фокус
                 </span>
               )}
             </div>
@@ -2131,7 +2128,7 @@ export default function TaskDetailsPanel({
                 </div>
                 <p className="text-[10px] text-slate-400 dark:text-slate-555 font-medium mt-0.5">
                   {pomo.isRunning 
-                    ? (pomo.isBreak ? 'Фокус окончен! Время расслабиться ☕' : `Фокусировка на задаче 🎯`) 
+                    ? `Фокусировка на задаче 🎯` 
                     : `Таймер настроен на ${customPomoMinutes} мин`}
                 </p>
               </div>
@@ -2139,7 +2136,7 @@ export default function TaskDetailsPanel({
               {pomo.isRunning && (
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100 dark:bg-slate-800">
                   <div 
-                    className={`h-full transition-all duration-1000 ${pomo.isBreak ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                    className="h-full transition-all duration-1000 bg-rose-500"
                     style={{ width: `${(pomo.timeLeft / pomo.duration) * 100}%` }}
                   />
                 </div>
@@ -2193,8 +2190,9 @@ export default function TaskDetailsPanel({
                         type="number"
                         min="0"
                         max="999"
-                        value={editPomoHours}
-                        onChange={(e) => setEditPomoHours(Math.max(0, parseInt(e.target.value) || 0))}
+                        value={editPomoHours === 0 ? '' : editPomoHours}
+                        placeholder="0"
+                        onChange={(e) => setEditPomoHours(Math.max(0, parseInt(e.target.value, 10) || 0))}
                         className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
                       />
                     </div>
@@ -2204,8 +2202,9 @@ export default function TaskDetailsPanel({
                         type="number"
                         min="0"
                         max="59"
-                        value={editPomoMinutes}
-                        onChange={(e) => setEditPomoMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                        value={editPomoMinutes === 0 ? '' : editPomoMinutes}
+                        placeholder="0"
+                        onChange={(e) => setEditPomoMinutes(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
                         className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
                       />
                     </div>
@@ -2215,8 +2214,9 @@ export default function TaskDetailsPanel({
                         type="number"
                         min="0"
                         max="59"
-                        value={editPomoSeconds}
-                        onChange={(e) => setEditPomoSeconds(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                        value={editPomoSeconds === 0 ? '' : editPomoSeconds}
+                        placeholder="0"
+                        onChange={(e) => setEditPomoSeconds(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
                         className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
                       />
                     </div>
@@ -2228,8 +2228,9 @@ export default function TaskDetailsPanel({
                       type="number"
                       min="0"
                       max="999"
-                      value={editPomoSessions}
-                      onChange={(e) => setEditPomoSessions(Math.max(0, parseInt(e.target.value) || 0))}
+                      value={editPomoSessions === 0 ? '' : editPomoSessions}
+                      placeholder="0"
+                      onChange={(e) => setEditPomoSessions(Math.max(0, parseInt(e.target.value, 10) || 0))}
                       className="w-12 px-1 py-0.5 text-center text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
                     />
                   </div>
@@ -2282,10 +2283,23 @@ export default function TaskDetailsPanel({
                     type="number"
                     min="1"
                     max="180"
-                    value={customPomoMinutes}
+                    value={customPomoMinutes === 0 ? '' : customPomoMinutes}
+                    placeholder="25"
                     onChange={(e) => {
-                      const val = parseInt(e.target.value, 10) || 25;
-                      handleChangeCustomMinutes(val);
+                      const valStr = e.target.value;
+                      if (valStr === '') {
+                        setCustomPomoMinutes(0);
+                        return;
+                      }
+                      const val = parseInt(valStr, 10);
+                      if (!isNaN(val)) {
+                        handleChangeCustomMinutes(val);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (customPomoMinutes < 1 || customPomoMinutes > 180) {
+                        handleChangeCustomMinutes(25);
+                      }
                     }}
                     className="w-16 px-1.5 py-0.5 text-center text-xs font-bold font-mono bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
                   />
@@ -2355,21 +2369,10 @@ export default function TaskDetailsPanel({
                     </button>
                   </>
                 )}
-
-                {!pomo.isRunning && (
-                  <button
-                    type="button"
-                    onClick={() => handleStartFocus(300)}
-                    className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 dark:bg-slate-800/40 dark:hover:bg-slate-800 text-[10px] font-bold rounded-xl border border-slate-200/50 dark:border-slate-800 transition-all cursor-pointer flex items-center gap-1 shrink-0"
-                    title="Запустить короткий перерыв на 5 минут"
-                  >
-                    <Coffee className="w-3.5 h-3.5 text-emerald-500" /> 5 мин
-                  </button>
-                )}
               </div>
 
               {/* EARLY COMPLETION BUTTON */}
-              {pomo.isRunning && !pomo.isBreak && (
+              {pomo.isRunning && (
                 <button
                   type="button"
                   onClick={handleCompletePomoEarly}

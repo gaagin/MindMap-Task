@@ -682,97 +682,69 @@ export default function App() {
             if (parsed.endTime && !parsed.isPaused && remaining <= 0) {
               playNotificationChime();
 
-              if (!parsed.isBreak) {
-                // Completed work session! Record full focus duration
-                if (parsed.nodeId) {
-                  const nodeId = parsed.nodeId;
-                  const durationSaved = parsed.duration;
+              // Completed work session! Record full focus duration
+              if (parsed.nodeId) {
+                const nodeId = parsed.nodeId;
+                const durationSaved = parsed.duration;
 
-                  setState(prev => {
-                    const pid = prev.activeProjectId;
-                    if (!pid) return prev;
+                setState(prev => {
+                  const pid = prev.activeProjectId;
+                  if (!pid) return prev;
 
-                    const currentNodes = prev.nodes[pid] || [];
-                    const targetNode = currentNodes.find(n => n.id === nodeId);
-                    if (!targetNode) return prev;
+                  const currentNodes = prev.nodes[pid] || [];
+                  const targetNode = currentNodes.find(n => n.id === nodeId);
+                  if (!targetNode) return prev;
 
-                    const updatedNode = {
-                      ...targetNode,
-                      pomodoroTotalTime: (targetNode.pomodoroTotalTime || 0) + durationSaved,
-                      pomodoroSessionsCount: (targetNode.pomodoroSessionsCount || 0) + 1,
-                      updatedAt: new Date().toISOString()
-                    };
+                  const updatedNode = {
+                    ...targetNode,
+                    pomodoroTotalTime: (targetNode.pomodoroTotalTime || 0) + durationSaved,
+                    pomodoroSessionsCount: (targetNode.pomodoroSessionsCount || 0) + 1,
+                    updatedAt: new Date().toISOString()
+                  };
 
-                    const updatedList = currentNodes.map(n => n.id === nodeId ? updatedNode : n);
-                    const syncedNodes = syncCompletion(updatedList);
-                    return {
-                      ...prev,
-                      nodes: {
-                        ...prev.nodes,
-                        [pid]: syncedNodes
-                      }
-                    };
-                  });
-                }
-
-                // Go to 5 min break
-                const breakDur = 300;
-                const nextState = {
-                  ...parsed,
-                  isBreak: true,
-                  duration: breakDur,
-                  endTime: Date.now() + breakDur * 1000,
-                  timeLeft: breakDur
-                };
-                localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextState));
-                setGlobalPomo(nextState);
-
-                // Firestore sync
-                const userObj = currentUserRef.current;
-                if (userObj) {
-                  const userDocRef = doc(db, 'workspaces', userObj.uid);
-                  updateDoc(userDocRef, {
-                    activePomodoro: nextState
-                  }).catch(err => {
-                    console.warn('[Firebase Pomo Sync] Failed to update activePomodoro to break:', err);
-                  });
-                }
-
-                window.dispatchEvent(new Event('task_mindmap_pomo_update'));
-                return;
-              } else {
-                // Completed break. Go to IDLE/RESET state
-                let customMins = 25;
-                try {
-                  const savedCustom = localStorage.getItem('task_mindmap_pomo_custom_minutes');
-                  if (savedCustom) customMins = parseInt(savedCustom, 10);
-                } catch (err) {}
-
-                const nextState = {
-                  ...parsed,
-                  isRunning: false,
-                  isBreak: false,
-                  duration: customMins * 60,
-                  endTime: null,
-                  timeLeft: customMins * 60
-                };
-                localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextState));
-                setGlobalPomo(nextState);
-
-                // Firestore sync
-                const userObj = currentUserRef.current;
-                if (userObj) {
-                  const userDocRef = doc(db, 'workspaces', userObj.uid);
-                  updateDoc(userDocRef, {
-                    activePomodoro: nextState
-                  }).catch(err => {
-                    console.warn('[Firebase Pomo Sync] Failed to clear activePomodoro on break complete:', err);
-                  });
-                }
-
-                window.dispatchEvent(new Event('task_mindmap_pomo_update'));
-                return;
+                  const updatedList = currentNodes.map(n => n.id === nodeId ? updatedNode : n);
+                  const syncedNodes = syncCompletion(updatedList);
+                  return {
+                    ...prev,
+                    nodes: {
+                      ...prev.nodes,
+                      [pid]: syncedNodes
+                    }
+                  };
+                });
               }
+
+              // Reset to IDLE/RESET state (no break)
+              let customMins = 25;
+              try {
+                const savedCustom = localStorage.getItem('task_mindmap_pomo_custom_minutes');
+                if (savedCustom) customMins = parseInt(savedCustom, 10);
+              } catch (err) {}
+
+              const nextState = {
+                ...parsed,
+                isRunning: false,
+                isBreak: false,
+                duration: customMins * 60,
+                endTime: null,
+                timeLeft: customMins * 60
+              };
+              localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(nextState));
+              setGlobalPomo(nextState);
+
+              // Firestore sync
+              const userObj = currentUserRef.current;
+              if (userObj) {
+                const userDocRef = doc(db, 'workspaces', userObj.uid);
+                updateDoc(userDocRef, {
+                  activePomodoro: nextState
+                }).catch(err => {
+                  console.warn('[Firebase Pomo Sync] Failed to clear activePomodoro on complete:', err);
+                });
+              }
+
+              window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+              return;
             }
 
             setGlobalPomo(parsed);
@@ -3687,19 +3659,15 @@ export default function App() {
                   setSelectedNodeId(globalPomo.nodeId);
                   setIsDrawerOpen(true);
                 }}
-                className={`hidden md:flex items-center gap-2 px-3 py-1.5 border rounded-xl text-xs font-bold cursor-pointer transition-all duration-250 hover:scale-[1.03] select-none shadow-xs ${
-                  globalPomo.isBreak 
-                    ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/25 text-emerald-700 dark:text-emerald-400' 
-                    : 'border-rose-200 bg-rose-50/50 dark:border-rose-900/40 dark:bg-rose-950/25 text-rose-700 dark:text-rose-400'
-                }`}
+                className="hidden md:flex items-center gap-2 px-3 py-1.5 border border-rose-200 bg-rose-50/50 dark:border-rose-900/40 dark:bg-rose-950/25 text-rose-700 dark:text-rose-400 rounded-xl text-xs font-bold cursor-pointer transition-all duration-250 hover:scale-[1.03] select-none shadow-xs"
                 title={`Активная сессия Pomodoro для задачи "${globalPomo.nodeText}". Нажмите для подробностей.`}
               >
                 <span className="relative flex h-2 w-2">
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${globalPomo.isBreak ? 'bg-emerald-400' : 'bg-rose-450'}`}></span>
-                  <span className={`relative inline-flex rounded-full h-2 w-2 ${globalPomo.isBreak ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-rose-450"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                 </span>
                 <span className="text-[11px] font-medium max-w-[130px] truncate">
-                  {globalPomo.isBreak ? '☕ Фокус окончен (Перерыв)' : `🎯 ${globalPomo.nodeText}`}
+                  🎯 {globalPomo.nodeText}
                 </span>
                 <span className="font-mono text-xs font-black tracking-wider leading-none">
                   {formatGlobalPomoTime(globalPomo.timeLeft)}
