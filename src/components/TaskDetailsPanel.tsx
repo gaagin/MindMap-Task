@@ -2386,6 +2386,31 @@ export default function TaskDetailsPanel({
           </div>
         )}
 
+        {/* Toggle to exclude task (not considered a task) */}
+        <div className="flex items-center justify-between p-3.5 bg-rose-500/5 dark:bg-rose-500/10 rounded-xl border border-rose-100/30 dark:border-rose-950/20">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+              Исключить из задач
+            </span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed max-w-[190px]">
+              Не учитывать как задачу и скрыть из всех видов, отчётов и календарей
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => handlePropChange('isNotTask', !node.isNotTask)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              node.isNotTask ? 'bg-rose-600' : 'bg-slate-200 dark:bg-slate-700'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                node.isNotTask ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
         {/* Priority buttons */}
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">

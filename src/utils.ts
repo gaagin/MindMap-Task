@@ -155,7 +155,7 @@ export function calculateProgress(nodeId: string, allNodes: TaskNode[]): number 
   const node = allNodes.find(n => n.id === nodeId);
   if (!node) return null;
 
-  const children = allNodes.filter(n => n.parentId === nodeId && !n.isWorkflowRectangle);
+  const children = allNodes.filter(n => n.parentId === nodeId && !n.isWorkflowRectangle && !n.isNotTask);
   if (children.length === 0) {
     if (node.completed) return 100;
     return node.progress !== undefined ? node.progress : 0;
@@ -172,7 +172,7 @@ export function calculateProgress(nodeId: string, allNodes: TaskNode[]): number 
     if (!currNode) return 0;
     if (currNode.completed) return 100;
 
-    const subChildren = allNodes.filter(n => n.parentId === id && !n.isWorkflowRectangle);
+    const subChildren = allNodes.filter(n => n.parentId === id && !n.isWorkflowRectangle && !n.isNotTask);
     if (subChildren.length === 0) {
       return currNode.progress !== undefined ? currNode.progress : 0;
     }
@@ -194,8 +194,8 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
   while (changed && iterations < 8) {
     changed = false;
     current = current.map(node => {
-      // Find direct children
-      const children = current.filter(n => n.parentId === node.id && !n.isWorkflowRectangle);
+      // Find direct children (ignore non-tasks)
+      const children = current.filter(n => n.parentId === node.id && !n.isWorkflowRectangle && !n.isNotTask);
       let nextNode = { ...node };
       let nodeChanged = false;
 
@@ -468,7 +468,7 @@ export async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit)
 // Helper to check if a task is overdue (not completed, has dueDate and date or time is in the past)
 // Also checks if any subtask is overdue when allNodes is provided.
 export function isNodeOverdue(node: TaskNode, allNodes?: TaskNode[]): boolean {
-  if (node.isContainer || node.completed || node.archived || node.isWorkflowRectangle) return false;
+  if (node.isContainer || node.completed || node.archived || node.isWorkflowRectangle || node.isNotTask) return false;
 
   const checkSingleOverdue = (targetNode: TaskNode): boolean => {
     if (!targetNode.dueDate) return false;
@@ -501,7 +501,7 @@ export function isNodeOverdue(node: TaskNode, allNodes?: TaskNode[]): boolean {
   // If any subtask (descendant in mind map tree) is overdue
   if (allNodes && allNodes.length > 0) {
     const descendants = getDescendants(node.id, allNodes);
-    return descendants.some(desc => !desc.isContainer && !desc.isWorkflowRectangle && !desc.completed && !desc.archived && checkSingleOverdue(desc));
+    return descendants.some(desc => !desc.isContainer && !desc.isWorkflowRectangle && !desc.isNotTask && !desc.completed && !desc.archived && checkSingleOverdue(desc));
   }
 
   return false;
@@ -513,6 +513,7 @@ export function isContainerOverdue(containerNode: TaskNode, allNodes: TaskNode[]
   return allNodes.some(n => 
     !n.isContainer && 
     !n.isWorkflowRectangle &&
+    !n.isNotTask &&
     !n.completed &&
     !n.archived &&
     isDescendantOrSelf(n.id, containerNode.id, allNodes) && 

@@ -137,6 +137,7 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         pn.pomodoroTotalTime !== nn.pomodoroTotalTime ||
         pn.pomodoroSessionsCount !== nn.pomodoroSessionsCount ||
         pn.archived !== nn.archived ||
+        pn.isNotTask !== nn.isNotTask ||
         pn.externalLink !== nn.externalLink ||
         pn.progress !== nn.progress ||
         pn.isFloating !== nn.isFloating ||
@@ -290,6 +291,7 @@ function normalizeWorkspaceState(wsState: WorkspaceState): WorkspaceState {
             estimatedTime: estTime,
             completed: !!n.completed,
             archived: !!n.archived,
+            isNotTask: !!n.isNotTask,
             parentId: n.parentId || null
           };
         });
@@ -363,6 +365,7 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         pomodoroSessionsCount: n.pomodoroSessionsCount !== undefined ? n.pomodoroSessionsCount : null,
         estimatedTime: n.estimatedTime !== undefined && n.estimatedTime !== null && !isNaN(n.estimatedTime) ? n.estimatedTime : null,
         archived: !!n.archived,
+        isNotTask: !!n.isNotTask,
         externalLink: n.externalLink || '',
         isCardCollapsed: !!n.isCardCollapsed,
         progress: n.progress !== undefined ? Math.round(Number(n.progress) || 0) : null,
@@ -2411,6 +2414,12 @@ export default function App() {
 
   const displayedNodesForViews = useMemo(() => {
     return activeNodes.filter(node => {
+      if (filterStatus === "not_tasks") {
+        return !!node.isNotTask;
+      } else if (node.isNotTask && viewMode !== 'canvas') {
+        return false;
+      }
+
       if (viewMode !== 'canvas' && node.isWorkflowRectangle) {
         return false;
       }
@@ -3302,6 +3311,12 @@ export default function App() {
 
   // ----- SEARCH & HIGHLIGHT -----
   const isNodeMatched = (node: TaskNode): boolean => {
+    if (filterStatus === "not_tasks") {
+      if (!node.isNotTask) return false;
+    } else if (node.isNotTask && viewMode !== 'canvas') {
+      return false;
+    }
+
     // 1. Text search (text, tags, notes)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -4332,6 +4347,7 @@ export default function App() {
                 <option value="active">Активные</option>
                 <option value="completed">Выполненные</option>
                 <option value="archived">📦 Архивные</option>
+                <option value="not_tasks">🚫 Не-задачи</option>
               </select>
             </div>
 

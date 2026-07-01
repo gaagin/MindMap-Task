@@ -92,6 +92,7 @@ export interface TaskNode {
   googleCalendarEventId?: string; // Optional reference to synced Google Calendar event ID
   googleCalendarId?: string; // Optional reference to specific Google Calendar ID
   estimatedTime?: number; // Optional estimated time of work (in hours)
+  isNotTask?: boolean; // Optional flag to mark task as a non-task (hide from all views)
 }
 
 export interface Project {
