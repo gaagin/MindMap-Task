@@ -986,7 +986,7 @@ export default function KanbanView({
                 }}
                 className={`inline-flex items-center gap-1.5 text-[9.5px] px-2 py-0.5 rounded-lg border font-extrabold shadow-sm hover:scale-[1.03] transition-transform cursor-pointer ${
                   isNodeOverdue(node, nodes)
-                    ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-605 dark:text-rose-400 border-rose-100 dark:border-rose-950/45'
+                    ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-605 dark:text-rose-400 border-rose-100 dark:border-rose-950/45 animate-pulse'
                     : 'bg-white dark:bg-slate-800 text-slate-550 border-slate-200 dark:border-slate-705 hover:bg-slate-50/50 dark:hover:bg-slate-755'
                 }`}
                 title={isNodeOverdue(node, nodes) ? `Просрочен дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Нажмите для изменения на месте)` : `Дедлайн: ${formatRussianDate(node.dueDate)}${node.dueTime ? ` ${node.dueTime}` : ''} (Нажмите для изменения на месте)`}

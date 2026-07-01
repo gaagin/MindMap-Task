@@ -947,7 +947,7 @@ export default function MobileListView({
                           {node.dueDate && (
                             <span className={`flex items-center gap-1 px-1 rounded-sm border ${
                               !node.completed && node.dueDate < todayStr
-                                ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30'
+                                ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30 animate-pulse'
                                 : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700'
                             }`}>
                               <span>{node.dueDate}</span>
@@ -1167,7 +1167,7 @@ export default function MobileListView({
                               {child.dueDate && (
                                 <span className={`shrink-0 flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-sm border ${
                                   !child.completed && child.dueDate < todayStr
-                                    ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30'
+                                    ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30 animate-pulse'
                                     : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700'
                                 }`}>
                                   <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />

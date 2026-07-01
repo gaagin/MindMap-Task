@@ -6875,7 +6875,7 @@ export default function MindMapCanvas({
                         : isSelected
                           ? 'bg-white dark:bg-slate-900 border-indigo-650 dark:border-indigo-400 ring-4 ring-indigo-100 dark:ring-indigo-950/40 shadow-lg' 
                           : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:hover:border-slate-655 shadow-sm'
-              } ${node.completed ? 'opacity-85' : isNodeOverdue(node, nodes) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5 animate-pulse' : ''}`}
+              } ${node.completed ? 'opacity-85' : isNodeOverdue(node, nodes) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5' : ''}`}
               onMouseDown={(e) => {
                 const target = e.target as HTMLElement;
                 if (target.tagName === 'INPUT' || target.closest('button')) return;
