@@ -395,6 +395,23 @@ export default function MindMapCanvas({
     cardId: string;
     type: 'priority' | 'date' | 'tag';
   } | null>(null);
+  const [openInlineMenuUpwards, setOpenInlineMenuUpwards] = useState<boolean>(false);
+
+  const handleToggleInlineMenu = (e: React.MouseEvent, cardId: string, type: 'priority' | 'date' | 'tag') => {
+    e.stopPropagation();
+    const isSame = activeInlineMenu?.cardId === cardId && activeInlineMenu?.type === type;
+    if (isSame) {
+      setActiveInlineMenu(null);
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const windowHeight = window.innerHeight;
+      const estHeight = type === 'date' ? 260 : type === 'tag' ? 220 : 150;
+      const shouldOpenUp = rect.bottom + estHeight > windowHeight;
+      setOpenInlineMenuUpwards(shouldOpenUp);
+      setActiveInlineMenu({ cardId, type });
+    }
+  };
+
   const [isElementDropdownOpen, setIsElementDropdownOpen] = useState(false);
 
   useEffect(() => {
@@ -7110,10 +7127,7 @@ export default function MindMapCanvas({
                         <div className="relative">
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'priority' ? null : { cardId: node.id, type: 'priority' });
-                            }}
+                            onClick={(e) => handleToggleInlineMenu(e, node.id, 'priority')}
                             className="hover:scale-[1.03] transition-transform cursor-pointer block text-left"
                             title="Изменить приоритет"
                           >
@@ -7125,7 +7139,9 @@ export default function MindMapCanvas({
                           
                           {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'priority' && (
                             <div 
-                              className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 rounded-xl shadow-xl p-1.5 w-44 z-100"
+                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 rounded-xl shadow-xl p-1.5 w-44 z-100 animate-in fade-in zoom-in-95 duration-100 ${
+                                openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                              }`}
                               onClick={(e) => e.stopPropagation()}
                               onMouseDown={(e) => e.stopPropagation()}
                             >
@@ -7162,10 +7178,7 @@ export default function MindMapCanvas({
                         {node.dueDate ? (
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' ? null : { cardId: node.id, type: 'date' });
-                            }}
+                            onClick={(e) => handleToggleInlineMenu(e, node.id, 'date')}
                             className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider hover:scale-[1.03] transition-transform cursor-pointer text-left ${
                               node.completed
                                 ? isRoot
@@ -7196,10 +7209,7 @@ export default function MindMapCanvas({
                           !isRoot && (
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' ? null : { cardId: node.id, type: 'date' });
-                              }}
+                              onClick={(e) => handleToggleInlineMenu(e, node.id, 'date')}
                               className="inline-flex items-center gap-1 text-[8px] text-slate-400 dark:text-slate-550 hover:text-slate-600 dark:hover:text-slate-300 px-1.5 py-0.5 rounded border border-dashed border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-900 hover:scale-[1.03] transition-all cursor-pointer text-left"
                               title="Добавить срок выполнения"
                             >
@@ -7211,7 +7221,9 @@ export default function MindMapCanvas({
 
                         {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' && (
                           <div 
-                            className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-3 w-56 z-100 flex flex-col gap-2.5"
+                            className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-3 w-56 z-100 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-100 ${
+                              openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                            }`}
                             onClick={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
                           >
@@ -7362,11 +7374,8 @@ export default function MindMapCanvas({
                         <div className="relative">
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveInlineMenu(activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'tag' ? null : { cardId: node.id, type: 'tag' });
-                            }}
-                            className="inline-flex items-center gap-1 text-[8px] text-slate-450 dark:text-slate-500 hover:text-indigo-605 dark:hover:text-amber-400 px-1.5 py-0.5 rounded border border-dashed border-slate-205 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850 hover:scale-[1.03] transition-all cursor-pointer text-left"
+                            onClick={(e) => handleToggleInlineMenu(e, node.id, 'tag')}
+                            className="inline-flex items-center gap-1 text-[8px] text-slate-455 dark:text-slate-500 hover:text-indigo-605 dark:hover:text-amber-400 px-1.5 py-0.5 rounded border border-dashed border-slate-205 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850 hover:scale-[1.03] transition-all cursor-pointer text-left"
                             title="Добавить или изменить теги на месте"
                           >
                             <Tag className="w-2.5 h-2.5 text-slate-400 shrink-0" />
@@ -7375,7 +7384,9 @@ export default function MindMapCanvas({
 
                           {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'tag' && (
                             <div 
-                              className="absolute left-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-64 z-100 flex flex-col gap-2"
+                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-64 z-100 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 ${
+                                openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                              }`}
                               onClick={(e) => e.stopPropagation()}
                               onMouseDown={(e) => e.stopPropagation()}
                             >
