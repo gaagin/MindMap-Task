@@ -94,6 +94,9 @@ export default function TaskDetailsPanel({
   const [copied, setCopied] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const activeBlockers = node ? allNodes.filter(n => node.blockedBy?.includes(n.id) && !n.completed) : [];
+  const hasActiveBlockers = activeBlockers.length > 0;
+
   // Drag and touch sorting states for subtasks
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [activeTouchIndex, setActiveTouchIndex] = useState<number | null>(null);
@@ -186,6 +189,7 @@ export default function TaskDetailsPanel({
   // Chat/Comments state variables
   const [activeTab, setActiveTab] = useState<'details' | 'chat'>(initialTab);
   const [detailsSubTab, setDetailsSubTab] = useState<'main' | 'dates' | 'tags'>('main');
+  const [blockerSearch, setBlockerSearch] = useState('');
 
   React.useEffect(() => {
     setActiveTab(initialTab);
@@ -2309,25 +2313,43 @@ export default function TaskDetailsPanel({
 
                   {/* Done switch / state badge */}
                   {!node.isWorkflowRectangle && (
-                    <div className="flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800/60">
-                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Статус выполнения:</span>
-                      <button
-                        onClick={() => {
-                          const nextCompleted = !node.completed;
-                          onUpdateNode({
-                            ...node,
-                            completed: nextCompleted,
-                            progress: nextCompleted ? 100 : 0
-                          });
-                        }}
-                        className={`px-2.5 py-1 rounded-md text-xs font-bold select-none cursor-pointer transition-colors ${
-                          node.completed 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900' 
-                            : 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900'
-                        }`}
-                      >
-                        {node.completed ? '✓ Выполнено' : '○ В процессе'}
-                      </button>
+                    <div className="space-y-2">
+                      {hasActiveBlockers && (
+                        <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-lg text-[11px] text-rose-700 dark:text-rose-400 font-medium space-y-1">
+                          <span className="font-bold flex items-center gap-1">⚠️ Задача заблокирована!</span>
+                          Вы не можете завершить её, пока не будут выполнены следующие задачи:
+                          <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                            {activeBlockers.map(b => (
+                              <li key={b.id} className="font-semibold">{b.text || 'Без названия'}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800/60">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Статус выполнения:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (hasActiveBlockers && !node.completed) return;
+                            const nextCompleted = !node.completed;
+                            onUpdateNode({
+                              ...node,
+                              completed: nextCompleted,
+                              progress: nextCompleted ? 100 : 0
+                            });
+                          }}
+                          disabled={hasActiveBlockers && !node.completed}
+                          className={`px-2.5 py-1 rounded-md text-xs font-bold select-none cursor-pointer transition-colors ${
+                            node.completed 
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900' 
+                              : hasActiveBlockers
+                                ? 'bg-slate-100 text-slate-400 border border-slate-200 dark:bg-slate-850 dark:text-slate-500 dark:border-slate-800 cursor-not-allowed'
+                                : 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900'
+                          }`}
+                        >
+                          {node.completed ? '✓ Выполнено' : hasActiveBlockers ? '○ Заблокировано' : '○ В процессе'}
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -2341,7 +2363,7 @@ export default function TaskDetailsPanel({
                     return (
                       <div className="space-y-2 bg-slate-50/30 dark:bg-slate-800/10 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800/40">
                         <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-bold text-slate-505 dark:text-slate-400 uppercase">
+                          <label className="text-[11px] font-bold text-slate-555 dark:text-slate-400 uppercase">
                             Прогресс задачи:
                           </label>
                           <span className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400">
@@ -2357,7 +2379,7 @@ export default function TaskDetailsPanel({
                                 style={{ width: `${calculatedProgressVal}%` }}
                               />
                             </div>
-                            <p className="text-[9px] text-slate-400 dark:text-slate-500 italic font-medium leading-tight">
+                            <p className="text-[9px] text-slate-400 dark:text-slate-505 italic font-medium leading-tight">
                               Рассчитывается из {descendantsCount} подзадач
                             </p>
                           </div>
@@ -2370,7 +2392,10 @@ export default function TaskDetailsPanel({
                               step="5"
                               value={manualProgressVal}
                               onChange={(e) => {
-                                const val = parseInt(e.target.value);
+                                let val = parseInt(e.target.value);
+                                if (hasActiveBlockers && val === 100) {
+                                  val = 95; // restrict from reaching 100%
+                                }
                                 onUpdateNode({
                                   ...node,
                                   progress: val,
@@ -2791,7 +2816,7 @@ export default function TaskDetailsPanel({
                   </div>
 
                   {/* Colors */}
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 pb-2 border-b border-slate-100 dark:border-slate-850">
                     <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase block">Цвет ветви связи:</span>
                     <div className="flex gap-1.5 flex-wrap">
                       {PASTEL_COLORS.map(col => {
@@ -2809,6 +2834,125 @@ export default function TaskDetailsPanel({
                           />
                         );
                       })}
+                    </div>
+                  </div>
+
+                  {/* ГРУППА: БЛОКИРОВКИ (BLOCKED BY) */}
+                  <div className="space-y-3 pt-1">
+                    <span className="text-[10px] font-black text-rose-600 dark:text-rose-450 uppercase tracking-wider block">
+                      Блокирующие задачи (Blocked By)
+                    </span>
+                    
+                    <div className="space-y-1.5">
+                      {(() => {
+                        const currentBlockers = allNodes.filter(n => node.blockedBy?.includes(n.id));
+                        if (currentBlockers.length === 0) {
+                          return (
+                            <div className="text-[11px] text-slate-400 dark:text-slate-500 italic bg-slate-50/50 dark:bg-slate-900/30 px-2.5 py-2 rounded-lg border border-dashed border-slate-150 dark:border-slate-800/50">
+                              Нет блокирующих задач.
+                            </div>
+                          );
+                        }
+                        return currentBlockers.map(blocker => (
+                          <div 
+                            key={blocker.id} 
+                            className="flex items-center justify-between bg-rose-50/40 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 p-2 rounded-lg"
+                          >
+                            <div 
+                              onClick={() => onSelectNode?.(blocker.id)}
+                              className="min-w-0 flex-1 cursor-pointer hover:opacity-80 group/blocker-title"
+                              title="Открыть свойства задачи"
+                            >
+                              <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 group-hover/blocker-title:text-indigo-600 dark:group-hover/blocker-title:text-indigo-400 group-hover/blocker-title:underline truncate">
+                                {blocker.text || 'Без названия'}
+                              </div>
+                              <div className="text-[9px] text-slate-400 dark:text-slate-505 flex items-center gap-1.5">
+                                {blocker.completed ? (
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓ Выполнена</span>
+                                ) : (
+                                  <span className="text-rose-500 dark:text-rose-400 font-bold">● Активный блокер</span>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updatedBlockedBy = (node.blockedBy || []).filter(id => id !== blocker.id);
+                                handlePropChange('blockedBy', updatedBlockedBy);
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors rounded hover:bg-rose-50 dark:hover:bg-slate-800 shrink-0 cursor-pointer"
+                              title="Удалить блокировку"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-505 uppercase block">Добавить блокирующую задачу:</span>
+                      
+                      {/* Search box */}
+                      <div className="relative mb-1.5">
+                        <input
+                          type="text"
+                          placeholder="Поиск задачи..."
+                          value={blockerSearch}
+                          onChange={(e) => setBlockerSearch(e.target.value)}
+                          className="w-full text-[11px] pl-7 pr-7 py-1 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-700 dark:text-slate-200"
+                        />
+                        <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        {blockerSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setBlockerSearch('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (!val) return;
+                          const currentBlockedBy = node.blockedBy || [];
+                          if (!currentBlockedBy.includes(val)) {
+                            handlePropChange('blockedBy', [...currentBlockedBy, val]);
+                          }
+                          setBlockerSearch('');
+                        }}
+                        className="w-full text-xs px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-700 dark:text-slate-200 cursor-pointer"
+                      >
+                        <option value="">
+                          {blockerSearch ? `Найдено задач: ${
+                            allNodes.filter(n => {
+                              if (n.id === node.id) return false;
+                              if (n.isContainer || n.isWorkflowRectangle) return false;
+                              if (node.blockedBy?.includes(n.id)) return false;
+                              return (n.text || '').toLowerCase().includes(blockerSearch.toLowerCase());
+                            }).length
+                          }` : '-- Выберите задачу --'}
+                        </option>
+                        {allNodes
+                          .filter(n => {
+                            if (n.id === node.id) return false;
+                            if (n.isContainer || n.isWorkflowRectangle) return false;
+                            if (node.blockedBy?.includes(n.id)) return false;
+                            if (blockerSearch) {
+                              return (n.text || '').toLowerCase().includes(blockerSearch.toLowerCase());
+                            }
+                            return true;
+                          })
+                          .map(n => (
+                            <option key={n.id} value={n.id}>
+                              {n.completed ? '✓ ' : '○ '} {n.text || 'Без названия'}
+                            </option>
+                          ))}
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -3810,25 +3954,43 @@ export default function TaskDetailsPanel({
 
         {/* State / Done badge */}
         {!node.isWorkflowRectangle && (
-          <div className="flex items-center justify-between bg-[#FAFBFD]/60 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/50 dark:border-slate-850">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Статус выполнения:</span>
-            <button
-              onClick={() => {
-                const nextCompleted = !node.completed;
-                onUpdateNode({
-                  ...node,
-                  completed: nextCompleted,
-                  progress: nextCompleted ? 100 : 0
-                });
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold select-none cursor-pointer transition-colors ${
-                node.completed 
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900' 
-                  : 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900'
-              }`}
-            >
-              {node.completed ? '✓ Выполнено' : '○ В процессе'}
-            </button>
+          <div className="space-y-2">
+            {hasActiveBlockers && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-700 dark:text-rose-400 font-medium space-y-1">
+                <span className="font-bold flex items-center gap-1">⚠️ Задача заблокирована!</span>
+                Вы не можете завершить её, пока не будут выполнены следующие задачи:
+                <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                  {activeBlockers.map(b => (
+                    <li key={b.id} className="font-semibold">{b.text || 'Без названия'}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex items-center justify-between bg-[#FAFBFD]/60 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/50 dark:border-slate-850">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Статус выполнения:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (hasActiveBlockers && !node.completed) return;
+                  const nextCompleted = !node.completed;
+                  onUpdateNode({
+                    ...node,
+                    completed: nextCompleted,
+                    progress: nextCompleted ? 100 : 0
+                  });
+                }}
+                disabled={hasActiveBlockers && !node.completed}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold select-none cursor-pointer transition-colors ${
+                  node.completed 
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900' 
+                    : hasActiveBlockers
+                      ? 'bg-slate-100 text-slate-400 border border-slate-200 dark:bg-slate-850 dark:text-slate-500 dark:border-slate-800 cursor-not-allowed'
+                      : 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900'
+                }`}
+              >
+                {node.completed ? '✓ Выполнено' : hasActiveBlockers ? '○ Заблокировано' : '○ В процессе'}
+              </button>
+            </div>
           </div>
         )}
 
@@ -3932,7 +4094,10 @@ export default function TaskDetailsPanel({
                     step="5"
                     value={manualProgressVal}
                     onChange={(e) => {
-                      const val = parseInt(e.target.value);
+                      let val = parseInt(e.target.value);
+                      if (hasActiveBlockers && val === 100) {
+                        val = 95; // restrict from reaching 100%
+                      }
                       onUpdateNode({
                         ...node,
                         progress: val,
@@ -4636,6 +4801,127 @@ export default function TaskDetailsPanel({
                 </p>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* ГРУППА: БЛОКИРОВКИ (BLOCKED BY) */}
+        <div className="space-y-3 bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-150 dark:border-slate-800">
+          <span className="text-xs font-bold text-rose-650 dark:text-rose-450 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
+            Блокирующие задачи (Blocked By)
+          </span>
+          
+          <div className="space-y-1.5">
+            {(() => {
+              const currentBlockers = allNodes.filter(n => node.blockedBy?.includes(n.id));
+              if (currentBlockers.length === 0) {
+                return (
+                  <div className="text-[11px] text-slate-400 dark:text-slate-500 italic bg-white dark:bg-slate-900 px-2.5 py-2 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+                    Нет блокирующих задач.
+                  </div>
+                );
+              }
+              return currentBlockers.map(blocker => (
+                <div 
+                  key={blocker.id} 
+                  className="flex items-center justify-between bg-rose-50/40 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 p-2.5 rounded-lg"
+                >
+                  <div 
+                    onClick={() => onSelectNode?.(blocker.id)}
+                    className="min-w-0 flex-1 cursor-pointer hover:opacity-80 group/blocker-title"
+                    title="Открыть свойства задачи"
+                  >
+                    <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 group-hover/blocker-title:text-indigo-600 dark:group-hover/blocker-title:text-indigo-400 group-hover/blocker-title:underline truncate">
+                      {blocker.text || 'Без названия'}
+                    </div>
+                    <div className="text-[9px] text-slate-400 dark:text-slate-505 flex items-center gap-1.5">
+                      {blocker.completed ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓ Выполнена</span>
+                      ) : (
+                        <span className="text-rose-500 dark:text-rose-400 font-bold">● Активный блокер</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updatedBlockedBy = (node.blockedBy || []).filter(id => id !== blocker.id);
+                      handlePropChange('blockedBy', updatedBlockedBy);
+                    }}
+                    className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors rounded hover:bg-rose-50 dark:hover:bg-slate-850 shrink-0 cursor-pointer"
+                    title="Удалить блокировку"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ));
+            })()}
+          </div>
+
+          <div className="space-y-1.5 pt-1">
+            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-450 uppercase block">
+              Добавить блокирующую задачу:
+            </label>
+            
+            {/* Search box */}
+            <div className="relative mb-1.5">
+              <input
+                type="text"
+                placeholder="Поиск задачи..."
+                value={blockerSearch}
+                onChange={(e) => setBlockerSearch(e.target.value)}
+                className="w-full text-[11px] pl-7 pr-7 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-700 dark:text-slate-200"
+              />
+              <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              {blockerSearch && (
+                <button
+                  type="button"
+                  onClick={() => setBlockerSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            <select
+              value=""
+              onChange={(e) => {
+                const val = e.target.value;
+                if (!val) return;
+                const currentBlockedBy = node.blockedBy || [];
+                if (!currentBlockedBy.includes(val)) {
+                  handlePropChange('blockedBy', [...currentBlockedBy, val]);
+                }
+                setBlockerSearch('');
+              }}
+              className="w-full text-xs px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-700 dark:text-slate-200 cursor-pointer"
+            >
+              <option value="">
+                {blockerSearch ? `Найдено задач: ${
+                  allNodes.filter(n => {
+                    if (n.id === node.id) return false;
+                    if (n.isContainer || n.isWorkflowRectangle) return false;
+                    if (node.blockedBy?.includes(n.id)) return false;
+                    return (n.text || '').toLowerCase().includes(blockerSearch.toLowerCase());
+                  }).length
+                }` : '-- Выберите задачу --'}
+              </option>
+              {allNodes
+                .filter(n => {
+                  if (n.id === node.id) return false;
+                  if (n.isContainer || n.isWorkflowRectangle) return false;
+                  if (node.blockedBy?.includes(n.id)) return false;
+                  if (blockerSearch) {
+                    return (n.text || '').toLowerCase().includes(blockerSearch.toLowerCase());
+                  }
+                  return true;
+                })
+                .map(n => (
+                  <option key={n.id} value={n.id}>
+                    {n.completed ? '✓ ' : '○ '} {n.text || 'Без названия'}
+                  </option>
+                ))}
+            </select>
           </div>
         </div>
         </div>

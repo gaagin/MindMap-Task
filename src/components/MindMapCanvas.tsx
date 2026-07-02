@@ -14,6 +14,7 @@ import {
   ZoomIn, 
   ZoomOut, 
   Move,
+  Lock,
   Type,
   ChevronDown,
   ChevronUp,
@@ -261,6 +262,69 @@ function getNodeHeight(n: TaskNode): number {
     return n.height || 400;
   }
   return n.height || 110;
+}
+
+function getClosestConnectionPoints(node1: TaskNode, node2: TaskNode) {
+  const w1 = getNodeWidth(node1);
+  const h1 = getNodeHeight(node1);
+  const w2 = getNodeWidth(node2);
+  const h2 = getNodeHeight(node2);
+
+  const c1 = { x: node1.x, y: node1.y };
+  const c2 = { x: node2.x, y: node2.y };
+
+  const p1_candidates = [
+    { x: c1.x, y: c1.y - h1 / 2, side: 'top' },
+    { x: c1.x, y: c1.y + h1 / 2, side: 'bottom' },
+    { x: c1.x - w1 / 2, y: c1.y, side: 'left' },
+    { x: c1.x + w1 / 2, y: c1.y, side: 'right' }
+  ];
+
+  const p2_candidates = [
+    { x: c2.x, y: c2.y - h2 / 2, side: 'top' },
+    { x: c2.x, y: c2.y + h2 / 2, side: 'bottom' },
+    { x: c2.x - w2 / 2, y: c2.y, side: 'left' },
+    { x: c2.x + w2 / 2, y: c2.y, side: 'right' }
+  ];
+
+  let minDistance = Infinity;
+  let bestP1 = p1_candidates[0];
+  let bestP2 = p2_candidates[0];
+
+  for (const p1 of p1_candidates) {
+    for (const p2 of p2_candidates) {
+      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestP1 = p1;
+        bestP2 = p2;
+      }
+    }
+  }
+
+  return { p1: bestP1, p2: bestP2 };
+}
+
+function getDependencyBezierPath(x1: number, y1: number, side1: string, x2: number, y2: number, side2: string): string {
+  let cp1x = x1;
+  let cp1y = y1;
+  let cp2x = x2;
+  let cp2y = y2;
+  
+  const dist = Math.hypot(x2 - x1, y2 - y1);
+  const flex = Math.min(dist * 0.35, 120);
+
+  if (side1 === 'top') cp1y -= flex;
+  else if (side1 === 'bottom') cp1y += flex;
+  else if (side1 === 'left') cp1x -= flex;
+  else if (side1 === 'right') cp1x += flex;
+
+  if (side2 === 'top') cp2y -= flex;
+  else if (side2 === 'bottom') cp2y += flex;
+  else if (side2 === 'left') cp2x -= flex;
+  else if (side2 === 'right') cp2x += flex;
+
+  return `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
 }
 
 export default function MindMapCanvas({
@@ -643,6 +707,12 @@ export default function MindMapCanvas({
 
   const nodes = (draggingNodeId || draggingConn) ? localNodes : incomingNodes;
 
+  const checkHasActiveBlockers = (nodeId: string) => {
+    const target = nodes.find(n => n.id === nodeId);
+    if (!target || target.completed || !target.blockedBy) return false;
+    return nodes.some(n => target.blockedBy?.includes(n.id) && !n.completed);
+  };
+
   const handleLocalUpdateCoordinates = (id: string, x: number, y: number) => {
     setLocalNodes(prev => {
       const targetNode = prev.find(n => n.id === id);
@@ -910,14 +980,28 @@ export default function MindMapCanvas({
                         onClick={(e) => { 
                           e.stopPropagation(); 
                           onSelectNode(child.id);
+                          if (checkHasActiveBlockers(child.id)) return;
                           onToggleNodeCompleted(child.id); 
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
                         data-drag-ignore
-                        className="text-slate-400 hover:text-indigo-650 dark:hover:text-amber-500 transition-colors cursor-pointer shrink-0"
+                        className={`transition-colors cursor-pointer shrink-0 ${
+                          checkHasActiveBlockers(child.id)
+                            ? 'text-rose-500 hover:text-rose-600 dark:text-rose-455'
+                            : 'text-slate-400 hover:text-indigo-650 dark:hover:text-amber-500'
+                        }`}
+                        title={
+                          child.completed 
+                            ? "Отметить невыполненной" 
+                            : checkHasActiveBlockers(child.id)
+                              ? "Задача заблокирована блокирующими связями"
+                              : "Отметить выполненной"
+                        }
                       >
                         {child.completed ? (
                           <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        ) : checkHasActiveBlockers(child.id) ? (
+                          <Lock className="w-4 h-4 text-rose-500 dark:text-rose-400 animate-in zoom-in-50" />
                         ) : activePomodoroNodeId === child.id ? (
                           <span className="relative flex items-center justify-center w-4 h-4 shrink-0 inline-block">
                             <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-450 opacity-75"></span>
@@ -1472,17 +1556,28 @@ export default function MindMapCanvas({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (checkHasActiveBlockers(child.id)) return;
                               onToggleNodeCompleted(child.id);
                             }}
+                            disabled={checkHasActiveBlockers(child.id) && !child.completed}
                             onMouseDown={(e) => e.stopPropagation()}
                             data-drag-ignore
                             className={`p-1 px-1.5 rounded-lg text-[8px] font-black cursor-pointer transition-all ${
                               child.completed 
                                 ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-455' 
-                                : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                : checkHasActiveBlockers(child.id)
+                                  ? 'bg-slate-100 text-slate-400 dark:bg-slate-850 dark:text-slate-500 cursor-not-allowed'
+                                  : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
                             }`}
+                            title={
+                              child.completed 
+                                ? "Отметить невыполненной" 
+                                : checkHasActiveBlockers(child.id)
+                                  ? "Задача заблокирована блокирующими связями"
+                                  : "Отметить выполненной"
+                            }
                           >
-                            {child.completed ? '↩ Отмена' : '✓ Вып.'}
+                            {child.completed ? '↩ Отмена' : checkHasActiveBlockers(child.id) ? '🔒 Блок' : '✓ Вып.'}
                           </button>
                         </div>
 
@@ -2218,13 +2313,30 @@ export default function MindMapCanvas({
                   >
                     <div className="w-[35%] md:w-[40%] min-w-0 pr-1 flex items-center gap-1">
                        <button 
-                         onClick={(e) => { e.stopPropagation(); onToggleNodeCompleted(child.id); }}
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           if (checkHasActiveBlockers(child.id)) return;
+                           onToggleNodeCompleted(child.id);
+                         }}
                          onMouseDown={(e) => e.stopPropagation()}
                          data-drag-ignore
-                         className="text-slate-400 hover:text-indigo-600 transition-all cursor-pointer shrink-0"
+                         className={`transition-all cursor-pointer shrink-0 ${
+                           checkHasActiveBlockers(child.id)
+                             ? 'text-rose-500 hover:text-rose-600'
+                             : 'text-slate-400 hover:text-indigo-600'
+                         }`}
+                         title={
+                           child.completed 
+                             ? "Отметить невыполненной" 
+                             : checkHasActiveBlockers(child.id)
+                               ? "Задача заблокирована блокирующими связями"
+                               : "Отметить выполненной"
+                         }
                        >
                          {child.completed ? (
                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 animate-in fade-in zoom-in-50 duration-205" />
+                         ) : checkHasActiveBlockers(child.id) ? (
+                           <Lock className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400 animate-in zoom-in-50" />
                          ) : (
                            <Circle className="w-3.5 h-3.5 text-slate-300 dark:text-slate-700 hover:scale-110 transition-transform" />
                          )}
@@ -5506,6 +5618,28 @@ export default function MindMapCanvas({
             >
               <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="currentColor" />
             </marker>
+            <marker
+              id="blocked-arrow-active"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto"
+            >
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#ef4444" />
+            </marker>
+            <marker
+              id="blocked-arrow-resolved"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto"
+            >
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#94a3b8" />
+            </marker>
           </defs>
         </svg>
 
@@ -5819,6 +5953,78 @@ export default function MindMapCanvas({
                 </g>
               </svg>
             );
+          })}
+
+          {/* Render Blocked By Dependencies */}
+          {visibleNodes.flatMap(node => {
+            if (!node.blockedBy || !Array.isArray(node.blockedBy)) return [];
+            return node.blockedBy.map(blockerId => {
+              const blocker = visibleNodes.find(n => n.id === blockerId);
+              if (!blocker) return null; // blocker is either not visible or deleted
+              
+              // Find closest connection points
+              const { p1, p2 } = getClosestConnectionPoints(blocker, node);
+
+              // Apply arrow offset on the end side so the arrowhead rests nicely on the edge
+              let x2 = p2.x;
+              let y2 = p2.y;
+              const arrowOffset = 8;
+              if (p2.side === 'top') y2 -= arrowOffset;
+              else if (p2.side === 'bottom') y2 += arrowOffset;
+              else if (p2.side === 'left') x2 -= arrowOffset;
+              else if (p2.side === 'right') x2 += arrowOffset;
+
+              const isResolved = blocker.completed;
+              const isSelected = selectedNodeId === node.id || selectedNodeId === blocker.id;
+              const pathColor = isResolved ? '#94a3b8' : '#ef4444'; // slate-400 for resolved, red-500 for active blockers
+              const strokeDash = isResolved ? '4,4' : '6,4';
+              const strokeWidth = isSelected ? 3 : (isResolved ? 1.5 : 2);
+              const pathD = getDependencyBezierPath(p1.x, p1.y, p1.side, x2, y2, p2.side);
+              const markerId = isResolved ? 'blocked-arrow-resolved' : 'blocked-arrow-active';
+
+              // Determine z-index
+              const ancestorContainer = getAncestorContainer(node.parentId);
+              let containerZ = 0;
+              let hasContainer = false;
+              if (ancestorContainer) {
+                hasContainer = true;
+                const isAncestorSelected = selectedNodeId === ancestorContainer.id;
+                const isAncestorLastActive = lastActiveContainerId === ancestorContainer.id;
+                containerZ = isAncestorSelected ? 1000 : (isAncestorLastActive ? 30 : 10);
+              }
+              const connectionZIndex = hasContainer ? containerZ + 1 : 4;
+
+              return (
+                <svg
+                  key={`blocked-${blocker.id}-${node.id}`}
+                  className="absolute inset-0 pointer-events-none overflow-visible w-1 h-1"
+                  style={{ zIndex: connectionZIndex }}
+                >
+                  <g style={{ opacity: isResolved ? 0.6 : 1 }} className="transition-all duration-300">
+                    {/* Shadow/glow for selected dependency */}
+                    {isSelected && (
+                      <path
+                        d={pathD}
+                        fill="none"
+                        stroke={pathColor}
+                        strokeWidth={strokeWidth + 4}
+                        className="opacity-15 blur-[1px] transition-all"
+                      />
+                    )}
+                    {/* Blocked by connection path */}
+                    <path
+                      d={pathD}
+                      fill="none"
+                      stroke={pathColor}
+                      strokeWidth={strokeWidth}
+                      strokeDasharray={strokeDash}
+                      markerEnd={`url(#${markerId})`}
+                      className="transition-all duration-200"
+                    />
+                  </g>
+                </svg>
+              );
+            }).filter(Boolean);
           })}
 
         {/* Task Nodes Render */}
@@ -6950,13 +7156,22 @@ export default function MindMapCanvas({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (checkHasActiveBlockers(node.id)) return;
                       onToggleNodeCompleted(node.id);
                     }}
-                    title={node.completed ? "Отметить невыполненной" : "Отметить выполненной"}
-                    className={`mt-0.5 cursor-pointer transition-colors ${
-                      isRoot 
-                        ? 'text-indigo-300 hover:text-white' 
-                        : 'text-slate-400 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400'
+                    title={
+                      node.completed 
+                        ? "Отметить невыполненной" 
+                        : checkHasActiveBlockers(node.id)
+                          ? "Задача заблокирована блокирующими связями"
+                          : "Отметить выполненной"
+                    }
+                    className={`mt-0.5 transition-colors ${
+                      checkHasActiveBlockers(node.id)
+                        ? 'text-rose-500 hover:text-rose-600 dark:text-rose-450 dark:hover:text-rose-400 cursor-not-allowed'
+                        : isRoot 
+                          ? 'text-indigo-300 hover:text-white cursor-pointer' 
+                          : 'text-slate-400 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer'
                     }`}
                   >
                     {node.completed ? (
@@ -6965,6 +7180,8 @@ export default function MindMapCanvas({
                       ) : (
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 fill-emerald-50 dark:fill-emerald-950/30" />
                       )
+                    ) : checkHasActiveBlockers(node.id) ? (
+                      <Lock className="w-4 h-4 text-rose-500 dark:text-rose-400 animate-in zoom-in-50" />
                     ) : activePomodoroNodeId === node.id ? (
                       <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
                         <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-rose-400 opacity-75"></span>
@@ -8210,13 +8427,29 @@ export default function MindMapCanvas({
                       >
                         {/* Task completing checkbox */}
                         <button
-                          onClick={() => onToggleNodeCompleted(task.id)}
+                          onClick={() => {
+                            if (checkHasActiveBlockers(task.id)) return;
+                            onToggleNodeCompleted(task.id);
+                          }}
+                          title={
+                            task.completed 
+                              ? "Отметить невыполненной" 
+                              : checkHasActiveBlockers(task.id)
+                                ? "Задача заблокирована блокирующими связями"
+                                : "Отметить выполненной"
+                          }
                           className={`p-0.5 rounded-full hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer ${
-                            task.completed ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-600'
+                            task.completed 
+                              ? 'text-indigo-600 dark:text-indigo-400' 
+                              : checkHasActiveBlockers(task.id)
+                                ? 'text-rose-500 hover:text-rose-600'
+                                : 'text-slate-400 dark:text-slate-600'
                           }`}
                         >
                           {task.completed ? (
                             <CheckCircle2 className="w-3.5 h-3.5" />
+                          ) : checkHasActiveBlockers(task.id) ? (
+                            <Lock className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400 animate-in zoom-in-50" />
                           ) : activePomodoroNodeId === task.id ? (
                             <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
                               <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
@@ -8667,11 +8900,27 @@ export default function MindMapCanvas({
                 {/* Title Section (Highly contrasting input) */}
                 <div className="flex items-start gap-3">
                   <button
-                    onClick={() => onToggleNodeCompleted(node.id)}
-                    className="mt-1 text-slate-500 dark:text-slate-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors cursor-pointer shrink-0"
+                    onClick={() => {
+                      if (checkHasActiveBlockers(node.id)) return;
+                      onToggleNodeCompleted(node.id);
+                    }}
+                    title={
+                      node.completed 
+                        ? "Отметить невыполненной" 
+                        : checkHasActiveBlockers(node.id)
+                          ? "Задача заблокирована блокирующими связями"
+                          : "Отметить выполненной"
+                    }
+                    className={`mt-1 transition-colors cursor-pointer shrink-0 ${
+                      checkHasActiveBlockers(node.id)
+                        ? 'text-rose-500 hover:text-rose-600 dark:text-rose-455'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-indigo-700 dark:hover:text-indigo-300'
+                    }`}
                   >
                     {node.completed ? (
                       <CheckCircle2 className="w-6 h-6 text-emerald-650 dark:text-emerald-400 fill-emerald-100 dark:fill-emerald-950/50 stroke-[2.5]" />
+                    ) : checkHasActiveBlockers(node.id) ? (
+                      <Lock className="w-6 h-6 text-rose-500 dark:text-rose-450 stroke-[2.5]" />
                     ) : (
                       <Circle className="w-6 h-6 text-slate-450 dark:text-slate-550 stroke-[2.5]" />
                     )}
@@ -8845,12 +9094,26 @@ export default function MindMapCanvas({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (checkHasActiveBlockers(sub.id)) return;
                                 onToggleNodeCompleted(sub.id);
                               }}
-                              className="text-slate-500 dark:text-slate-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors shrink-0 cursor-pointer stroke-[2]"
+                              className={`transition-colors shrink-0 cursor-pointer stroke-[2] ${
+                                checkHasActiveBlockers(sub.id)
+                                  ? 'text-rose-500 hover:text-rose-600 dark:text-rose-455'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-indigo-700 dark:hover:text-indigo-300'
+                              }`}
+                              title={
+                                sub.completed 
+                                  ? "Отметить невыполненной" 
+                                  : checkHasActiveBlockers(sub.id)
+                                    ? "Задача заблокирована блокирующими связями"
+                                    : "Отметить выполненной"
+                              }
                             >
                               {sub.completed ? (
                                 <CheckCircle2 className="w-5 h-5 text-emerald-650 dark:text-emerald-400" />
+                              ) : checkHasActiveBlockers(sub.id) ? (
+                                <Lock className="w-5 h-5 text-rose-500 dark:text-rose-400 animate-in zoom-in-50" />
                               ) : (
                                 <Circle className="w-5 h-5 text-slate-450 dark:text-slate-550" />
                               )}

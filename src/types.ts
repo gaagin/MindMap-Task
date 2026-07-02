@@ -93,6 +93,7 @@ export interface TaskNode {
   googleCalendarId?: string; // Optional reference to specific Google Calendar ID
   estimatedTime?: number; // Optional estimated time of work (in hours)
   isNotTask?: boolean; // Optional flag to mark task as a non-task (hide from all views)
+  blockedBy?: string[]; // Optional array of node IDs that block this node
 }
 
 export interface Project {
