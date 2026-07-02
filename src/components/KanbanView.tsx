@@ -20,7 +20,8 @@ import {
   Bell,
   AlertTriangle,
   Maximize2,
-  Minimize2
+  Minimize2,
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
@@ -32,7 +33,7 @@ interface KanbanViewProps {
   activeProjectId: string;
   selectedNodeId: string | null;
   activePomodoroNodeId?: string | null;
-  onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
+  onSelectNode: (id: string | null, eOrIsMulti?: any, initialTab?: 'details' | 'chat') => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask: (text: string, initialTags: string[], priority?: Priority, parentId?: string | null) => void;
@@ -1270,6 +1271,29 @@ export default function KanbanView({
               <span>{node.files.length}</span>
             </span>
           )}
+
+          {/* Chat / Comments Indicator */}
+          {(() => {
+            const hasComments = node.comments && node.comments.length > 0;
+            return (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectNode(node.id, undefined, 'chat');
+                }}
+                className={`inline-flex items-center gap-1 text-[10.5px] px-1.5 py-0.5 rounded-md border transition-all cursor-pointer ${
+                  hasComments
+                    ? 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 font-bold hover:scale-105 shadow-2xs'
+                    : 'bg-slate-50/50 dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60 text-slate-400 hover:text-slate-600 hover:border-slate-300 dark:hover:text-slate-300'
+                }`}
+                title={hasComments ? `Обсуждение (${node.comments.length} сообщений)` : 'Открыть чат'}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                {hasComments && <span>{node.comments.length}</span>}
+              </button>
+            );
+          })()}
 
           {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) && (
             <span 

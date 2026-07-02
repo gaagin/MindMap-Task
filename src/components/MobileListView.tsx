@@ -29,7 +29,8 @@ import {
   Minimize2,
   Target,
   Timer,
-  X
+  X,
+  MessageSquare
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { generateId } from '../utils';
@@ -41,7 +42,7 @@ interface MobileListViewProps {
   activeProjectId: string;
   selectedNodeId: string | null;
   activePomodoroNodeId?: string | null;
-  onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
+  onSelectNode: (id: string | null, eOrIsMulti?: any, initialTab?: 'details' | 'chat') => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask: (text: string, tags: string[], priority: Priority, dueDate?: string, parentId?: string | null) => void;
@@ -1038,7 +1039,7 @@ export default function MobileListView({
               </div>
 
               {/* Subtags listed in details line when NOT editing */}
-              {(!isEditing && ((node.tags && node.tags.length > 0) || node.notes)) && (
+              {(!isEditing && ((node.tags && node.tags.length > 0) || node.notes || (node.comments && node.comments.length > 0))) && (
                 <div className="flex flex-wrap items-center gap-1.5 ml-6.5 text-[10px] text-slate-400 font-mono">
                   {node.tags && node.tags.map(t => (
                     <span key={t} className="px-1 bg-indigo-5/50 dark:bg-indigo-95/20 text-indigo-500 border border-indigo-100/40 text-[9px] rounded-sm font-sans">
@@ -1050,6 +1051,19 @@ export default function MobileListView({
                       <FileText className="w-2.5 h-2.5 shrink-0" />
                       <span className="truncate">{highlightText(node.notes, searchQuery)}</span>
                     </span>
+                  )}
+                  {node.comments && node.comments.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectNode(node.id, undefined, 'chat');
+                      }}
+                      className="inline-flex items-center gap-1 font-sans text-rose-600 dark:text-rose-450 font-bold text-[9.5px] bg-rose-50 dark:bg-rose-950/20 px-1.5 py-0.5 rounded-md cursor-pointer hover:scale-105 transition-transform border border-rose-100 dark:border-rose-950/30"
+                    >
+                      <MessageSquare className="w-2.5 h-2.5 shrink-0 text-rose-500" />
+                      <span>{node.comments.length}</span>
+                    </button>
                   )}
                 </div>
               )}

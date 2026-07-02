@@ -59,6 +59,7 @@ interface TaskDetailsPanelProps {
   onDeleteTagCategory?: (id: string) => void;
   googleToken?: string | null;
   onUpdateNodeParent?: (id: string, newParentId: string | null, newX?: number, newY?: number) => void;
+  initialTab?: 'details' | 'chat';
 }
 
 const PASTEL_COLORS = [
@@ -84,12 +85,14 @@ export default function TaskDetailsPanel({
   onUpdateTagCategory,
   onDeleteTagCategory,
   googleToken = null,
-  onUpdateNodeParent
+  onUpdateNodeParent,
+  initialTab = 'details'
 }: TaskDetailsPanelProps) {
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Drag and touch sorting states for subtasks
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -181,7 +184,13 @@ export default function TaskDetailsPanel({
   const notesTextareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   // Chat/Comments state variables
-  const [activeTab, setActiveTab] = useState<'details' | 'chat'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'chat'>(initialTab);
+  const [detailsSubTab, setDetailsSubTab] = useState<'main' | 'dates' | 'tags'>('main');
+
+  React.useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab, node?.id]);
+
   const [commentText, setCommentText] = useState('');
   const [isUploadingCommentImage, setIsUploadingCommentImage] = useState(false);
   const [commentImagePreview, setCommentImagePreview] = useState<string | null>(null);
@@ -1436,6 +1445,1796 @@ export default function TaskDetailsPanel({
     handlePropChange('files', updatedFiles);
   };
 
+  if (isFullscreen) {
+    const subtasks = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
+    const sortedSubtasks = [...subtasks].sort((a, b) => {
+      const orderA = a.subtaskOrder !== undefined ? a.subtaskOrder : 1000000;
+      const orderB = b.subtaskOrder !== undefined ? b.subtaskOrder : 1000000;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.id.localeCompare(b.id);
+    });
+
+    const handleMoveSubtask = (subtaskId: string, direction: 'up' | 'down') => {
+      const index = sortedSubtasks.findIndex(s => s.id === subtaskId);
+      if (index === -1) return;
+
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= sortedSubtasks.length) return;
+
+      const itemA = sortedSubtasks[index];
+      const itemB = sortedSubtasks[targetIndex];
+
+      sortedSubtasks.forEach((item, idx) => {
+        if (item.subtaskOrder === undefined) {
+          item.subtaskOrder = idx * 10;
+        }
+      });
+
+      const tempOrder = itemA.subtaskOrder!;
+      itemA.subtaskOrder = itemB.subtaskOrder!;
+      itemB.subtaskOrder = tempOrder;
+
+      onUpdateNode({ ...itemA });
+      onUpdateNode({ ...itemB });
+    };
+
+    const handleDragStart = (e: React.DragEvent, index: number) => {
+      setDraggedIndex(index);
+      e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDragOver = (e: React.DragEvent, index: number) => {
+      e.preventDefault();
+      if (draggedIndex === null || draggedIndex === index) return;
+
+      const now = Date.now();
+      if (now - lastSwapTimeRef.current < 200) return;
+
+      const rect = e.currentTarget.getBoundingClientRect();
+      const mouseY = e.clientY - rect.top;
+      const threshold = rect.height / 2;
+
+      if (draggedIndex < index && mouseY < threshold) return;
+      if (draggedIndex > index && mouseY > threshold) return;
+
+      const draggedItem = sortedSubtasks[draggedIndex];
+      const targetItem = sortedSubtasks[index];
+
+      sortedSubtasks.forEach((item, idx) => {
+        if (item.subtaskOrder === undefined) {
+          item.subtaskOrder = idx * 10;
+        }
+      });
+
+      const tempOrder = draggedItem.subtaskOrder!;
+      draggedItem.subtaskOrder = targetItem.subtaskOrder!;
+      targetItem.subtaskOrder = tempOrder;
+
+      lastSwapTimeRef.current = now;
+      onUpdateNode({ ...draggedItem });
+      onUpdateNode({ ...targetItem });
+      setDraggedIndex(index);
+    };
+
+    const handleDragEnd = () => {
+      setDraggedIndex(null);
+    };
+
+    return (
+      <div 
+        onPaste={handleAsidePaste}
+        className="fixed inset-0 bg-slate-100 dark:bg-slate-950 z-[100] flex flex-col h-screen w-screen overflow-hidden font-sans select-none"
+      >
+        {/* HEADER BAR */}
+        <div className="h-14 px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 shadow-xs">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-extrabold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-400 px-3 py-1 rounded-lg uppercase tracking-wider flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5" /> Свойства задачи
+            </span>
+            {node.parentId && (() => {
+              const parentNode = allNodes.find(n => n.id === node.parentId);
+              if (parentNode && onSelectNode) {
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onSelectNode(parentNode.id)}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50/40 hover:bg-indigo-100/40 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 text-xs font-bold rounded-lg border border-indigo-100/20 dark:border-indigo-900/20 transition-all cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <span className="truncate max-w-[150px]">Назад к: {parentNode.text}</span>
+                  </button>
+                );
+              }
+            })()}
+          </div>
+
+          {/* Core Title input centered */}
+          <div className="flex-1 max-w-xl mx-4">
+            <input
+              type="text"
+              value={node.text}
+              onChange={(e) => handlePropChange('text', e.target.value)}
+              onFocus={() => {
+                setOriginalText(node.text);
+                setOriginalNotes(node.notes || '');
+              }}
+              onBlur={() => {
+                if (node.text !== originalText) {
+                  recordHistoryVersion(originalText, originalNotes, 'Правка названия (полный экран)');
+                }
+              }}
+              className="w-full text-sm font-bold px-4 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center dark:text-slate-100 font-sans"
+              placeholder="Введите название задачи..."
+            />
+          </div>
+
+          {/* Action buttons on the right */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button 
+              type="button"
+              onClick={handleCopyLink}
+              className={`p-1.5 px-2.5 rounded-lg hover:bg-slate-105 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer ${copied ? 'text-emerald-650 dark:text-emerald-400' : 'text-slate-500 hover:text-indigo-500'}`}
+              title="Скопировать прямую ссылку"
+            >
+              {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <LinkIcon className="w-4 h-4" />}
+              <span className="hidden sm:inline">{copied ? "Ссылка скопирована!" : "Ссылка"}</span>
+            </button>
+
+            <button 
+              onClick={() => setIsFullscreen(false)}
+              className="p-1.5 px-3 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 font-bold flex items-center gap-1.5 text-xs cursor-pointer transition-all border border-indigo-100/30"
+              title="Вернуться к обычному виду"
+            >
+              <Maximize2 className="w-3.5 h-3.5 rotate-180" />
+              <span>Свернуть</span>
+            </button>
+
+            <button 
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
+              title="Закрыть панель"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* BENTO GRID AREA */}
+        <div className="flex-1 grid grid-cols-1 xl:grid-cols-4 gap-4 p-4 min-h-0 bg-slate-50 dark:bg-slate-950 overflow-hidden">
+          
+          {/* COLUMN 1: SUBTASKS & POMODORO */}
+          <div className="flex flex-col gap-4 min-h-0 h-full">
+            {/* SUBTASKS CARD */}
+            <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 p-4 shadow-xs overflow-hidden min-h-0">
+              <div className="flex items-center justify-between mb-3 shrink-0">
+                <span className="text-xs font-bold text-slate-505 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-indigo-500" />
+                  Подзадачи ({sortedSubtasks.length})
+                </span>
+                {onAddChildNode && (
+                  <button
+                    type="button"
+                    onClick={() => onAddChildNode(node.id, true)}
+                    className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-750 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Добавить
+                  </button>
+                )}
+              </div>
+
+              {/* Scrollable Subtasks content */}
+              <div className="flex-1 overflow-y-auto pr-1">
+                {sortedSubtasks.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {sortedSubtasks.map((child, index) => (
+                      <motion.div 
+                        key={child.id}
+                        layout
+                        transition={{ type: "spring", stiffness: 500, damping: 45 }}
+                        className="flex items-center justify-between gap-1.5 p-2 bg-slate-50/50 dark:bg-slate-950/20 rounded-lg border border-slate-100 dark:border-slate-800/60 group hover:border-slate-250 dark:hover:border-slate-700 transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 select-none shrink-0 min-w-[14px]">
+                            {index + 1}.
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onUpdateNode({
+                                ...child,
+                                completed: !child.completed
+                              });
+                            }}
+                            className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex-shrink-0 transition-colors"
+                          >
+                            {child.completed ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-455" />
+                            ) : pomo.isRunning && pomo.nodeId === child.id ? (
+                              <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
+                                <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
+                                <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
+                              </span>
+                            ) : (
+                              <Circle className="w-4 h-4 text-slate-300 dark:text-slate-600" />
+                            )}
+                          </button>
+
+                          <input
+                            type="text"
+                            value={child.text}
+                            onChange={(e) => {
+                              onUpdateNode({
+                                ...child,
+                                text: e.target.value
+                              });
+                            }}
+                            className={`text-xs font-semibold bg-transparent border-0 focus:ring-0 focus:outline-none p-0 w-full text-slate-700 dark:text-slate-200 ${
+                              child.completed ? 'line-through text-slate-400 dark:text-slate-500 italic' : ''
+                            }`}
+                          />
+
+                          {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) && (
+                            <span 
+                              className="text-[9px] font-bold text-slate-505 bg-slate-100 dark:bg-slate-800 dark:text-slate-450 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0"
+                            >
+                              <Timer className="w-2.5 h-2.5 text-slate-400" />
+                              {child.estimatedTime}м
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            onClick={() => handleMoveSubtask(child.id, 'up')}
+                            className="p-1 text-slate-400 hover:text-indigo-600 disabled:opacity-20 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={index === sortedSubtasks.length - 1}
+                            onClick={() => handleMoveSubtask(child.id, 'down')}
+                            className="p-1 text-slate-400 hover:text-indigo-600 disabled:opacity-20 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+
+                          {onSelectNode && (
+                            <button
+                              type="button"
+                              onClick={() => onSelectNode(child.id)}
+                              title="Свойства"
+                              className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirmDeleteSubtaskId === child.id) {
+                                onDeleteNode(child.id);
+                                setConfirmDeleteSubtaskId(null);
+                              } else {
+                                setConfirmDeleteSubtaskId(child.id);
+                                setTimeout(() => setConfirmDeleteSubtaskId(curr => curr === child.id ? null : curr), 4000);
+                              }
+                            }}
+                            className={`p-1 rounded text-slate-400 hover:text-rose-650 hover:bg-slate-100 dark:hover:bg-slate-800 transition ${
+                              confirmDeleteSubtaskId === child.id ? 'bg-rose-100 text-rose-600 dark:bg-rose-950/20 font-bold px-2' : ''
+                            }`}
+                          >
+                            {confirmDeleteSubtaskId === child.id ? 'Да?' : <Trash2 className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 italic text-xs py-8">
+                    <span>Нет дочерних подзадач</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* POMODORO CARD */}
+            {node.isContainer ? (
+              <div className="bg-emerald-500/10 dark:bg-emerald-950/10 p-4 rounded-xl border border-emerald-500/15 dark:border-emerald-500/10 flex flex-col justify-between shrink-0 h-auto">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Timer className="w-4 h-4 text-emerald-500 animate-pulse" />
+                    Время по проекту
+                  </span>
+                  <span className="text-[9px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-extrabold uppercase py-0.5 px-2 rounded-full tracking-wider">
+                    Проект / Контейнер
+                  </span>
+                </div>
+
+                <div className="text-xs space-y-2 py-3 px-3.5 bg-white/50 dark:bg-slate-900/40 rounded-lg border border-slate-100 dark:border-slate-800">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-slate-700 dark:text-slate-300">
+                      <span className="font-medium text-[11.5px]">
+                        Общее время по проекту:
+                      </span>
+                      <span className="font-extrabold font-mono text-emerald-600 dark:text-emerald-400 text-[12px]">
+                        {formatTotalPomoTime(getPomoStatsForNode(node, allNodes).pomodoroTotalTime)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-505 dark:text-slate-500 text-[10.5px]">
+                      <span>Всего завершенных сессий:</span>
+                      <span className="font-bold text-slate-700 dark:text-slate-300">
+                        {getPomoStatsForNode(node, allNodes).pomodoroSessionsCount}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-[9.5px] text-slate-450 dark:text-slate-500 border-t border-slate-100/80 dark:border-slate-800/60 pt-2 mt-2 leading-normal italic">
+                    💡 Время рассчитывается как сумма накопленной фокусировки по всем вложенным в него задачам и подветвям.
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/85 p-4 shadow-xs shrink-0 flex flex-col justify-between h-auto gap-3">
+                <div className="flex items-center justify-between shrink-0">
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Timer className="w-4 h-4 text-rose-500 animate-pulse" />
+                    Pomodoro Таймер
+                  </span>
+                  {pomo.isRunning && (
+                    <span className="text-[9px] px-2 py-0.5 rounded-full font-extrabold uppercase bg-rose-100 text-rose-750 dark:bg-rose-950 dark:text-rose-400 animate-pulse">
+                      Фокус
+                    </span>
+                  )}
+                </div>
+
+                {/* Timer clock view */}
+                <div className="flex flex-col justify-center items-center py-1">
+                  <div className="w-full max-w-[200px] text-center bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 p-2 rounded-xl relative overflow-hidden">
+                    <div className="text-2xl font-black font-mono text-slate-800 dark:text-slate-100 tracking-tight tabular-nums z-10 relative">
+                      {formatPomoTime(pomo.timeLeft)}
+                    </div>
+                    {pomo.isRunning && (
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100 dark:bg-slate-800">
+                        <div 
+                          className="h-full bg-rose-500 transition-all duration-1000"
+                          style={{ width: `${(pomo.timeLeft / pomo.duration) * 100}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[9px] text-slate-400 dark:text-slate-500 font-medium mt-1">
+                    {pomo.isRunning 
+                      ? `Фокусировка на задаче 🎯` 
+                      : `Таймер настроен на ${customPomoMinutes} мин`}
+                  </p>
+                </div>
+
+                {/* SESSIONS STATS / ACCUMULATED SAVED TIME */}
+                <div className="text-xs space-y-2 py-2 px-2.5 bg-rose-50/20 dark:bg-rose-950/5 rounded-lg border border-rose-100/30 dark:border-rose-950/20">
+                  {!isEditingPomoTime ? (
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+                        <span className="font-medium text-[11px] flex items-center gap-1">
+                          Накоплено времени:
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold font-mono text-rose-600 dark:text-rose-450 text-[11px]">
+                            {formatTotalPomoTime(node.pomodoroTotalTime || 0)}
+                          </span>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const total = node.pomodoroTotalTime || 0;
+                              setEditPomoHours(Math.floor(total / 3600));
+                              setEditPomoMinutes(Math.floor((total % 3600) / 60));
+                              setEditPomoSeconds(total % 60);
+                              setEditPomoSessions(node.pomodoroSessionsCount || 0);
+                              setIsEditingPomoTime(true);
+                            }}
+                            className="p-1 hover:bg-rose-100/50 dark:hover:bg-rose-955/35 text-rose-650 dark:text-rose-400 rounded transition cursor-pointer"
+                            title="Редактировать время вручную"
+                          >
+                            <Edit className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-505 dark:text-slate-500 text-[10px]">
+                        <span>Всего запусков («помидоров»):</span>
+                        <span className="font-semibold">{node.pomodoroSessionsCount || 0}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 py-0.5 text-left">
+                      <div className="text-[9px] font-bold text-slate-400 dark:text-slate-505 uppercase tracking-wide">
+                        Редактирование времени фокусировки
+                      </div>
+                      
+                      <div className="grid grid-cols-3 gap-1">
+                        <div className="space-y-1">
+                          <span className="text-[8px] text-slate-400 dark:text-slate-505 block text-center font-bold">ЧАСЫ</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="999"
+                            value={editPomoHours === 0 ? '' : editPomoHours}
+                            placeholder="0"
+                            onChange={(e) => setEditPomoHours(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                            className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 focus:outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] text-slate-400 dark:text-slate-505 block text-center font-bold">МИН</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={editPomoMinutes === 0 ? '' : editPomoMinutes}
+                            placeholder="0"
+                            onChange={(e) => setEditPomoMinutes(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                            className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 focus:outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] text-slate-400 dark:text-slate-505 block text-center font-bold">СЕК</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={editPomoSeconds === 0 ? '' : editPomoSeconds}
+                            placeholder="0"
+                            onChange={(e) => setEditPomoSeconds(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                            className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-center bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded px-1.5 py-0.5">
+                        <span className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold">Всего «помидоров»:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="999"
+                          value={editPomoSessions === 0 ? '' : editPomoSessions}
+                          placeholder="0"
+                          onChange={(e) => setEditPomoSessions(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          className="w-10 px-1 py-0.5 text-center text-xs font-mono font-bold bg-slate-55 dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded text-slate-800 dark:text-slate-100 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="flex gap-1.5 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingPomoTime(false)}
+                          className="px-2 py-0.5 text-[9px] font-bold bg-slate-100 dark:bg-slate-800 rounded text-slate-600 dark:text-slate-350 cursor-pointer"
+                        >
+                          Отмена
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const totalSeconds = (editPomoHours * 3600) + (editPomoMinutes * 60) + editPomoSeconds;
+                            onUpdateNode({
+                              ...node,
+                              pomodoroTotalTime: totalSeconds,
+                              pomodoroSessionsCount: editPomoSessions
+                            });
+                            setIsEditingPomoTime(false);
+                          }}
+                          className="px-2 py-0.5 text-[9px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded cursor-pointer"
+                        >
+                          Сохранить
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Custom numeric timer minutes input */}
+                {!pomo.isRunning && (
+                  <div className="space-y-1.5 text-left">
+                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800/85 rounded-lg p-1 w-full justify-between">
+                      <span className="text-[9px] text-slate-400 dark:text-slate-505 font-bold uppercase pl-1 shrink-0">
+                        Время:
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="180"
+                        value={customPomoMinutes === 0 ? '' : customPomoMinutes}
+                        placeholder="25"
+                        onChange={(e) => {
+                          const valStr = e.target.value;
+                          if (valStr === '') {
+                            setCustomPomoMinutes(0);
+                            return;
+                          }
+                          const val = parseInt(valStr, 10);
+                          if (!isNaN(val)) {
+                            handleChangeCustomMinutes(val);
+                          }
+                        }}
+                        onBlur={() => {
+                          if (customPomoMinutes < 1 || customPomoMinutes > 180) {
+                            handleChangeCustomMinutes(25);
+                          }
+                        }}
+                        className="w-12 px-1 py-0.5 text-center text-xs font-bold font-mono bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-slate-100 focus:outline-none"
+                      />
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium shrink-0 pr-1">
+                        минут
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Focus controls and custom duration presets */}
+                <div className="space-y-2 border-t border-slate-100 dark:border-slate-800/80 pt-2">
+                  {!pomo.isRunning ? (
+                    <div className="flex gap-1 w-full">
+                      {[15, 25, 45, 60].map(mins => (
+                        <button
+                          key={mins}
+                          type="button"
+                          onClick={() => handleChangeCustomMinutes(mins)}
+                          className={`flex-1 py-1 text-[10px] font-bold rounded border transition cursor-pointer ${
+                            customPomoMinutes === mins
+                              ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/50'
+                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-505 hover:bg-slate-50'
+                          }`}
+                        >
+                          {mins}м
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => handleStartFocus(customPomoMinutes * 60)}
+                        className="p-1 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10.5px] rounded-lg shadow-xs flex items-center gap-1 cursor-pointer transition-all shrink-0 animate-pulse"
+                      >
+                        <Play className="w-3 h-3" /> Старт
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5 w-full">
+                      <div className="flex gap-1.5 w-full">
+                        <button
+                          type="button"
+                          onClick={handleTogglePomoPause}
+                          className={`flex-1 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                            pomo.isPaused 
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs' 
+                              : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-955/20 dark:text-amber-400 dark:border-amber-900'
+                          }`}
+                        >
+                          {pomo.isPaused ? 'Продолжить' : 'Пауза'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleResetPomo}
+                          className="p-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* EARLY COMPLETION BUTTON */}
+                      <button
+                        type="button"
+                        onClick={handleCompletePomoEarly}
+                        className="w-full py-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-955/10 dark:hover:bg-rose-955/20 text-rose-600 dark:text-rose-450 border border-rose-200/50 dark:border-rose-900 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
+                        title="Остановить таймер и сохранить накопленное время фокусировки"
+                      >
+                        💾 Сберечь время ({formatTotalPomoTime(pomo.duration - pomo.timeLeft)})
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* COLUMN 2: RICH NOTES & WIKI LINKS */}
+          <div className="flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 p-4 shadow-xs overflow-hidden h-full min-h-0">
+            <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800 pb-2 shrink-0">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-indigo-500" />
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  Подробное описание и заметки
+                </span>
+              </div>
+              
+              <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => setNotesMode('edit')}
+                  className={`px-3 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                    notesMode === 'edit' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs' : 'text-slate-505'
+                  }`}
+                >
+                  Редактор
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotesMode('preview')}
+                  className={`px-3 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                    notesMode === 'preview' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs' : 'text-slate-505'
+                  }`}
+                >
+                  Превью
+                </button>
+              </div>
+            </div>
+
+            {/* Note area */}
+            <div className="flex-1 mt-3 min-h-0 flex flex-col relative">
+              {notesMode === 'edit' ? (
+                <textarea
+                  ref={notesTextareaRef}
+                  value={node.notes || ''}
+                  onChange={(e) => handlePropChange('notes', e.target.value)}
+                  onFocus={() => {
+                    setOriginalText(node.text);
+                    setOriginalNotes(node.notes || '');
+                  }}
+                  onBlur={() => {
+                    if ((node.notes || '') !== originalNotes) {
+                      recordHistoryVersion(originalText, originalNotes, 'Правка заметок (полный экран)');
+                    }
+                  }}
+                  className="flex-1 w-full text-xs bg-slate-50/40 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-lg p-4 focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-sans resize-none h-full"
+                  placeholder="Напишите мысли, plans, спецификации... Используйте [[Имя Задачи]] для создания связей..."
+                />
+              ) : (
+                <div className="flex-1 overflow-y-auto pr-1 text-slate-700 dark:text-slate-200 text-xs leading-relaxed">
+                  {renderNotesWithLinks(node.notes || '')}
+                </div>
+              )}
+
+              {/* Wiki Links Connector button */}
+              <div className="absolute right-3 bottom-3 z-10">
+                <button
+                  type="button"
+                  onClick={() => setIsInsertingLink(!isInsertingLink)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-lg shadow-sm flex items-center gap-1 transition cursor-pointer"
+                >
+                  <LinkIcon className="w-3.5 h-3.5" /> Ссылка на задачу
+                </button>
+
+                {isInsertingLink && (
+                  <div className="absolute right-0 bottom-9 z-50 w-64 bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 rounded-xl shadow-2xl p-3 space-y-2 text-left">
+                    <div className="text-[10px] font-extrabold text-slate-400 dark:text-slate-505 uppercase tracking-wider flex items-center justify-between">
+                      <span>Связать с задачей</span>
+                      <button onClick={() => { setIsInsertingLink(false); setLinkSearchQuery(''); }} className="text-slate-400 hover:text-slate-650">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <Search className="w-3 h-3 text-slate-400 absolute left-2 top-2" />
+                      <input
+                        type="text"
+                        placeholder="Поиск задачи..."
+                        value={linkSearchQuery}
+                        onChange={(e) => setLinkSearchQuery(e.target.value)}
+                        className="w-full text-xs pl-7 pr-3 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="max-h-36 overflow-y-auto space-y-1 text-xs">
+                      {allNodes
+                        .filter(n => n.id !== node.id)
+                        .filter(n => n.text.toLowerCase().includes(linkSearchQuery.toLowerCase()))
+                        .map(item => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleInsertTaskLink(item.id, item.text)}
+                            className="w-full text-left px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-[11px]"
+                          >
+                            <span className="font-bold block truncate text-slate-800 dark:text-slate-200">{item.text}</span>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Version History Section inside Column 2 */}
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mt-3 bg-[#FAFBFD]/30 dark:bg-slate-800/20 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-850/80 transition-all select-none cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <History className="w-3.5 h-3.5 text-indigo-500" />
+                  <span className="text-[11px] font-bold text-slate-750 dark:text-slate-350 uppercase tracking-wider">
+                    История изменений
+                  </span>
+                  <span className="text-[9px] font-extrabold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 px-1.5 py-0.5 rounded-full font-mono">
+                    {(node.history || []).length}
+                  </span>
+                </div>
+                {isHistorySectionOpen ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                )}
+              </button>
+
+              {isHistorySectionOpen && (
+                <div className="p-3 space-y-3 bg-white dark:bg-slate-900 animate-fade-in max-h-[180px] overflow-y-auto text-left">
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-1.5">
+                    <span className="text-[9px] text-slate-400 dark:text-slate-505 italic leading-tight">
+                      Автосохранение истории
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSaveManualCheckpoint}
+                      className="px-2 py-0.5 text-[9px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-955/30 dark:hover:bg-indigo-900/40 dark:text-indigo-400 rounded transition shadow-2xs shrink-0"
+                      title="Сохранить текущую версию как снимок"
+                    >
+                      + Снимок
+                    </button>
+                  </div>
+
+                  {(node.history || []).length === 0 ? (
+                    <div className="text-center py-3 text-[11px] text-slate-400 dark:text-slate-505 italic">
+                      История изменений пуста
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {(node.history || []).map((ver) => {
+                        const isExpanded = expandedVersionId === ver.id;
+                        const canRestore = ver.text !== node.text || ver.notes !== node.notes;
+
+                        return (
+                          <div
+                            key={ver.id}
+                            className="p-2 border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 rounded-lg flex flex-col gap-1"
+                          >
+                            <div className="flex items-start justify-between gap-1">
+                              <div className="min-w-0">
+                                <div className="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                                  {ver.description || 'Правка'}
+                                </div>
+                                <div className="text-[8.5px] text-slate-400 font-mono">
+                                  {new Date(ver.timestamp).toLocaleString()}
+                                </div>
+                              </div>
+                              
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedVersionId(isExpanded ? null : ver.id)}
+                                  className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-505 dark:text-slate-400 rounded transition"
+                                >
+                                  {isExpanded ? (
+                                    <ChevronDown className="w-3 h-3" />
+                                  ) : (
+                                    <ChevronRight className="w-3 h-3" />
+                                  )}
+                                </button>
+                                
+                                <button
+                                  type="button"
+                                  disabled={!canRestore}
+                                  onClick={() => handleRestoreVersion(ver)}
+                                  className={`px-1 py-0.5 text-[8.5px] font-bold rounded cursor-pointer transition ${
+                                    canRestore 
+                                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-955/40 dark:hover:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200/50' 
+                                      : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600 cursor-not-allowed'
+                                  }`}
+                                  title={canRestore ? "Восстановить версию" : "Текущая версия совпадает"}
+                                >
+                                  Откат
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteVersion(ver.id)}
+                                  className="p-0.5 hover:bg-rose-105 dark:hover:bg-rose-950/20 text-rose-500 rounded transition"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {isExpanded && (
+                              <div className="mt-1 pt-1 border-t border-slate-150/40 dark:border-slate-800/40 space-y-1">
+                                <div>
+                                  <span className="text-[8px] font-bold text-slate-400 dark:text-slate-555 block uppercase font-sans">
+                                    Название:
+                                  </span>
+                                  <div className="bg-white dark:bg-slate-800/80 p-1 rounded text-[9px] text-slate-700 dark:text-slate-350 border border-slate-100 dark:border-slate-850 break-words font-mono max-h-12 overflow-y-auto font-sans">
+                                    {ver.text}
+                                  </div>
+                                </div>
+                                
+                                {ver.notes ? (
+                                  <div>
+                                    <span className="text-[8px] font-bold text-slate-400 dark:text-slate-555 block uppercase font-sans">
+                                      Заметки:
+                                    </span>
+                                    <div className="bg-white dark:bg-slate-800/80 p-1 rounded text-[9px] text-slate-600 dark:text-slate-400 border border-slate-100 dark:border-slate-850 break-all font-mono whitespace-pre-wrap max-h-20 overflow-y-auto">
+                                      {ver.notes}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[8.5px] text-slate-405 italic">Заметки пусты</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {(node.history || []).length > 0 && (
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={handleClearHistory}
+                        className="text-[8.5px] font-bold text-rose-600 hover:underline transition-colors cursor-pointer"
+                      >
+                        Очистить всю историю
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* COLUMN 3: SCHEDULES, CATEGORIES & FILES */}
+          <div className="flex flex-col gap-4 min-h-0 h-full">
+            {/* SCHEDULE DATES & ESTIMATIONS CARD */}
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 p-4 shadow-xs shrink-0 flex flex-col h-[400px] overflow-hidden">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 shrink-0 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
+                <Calendar className="w-4 h-4 text-indigo-500" />
+                Планирование и параметры
+              </span>
+
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1 min-h-0 text-left">
+                
+                {/* ГРУППА 1: СТАТУС И ПРОГРЕСС */}
+                <div className="space-y-2.5">
+                  <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block">
+                    Выполнение и прогресс
+                  </span>
+
+                  {/* Done switch / state badge */}
+                  {!node.isWorkflowRectangle && (
+                    <div className="flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800/60">
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Статус выполнения:</span>
+                      <button
+                        onClick={() => {
+                          const nextCompleted = !node.completed;
+                          onUpdateNode({
+                            ...node,
+                            completed: nextCompleted,
+                            progress: nextCompleted ? 100 : 0
+                          });
+                        }}
+                        className={`px-2.5 py-1 rounded-md text-xs font-bold select-none cursor-pointer transition-colors ${
+                          node.completed 
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900' 
+                            : 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900'
+                        }`}
+                      >
+                        {node.completed ? '✓ Выполнено' : '○ В процессе'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Progress slider/bar */}
+                  {(() => {
+                    const hasChildren = allNodes.some(n => n.parentId === node.id);
+                    const calculatedProgressVal = hasChildren ? (calculateProgress(node.id, allNodes) || 0) : 0;
+                    const descendantsCount = getDescendants(node.id, allNodes).length;
+                    const manualProgressVal = node.progress !== undefined ? node.progress : (node.completed ? 100 : 0);
+
+                    return (
+                      <div className="space-y-2 bg-slate-50/30 dark:bg-slate-800/10 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800/40">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold text-slate-505 dark:text-slate-400 uppercase">
+                            Прогресс задачи:
+                          </label>
+                          <span className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                            {hasChildren ? `${calculatedProgressVal}%` : `${manualProgressVal}%`}
+                          </span>
+                        </div>
+
+                        {hasChildren ? (
+                          <div className="space-y-1">
+                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                              <div 
+                                className="bg-indigo-600 dark:bg-indigo-500 h-full transition-all duration-300"
+                                style={{ width: `${calculatedProgressVal}%` }}
+                              />
+                            </div>
+                            <p className="text-[9px] text-slate-400 dark:text-slate-500 italic font-medium leading-tight">
+                              Рассчитывается из {descendantsCount} подзадач
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              step="5"
+                              value={manualProgressVal}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                onUpdateNode({
+                                  ...node,
+                                  progress: val,
+                                  completed: val === 100
+                                });
+                              }}
+                              className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:accent-indigo-505"
+                            />
+                            <div className="flex justify-between text-[8px] text-slate-400 dark:text-slate-500 font-medium">
+                              <span>0%</span>
+                              <span>50%</span>
+                              <span>100%</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Class selection: task vs non-task */}
+                  <div className="flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800/60">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Исключить из задач:</span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 leading-normal max-w-[130px]">Не учитывать как активную задачу</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handlePropChange('isNotTask', !node.isNotTask)}
+                      className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        node.isNotTask ? 'bg-rose-600' : 'bg-slate-200 dark:bg-slate-700'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                          node.isNotTask ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {/* ГРУППА 2: WORKFLOW & CONTAINERS (IF APPLICABLE) */}
+                {(node.isWorkflowRectangle || (!node.isWorkflowRectangle && !node.isContainer)) && (
+                  <div className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-slate-800/60">
+                    <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block">
+                      Специфические свойства
+                    </span>
+
+                    {/* Workflow step settings */}
+                    {node.isWorkflowRectangle && (
+                      <div className="space-y-2.5 bg-indigo-50/10 dark:bg-slate-800/20 p-2.5 rounded-lg border border-indigo-100/20 dark:border-slate-800">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[11px] font-bold text-slate-550 dark:text-slate-300">Форма шага:</span>
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handlePropChange('workflowShape', 'rectangle')}
+                              className={`px-2 py-1 rounded text-[10.5px] font-extrabold border transition ${
+                                node.workflowShape !== 'rhomb'
+                                  ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 border-indigo-505'
+                                  : 'bg-slate-50 dark:bg-slate-850 text-slate-505 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+                              }`}
+                            >
+                              Прямоугольник
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handlePropChange('workflowShape', 'rhomb')}
+                              className={`px-2 py-1 rounded text-[10.5px] font-extrabold border transition ${
+                                node.workflowShape === 'rhomb'
+                                  ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 border-amber-505'
+                                  : 'bg-slate-50 dark:bg-slate-850 text-slate-505 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+                              }`}
+                            >
+                              Ромб
+                            </button>
+                          </div>
+                        </div>
+
+                        <label className="flex items-center justify-between cursor-pointer select-none">
+                          <span className="text-[11px] font-bold text-slate-550 dark:text-slate-300">Отключить авто-тег:</span>
+                          <div className="relative flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={!!node.isZoneTriggerDisabled}
+                              onChange={(e) => handlePropChange('isZoneTriggerDisabled', e.target.checked)}
+                              className="sr-only peer"
+                            />
+                            <div className="w-8 h-4.5 bg-slate-200 dark:bg-slate-800 rounded-full peer peer-checked:bg-rose-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-350 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:after:translate-x-3.5" />
+                          </div>
+                        </label>
+                      </div>
+                    )}
+
+                    {/* Container Properties */}
+                    {!node.isWorkflowRectangle && !node.isContainer && (
+                      <div className="space-y-2 bg-slate-50/40 dark:bg-slate-800/15 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800/50">
+                        {onUpdateNodeParent && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-505 uppercase block">
+                              Переместить в контейнер:
+                            </span>
+                            <select
+                              value={node.parentId || 'no-container'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === 'no-container') {
+                                  onUpdateNodeParent(node.id, null);
+                                } else {
+                                  onUpdateNodeParent(node.id, val);
+                                }
+                              }}
+                              className="w-full px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded text-xs focus:outline-none dark:text-slate-100 cursor-pointer"
+                            >
+                              <option value="no-container">📦 Без контейнера</option>
+                              {allNodes
+                                .filter(n => n.isContainer && n.id !== node.id)
+                                .map(container => (
+                                  <option key={container.id} value={container.id}>
+                                    📥 {container.text || 'Без имени'}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {node.containerPlace && (
+                          <div className="pt-1">
+                            <span className="text-[9px] font-bold text-slate-400 dark:text-slate-505 uppercase block mb-0.5">
+                              Место в контейнере:
+                            </span>
+                            <p className="text-[11px] font-mono font-bold text-slate-600 dark:text-slate-300 truncate">
+                              📦 {node.containerPlace}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ГРУППА 3: СРОКИ, ПРИОРИТЕТ, ОЦЕНКА, НАПОМИНАНИЯ */}
+                <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800/60">
+                  <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block">
+                    Планирование, приоритет и сроки
+                  </span>
+
+                  {/* Priority & Estimation row */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-505 uppercase">Приоритет:</span>
+                      <select
+                        value={node.priority || 'none'}
+                        onChange={(e) => handlePropChange('priority', e.target.value as Priority)}
+                        className="w-full text-xs px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 dark:text-slate-200 cursor-pointer"
+                      >
+                        <option value="none">Без приоритета</option>
+                        <option value="low">🟢 Низкий</option>
+                        <option value="medium">🔵 Средний</option>
+                        <option value="high">🟡 Высокий</option>
+                        <option value="urgent">🔴 Критический</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase">Оценка (мин):</span>
+                        {node.estimatedTime !== undefined && node.estimatedTime !== null && !hasSubtaskWithTime && (
+                          <button
+                            type="button"
+                            onClick={() => handlePropChange('estimatedTime', undefined)}
+                            className="text-[9px] text-rose-550 dark:text-rose-400 hover:underline font-bold cursor-pointer"
+                          >
+                            Сброс
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder={hasSubtaskWithTime ? "Сумма подзадач" : "Например: 30"}
+                        disabled={hasSubtaskWithTime}
+                        value={node.estimatedTime !== undefined && node.estimatedTime !== null ? node.estimatedTime : ''}
+                        onChange={(e) => handlePropChange('estimatedTime', e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                        className={`w-full text-xs px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 dark:text-slate-200 ${
+                          hasSubtaskWithTime ? 'bg-slate-100 dark:bg-slate-900/60 cursor-not-allowed font-semibold text-indigo-600 dark:text-indigo-400' : ''
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Start Date & Time Row */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase">Дата и время начала:</span>
+                      {(node.startDate || node.startTime) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateNode({
+                              ...node,
+                              startDate: undefined,
+                              startTime: undefined
+                            });
+                          }}
+                          className="text-[9px] text-rose-550 dark:text-rose-400 hover:underline font-bold cursor-pointer"
+                        >
+                          Сбросить
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <input
+                        type="date"
+                        value={node.startDate || ''}
+                        onChange={(e) => handleTimePropChange('startDate', e.target.value)}
+                        className="w-full text-xs px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 focus:outline-none"
+                      />
+                      <input
+                        type="time"
+                        value={node.startTime || ''}
+                        onChange={(e) => handleTimePropChange('startTime', e.target.value)}
+                        className="w-full text-xs px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 focus:outline-none font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Due Date & Time Row */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase">Срок сдачи (дедлайн):</span>
+                      {(node.dueDate || node.dueTime) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateNode({
+                              ...node,
+                              dueDate: undefined,
+                              dueTime: undefined,
+                              reminderMinutesBefore: undefined
+                            });
+                          }}
+                          className="text-[9px] text-rose-550 dark:text-rose-400 hover:underline font-bold cursor-pointer"
+                        >
+                          Сбросить
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <input
+                        type="date"
+                        value={node.dueDate || ''}
+                        onChange={(e) => handleTimePropChange('dueDate', e.target.value)}
+                        className="w-full text-xs px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 focus:outline-none"
+                      />
+                      <input
+                        type="time"
+                        value={node.dueTime || ''}
+                        onChange={(e) => handleTimePropChange('dueTime', e.target.value)}
+                        className="w-full text-xs px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 focus:outline-none font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Reminder quick dropdown */}
+                  {node.dueDate && (
+                    <div className="flex items-center gap-2 bg-indigo-50/15 dark:bg-slate-900/40 p-2 rounded-xl border border-indigo-100/20 dark:border-slate-800">
+                      <Bell className="w-3.5 h-3.5 text-indigo-500 shrink-0 animate-bounce" />
+                      <span className="text-[10px] font-bold text-slate-550 dark:text-slate-400 uppercase">Напомнить:</span>
+                      <select
+                        value={
+                          node.reminderDate && node.reminderMinutesBefore !== undefined
+                            ? String(node.reminderMinutesBefore)
+                            : node.reminderDate
+                            ? 'custom'
+                            : 'none'
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'none') {
+                            onUpdateNode({
+                              ...node,
+                              reminderMinutesBefore: undefined,
+                              reminderDate: undefined,
+                              reminderTime: undefined,
+                              reminderDismissed: undefined
+                            });
+                          } else if (val === 'custom') {
+                            onUpdateNode({
+                              ...node,
+                              reminderMinutesBefore: undefined,
+                              reminderDate: node.reminderDate || node.dueDate,
+                              reminderTime: node.reminderTime || node.dueTime || '12:00',
+                              reminderDismissed: false
+                            });
+                          } else {
+                            handleSetRelativeReminder(Number(val));
+                          }
+                        }}
+                        className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[11px] px-1.5 py-0.5 focus:outline-none dark:text-slate-200 font-medium text-slate-700 cursor-pointer"
+                      >
+                        <option value="none">Без напоминания</option>
+                        <option value="0">В срок</option>
+                        <option value="5">За 5 минут до</option>
+                        <option value="10">За 10 минут до</option>
+                        <option value="15">За 15 минут до</option>
+                        <option value="30">За 30 минут до</option>
+                        <option value="60">За 1 час до</option>
+                        <option value="120">За 2 часа до</option>
+                        <option value="1440">За 1 день до</option>
+                        <option value="custom">Своё время...</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Reminder custom inputs */}
+                  <div className="bg-slate-50/30 dark:bg-slate-800/10 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800/40 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase flex items-center gap-1">
+                        <Bell className="w-3 h-3 text-indigo-500" /> Своё напоминание:
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => playNotificationChime()}
+                          className="text-[9px] text-indigo-600 hover:underline font-bold cursor-pointer"
+                          title="Проверить звук"
+                        >
+                          Звук 🔊
+                        </button>
+                        {(node.reminderDate || node.reminderTime) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onUpdateNode({
+                                ...node,
+                                reminderDate: undefined,
+                                reminderTime: undefined,
+                                reminderMinutesBefore: undefined,
+                                reminderDismissed: undefined
+                              });
+                            }}
+                            className="text-[9px] text-rose-500 hover:underline font-bold cursor-pointer"
+                          >
+                            Сбросить
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <input
+                        type="date"
+                        value={node.reminderDate || ''}
+                        onChange={(e) => {
+                          onUpdateNode({
+                            ...node,
+                            reminderDate: e.target.value || undefined,
+                            reminderMinutesBefore: undefined,
+                            reminderDismissed: false
+                          });
+                        }}
+                        className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:outline-none dark:text-slate-100"
+                      />
+                      <input
+                        type="time"
+                        value={node.reminderTime || ''}
+                        onChange={(e) => {
+                          onUpdateNode({
+                            ...node,
+                            reminderTime: e.target.value || undefined,
+                            reminderMinutesBefore: undefined,
+                            reminderDismissed: false
+                          });
+                        }}
+                        className="w-full text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:outline-none dark:text-slate-100 font-mono"
+                      />
+                    </div>
+
+                    {node.reminderDate && node.reminderTime && (
+                      <div className="p-1.5 bg-indigo-50/30 dark:bg-indigo-950/20 border border-indigo-100/30 rounded">
+                        <p className="text-[9.5px] text-indigo-650 dark:text-indigo-400 font-semibold leading-snug">
+                          🔔 Сработает: {node.reminderDate} в {node.reminderTime}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ГРУППА 4: ВНЕШНЯЯ ССЫЛКА И ЦВЕТ СВЯЗИ */}
+                <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800/60">
+                  <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block">
+                    Ссылки и внешний вид
+                  </span>
+
+                  {/* External link */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase">Внешняя ссылка:</span>
+                      {node.externalLink && (
+                        <a
+                          href={node.externalLink.startsWith('http') ? node.externalLink : `https://${node.externalLink}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] text-indigo-650 dark:text-indigo-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                        >
+                          Перейти <LinkIcon className="w-3 h-3 text-indigo-500" />
+                        </a>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="https://example.com"
+                      value={node.externalLink || ''}
+                      onChange={(e) => handlePropChange('externalLink', e.target.value)}
+                      className="w-full text-xs px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none dark:text-slate-100"
+                    />
+                  </div>
+
+                  {/* Colors */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase block">Цвет ветви связи:</span>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {PASTEL_COLORS.map(col => {
+                        const isSelected = (node.color || '') === col.value;
+                        return (
+                          <button
+                            key={col.value || 'default'}
+                            type="button"
+                            onClick={() => handlePropChange('color', col.value)}
+                            className={`w-5.5 h-5.5 rounded-full border transition-all cursor-pointer ${
+                              isSelected ? 'ring-2 ring-indigo-500 scale-110 border-slate-400' : 'border-slate-200 dark:border-slate-800 hover:scale-105'
+                            }`}
+                            style={{ backgroundColor: col.value || '#cbd5e1' }}
+                            title={col.name}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* TAG CATEGORIES CARD */}
+            <div className="flex-1 min-h-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 p-4 shadow-xs overflow-hidden flex flex-col animate-fade-in">
+              {/* Ad-hoc Freeform Task Tags */}
+              <div className="space-y-2 mb-3.5 pb-3 border-b border-slate-100 dark:border-slate-800/80">
+                <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                  Теги этой задачи
+                </span>
+                
+                {/* List of active tag badges */}
+                {node.tags && node.tags.length > 0 ? (
+                  <div className="flex flex-wrap gap-1 mt-1.5 max-h-20 overflow-y-auto pr-1">
+                    {node.tags.map((tag, index) => {
+                      const matchedCategory = activeCategories.find(cat => cat.tags && cat.tags.includes(tag));
+                      const color = matchedCategory?.color;
+                      const style = color ? {
+                        backgroundColor: `${color}18`,
+                        color: color,
+                        border: `1px solid ${color}35`
+                      } : undefined;
+
+                      return (
+                        <span
+                          key={`${tag}-${index}`}
+                          style={style}
+                          className={`inline-flex items-center gap-1 text-[10.5px] font-bold px-1.5 py-0.5 rounded-md shrink-0 ${
+                            color 
+                              ? '' 
+                              : 'text-slate-600 dark:text-slate-450 bg-slate-50 dark:bg-slate-800/80 border border-slate-150 dark:border-slate-750'
+                          }`}
+                        >
+                          #{tag}
+                          <button 
+                            onClick={() => handleRemoveTag(index)}
+                            className="p-0.5 hover:text-rose-650 text-slate-400 hover:scale-110 active:scale-95 shrink-0 cursor-pointer transition-transform"
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-400 italic">Нет тегов.</p>
+                )}
+
+                {/* Freeform add form */}
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleAddTag(e);
+                  }} 
+                  className="flex gap-2 mt-2"
+                >
+                  <input
+                    type="text"
+                    placeholder="Быстрый тег..."
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    className="flex-1 px-2.5 py-1 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
+                  />
+                  <button
+                    type="submit"
+                    className="py-1 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg cursor-pointer"
+                  >
+                    +
+                  </button>
+                </form>
+              </div>
+
+              <div className="flex items-center justify-between mb-2 shrink-0">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Plus className="w-4 h-4 text-indigo-500" />
+                  Категории тегов и меток
+                </span>
+                {onCreateTagCategory && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewCatForm(!showNewCatForm);
+                      setNewCatName('');
+                      setNewCatColor('#6366f1');
+                    }}
+                    className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> Создать группу
+                  </button>
+                )}
+              </div>
+
+              {/* Add New Category form inline inside card */}
+              {showNewCatForm && onCreateTagCategory && (
+                <div className="bg-slate-50 dark:bg-slate-800 border p-3 rounded-lg space-y-2 text-xs mb-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-450 block mb-1">Имя группы</label>
+                    <input
+                      type="text"
+                      placeholder="Например, Спринт, Срочность..."
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900 border rounded px-2 py-1 focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-1.5">
+                    <button type="button" onClick={() => setShowNewCatForm(false)} className="px-2 py-0.5 bg-slate-200 rounded text-[10px]">Отмена</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (newCatName.trim()) {
+                          handleCreateTagCategory(newCatName.trim(), newCatColor);
+                          setShowNewCatForm(false);
+                        }
+                      }}
+                      className="px-2 py-0.5 bg-indigo-600 text-white rounded font-bold text-[10px]"
+                    >
+                      Создать
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Scrollable categories list */}
+              <div className="flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
+                {activeCategories && activeCategories.length > 0 ? (
+                  activeCategories.map(cat => {
+                    const isAddingTag = addingTagToCatId === cat.id;
+                    return (
+                      <div key={cat.id} className="p-2.5 bg-slate-50/50 dark:bg-slate-850/10 rounded-xl border border-slate-100 dark:border-slate-800/40 text-xs">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1.5">
+                          <div 
+                            className="flex items-center gap-1.5 cursor-pointer select-none truncate flex-1 hover:bg-slate-100 dark:hover:bg-slate-850 p-1 rounded"
+                            onClick={() => {
+                              setCollapsedCategoryIds(prev => ({ ...prev, [cat.id]: !prev[cat.id] }));
+                            }}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0 animate-pulse" style={{ backgroundColor: cat.color }} />
+                            <span className="text-slate-700 dark:text-slate-300 font-bold truncate">{cat.name}</span>
+                          </div>
+                          
+                          <div className="flex gap-1.5 pl-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextVal = !isAddingTag;
+                                setAddingTagToCatId(nextVal ? cat.id : null);
+                                setNewCatTagName('');
+                              }}
+                              className="text-indigo-600 hover:underline text-[10px] font-bold"
+                            >
+                              + Тег
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirmDeleteCatId === cat.id) {
+                                  handleDeleteTagCategory(cat.id);
+                                  setConfirmDeleteCatId(null);
+                                } else {
+                                  setConfirmDeleteCatId(cat.id);
+                                }
+                              }}
+                              className="text-rose-550 hover:underline text-[10px] font-bold"
+                            >
+                              {confirmDeleteCatId === cat.id ? "Удалить?" : "Удалить"}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Inline Tag insertion form */}
+                        {isAddingTag && (
+                          <div className="flex gap-1 items-center py-1">
+                            <input
+                              type="text"
+                              placeholder="Имя тега..."
+                              value={newCatTagName}
+                              onChange={(e) => setNewCatTagName(e.target.value.replace(/\s+/g, '-'))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const trimmed = newCatTagName.trim().replace(/#/g, '');
+                                  if (trimmed) {
+                                    const alreadyInCat = cat.tags && cat.tags.includes(trimmed);
+                                    if (!alreadyInCat) {
+                                      const updatedTags = cat.tags ? [...cat.tags, trimmed] : [trimmed];
+                                      handleUpdateTagCategory(cat.id, cat.name, cat.color, updatedTags);
+                                    }
+                                  }
+                                  setAddingTagToCatId(null);
+                                }
+                              }}
+                              className="bg-white dark:bg-slate-800 border border-slate-200 rounded px-1.5 py-0.5 text-[10px] w-full focus:outline-none"
+                              autoFocus
+                            />
+                          </div>
+                        )}
+
+                        {/* Listed tags */}
+                        {!collapsedCategoryIds[cat.id] && cat.tags && cat.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {cat.tags.map(t => {
+                              const isSelected = node.tags && node.tags.includes(t);
+                              return (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => handleToggleCategoryTag(t)}
+                                  className="text-[9.5px] font-extrabold px-2 py-0.5 rounded-lg transition-all select-none"
+                                  style={{
+                                    backgroundColor: isSelected ? `${cat.color}20` : '#f1f5f9',
+                                    color: isSelected ? cat.color : '#64748b',
+                                    border: `1px solid ${isSelected ? cat.color : '#e2e8f0'}`
+                                  }}
+                                >
+                                  {isSelected ? '✓ ' : ''}#{t}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-[11px] text-slate-400 italic text-center py-6">Нет категорий</p>
+                )}
+              </div>
+            </div>
+
+            {/* FILES & ATTACHMENTS CARD */}
+            <div className="h-[180px] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 p-4 shadow-xs overflow-hidden flex flex-col shrink-0">
+              <span className="text-xs font-bold text-slate-505 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 shrink-0 mb-2">
+                <Paperclip className="w-4 h-4 text-indigo-500" />
+                Вложения и файлы
+              </span>
+
+              <div className="flex-1 overflow-y-auto pr-1 space-y-2 min-h-0">
+                {/* Drag drop files */}
+                <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-indigo-400 transition rounded-xl p-2.5 text-center cursor-pointer">
+                  <input
+                    type="file"
+                    onChange={handleFileUpload}
+                    disabled={isUploadingFile}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  {isUploadingFile ? (
+                    <Loader2 className="w-4 h-4 animate-spin mx-auto text-amber-500" />
+                  ) : (
+                    <p className="text-[10px] text-slate-500 font-bold">Выбрать файл или вставить (Ctrl+V)</p>
+                  )}
+                </div>
+
+                {/* Uploaded attachments */}
+                <div className="space-y-1">
+                  {node.files && node.files.length > 0 ? (
+                    node.files.map(file => (
+                      <div key={file.id} className="flex items-center justify-between p-1.5 bg-slate-50 dark:bg-slate-950/20 rounded-lg text-[11px]">
+                        <span className="truncate font-bold text-slate-700 dark:text-slate-300 max-w-[120px]" title={file.name}>
+                          {file.name}
+                        </span>
+                        <div className="flex gap-1 shrink-0">
+                          <a href={file.dataUrl} target="_blank" rel="noreferrer" className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-indigo-500">
+                            <Download className="w-3.5 h-3.5" />
+                          </a>
+                          <button onClick={() => handleRemoveFile(file.id)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-rose-500">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-[10px] text-slate-400 italic text-center py-2">Нет файлов</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* COLUMN 4: DISCUSSIONS (CHAT) & VERSION HISTORY */}
+          <div className="flex flex-col gap-4 min-h-0 h-full">
+            {/* DISCUSSION CHAT CARD */}
+            <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 shadow-xs overflow-hidden min-h-0">
+              <span className="text-xs font-bold text-slate-505 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 shrink-0 px-4 pt-4 pb-2 border-b border-slate-100 dark:border-slate-800/80">
+                <Send className="w-4 h-4 text-indigo-500" />
+                Обсуждение ({ (node.comments || []).length })
+              </span>
+
+              {/* Chat scrolling block */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+                {(node.comments || []).length === 0 ? (
+                  <div className="text-center py-10 text-[11px] text-slate-400 italic">Начните обсуждение по задаче...</div>
+                ) : (
+                  (node.comments || []).map(comment => (
+                    <div key={comment.id} className="flex gap-2 items-start text-xs">
+                      <div className="w-6.5 h-6.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-[10px] shrink-0 border border-indigo-100">
+                        {comment.userName.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0 bg-slate-50 dark:bg-slate-950/40 p-2.5 rounded-xl">
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{comment.userName}</span>
+                          <span className="text-[8px] text-slate-400">{new Date(comment.createdAt).toLocaleTimeString()}</span>
+                        </div>
+                        <p className="text-slate-700 dark:text-slate-300 break-words">{comment.text}</p>
+                      </div>
+                      <button onClick={() => handleDeleteComment(comment.id)} className="text-slate-300 hover:text-rose-500 p-1 self-center transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Chat Comment input */}
+              <div className="p-3 border-t border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 flex gap-2 items-center shrink-0">
+                <input
+                  type="text"
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSendComment();
+                    }
+                  }}
+                  placeholder="Задать вопрос или прокомментировать..."
+                  className="flex-1 text-xs bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 focus:outline-none dark:text-slate-100 font-sans"
+                />
+                <button
+                  onClick={handleSendComment}
+                  disabled={!commentText.trim()}
+                  className="p-1.5 px-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-45 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Send className="w-3 h-3" /> Отправить
+                </button>
+              </div>
+            </div>
+
+            {/* VERSION HISTORY CARD */}
+            <div className="h-[180px] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 p-4 shadow-xs overflow-hidden flex flex-col shrink-0">
+              <div className="flex items-center justify-between shrink-0 mb-2 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <History className="w-4 h-4 text-indigo-500" />
+                  История версий ({ (node.history || []).length })
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSaveManualCheckpoint}
+                  className="text-[9.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                >
+                  + Снимок
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 min-h-0">
+                {(node.history || []).length === 0 ? (
+                  <p className="text-[10px] text-slate-400 italic text-center py-4">Архив снимков пуст</p>
+                ) : (
+                  (node.history || []).map(ver => (
+                    <div key={ver.id} className="p-2 border border-slate-100 dark:border-slate-800/60 rounded-lg bg-slate-50/50 text-[10px] flex justify-between items-center">
+                      <div className="truncate pr-1">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 block truncate">{ver.description || 'Правка'}</span>
+                        <span className="text-[8px] text-slate-400 font-mono">{new Date(ver.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <button
+                        onClick={() => handleRestoreVersion(ver)}
+                        className="px-2 py-0.5 bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400 rounded-md font-bold text-[9px] cursor-pointer hover:bg-indigo-100"
+                      >
+                        Откат
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* CONTROLS FOOTER */}
+        <div className="h-14 px-6 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Глобальные действия:</span>
+            <button
+              type="button"
+              onClick={() => handlePropChange('archived', !node.archived)}
+              className={`px-3 py-1 rounded-lg text-[11px] font-extrabold border cursor-pointer transition ${
+                node.archived ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/20' : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800'
+              }`}
+            >
+              {node.archived ? 'Разархивировать' : 'В архив'}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {!isCentralRootNode ? (
+              <button
+                onClick={() => {
+                  if (confirmDelete) {
+                    onDeleteNode(node.id);
+                    onClose();
+                    setConfirmDelete(false);
+                  } else {
+                    setConfirmDelete(true);
+                    setTimeout(() => setConfirmDelete(false), 4000);
+                  }
+                }}
+                className={`px-4 py-1.5 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                  confirmDelete ? 'bg-rose-605 text-white animate-pulse' : 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/20'
+                }`}
+              >
+                {confirmDelete ? "ПОДТВЕРДИТЕ УДАЛЕНИЕ ЗАДАЧИ!" : "Удалить эту ветвь"}
+              </button>
+            ) : (
+              <span className="text-[10px] text-slate-400 font-mono italic">Корневой узел. Удаление недоступно.</span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <aside 
@@ -1465,6 +3264,15 @@ export default function TaskDetailsPanel({
                 <LinkIcon className="w-4 h-4" />
               </>
             )}
+          </button>
+
+          <button 
+            type="button"
+            onClick={() => setIsFullscreen(true)}
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-500 transition-colors cursor-pointer"
+            title="Открыть во весь экран"
+          >
+            <Maximize2 className="w-4 h-4" />
           </button>
 
           <button 
@@ -1574,7 +3382,79 @@ export default function TaskDetailsPanel({
           />
         </div>
 
-        {/* Subtasks Section */}
+        {/* Quick Access Info Dashboard & Sub-tabs Switcher */}
+        <div className="space-y-3 bg-slate-50/50 dark:bg-slate-900/30 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/60 shadow-xs mb-4 shrink-0">
+          <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+            Быстрый доступ к параметрам
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {/* Main Subtab Button */}
+            <button
+              type="button"
+              onClick={() => setDetailsSubTab('main')}
+              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                detailsSubTab === 'main'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
+                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+            >
+              <span className="text-base">📊</span>
+              <span className="text-[10px] font-bold mt-1 leading-none">Главное</span>
+              <span className={`text-[9px] mt-1 font-medium ${detailsSubTab === 'main' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                {(() => {
+                  const subCount = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length;
+                  return subCount > 0 ? `${subCount} подзад.` : 'Нет подзад.';
+                })()}
+              </span>
+            </button>
+
+            {/* Dates Subtab Button */}
+            <button
+              type="button"
+              onClick={() => setDetailsSubTab('dates')}
+              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                detailsSubTab === 'dates'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
+                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+            >
+              <span className="text-base">📅</span>
+              <span className="text-[10px] font-bold mt-1 leading-none">Сроки</span>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${detailsSubTab === 'dates' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                {node.dueDate ? (
+                  node.dueTime ? `${node.dueDate.slice(5)} ${node.dueTime}` : node.dueDate.slice(5)
+                ) : (
+                  'Не заданы'
+                )}
+              </span>
+            </button>
+
+            {/* Tags Subtab Button */}
+            <button
+              type="button"
+              onClick={() => setDetailsSubTab('tags')}
+              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                detailsSubTab === 'tags'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
+                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+            >
+              <span className="text-base">🏷️</span>
+              <span className="text-[10px] font-bold mt-1 leading-none">Теги</span>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${detailsSubTab === 'tags' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                {node.tags && node.tags.length > 0 ? (
+                  `${node.tags.length} шт.`
+                ) : (
+                  'Без тегов'
+                )}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Main Sub-tab Container */}
+        <div className={detailsSubTab === 'main' ? 'space-y-6' : 'hidden'}>
+          {/* Subtasks Section */}
         <div className="space-y-2 bg-[#FAFBFD]/40 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-slate-400 dark:text-slate-505 uppercase tracking-wider">
@@ -2451,8 +4331,11 @@ export default function TaskDetailsPanel({
             })}
           </div>
         </div>
+        </div>
 
-        {/* Даты и время (Начало и Конец) */}
+        {/* Dates Sub-tab Container */}
+        <div className={detailsSubTab === 'dates' ? 'space-y-6' : 'hidden'}>
+          {/* Даты и время (Начало и Конец) */}
         <div className="space-y-4 bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-150 dark:border-slate-800">
           <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
             <Calendar className="w-4 h-4 text-indigo-500" />
@@ -2755,8 +4638,11 @@ export default function TaskDetailsPanel({
             )}
           </div>
         </div>
+        </div>
 
-        {/* Branch / Connector Color picker */}
+        {/* Tags Sub-tab Container */}
+        <div className={detailsSubTab === 'tags' ? 'space-y-6' : 'hidden'}>
+          {/* Branch / Connector Color picker */}
         <div className="space-y-2.5">
           <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
             Цвет ветви связи
@@ -3095,6 +4981,8 @@ export default function TaskDetailsPanel({
               )}
             </div>
           </div>
+        </div>
+
         </div>
 
         {/* External Link */}

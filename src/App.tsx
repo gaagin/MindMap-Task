@@ -817,6 +817,7 @@ export default function App() {
   // Selected task node for detail panel
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [detailsPanelTab, setDetailsPanelTab] = useState<'details' | 'chat'>('details');
 
   // Selected task nodes for multiple selection
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
@@ -967,7 +968,7 @@ export default function App() {
     setGlobalSelectionEnd(null);
   };
 
-  const handleSelectNode = (id: string | null, eOrIsMulti?: any) => {
+  const handleSelectNode = (id: string | null, eOrIsMulti?: any, initialTab: 'details' | 'chat' = 'details') => {
     let isMulti = false;
     
     if (typeof eOrIsMulti === 'boolean') {
@@ -1010,6 +1011,7 @@ export default function App() {
       setSelectedNodeId(null);
     } else {
       setSelectedNodeId(id);
+      setDetailsPanelTab(initialTab);
       setIsDrawerOpen(true);
     }
   };
@@ -4676,6 +4678,7 @@ export default function App() {
             onDeleteTagCategory={handleDeleteTagCategory}
             googleToken={googleToken}
             onUpdateNodeParent={handleUpdateNodeParent}
+            initialTab={detailsPanelTab}
           />
         )}
 

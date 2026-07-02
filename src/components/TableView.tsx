@@ -18,7 +18,8 @@ import {
   Link as LinkIcon,
   Maximize2,
   Minimize2,
-  Timer
+  Timer,
+  MessageSquare
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
@@ -28,7 +29,7 @@ interface TableViewProps {
   activeProjectId: string;
   selectedNodeId: string | null;
   activePomodoroNodeId?: string | null;
-  onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
+  onSelectNode: (id: string | null, eOrIsMulti?: any, initialTab?: 'details' | 'chat') => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask?: (text: string, initialTags: string[]) => void;
@@ -791,6 +792,26 @@ export default function TableView({
                         >
                           <FileText className="w-3.5 h-3.5" />
                         </button>
+                        {(() => {
+                          const hasComments = task.comments && task.comments.length > 0;
+                          return (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectNode(task.id, undefined, 'chat');
+                              }}
+                              title={hasComments ? `Обсуждение (${task.comments.length} сообщений)` : 'Открыть чат'}
+                              className={`p-1 rounded transition-colors cursor-pointer flex items-center gap-0.5 text-[9.5px] ${
+                                hasComments
+                                  ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 font-extrabold px-1'
+                                  : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-rose-650 dark:text-slate-400 dark:hover:text-rose-400'
+                              }`}
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              {hasComments && <span>{task.comments.length}</span>}
+                            </button>
+                          );
+                        })()}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

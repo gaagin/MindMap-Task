@@ -204,6 +204,7 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
         const allCompleted = children.every(c => c.completed);
         if (nextNode.completed !== allCompleted) {
           nextNode.completed = allCompleted;
+          nextNode.collapsed = allCompleted; // Automatically collapse the branch if completed, expand if active
           nodeChanged = true;
         }
 
@@ -269,7 +270,11 @@ export function toggleNodeAndDescendants(nodeId: string, completed: boolean, all
   
   return allNodes.map(n => {
     if (idsToToggle.includes(n.id)) {
-      return { ...n, completed: completed };
+      const updatedNode = { ...n, completed: completed };
+      if (n.id === nodeId) {
+        updatedNode.collapsed = completed; // Automatically collapse branch if completed, expand if active
+      }
+      return updatedNode;
     }
     return n;
   });

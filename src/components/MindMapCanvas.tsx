@@ -4814,6 +4814,14 @@ export default function MindMapCanvas({
   const visibleNodes = nodes.filter(node => {
     if (node.parentId === 'inbox') return false;
 
+    // Collapse/hide completed child nodes from mindmap canvas view so they collapse and don't obstruct the view (unless under a container list/kanban, or when searching/filtering)
+    if (node.completed && node.parentId !== null && filterStatus !== 'completed' && !searchQuery.trim()) {
+      const parentNode = nodes.find(n => n.id === node.parentId);
+      if (parentNode && !parentNode.isContainer) {
+        return false;
+      }
+    }
+
     // Filter by task focus mode: if a specific task is focused, show only that task and its descendants/subtasks
     if (focusedTaskId) {
       if (node.id === focusedTaskId) return true;
