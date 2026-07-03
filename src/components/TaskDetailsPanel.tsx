@@ -37,7 +37,7 @@ import {
   GripVertical
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
-import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch, pruneTaskNodeHistory } from '../utils';
+import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch, pruneTaskNodeHistory, suggestEstimatedTime } from '../utils';
 import { auth, db } from '../lib/firebase';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import GoogleDriveImage from './GoogleDriveImage';
@@ -96,6 +96,7 @@ export default function TaskDetailsPanel({
 
   const activeBlockers = node ? allNodes.filter(n => node.blockedBy?.includes(n.id) && !n.completed) : [];
   const hasActiveBlockers = activeBlockers.length > 0;
+  const suggestedTime = node ? suggestEstimatedTime(node.text, allNodes) : undefined;
 
   // Drag and touch sorting states for subtasks
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -2663,6 +2664,18 @@ export default function TaskDetailsPanel({
                           hasSubtaskWithTime ? 'bg-slate-100 dark:bg-slate-900/60 cursor-not-allowed font-semibold text-indigo-600 dark:text-indigo-400' : ''
                         }`}
                       />
+                      {suggestedTime !== undefined && suggestedTime !== node.estimatedTime && !hasSubtaskWithTime && (
+                        <div className="mt-1 text-[10px] text-indigo-600 dark:text-indigo-400 flex items-center justify-between">
+                          <span>Рекомендация: {suggestedTime} мин</span>
+                          <button
+                            type="button"
+                            onClick={() => handlePropChange('estimatedTime', suggestedTime)}
+                            className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300 underline cursor-pointer"
+                          >
+                            Применить
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -4696,6 +4709,20 @@ export default function TaskDetailsPanel({
                 </span>
               )}
             </div>
+            {suggestedTime !== undefined && suggestedTime !== node.estimatedTime && !hasSubtaskWithTime && (
+              <div className="text-[10px] text-indigo-600 dark:text-indigo-400 flex items-center justify-between pt-0.5">
+                <span className="flex items-center gap-1">
+                  💡 Рекомендуемое время: <strong>{suggestedTime} мин</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handlePropChange('estimatedTime', suggestedTime)}
+                  className="font-bold text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300 hover:underline cursor-pointer"
+                >
+                  Применить
+                </button>
+              </div>
+            )}
             {hasSubtaskWithTime && (
               <p className="text-[10px] text-indigo-500 dark:text-indigo-400 font-semibold">
                 Рассчитано автоматически как сумма подзадач

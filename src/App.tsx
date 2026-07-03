@@ -46,7 +46,7 @@ import {
   Plus
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
-import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup } from './utils';
+import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime } from './utils';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
@@ -1264,6 +1264,7 @@ export default function App() {
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [isMobileViewSwitcherOpen, setIsMobileViewSwitcherOpen] = useState(false);
   const [isContainerFocused, setIsContainerFocused] = useState(false);
+  const [focusedContainerId, setFocusedContainerId] = useState<string | null>(null);
   const [isViewFullScreen, setIsViewFullScreen] = useState(false);
 
   useEffect(() => {
@@ -2125,59 +2126,6 @@ export default function App() {
     }
   }, [state.nodes]);
 
-  // Handle keyboard shortcuts (Delete to delete selected task, Escape to cancel newly added task during focus)
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isTyping = (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT' ||
-        target.isContentEditable
-      );
-
-      if (e.key === 'Escape' || e.key === 'Esc') {
-        if (selectedNodeId && selectedNodeId === lastCreatedNodeId) {
-          if (isTyping) {
-            target.blur();
-          }
-          handleDeleteNode(selectedNodeId, true); // True to skip confirming if it happens to be a container
-          setLastCreatedNodeId(null);
-          setSelectedNodeId(null);
-          e.preventDefault();
-          return;
-        }
-      }
-
-      if (isTyping) {
-        return; // Ignore other shortcuts (like Delete) while typing in inputs
-      }
-
-      if (e.key === 'Delete' || e.key === 'Del' || e.key === 'Backspace') {
-        if (selectedNodeId) {
-          handleDeleteNode(selectedNodeId);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleGlobalKeyDown);
-    };
-  }, [selectedNodeId, lastCreatedNodeId, state]);
-
-  // Adjust sidebar on startup based on screen width ONLY on initial load if no preference is saved
-  useEffect(() => {
-    const saved = localStorage.getItem('task_mindmap_sidebar_open');
-    if (saved === null) {
-      if (window.innerWidth < 1024) {
-        setSidebarOpen(false);
-      } else {
-        setSidebarOpen(true);
-      }
-    }
-  }, []);
-
   // Back up history before doing node modifications
   const pushToUndo = (projectId: string, currentNodes: TaskNode[]) => {
     setUndoStack(prev => {
@@ -2214,6 +2162,68 @@ export default function App() {
       }
     }));
   };
+
+  // Handle keyboard shortcuts (Delete to delete selected task, Escape to cancel newly added task during focus)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isTyping = (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      );
+
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        if (selectedNodeId && selectedNodeId === lastCreatedNodeId) {
+          if (isTyping) {
+            target.blur();
+          }
+          handleDeleteNode(selectedNodeId, true); // True to skip confirming if it happens to be a container
+          setLastCreatedNodeId(null);
+          setSelectedNodeId(null);
+          e.preventDefault();
+          return;
+        }
+      }
+
+      if (isTyping) {
+        return; // Ignore other shortcuts (like Delete) while typing in inputs
+      }
+
+      // Ctrl + Z to Undo last task operation
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      if (e.key === 'Delete' || e.key === 'Del' || e.key === 'Backspace') {
+        if (selectedNodeId) {
+          handleDeleteNode(selectedNodeId);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [selectedNodeId, lastCreatedNodeId, state, undoStack, handleUndo]);
+
+  // Adjust sidebar on startup based on screen width ONLY on initial load if no preference is saved
+  useEffect(() => {
+    const saved = localStorage.getItem('task_mindmap_sidebar_open');
+    if (saved === null) {
+      if (window.innerWidth < 1024) {
+        setSidebarOpen(false);
+      } else {
+        setSidebarOpen(true);
+      }
+    }
+  }, []);
+
+
 
   // Switch project handler
   const handleSelectProject = (projectId: string) => {
@@ -2434,6 +2444,25 @@ export default function App() {
 
   const displayedNodesForViews = useMemo(() => {
     return activeNodes.filter(node => {
+      // If we have a focused container, we want to see only tasks belonging to this container (or the container itself)
+      if (focusedContainerId) {
+        if (node.id !== focusedContainerId) {
+          let isDescendant = false;
+          let currentParentId = node.parentId;
+          while (currentParentId) {
+            if (currentParentId === focusedContainerId) {
+              isDescendant = true;
+              break;
+            }
+            const parent = activeNodes.find(n => n.id === currentParentId);
+            currentParentId = parent ? parent.parentId : null;
+          }
+          if (!isDescendant) {
+            return false;
+          }
+        }
+      }
+
       if (filterStatus === "not_tasks") {
         return !!node.isNotTask;
       } else if (node.isNotTask && viewMode !== 'canvas') {
@@ -2460,7 +2489,7 @@ export default function App() {
       
       return !node.archived;
     });
-  }, [activeNodes, filterStatus, searchQuery, viewMode]);
+  }, [activeNodes, filterStatus, searchQuery, viewMode, focusedContainerId]);
 
   // Single node or multi-node drag updating coordinates with simultaneous movement of all descendant nodes
   const handleUpdateNodeCoordinates = (id: string, x: number, y: number) => {
@@ -2791,7 +2820,7 @@ export default function App() {
       notes: 'Эта задача была записана в INBOX. Нажмите "На холст", чтобы разместить её на интеллект-карте.',
       completed: false,
       files: [],
-      estimatedTime: 30
+      estimatedTime: suggestEstimatedTime(text, Object.values(state.nodes).flat() as TaskNode[]) ?? 30
     };
 
     setState(prev => ({
@@ -2912,7 +2941,7 @@ export default function App() {
       completed: false,
       files: [],
       color: isInsideContainer ? '#3b82f6' : '#10b981', // Blue inside container, green otherwise
-      estimatedTime: 30,
+      estimatedTime: customText ? (suggestEstimatedTime(customText, Object.values(state.nodes).flat() as TaskNode[]) ?? 30) : 30,
       ...extraFields
     };
 
@@ -3209,7 +3238,7 @@ export default function App() {
       files: [],
       dueDate,
       color: '#6366f1',
-      estimatedTime: 30,
+      estimatedTime: suggestEstimatedTime(text, Object.values(state.nodes).flat() as TaskNode[]) ?? 30,
       ...extraFields
     };
 
@@ -3252,7 +3281,7 @@ export default function App() {
       dueDate,
       dueTime,
       color: parentNode ? parentNode.color : '#6366f1',
-      estimatedTime: 30
+      estimatedTime: suggestEstimatedTime(text, Object.values(state.nodes).flat() as TaskNode[]) ?? 30
     };
 
     setState(prev => ({
@@ -3277,6 +3306,24 @@ export default function App() {
         ...updatedNode,
         updatedAt: new Date().toISOString()
       };
+
+      if (targetNode && targetNode.text !== updatedNode.text) {
+        const isPlaceholder = (t: string) => {
+          const lower = t.toLowerCase();
+          return lower.includes('новая подзадача') || lower.includes('плавающая задача') || lower.includes('новые задачи') || lower.includes('новый контейнер') || lower.includes('новая задача') || t.trim() === '';
+        };
+
+        const wasPlaceholder = isPlaceholder(targetNode.text);
+        const isNowPlaceholder = isPlaceholder(updatedNode.text);
+
+        if ((wasPlaceholder && !isNowPlaceholder) || updatedNode.estimatedTime === 30 || updatedNode.estimatedTime === undefined) {
+          const allWorkspaceNodes = Object.values(prev.nodes).flat();
+          const suggested = suggestEstimatedTime(updatedNode.text, allWorkspaceNodes);
+          if (suggested !== undefined) {
+            nodeWithTimeStamp.estimatedTime = suggested;
+          }
+        }
+      }
 
       let updatedList = currentNodes.map(n => n.id === updatedNode.id ? nodeWithTimeStamp : n);
       
@@ -3307,14 +3354,32 @@ export default function App() {
   const updateNodeInProject = (projId: string, updatedNode: TaskNode) => {
     setState(prev => {
       const currentNodes = prev.nodes[projId] || [];
+      const targetNode = currentNodes.find(n => n.id === updatedNode.id);
+      
       const nodeWithTimeStamp = {
         ...updatedNode,
         updatedAt: new Date().toISOString()
       };
+
+      if (targetNode && targetNode.text !== updatedNode.text) {
+        const isPlaceholder = (t: string) => {
+          const lower = t.toLowerCase();
+          return lower.includes('новая подзадача') || lower.includes('плавающая задача') || lower.includes('новые задачи') || lower.includes('новый контейнер') || lower.includes('новая задача') || t.trim() === '';
+        };
+
+        const wasPlaceholder = isPlaceholder(targetNode.text);
+        const isNowPlaceholder = isPlaceholder(updatedNode.text);
+
+        if ((wasPlaceholder && !isNowPlaceholder) || updatedNode.estimatedTime === 30 || updatedNode.estimatedTime === undefined) {
+          const allWorkspaceNodes = Object.values(prev.nodes).flat();
+          const suggested = suggestEstimatedTime(updatedNode.text, allWorkspaceNodes);
+          if (suggested !== undefined) {
+            nodeWithTimeStamp.estimatedTime = suggested;
+          }
+        }
+      }
       
       let updatedList = currentNodes.map(n => n.id === updatedNode.id ? nodeWithTimeStamp : n);
-      
-      const targetNode = currentNodes.find(n => n.id === updatedNode.id);
       if (targetNode && targetNode.completed !== updatedNode.completed) {
         updatedList = toggleNodeAndDescendants(updatedNode.id, updatedNode.completed, updatedList);
       }
@@ -3665,6 +3730,24 @@ export default function App() {
                     <span>Нужна авторизация!</span>
                   </span>
                 )}
+                {focusedContainerId && (() => {
+                  const containerNode = activeNodes.find(n => n.id === focusedContainerId);
+                  return (
+                    <span className="inline-flex items-center gap-1.5 bg-amber-500/15 dark:bg-amber-550/20 border border-amber-200/50 dark:border-amber-900/40 px-2 py-0.5 rounded-full text-[10px] text-amber-700 dark:text-amber-400 font-bold shrink-0">
+                      <span>📦 {containerNode?.text || 'Без названия'}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFocusedContainerId(null);
+                        }}
+                        className="ml-1 px-1 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white text-[8px] font-extrabold uppercase transition-all cursor-pointer shadow-xs border-none"
+                        title="Выйти из режима фокусировки"
+                      >
+                        Выйти
+                      </button>
+                    </span>
+                  );
+                })()}
               </h2>
               {viewMode !== 'mobile-list' && (() => {
                 const actualTasks = activeNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
@@ -3882,7 +3965,7 @@ export default function App() {
             {state.activeProjectId && (undoStack[state.activeProjectId] || []).length > 0 && (
               <button
                 onClick={handleUndo}
-                title="Отменить последнее ветвление или удаление"
+                title="Отменить последнее ветвление или удаление (Ctrl+Z)"
                 className="p-1.5 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center gap-1 text-xs cursor-pointer focus:outline-none"
               >
                 <Undo2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
@@ -4221,7 +4304,7 @@ export default function App() {
             <button
               type="button"
               onClick={handleUndo}
-              title="Отменить"
+              title="Отменить (Ctrl+Z)"
               className="p-1.5 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-center cursor-pointer"
             >
               <Undo2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
@@ -4671,6 +4754,13 @@ export default function App() {
                 onFullScreenChange={setIsViewFullScreen}
                 focusedTaskId={focusedTaskId}
                 onFocusedTaskIdChange={setFocusedTaskId}
+                focusedContainerId={focusedContainerId}
+                onFocusedContainerIdChange={(id) => {
+                  setFocusedContainerId(id);
+                  if (id) {
+                    setViewMode('canvas');
+                  }
+                }}
               />
             )
           ) : (

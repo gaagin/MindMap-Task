@@ -617,6 +617,105 @@ export function runAutomatedBackup(state: WorkspaceState): void {
   }
 }
 
+// Automatically suggests an estimated execution time for a new task in minutes
+// based on the average execution/estimate time of previous similar completed or tracked tasks
+export function suggestEstimatedTime(text: string, allNodes: TaskNode[]): number | undefined {
+  if (!text || !text.trim()) return undefined;
+  
+  // Clean and tokenize the input text
+  const cleanAndTokenize = (str: string): string[] => {
+    const stopwords = new Set([
+      'и', 'в', 'на', 'с', 'по', 'для', 'а', 'но', 'как', 'то', 'же', 'от', 'до', 'за', 'из', 'у', 'о', 'об', 'при', 'со', 'без', 'над', 'под', 'перед',
+      'the', 'a', 'an', 'and', 'or', 'to', 'for', 'in', 'on', 'at', 'with', 'by', 'of', 'from', 'up', 'about', 'into', 'over', 'after', 'with'
+    ]);
+    return str
+      .toLowerCase()
+      .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"']/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 1 && !stopwords.has(w));
+  };
+
+  const newTokens = cleanAndTokenize(text);
+  if (newTokens.length === 0) return undefined;
+
+  interface MatchedTask {
+    node: TaskNode;
+    time: number; // in minutes
+    score: number; // similarity score
+  }
+
+  const matches: MatchedTask[] = [];
+
+  for (const node of allNodes) {
+    const isCompleted = !!node.completed;
+    const hasPomoTime = node.pomodoroTotalTime !== undefined && node.pomodoroTotalTime > 0;
+    const hasEstTime = node.estimatedTime !== undefined && node.estimatedTime > 0;
+
+    // Only consider completed tasks or tasks with tracked focus time
+    if (!isCompleted && !hasPomoTime) continue;
+    if (!node.text || node.text.trim() === '') continue;
+
+    // Skip placeholder names
+    const lowerText = node.text.toLowerCase();
+    if (
+      lowerText.includes('новая подзадача') || 
+      lowerText.includes('плавающая задача') || 
+      lowerText.includes('новые задачи') || 
+      lowerText.includes('новый контейнер') ||
+      lowerText.includes('новая задача')
+    ) {
+      continue;
+    }
+
+    const nodeTokens = cleanAndTokenize(node.text);
+    if (nodeTokens.length === 0) continue;
+
+    // Calculate word intersection and Jaccard similarity score
+    const union = new Set([...newTokens, ...nodeTokens]);
+    const intersection = newTokens.filter(t => nodeTokens.includes(t));
+    const score = intersection.length / union.size;
+
+    if (score > 0 || intersection.length > 0) {
+      let time = 30; // default minutes fallback
+      if (hasPomoTime) {
+        time = Math.round(node.pomodoroTotalTime! / 60);
+      } else if (hasEstTime) {
+        time = node.estimatedTime!;
+      } else {
+        continue;
+      }
+
+      if (time > 0) {
+        // Weighted similarity score
+        const finalScore = score * 0.7 + (intersection.length / Math.max(newTokens.length, nodeTokens.length)) * 0.3;
+        matches.push({ node, time, score: finalScore });
+      }
+    }
+  }
+
+  if (matches.length === 0) return undefined;
+
+  // Sort matches by similarity score descending
+  matches.sort((a, b) => b.score - a.score);
+
+  // Take the best matches (similarity score >= 0.15)
+  const threshold = 0.15;
+  const bestMatches = matches.filter(m => m.score >= threshold);
+  const finalCandidates = bestMatches.length > 0 ? bestMatches : matches.slice(0, 3);
+
+  // Compute weighted average
+  const totalScore = finalCandidates.reduce((sum, m) => sum + m.score, 0);
+  const weightedTimeSum = finalCandidates.reduce((sum, m) => sum + m.time * m.score, 0);
+  
+  if (totalScore > 0) {
+    const suggested = Math.round(weightedTimeSum / totalScore);
+    return suggested > 0 ? suggested : 30;
+  }
+
+  const average = Math.round(finalCandidates.reduce((sum, m) => sum + m.time, 0) / finalCandidates.length);
+  return average > 0 ? average : 30;
+}
+
 
 
 

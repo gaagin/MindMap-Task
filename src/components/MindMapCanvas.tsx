@@ -50,7 +50,7 @@ import {
   GripVertical
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
-import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, pruneTaskNodeHistory } from '../utils';
+import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, pruneTaskNodeHistory, suggestEstimatedTime } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface MindMapCanvasProps {
@@ -97,6 +97,8 @@ interface MindMapCanvasProps {
   onFullScreenChange?: (isFullScreen: boolean) => void;
   focusedTaskId?: string | null;
   onFocusedTaskIdChange?: (id: string | null) => void;
+  focusedContainerId?: string | null;
+  onFocusedContainerIdChange?: (id: string | null) => void;
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -370,7 +372,9 @@ export default function MindMapCanvas({
   onContainerFocusChange,
   onFullScreenChange,
   focusedTaskId = null,
-  onFocusedTaskIdChange
+  onFocusedTaskIdChange,
+  focusedContainerId: propFocusedContainerId,
+  onFocusedContainerIdChange
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -871,6 +875,44 @@ export default function MindMapCanvas({
   };
 
   const renderContainerBody = (node: TaskNode, rawChildren: TaskNode[], isFullScreen = false) => {
+    const containerChildren = rawChildren;
+
+    if (containerChildren.length === 0) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto transition-all">
+          <span className="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest mb-1">Свободный холст</span>
+          <span className="text-[9px] text-slate-400 dark:text-slate-500 max-w-[200px] mb-3">
+            Дочерние подзадачи свободно перемещаются по этому прямоугольнику.
+          </span>
+          <div className="flex gap-2 pointer-events-auto">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddFloatingNode(node.x, node.y, node.id, 'Workflow Шаг', { isWorkflowRectangle: true });
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wide uppercase bg-indigo-500 hover:bg-indigo-600 text-white shadow-xs transition-transform hover:scale-105 cursor-pointer"
+            >
+              <Network className="w-3 h-3 text-white" />
+              🟦 Прямоугольник Workflow
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddFloatingNode(node.x, node.y, node.id, 'Новая задача');
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wide uppercase bg-slate-150 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-250 dark:border-slate-700 shadow-xs transition-transform hover:scale-105 cursor-pointer"
+            >
+              <Plus className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+              Обычная задача
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const originalRenderContainerBody_OLD_UNUSED = (node: TaskNode, rawChildren: TaskNode[], isFullScreen = false) => {
     const viewMode = containerViewModes[node.id] || 'canvas';
     const containerChildren = viewMode === 'canvas' ? rawChildren : rawChildren.filter(n => !n.isWorkflowRectangle);
 
@@ -2788,7 +2830,15 @@ export default function MindMapCanvas({
   // --- END OF WEB SPEECH API INTEGRATION ---
 
   // Focus mode states for container fullscreen focus
-  const [focusedContainerId, setFocusedContainerId] = useState<string | null>(null);
+  const [localFocusedContainerId, setLocalFocusedContainerId] = useState<string | null>(null);
+  const focusedContainerId = propFocusedContainerId !== undefined ? propFocusedContainerId : localFocusedContainerId;
+  const setFocusedContainerId = (id: string | null) => {
+    if (onFocusedContainerIdChange) {
+      onFocusedContainerIdChange(id);
+    } else {
+      setLocalFocusedContainerId(id);
+    }
+  };
   const [isFocusStatsMobileExpanded, setIsFocusStatsMobileExpanded] = useState<boolean>(false);
   const [isMobileViewsListExpanded, setIsMobileViewsListExpanded] = useState<boolean>(false);
 
@@ -5174,44 +5224,6 @@ export default function MindMapCanvas({
                 </div>
               </div>
               
-              <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
-
-              {/* View Selector for Focused Mode */}
-              <div className="flex items-center gap-1 bg-[#f1f5f9] dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200/50 dark:border-slate-850 overflow-x-auto scrollbar-none select-none shrink-0 max-w-full shadow-inner">
-                {[
-                  { id: 'canvas', label: 'Холст', icon: Network },
-                  { id: 'kanban', label: 'Канбан', icon: Kanban },
-                  { id: 'list', label: 'Мобильный', icon: Smartphone },
-                  { id: 'calendar', label: 'Календарь', icon: Calendar },
-                  { id: 'gantt', label: 'Гант', icon: GanttChart },
-                  { id: 'table', label: 'Таблица', icon: Table }
-                ].map(v => {
-                  const active = (containerViewModes[focusedContainer.id] || 'canvas') === v.id;
-                  const IconComponent = v.icon;
-                  return (
-                    <button
-                      key={v.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setContainerViewMode(focusedContainer.id, v.id as any);
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      data-drag-ignore
-                      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[11px] font-bold tracking-tight transition-all duration-200 cursor-pointer whitespace-nowrap ${
-                        active 
-                          ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-450 border border-slate-100 dark:border-slate-755 shadow-[0_2px_8px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)]' 
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-850 border border-transparent'
-                      }`}
-                    >
-                      <IconComponent className={`w-3.5 h-3.5 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`} />
-                      <span>{v.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              
-              <div className="hidden md:block w-[1px] h-8 bg-slate-200 dark:bg-slate-800 shrink-0" />
-              
               <div className="flex items-center gap-3 shrink-0 w-full md:w-auto justify-between md:justify-start">
                 <div className="flex flex-col items-end gap-0.5 select-none text-right">
                   <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
@@ -5360,37 +5372,9 @@ export default function MindMapCanvas({
 
               {/* Smoothly expanding accordion of views & actions */}
               {isFocusStatsMobileExpanded && (() => {
-                const currentViewModeId = containerViewModes[focusedContainer.id] || 'canvas';
-                const viewOptions = [
-                  { id: 'canvas', label: 'Холст', icon: Network },
-                  { id: 'kanban', label: 'Канбан', icon: Kanban },
-                  { id: 'list', label: 'Мобильный', icon: Smartphone },
-                  { id: 'calendar', label: 'Календарь', icon: Calendar },
-                  { id: 'gantt', label: 'Гант', icon: GanttChart },
-                  { id: 'table', label: 'Таблица', icon: Table }
-                ];
-                const currentViewOption = viewOptions.find(o => o.id === currentViewModeId) || viewOptions[0];
-                const CurrentIcon = currentViewOption.icon;
-
                 return (
                   <div className="px-3 pb-2.5 pt-1.5 flex flex-col gap-2 bg-white dark:bg-slate-900 animate-in slide-in-from-top-1 duration-150">
                     <div className="flex items-center gap-2 w-full">
-                      {/* Collapsible View Selector Header */}
-                      <button 
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsMobileViewsListExpanded(!isMobileViewsListExpanded);
-                        }}
-                        className="flex-1 flex items-center justify-between h-[38px] bg-slate-50 dark:bg-slate-850 border border-slate-200/60 dark:border-slate-755 px-3 rounded-xl shadow-xs cursor-pointer select-none min-w-0"
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <CurrentIcon className="w-4 h-4 text-indigo-500 shrink-0" />
-                          <span className="text-xs font-extrabold text-slate-755 dark:text-slate-200 truncate leading-none">{currentViewOption.label}</span>
-                        </div>
-                        {isMobileViewsListExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
-                      </button>
-
                       <button
                         onClick={() => {
                           const x = Math.round(-panX / zoom);
@@ -5398,11 +5382,11 @@ export default function MindMapCanvas({
                           onAddFloatingNode(x, y, focusedContainerId, 'Workflow Шаг', { isWorkflowRectangle: true });
                           setIsFocusStatsMobileExpanded(false);
                         }}
-                        className="flex items-center justify-center gap-1 px-2.5 h-[38px] rounded-xl text-[10px] uppercase tracking-wider font-extrabold bg-indigo-500 hover:bg-indigo-600 text-white shadow-xs cursor-pointer shrink-0"
+                        className="flex-1 flex items-center justify-center gap-1 px-2.5 h-[38px] rounded-xl text-[10px] uppercase tracking-wider font-extrabold bg-indigo-500 hover:bg-indigo-600 text-white shadow-xs cursor-pointer"
                         title="Добавить шаг workflow"
                       >
                         <Network className="w-3.5 h-3.5 text-white" />
-                        <span>+ Шаг</span>
+                        <span>+ Шаг Workflow</span>
                       </button>
 
                       <button
@@ -5412,43 +5396,13 @@ export default function MindMapCanvas({
                           onAddFloatingNode(x, y, focusedContainerId);
                           setIsFocusStatsMobileExpanded(false);
                         }}
-                        className="flex items-center justify-center gap-1 px-2.5 h-[38px] rounded-xl text-[10px] uppercase tracking-wider font-extrabold bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs cursor-pointer shrink-0"
+                        className="flex-1 flex items-center justify-center gap-1 px-2.5 h-[38px] rounded-xl text-[10px] uppercase tracking-wider font-extrabold bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs cursor-pointer"
                         title="Добавить задачу"
                       >
                         <PlusCircle className="w-3.5 h-3.5 text-white" />
                         <span>+ Задача</span>
                       </button>
                     </div>
-
-                    {/* Expanding list of available views */}
-                    {isMobileViewsListExpanded && (
-                      <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-1 select-none animate-in slide-in-from-top-1 duration-150 border-t border-slate-150/50 dark:border-slate-800/80 pt-2">
-                        {viewOptions.map(v => {
-                          const active = currentViewModeId === v.id;
-                          const IconComponent = v.icon;
-                          return (
-                            <button
-                              key={v.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setContainerViewMode(focusedContainer.id, v.id as any);
-                                setIsMobileViewsListExpanded(false);
-                              }}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              data-drag-ignore
-                              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-bold tracking-tight transition-all duration-150 cursor-pointer whitespace-nowrap border ${
-                                active 
-                                  ? 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent shadow-xs' 
-                                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 border-slate-150 dark:border-slate-700/80'
-                              }`}
-                            >
-                              <IconComponent className={`w-3 h-3 ${active ? 'text-white' : 'text-slate-450 dark:text-slate-400'}`} />
-                              <span>{v.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 );
               })()}
@@ -6273,7 +6227,7 @@ export default function MindMapCanvas({
                         onMouseDown={(e) => e.stopPropagation()}
                         data-drag-ignore
                         title="Добавить прямоугольник workflow в контейнер"
-                        className="p-1 rounded-md text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        className="p-1 rounded-md text-indigo-600 dark:text-indigo-450 hover:text-indigo-700 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                       >
                         <Network className="w-3.5 h-3.5" />
                       </button>
@@ -6333,44 +6287,6 @@ export default function MindMapCanvas({
                     </button>
                   </div>
                 </div>
-
-                {/* Secondary toolbar for View Selection within Container */}
-                {!isContainerCollapsed && (
-                  <div className="px-3 py-2 flex items-center justify-center bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-100 dark:border-slate-800/60 select-none z-10 shrink-0">
-                    <div className="flex items-center gap-0.5 bg-[#f1f5f9] dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200/50 dark:border-slate-850 overflow-x-auto scrollbar-none max-w-full shadow-inner">
-                      {[
-                        { id: 'canvas', label: 'Холст', icon: Network },
-                        { id: 'kanban', label: 'Канбан', icon: Kanban },
-                        { id: 'list', label: 'Мобильный', icon: Smartphone },
-                        { id: 'calendar', label: 'Календарь', icon: Calendar },
-                        { id: 'gantt', label: 'Гант', icon: GanttChart },
-                        { id: 'table', label: 'Таблица', icon: Table }
-                      ].map(v => {
-                        const active = (containerViewModes[node.id] || 'canvas') === v.id;
-                        const IconComponent = v.icon;
-                        return (
-                          <button
-                            key={v.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setContainerViewMode(node.id, v.id as any);
-                            }}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            data-drag-ignore
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-tight transition-all duration-200 cursor-pointer whitespace-nowrap ${
-                              active 
-                                ? 'bg-white dark:bg-slate-800 text-indigo-650 dark:text-indigo-400 border border-slate-100/80 dark:border-slate-750 shadow-[0_1.5px_4px_rgba(0,0,0,0.04)]' 
-                                : 'text-slate-650 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-200 hover:bg-slate-200/40 dark:hover:bg-slate-800/40 border border-transparent'
-                            }`}
-                          >
-                            <IconComponent className={`w-3 h-3 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-550 dark:text-slate-400'}`} />
-                            <span>{v.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
 
                 {/* Body / Workspace Area */}
                 <div className="relative flex-1 p-3 flex flex-col justify-between min-h-0 bg-transparent rounded-b-2xl">
@@ -7764,46 +7680,61 @@ export default function MindMapCanvas({
                           </button>
                         )}
 
-                        {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'estimatedTime' && (
-                          <div 
-                            className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-48 z-100 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 text-left whitespace-normal ${
-                              openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
-                            }`}
-                            onClick={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
-                          >
-                            <div className="flex items-center justify-between">
-                              <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">Оценка времени:</p>
-                              <button 
-                                type="button" 
-                                onClick={() => setActiveInlineMenu(null)}
-                                className="p-1 rounded-md hover:bg-slate-105 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
+                        {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'estimatedTime' && (() => {
+                          const suggested = suggestEstimatedTime(node.text, nodes);
+                          return (
+                            <div 
+                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-48 z-100 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 text-left whitespace-normal ${
+                                openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                              }`}
+                              onClick={(e) => e.stopPropagation()}
+                              onMouseDown={(e) => e.stopPropagation()}
+                            >
+                              <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">Оценка времени:</p>
+                                <button 
+                                  type="button" 
+                                  onClick={() => setActiveInlineMenu(null)}
+                                  className="p-1 rounded-md hover:bg-slate-105 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
 
-                            <div className="flex gap-1.5">
-                              <input
-                                type="number"
-                                min="0"
-                                placeholder="Мин"
-                                value={node.estimatedTime || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val === '') {
-                                    onUpdateNode({ ...node, estimatedTime: undefined });
-                                  } else {
-                                    const num = parseFloat(val);
-                                    if (!isNaN(num)) {
-                                      onUpdateNode({ ...node, estimatedTime: num });
+                              <div className="flex gap-1.5">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  placeholder="Мин"
+                                  value={node.estimatedTime || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val === '') {
+                                      onUpdateNode({ ...node, estimatedTime: undefined });
+                                    } else {
+                                      const num = parseFloat(val);
+                                      if (!isNaN(num)) {
+                                        onUpdateNode({ ...node, estimatedTime: num });
+                                      }
                                     }
-                                  }
-                                }}
-                                className="w-full text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
-                              />
-                              <span className="text-xs text-slate-400 dark:text-slate-505 self-center shrink-0">мин</span>
-                            </div>
+                                  }}
+                                  className="w-full text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                                />
+                                <span className="text-xs text-slate-400 dark:text-slate-505 self-center shrink-0">мин</span>
+                              </div>
+
+                              {suggested !== undefined && suggested !== node.estimatedTime && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateNode({ ...node, estimatedTime: suggested });
+                                    setActiveInlineMenu(null);
+                                  }}
+                                  className="w-full py-1 px-1.5 text-[9px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 border border-dashed border-indigo-200 dark:border-indigo-850 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 rounded transition-all cursor-pointer text-left"
+                                >
+                                  💡 Рекомендация: {suggested} мин
+                                </button>
+                              )}
 
                             <div className="grid grid-cols-2 gap-1 mt-1">
                               {[15, 25, 30, 45, 60, 90, 120, 180].map((mins) => (
@@ -7832,7 +7763,8 @@ export default function MindMapCanvas({
                               Очистить
                             </button>
                           </div>
-                        )}
+                        );
+                      })()}
                       </div>
                     </div>
 
