@@ -33,7 +33,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
-import { generateId } from '../utils';
+import { generateId, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface MobileListViewProps {
@@ -961,13 +961,65 @@ export default function MobileListView({
                             </span>
                           )}
 
-                          {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) && (
+                          {(() => {
+                            const stats = getPomoStatsForNode(node, nodes);
+                            return stats.pomodoroTotalTime > 0 ? (
+                              <span 
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="flex items-center gap-1 px-1.5 py-0.5 rounded border bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400 text-[9px] font-bold select-none"
+                                title={`Проведено на помидоре: ${formatTotalPomoTime(stats.pomodoroTotalTime)}`}
+                              >
+                                <span>🍅</span>
+                                <span>{formatTotalPomoTime(stats.pomodoroTotalTime)}</span>
+                              </span>
+                            ) : null;
+                          })()}
+
+                          {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) ? (
                             <span 
-                              className="flex items-center gap-1 px-1 rounded-sm border bg-indigo-50/70 border-indigo-150/40 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 text-[9px] font-bold"
-                              title={`Ориентировочное время: ${node.estimatedTime} мин`}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const val = prompt("Изменить ориентировочное время работы (в минутах):", node.estimatedTime?.toString() || "30");
+                                if (val !== null) {
+                                  if (val === "") {
+                                    onUpdateNode({ ...node, estimatedTime: undefined });
+                                  } else {
+                                    const num = parseFloat(val);
+                                    if (!isNaN(num)) {
+                                      onUpdateNode({ ...node, estimatedTime: num });
+                                    }
+                                  }
+                                }
+                              }}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded border bg-indigo-50/70 border-indigo-150/40 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 text-[9px] font-bold cursor-pointer transition-colors"
+                              title={`Ориентировочное время: ${node.estimatedTime} мин (нажмите для изменения)`}
                             >
                               <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
                               <span>{node.estimatedTime} мин</span>
+                            </span>
+                          ) : (
+                            <span 
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const val = prompt("Укажите ориентировочное время работы (в минутах):", "30");
+                                if (val !== null) {
+                                  if (val === "") {
+                                    onUpdateNode({ ...node, estimatedTime: undefined });
+                                  } else {
+                                    const num = parseFloat(val);
+                                    if (!isNaN(num)) {
+                                      onUpdateNode({ ...node, estimatedTime: num });
+                                    }
+                                  }
+                                }
+                              }}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed bg-slate-50/50 border-slate-300 text-slate-400 dark:bg-slate-800/40 dark:border-slate-700 dark:text-slate-500 text-[9px] font-bold cursor-pointer transition-colors"
+                              title="Нажмите, чтобы указать ориентировочное время работы"
+                            >
+                              <Timer className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                              <span>0 мин</span>
                             </span>
                           )}
                         </div>

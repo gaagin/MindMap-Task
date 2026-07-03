@@ -907,15 +907,13 @@ export default function TaskDetailsPanel({
   };
 
   const formatTotalPomoTime = (totalSeconds: number) => {
-    if (!totalSeconds) return '0 сек';
+    if (!totalSeconds) return '0 мин';
     const hrs = Math.floor(totalSeconds / 3600);
     const mins = Math.floor((totalSeconds % 3600) / 60);
-    const secs = totalSeconds % 60;
     
     const parts = [];
     if (hrs > 0) parts.push(`${hrs} ч`);
-    if (mins > 0) parts.push(`${mins} мин`);
-    if (secs > 0 || parts.length === 0) parts.push(`${secs} сек`);
+    if (mins > 0 || parts.length === 0) parts.push(`${mins} мин`);
     return parts.join(' ');
   };
 
@@ -1687,14 +1685,67 @@ export default function TaskDetailsPanel({
                             }`}
                           />
 
-                          {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) && (
-                            <span 
-                              className="text-[9px] font-bold text-slate-505 bg-slate-100 dark:bg-slate-800 dark:text-slate-450 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0"
+                          {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) ? (
+                            <button 
+                              type="button"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const val = prompt("Изменить ориентировочное время работы подзадачи (в минутах):", child.estimatedTime?.toString() || "30");
+                                if (val !== null) {
+                                  if (val === "") {
+                                    onUpdateNode({ ...child, estimatedTime: undefined });
+                                  } else {
+                                    const num = parseFloat(val);
+                                    if (!isNaN(num)) {
+                                      onUpdateNode({ ...child, estimatedTime: num });
+                                    }
+                                  }
+                                }
+                              }}
+                              className="text-[9px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-150/40 dark:border-indigo-900/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                              title={`Ориентировочное время: ${child.estimatedTime} мин (нажмите для изменения)`}
+                            >
+                              <Timer className="w-2.5 h-2.5 text-indigo-500" />
+                              {child.estimatedTime}м
+                            </button>
+                          ) : (
+                            <button 
+                              type="button"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const val = prompt("Укажите ориентировочное время работы подзадачи (в минутах):", "30");
+                                if (val !== null) {
+                                  if (val === "") {
+                                    onUpdateNode({ ...child, estimatedTime: undefined });
+                                  } else {
+                                    const num = parseFloat(val);
+                                    if (!isNaN(num)) {
+                                      onUpdateNode({ ...child, estimatedTime: num });
+                                    }
+                                  }
+                                }
+                              }}
+                              className="text-[9px] font-bold text-slate-400 dark:text-slate-505 bg-slate-50/50 dark:bg-slate-800/40 border border-dashed border-slate-300 dark:border-slate-700/60 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 cursor-pointer hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-all"
+                              title="Нажмите, чтобы указать ориентировочное время работы"
                             >
                               <Timer className="w-2.5 h-2.5 text-slate-400" />
-                              {child.estimatedTime}м
-                            </span>
+                              0м
+                            </button>
                           )}
+
+                          {(() => {
+                            const childStats = getPomoStatsForNode(child, allNodes);
+                            return childStats.pomodoroTotalTime > 0 ? (
+                              <span 
+                                className="text-[9px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/30 border border-rose-150/30 dark:border-rose-900/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 select-none"
+                                title={`Проведено на Помидоре: ${formatTotalPomoTime(childStats.pomodoroTotalTime)}`}
+                              >
+                                🍅 {formatTotalPomoTime(childStats.pomodoroTotalTime)}
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
 
                         <div className="flex items-center gap-1 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
@@ -3822,7 +3873,7 @@ export default function TaskDetailsPanel({
                           className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex-shrink-0 transition-colors"
                         >
                           {child.completed ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-450" />
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-455" />
                           ) : pomo.isRunning && pomo.nodeId === child.id ? (
                             <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
                               <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
@@ -3849,15 +3900,67 @@ export default function TaskDetailsPanel({
                           }`}
                         />
 
-                        {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) && (
-                          <span 
-                            className="text-[9px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0" 
-                            title={`Ориентировочное время: ${child.estimatedTime} мин`}
+                        {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) ? (
+                          <button 
+                            type="button"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const val = prompt("Изменить ориентировочное время работы подзадачи (в минутах):", child.estimatedTime?.toString() || "30");
+                              if (val !== null) {
+                                  if (val === "") {
+                                    onUpdateNode({ ...child, estimatedTime: undefined });
+                                  } else {
+                                    const num = parseFloat(val);
+                                    if (!isNaN(num)) {
+                                      onUpdateNode({ ...child, estimatedTime: num });
+                                    }
+                                  }
+                                }
+                            }}
+                            className="text-[9px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-150/40 dark:border-indigo-900/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                            title={`Ориентировочное время: ${child.estimatedTime} мин (нажмите для изменения)`}
+                          >
+                            <Timer className="w-2.5 h-2.5 text-indigo-500" />
+                            {child.estimatedTime} мин
+                          </button>
+                        ) : (
+                          <button 
+                            type="button"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const val = prompt("Укажите ориентировочное время работы подзадачи (в минутах):", "30");
+                              if (val !== null) {
+                                  if (val === "") {
+                                    onUpdateNode({ ...child, estimatedTime: undefined });
+                                  } else {
+                                    const num = parseFloat(val);
+                                    if (!isNaN(num)) {
+                                      onUpdateNode({ ...child, estimatedTime: num });
+                                    }
+                                  }
+                                }
+                            }}
+                            className="text-[9px] font-bold text-slate-400 dark:text-slate-505 bg-slate-50/50 dark:bg-slate-800/40 border border-dashed border-slate-300 dark:border-slate-700/60 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 cursor-pointer hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-all"
+                            title="Нажмите, чтобы указать ориентировочное время работы"
                           >
                             <Timer className="w-2.5 h-2.5 text-slate-400" />
-                            {child.estimatedTime} мин
-                          </span>
+                            0 мин
+                          </button>
                         )}
+
+                        {(() => {
+                          const childStats = getPomoStatsForNode(child, allNodes);
+                          return childStats.pomodoroTotalTime > 0 ? (
+                            <span 
+                              className="text-[9px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/30 border border-rose-150/30 dark:border-rose-900/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 select-none"
+                              title={`Проведено на Помидоре: ${formatTotalPomoTime(childStats.pomodoroTotalTime)}`}
+                            >
+                              🍅 {formatTotalPomoTime(childStats.pomodoroTotalTime)}
+                            </span>
+                          ) : null;
+                        })()}
                       </div>
 
                       <div className="flex items-center gap-1 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">

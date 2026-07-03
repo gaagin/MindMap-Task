@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
-import { isNodeOverdue, isContainerOverdue } from '../utils';
+import { isNodeOverdue, isContainerOverdue, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
 
 interface KanbanViewProps {
   nodes: TaskNode[];
@@ -1409,13 +1409,65 @@ export default function KanbanView({
             );
           })()}
 
-          {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) && (
+          {(() => {
+            const stats = getPomoStatsForNode(node, nodes);
+            return stats.pomodoroTotalTime > 0 ? (
+              <span 
+                onMouseDown={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 text-[10.5px] px-1.5 py-0.5 rounded-lg bg-rose-50/70 dark:bg-rose-950/30 border border-rose-150/40 dark:border-rose-900/35 text-rose-600 dark:text-rose-400 font-bold shrink-0 select-none"
+                title={`Проведено на помидоре: ${formatTotalPomoTime(stats.pomodoroTotalTime)}`}
+              >
+                <span>🍅</span>
+                <span>{formatTotalPomoTime(stats.pomodoroTotalTime)}</span>
+              </span>
+            ) : null;
+          })()}
+
+          {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) ? (
             <span 
-              className="inline-flex items-center gap-1 text-[10.5px] px-1.5 py-0.5 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-150/40 dark:border-indigo-900/35 text-indigo-600 dark:text-indigo-405 font-bold" 
-              title={`Ориентировочное время: ${node.estimatedTime} мин`}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                const val = prompt("Изменить ориентировочное время работы (в минутах):", node.estimatedTime?.toString() || "30");
+                if (val !== null) {
+                  if (val === "") {
+                    onUpdateNode({ ...node, estimatedTime: undefined });
+                  } else {
+                    const num = parseFloat(val);
+                    if (!isNaN(num)) {
+                      onUpdateNode({ ...node, estimatedTime: num });
+                    }
+                  }
+                }
+              }}
+              className="inline-flex items-center gap-1 text-[10.5px] px-1.5 py-0.5 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-150/40 dark:border-indigo-900/35 text-indigo-600 dark:text-indigo-400 font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 cursor-pointer transition-colors shrink-0" 
+              title={`Ориентировочное время: ${node.estimatedTime} мин (нажмите для изменения)`}
             >
               <Timer className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
               <span>{node.estimatedTime} мин</span>
+            </span>
+          ) : (
+            <span 
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                const val = prompt("Укажите ориентировочное время работы (в минутах):", "30");
+                if (val !== null) {
+                  if (val === "") {
+                    onUpdateNode({ ...node, estimatedTime: undefined });
+                  } else {
+                    const num = parseFloat(val);
+                    if (!isNaN(num)) {
+                      onUpdateNode({ ...node, estimatedTime: num });
+                    }
+                  }
+                }
+              }}
+              className="inline-flex items-center gap-1 text-[10.5px] px-1.5 py-0.5 rounded-lg bg-slate-50/50 dark:bg-slate-800/40 border border-dashed border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-500 font-medium hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 cursor-pointer transition-all shrink-0" 
+              title="Нажмите, чтобы указать ориентировочное время работы"
+            >
+              <Timer className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>0 мин</span>
             </span>
           )}
         </div>

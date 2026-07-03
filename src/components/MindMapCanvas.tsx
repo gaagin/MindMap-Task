@@ -457,11 +457,11 @@ export default function MindMapCanvas({
 
   const [activeInlineMenu, setActiveInlineMenu] = useState<{
     cardId: string;
-    type: 'priority' | 'date' | 'tag' | 'pomodoro';
+    type: 'priority' | 'date' | 'tag' | 'pomodoro' | 'estimatedTime';
   } | null>(null);
   const [openInlineMenuUpwards, setOpenInlineMenuUpwards] = useState<boolean>(false);
 
-  const handleToggleInlineMenu = (e: React.MouseEvent, cardId: string, type: 'priority' | 'date' | 'tag' | 'pomodoro') => {
+  const handleToggleInlineMenu = (e: React.MouseEvent, cardId: string, type: 'priority' | 'date' | 'tag' | 'pomodoro' | 'estimatedTime') => {
     e.stopPropagation();
     const isSame = activeInlineMenu?.cardId === cardId && activeInlineMenu?.type === type;
     if (isSame) {
@@ -469,7 +469,7 @@ export default function MindMapCanvas({
     } else {
       const rect = e.currentTarget.getBoundingClientRect();
       const windowHeight = window.innerHeight;
-      const estHeight = type === 'date' ? 260 : type === 'tag' ? 220 : type === 'pomodoro' ? 180 : 150;
+      const estHeight = type === 'date' ? 260 : type === 'tag' ? 220 : type === 'pomodoro' ? 180 : type === 'estimatedTime' ? 200 : 150;
       const shouldOpenUp = rect.bottom + estHeight > windowHeight;
       setOpenInlineMenuUpwards(shouldOpenUp);
       setActiveInlineMenu({ cardId, type });
@@ -7713,19 +7713,127 @@ export default function MindMapCanvas({
                         </span>
                       )}
 
-                      {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) && (
-                        <span 
-                          className={`inline-flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded border ${
-                            isRoot 
-                              ? 'bg-indigo-700/60 text-indigo-100 border-indigo-500/30' 
-                              : 'bg-indigo-50 text-indigo-600 border-indigo-150/40 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400'
-                          }`}
-                          title={`Ориентировочное время: ${node.estimatedTime} мин`}
-                        >
-                          <Timer className="w-2.5 h-2.5 shrink-0" />
-                          {node.estimatedTime} мин
-                        </span>
-                      )}
+                      {(() => {
+                        const stats = getPomoStatsForNode(node, nodes);
+                        return stats.pomodoroTotalTime > 0 ? (
+                          <span 
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className={`inline-flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded border select-none ${
+                              isRoot 
+                                ? 'bg-indigo-700/60 text-indigo-100 border-indigo-500/30' 
+                                : 'bg-rose-550/10 text-rose-600 border-rose-200/40 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400'
+                            }`}
+                            title={`Проведено на помидоре: ${formatTotalPomoTime(stats.pomodoroTotalTime)}`}
+                          >
+                            <span>🍅</span>
+                            <span>{formatTotalPomoTime(stats.pomodoroTotalTime)}</span>
+                          </span>
+                        ) : null;
+                      })()}
+
+                      <div className="relative">
+                        {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) ? (
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => handleToggleInlineMenu(e, node.id, 'estimatedTime')}
+                            className={`inline-flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded border cursor-pointer hover:scale-[1.03] transition-all shrink-0 ${
+                              isRoot 
+                                ? 'bg-indigo-700/60 text-indigo-100 border-indigo-500/30 hover:bg-indigo-650/70' 
+                                : 'bg-indigo-50 text-indigo-600 border-indigo-150/40 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 hover:bg-indigo-100/80 dark:hover:bg-indigo-900/40'
+                            }`}
+                            title={`Ориентировочное время: ${node.estimatedTime} мин (нажмите для изменения)`}
+                          >
+                            <Timer className="w-2.5 h-2.5 shrink-0" />
+                            {node.estimatedTime} мин
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => handleToggleInlineMenu(e, node.id, 'estimatedTime')}
+                            className={`inline-flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded border border-dashed cursor-pointer hover:scale-[1.03] transition-all shrink-0 ${
+                              isRoot 
+                                ? 'bg-indigo-800/20 text-indigo-300/60 border-indigo-500/20 hover:bg-indigo-800/30' 
+                                : 'bg-slate-50/50 text-slate-400 border-slate-200 dark:bg-slate-800/40 dark:border-slate-700 dark:text-slate-500 hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400'
+                            }`}
+                            title="Нажмите, чтобы указать ориентировочное время работы"
+                          >
+                            <Timer className="w-2.5 h-2.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                            0 мин
+                          </button>
+                        )}
+
+                        {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'estimatedTime' && (
+                          <div 
+                            className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-48 z-100 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 text-left whitespace-normal ${
+                              openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                            }`}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex items-center justify-between">
+                              <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">Оценка времени:</p>
+                              <button 
+                                type="button" 
+                                onClick={() => setActiveInlineMenu(null)}
+                                className="p-1 rounded-md hover:bg-slate-105 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+
+                            <div className="flex gap-1.5">
+                              <input
+                                type="number"
+                                min="0"
+                                placeholder="Мин"
+                                value={node.estimatedTime || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '') {
+                                    onUpdateNode({ ...node, estimatedTime: undefined });
+                                  } else {
+                                    const num = parseFloat(val);
+                                    if (!isNaN(num)) {
+                                      onUpdateNode({ ...node, estimatedTime: num });
+                                    }
+                                  }
+                                }}
+                                className="w-full text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                              />
+                              <span className="text-xs text-slate-400 dark:text-slate-505 self-center shrink-0">мин</span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1 mt-1">
+                              {[15, 25, 30, 45, 60, 90, 120, 180].map((mins) => (
+                                <button
+                                  key={mins}
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateNode({ ...node, estimatedTime: mins });
+                                    setActiveInlineMenu(null);
+                                  }}
+                                  className="py-1 px-1.5 text-[10px] font-bold rounded bg-slate-50 dark:bg-slate-850 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 text-slate-600 dark:text-slate-300 border border-slate-205 dark:border-slate-750 hover:border-indigo-300 dark:hover:text-indigo-900 cursor-pointer text-center font-mono"
+                                >
+                                  {mins >= 60 ? `${Math.floor(mins / 60)} ч${mins % 60 > 0 ? ` ${mins % 60}м` : ''}` : `${mins} м`}
+                                </button>
+                              ))}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateNode({ ...node, estimatedTime: undefined });
+                                setActiveInlineMenu(null);
+                              }}
+                              className="w-full py-1 text-[10px] font-bold text-rose-600 hover:text-white hover:bg-rose-600 border border-dashed border-rose-200 dark:border-rose-900 rounded transition-all cursor-pointer text-center mt-1"
+                            >
+                              Очистить
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Subtask Progress Bar for nodes with children */}

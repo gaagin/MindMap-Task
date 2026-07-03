@@ -2719,7 +2719,8 @@ export default function App() {
       notes: '',
       completed: false,
       files: [],
-      color: parent.color || ''
+      color: parent.color || '',
+      estimatedTime: 30
     };
 
     setState(prev => {
@@ -2789,7 +2790,8 @@ export default function App() {
       tags: [],
       notes: 'Эта задача была записана в INBOX. Нажмите "На холст", чтобы разместить её на интеллект-карте.',
       completed: false,
-      files: []
+      files: [],
+      estimatedTime: 30
     };
 
     setState(prev => ({
@@ -2910,6 +2912,7 @@ export default function App() {
       completed: false,
       files: [],
       color: isInsideContainer ? '#3b82f6' : '#10b981', // Blue inside container, green otherwise
+      estimatedTime: 30,
       ...extraFields
     };
 
@@ -3206,6 +3209,7 @@ export default function App() {
       files: [],
       dueDate,
       color: '#6366f1',
+      estimatedTime: 30,
       ...extraFields
     };
 
@@ -3247,7 +3251,8 @@ export default function App() {
       files: [],
       dueDate,
       dueTime,
-      color: parentNode ? parentNode.color : '#6366f1'
+      color: parentNode ? parentNode.color : '#6366f1',
+      estimatedTime: 30
     };
 
     setState(prev => ({

@@ -388,17 +388,15 @@ export function getPomoStatsForNode(node: TaskNode, allNodes: TaskNode[]) {
   };
 }
 
-// Formats total seconds spent on Pomodoro sessions into human readable string.
+// Formats total seconds spent on Pomodoro sessions into human readable string without seconds.
 export function formatTotalPomoTime(totalSeconds: number): string {
-  if (!totalSeconds) return '0 сек';
+  if (!totalSeconds) return '0 мин';
   const hrs = Math.floor(totalSeconds / 3600);
   const mins = Math.floor((totalSeconds % 3600) / 60);
-  const secs = totalSeconds % 60;
   
   const parts = [];
   if (hrs > 0) parts.push(`${hrs} ч`);
-  if (mins > 0) parts.push(`${mins} мин`);
-  if (secs > 0 || parts.length === 0) parts.push(`${secs} сек`);
+  if (mins > 0 || parts.length === 0) parts.push(`${mins} мин`);
   return parts.join(' ');
 }
 
