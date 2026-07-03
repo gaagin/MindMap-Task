@@ -457,11 +457,11 @@ export default function MindMapCanvas({
 
   const [activeInlineMenu, setActiveInlineMenu] = useState<{
     cardId: string;
-    type: 'priority' | 'date' | 'tag';
+    type: 'priority' | 'date' | 'tag' | 'pomodoro';
   } | null>(null);
   const [openInlineMenuUpwards, setOpenInlineMenuUpwards] = useState<boolean>(false);
 
-  const handleToggleInlineMenu = (e: React.MouseEvent, cardId: string, type: 'priority' | 'date' | 'tag') => {
+  const handleToggleInlineMenu = (e: React.MouseEvent, cardId: string, type: 'priority' | 'date' | 'tag' | 'pomodoro') => {
     e.stopPropagation();
     const isSame = activeInlineMenu?.cardId === cardId && activeInlineMenu?.type === type;
     if (isSame) {
@@ -469,7 +469,7 @@ export default function MindMapCanvas({
     } else {
       const rect = e.currentTarget.getBoundingClientRect();
       const windowHeight = window.innerHeight;
-      const estHeight = type === 'date' ? 260 : type === 'tag' ? 220 : 150;
+      const estHeight = type === 'date' ? 260 : type === 'tag' ? 220 : type === 'pomodoro' ? 180 : 150;
       const shouldOpenUp = rect.bottom + estHeight > windowHeight;
       setOpenInlineMenuUpwards(shouldOpenUp);
       setActiveInlineMenu({ cardId, type });
@@ -542,11 +542,13 @@ export default function MindMapCanvas({
 
     if (currentGroupBy === 'status') {
       if (colId === 'todo') {
-        onUpdateNode({ ...node, completed: false, progress: 0 });
+        onUpdateNode({ ...node, completed: false, progress: 0, status: 'todo' });
       } else if (colId === 'progress') {
-        onUpdateNode({ ...node, completed: false, progress: 50 });
+        onUpdateNode({ ...node, completed: false, progress: 50, status: 'progress' });
+      } else if (colId === 'waiting') {
+        onUpdateNode({ ...node, completed: false, status: 'waiting' });
       } else if (colId === 'done') {
-        onUpdateNode({ ...node, completed: true });
+        onUpdateNode({ ...node, completed: true, progress: 100, status: 'done' });
       }
     } else if (currentGroupBy === 'priority') {
       const priority = colId === 'none' ? 'none' : colId as Priority;
@@ -1260,13 +1262,15 @@ export default function MindMapCanvas({
       let columnsList: { id: string; title: string; tasks: TaskNode[]; bg?: string; border?: string; style?: React.CSSProperties; titleColor?: string }[] = [];
 
       if (currentGroupBy === 'status') {
-        const todoTasks = containerChildren.filter(c => !c.completed && (!c.progress || c.progress === 0));
-        const progressTasks = containerChildren.filter(c => !c.completed && (c.progress && c.progress > 0));
+        const todoTasks = containerChildren.filter(c => !c.completed && (!c.progress || c.progress === 0) && c.status !== 'waiting');
+        const progressTasks = containerChildren.filter(c => !c.completed && (c.progress && c.progress > 0) && c.status !== 'waiting');
+        const waitingTasks = containerChildren.filter(c => !c.completed && c.status === 'waiting');
         const doneTasks = containerChildren.filter(c => c.completed);
 
         columnsList = [
           { id: 'todo', title: 'План', tasks: todoTasks, bg: 'bg-slate-500/5 dark:bg-slate-900/40', border: 'border-slate-150 dark:border-slate-800/60', titleColor: 'text-slate-500 dark:text-slate-400' },
           { id: 'progress', title: 'В работе', tasks: progressTasks, bg: 'bg-amber-500/5 dark:bg-amber-950/10', border: 'border-amber-200/20 dark:border-amber-900/30', titleColor: 'text-amber-600 dark:text-amber-400' },
+          { id: 'waiting', title: 'В ожидании', tasks: waitingTasks, bg: 'bg-indigo-500/5 dark:bg-indigo-950/10', border: 'border-indigo-200/20 dark:border-indigo-900/30', titleColor: 'text-indigo-600 dark:text-indigo-400' },
           { id: 'done', title: 'Готово', tasks: doneTasks, bg: 'bg-emerald-500/5 dark:bg-emerald-950/10', border: 'border-emerald-200/20 dark:border-emerald-900/30', titleColor: 'text-emerald-500 dark:text-emerald-400' }
         ];
       } else if (currentGroupBy === 'priority') {
@@ -8067,7 +8071,7 @@ export default function MindMapCanvas({
                                             ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-950/30'
                                             : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200/50 dark:border-slate-750'
                                         }`}>
-                                          <Clock className="w-2.5 h-2.5 text-slate-450 dark:text-slate-550" />
+                                          <Clock className="w-2.5 h-2.5 text-slate-450 dark:text-slate-555" />
                                           <span>{formatDisplayDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
                                         </span>
                                       )}
@@ -8168,6 +8172,75 @@ export default function MindMapCanvas({
                   >
                     <Target className="w-4 h-4" />
                   </button>
+
+                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                  {/* Button 3.6: Быстрый Pomodoro */}
+                  <div className="relative flex items-center justify-center">
+                    <button
+                      onClick={(e) => {
+                        handleToggleInlineMenu(e, node.id, 'pomodoro');
+                      }}
+                      title="Запустить Pomodoro таймер быстро"
+                      className={`flex items-center justify-center w-8 h-8 rounded-full cursor-pointer transition-colors ${
+                        activePomodoroNodeId === node.id
+                          ? 'bg-rose-50 dark:bg-rose-955/40 text-rose-600 dark:text-rose-400 animate-pulse'
+                          : 'text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span className="text-[15px]">🍅</span>
+                    </button>
+
+                    {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'pomodoro' && (
+                      <div 
+                        className={`absolute left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-2xl shadow-xl p-3 w-48 z-100 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-2 ${
+                          openInlineMenuUpwards ? 'bottom-full mb-2' : 'top-full mt-2'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider text-left">Фокус:</p>
+                          <button 
+                            type="button" 
+                            onClick={() => setActiveInlineMenu(null)}
+                            className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {[5, 10, 15, 25, 30, 45, 50, 60].map((mins) => (
+                            <button
+                              key={mins}
+                              type="button"
+                              onClick={() => {
+                                const durationSec = mins * 60;
+                                const newState = {
+                                  nodeId: node.id,
+                                  nodeText: node.text,
+                                  isRunning: true,
+                                  isPaused: false,
+                                  isBreak: false,
+                                  duration: durationSec,
+                                  endTime: Date.now() + durationSec * 1000,
+                                  timeLeft: durationSec
+                                };
+                                localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(newState));
+                                localStorage.setItem('task_mindmap_pomo_custom_minutes', String(mins));
+                                window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+                                setActiveInlineMenu(null);
+                              }}
+                              className="py-1 px-2 text-[11px] font-bold rounded-lg border border-slate-150 dark:border-slate-700 bg-slate-50 dark:bg-slate-855 text-slate-650 dark:text-slate-300 hover:bg-rose-50 dark:hover:bg-rose-950/20 hover:border-rose-200 dark:hover:border-rose-900/40 hover:text-rose-600 dark:hover:text-rose-400 transition-all cursor-pointer text-center"
+                            >
+                              {mins} мин
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {node.parentId && !currentParentForNode?.isContainer && (
                     <>

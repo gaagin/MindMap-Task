@@ -730,10 +730,19 @@ export default function App() {
                 }
 
                 if (targetNode && foundProjectId) {
+                  const minutesToSubtract = Math.round(durationSaved / 60);
+                  const currentEst = targetNode.estimatedTime !== undefined && targetNode.estimatedTime !== null && !isNaN(targetNode.estimatedTime)
+                    ? targetNode.estimatedTime
+                    : 0;
+                  const nextEst = targetNode.estimatedTime !== undefined && targetNode.estimatedTime !== null && !isNaN(targetNode.estimatedTime)
+                    ? Math.max(0, parseFloat((currentEst - minutesToSubtract).toFixed(2)))
+                    : undefined;
+
                   const updatedNode = {
                     ...targetNode,
                     pomodoroTotalTime: (targetNode.pomodoroTotalTime || 0) + durationSaved,
                     pomodoroSessionsCount: (targetNode.pomodoroSessionsCount || 0) + 1,
+                    estimatedTime: nextEst,
                     updatedAt: new Date().toISOString()
                   };
 
@@ -1772,10 +1781,19 @@ export default function App() {
         }
 
         if (foundNode && foundPid) {
+          const minutesToSubtract = Math.round(elapsed / 60);
+          const currentEst = foundNode.estimatedTime !== undefined && foundNode.estimatedTime !== null && !isNaN(foundNode.estimatedTime)
+            ? foundNode.estimatedTime
+            : 0;
+          const nextEst = foundNode.estimatedTime !== undefined && foundNode.estimatedTime !== null && !isNaN(foundNode.estimatedTime)
+            ? Math.max(0, parseFloat((currentEst - minutesToSubtract).toFixed(2)))
+            : undefined;
+
           const updatedNode = {
             ...foundNode,
             pomodoroTotalTime: (foundNode.pomodoroTotalTime || 0) + elapsed,
-            pomodoroSessionsCount: (foundNode.pomodoroSessionsCount || 0) + 1
+            pomodoroSessionsCount: (foundNode.pomodoroSessionsCount || 0) + 1,
+            estimatedTime: nextEst
           };
           
           setState(prev => {
@@ -3162,7 +3180,7 @@ export default function App() {
   };
 
   // Create a new task originating from the Kanban Board view
-  const handleCreateKanbanTask = (text: string, initialTags: string[], initialPriority: Priority = 'none', parentId: string | null = null, dueDate?: string) => {
+  const handleCreateKanbanTask = (text: string, initialTags: string[], initialPriority: Priority = 'none', parentId: string | null = null, dueDate?: string, extraFields?: Partial<TaskNode>) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
@@ -3187,7 +3205,8 @@ export default function App() {
       completed: false,
       files: [],
       dueDate,
-      color: '#6366f1'
+      color: '#6366f1',
+      ...extraFields
     };
 
     setState(prev => ({

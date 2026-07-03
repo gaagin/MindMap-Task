@@ -879,10 +879,19 @@ export default function TaskDetailsPanel({
       if (elapsed > 0) {
         const targetNode = allNodes.find(n => n.id === pomo.nodeId);
         if (targetNode) {
+          const minutesToSubtract = Math.round(elapsed / 60);
+          const currentEst = targetNode.estimatedTime !== undefined && targetNode.estimatedTime !== null && !isNaN(targetNode.estimatedTime)
+            ? targetNode.estimatedTime
+            : 0;
+          const nextEst = targetNode.estimatedTime !== undefined && targetNode.estimatedTime !== null && !isNaN(targetNode.estimatedTime)
+            ? Math.max(0, parseFloat((currentEst - minutesToSubtract).toFixed(2)))
+            : undefined;
+
           onUpdateNode({
             ...targetNode,
             pomodoroTotalTime: (targetNode.pomodoroTotalTime || 0) + elapsed,
-            pomodoroSessionsCount: (targetNode.pomodoroSessionsCount || 0) + 1
+            pomodoroSessionsCount: (targetNode.pomodoroSessionsCount || 0) + 1,
+            estimatedTime: nextEst
           });
         }
       }
@@ -1532,8 +1541,8 @@ export default function TaskDetailsPanel({
         {/* HEADER BAR */}
         <div className="h-14 px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 shadow-xs">
           <div className="flex items-center gap-3">
-            <span className="text-xs font-extrabold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-400 px-3 py-1 rounded-lg uppercase tracking-wider flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5" /> Свойства задачи
+            <span className="text-xs font-extrabold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-400 px-3 py-1 rounded-lg flex items-center gap-1.5 max-w-[200px] md:max-w-[400px]">
+              <Layers className="w-3.5 h-3.5 shrink-0" /> <span className="truncate">{node.text}</span>
             </span>
             {node.parentId && (() => {
               const parentNode = allNodes.find(n => n.id === node.parentId);
@@ -2327,28 +2336,47 @@ export default function TaskDetailsPanel({
                       )}
                       <div className="flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800/60">
                         <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Статус выполнения:</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (hasActiveBlockers && !node.completed) return;
-                            const nextCompleted = !node.completed;
-                            onUpdateNode({
-                              ...node,
-                              completed: nextCompleted,
-                              progress: nextCompleted ? 100 : 0
-                            });
-                          }}
+                        <select
+                          value={node.completed ? 'done' : (node.status === 'waiting' ? 'waiting' : (node.progress && node.progress > 0 ? 'progress' : 'todo'))}
                           disabled={hasActiveBlockers && !node.completed}
-                          className={`px-2.5 py-1 rounded-md text-xs font-bold select-none cursor-pointer transition-colors ${
-                            node.completed 
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900' 
-                              : hasActiveBlockers
-                                ? 'bg-slate-100 text-slate-400 border border-slate-200 dark:bg-slate-850 dark:text-slate-500 dark:border-slate-800 cursor-not-allowed'
-                                : 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900'
-                          }`}
+                          onChange={(e) => {
+                            const val = e.target.value as 'todo' | 'progress' | 'waiting' | 'done';
+                            if (val === 'done') {
+                              onUpdateNode({
+                                ...node,
+                                completed: true,
+                                progress: 100,
+                                status: 'done'
+                              });
+                            } else if (val === 'waiting') {
+                              onUpdateNode({
+                                ...node,
+                                completed: false,
+                                status: 'waiting'
+                              });
+                            } else if (val === 'progress') {
+                              onUpdateNode({
+                                ...node,
+                                completed: false,
+                                progress: node.progress && node.progress > 0 ? node.progress : 50,
+                                status: 'progress'
+                              });
+                            } else {
+                              onUpdateNode({
+                                ...node,
+                                completed: false,
+                                progress: 0,
+                                status: 'todo'
+                              });
+                            }
+                          }}
+                          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold px-2 py-1 focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-700 dark:text-slate-200 cursor-pointer"
                         >
-                          {node.completed ? '✓ Выполнено' : hasActiveBlockers ? '○ Заблокировано' : '○ В процессе'}
-                        </button>
+                          <option value="todo">📋 План</option>
+                          <option value="progress">▶ В работе</option>
+                          <option value="waiting">⏳ В ожидании</option>
+                          <option value="done">✓ Готово</option>
+                        </select>
                       </div>
                     </div>
                   )}
@@ -3387,8 +3415,8 @@ export default function TaskDetailsPanel({
       >
       {/* Header */}
       <div className="h-16 px-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 uppercase tracking-wider font-sans flex items-center gap-2">
-          <Layers className="w-4 h-4 text-indigo-500" /> Свойства задачи
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 font-sans flex items-center gap-2 truncate max-w-[180px] sm:max-w-[250px] md:max-w-[280px]">
+          <Layers className="w-4 h-4 text-indigo-500 shrink-0" /> <span className="truncate">{node.text}</span>
         </h3>
         <div className="flex items-center gap-1.55">
           {/* Quick header copy link button */}
@@ -3463,68 +3491,68 @@ export default function TaskDetailsPanel({
       </div>
 
       {activeTab === 'details' && (
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-
-          {node.parentId && (() => {
-            const parentNode = allNodes.find(n => n.id === node.parentId);
-            if (parentNode && onSelectNode) {
-              return (
-                <button
-                  type="button"
-                  onClick={() => onSelectNode(parentNode.id)}
-                  className="w-full flex items-center gap-2 px-3 py-2 bg-indigo-50/50 hover:bg-indigo-100/50 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 text-xs font-bold rounded-lg border border-indigo-100/30 dark:border-indigo-900/30 transition-all cursor-pointer mb-2"
-                  title={`Вернуться к главной задаче: ${parentNode.text}`}
-                >
-                  <ChevronLeft className="w-4 h-4 shrink-0 text-indigo-500" />
-                  <span className="truncate">Назад к: <span className="font-semibold">{parentNode.text}</span></span>
-                </button>
-              );
-            }
-            return null;
-          })()}
-        
-        {/* Name / Heading */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Текст задачи (ветвь)
-            </label>
-            <button
-              type="button"
-              onClick={handleCopyLink}
-              className={`text-[10px] font-bold flex items-center gap-1 cursor-pointer hover:underline transition-colors ${
-                copied ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400 font-semibold'
-              }`}
-              title="Получить прямую ссылку"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3 h-3 text-emerald-500" /> Ссылка скопирована!
-                </>
-              ) : (
-                <>
-                  <LinkIcon className="w-3 h-3" /> Копировать ссылку на задачу
-                </>
-              )}
-            </button>
+        <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900">
+          {/* Sticky Name / Heading Header - Always on View */}
+          <div className="px-6 py-4 border-b border-slate-150 dark:border-slate-805 bg-slate-50/15 dark:bg-slate-900/10 space-y-2 shrink-0 shadow-xs">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                Текст задачи (ветвь)
+              </label>
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className={`text-[10px] font-bold flex items-center gap-1 cursor-pointer hover:underline transition-colors ${
+                  copied ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400 font-semibold'
+                }`}
+                title="Получить прямую ссылку"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-500" /> Ссылка скопирована!
+                  </>
+                ) : (
+                  <>
+                    <LinkIcon className="w-3 h-3" /> Копировать ссылку на задачу
+                  </>
+                )}
+              </button>
+            </div>
+            <textarea
+              value={node.text}
+              onChange={(e) => handlePropChange('text', e.target.value)}
+              onFocus={() => {
+                setOriginalText(node.text);
+                setOriginalNotes(node.notes || '');
+              }}
+              onBlur={() => {
+                if (node.text !== originalText) {
+                  recordHistoryVersion(originalText, originalNotes, 'Правка названия');
+                }
+              }}
+              className="w-full text-base font-semibold px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-sans"
+              rows={2}
+              placeholder="Введите название задачи..."
+            />
           </div>
-          <textarea
-            value={node.text}
-            onChange={(e) => handlePropChange('text', e.target.value)}
-            onFocus={() => {
-              setOriginalText(node.text);
-              setOriginalNotes(node.notes || '');
-            }}
-            onBlur={() => {
-              if (node.text !== originalText) {
-                recordHistoryVersion(originalText, originalNotes, 'Правка названия');
+
+          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+            {node.parentId && (() => {
+              const parentNode = allNodes.find(n => n.id === node.parentId);
+              if (parentNode && onSelectNode) {
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onSelectNode(parentNode.id)}
+                    className="w-full flex items-center gap-2 px-3 py-2 bg-indigo-50/50 hover:bg-indigo-100/50 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 text-xs font-bold rounded-lg border border-indigo-100/30 dark:border-indigo-900/30 transition-all cursor-pointer mb-2"
+                    title={`Вернуться к главной задаче: ${parentNode.text}`}
+                  >
+                    <ChevronLeft className="w-4 h-4 shrink-0 text-indigo-500" />
+                    <span className="truncate">Назад к: <span className="font-semibold">{parentNode.text}</span></span>
+                  </button>
+                );
               }
-            }}
-            className="w-full text-base font-semibold px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
-            rows={2}
-            placeholder="Введите название задачи..."
-          />
-        </div>
+              return null;
+            })()}
 
         {/* Quick Access Info Dashboard & Sub-tabs Switcher */}
         <div className="space-y-3 bg-slate-50/50 dark:bg-slate-900/30 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/60 shadow-xs mb-4 shrink-0">
@@ -3968,28 +3996,47 @@ export default function TaskDetailsPanel({
             )}
             <div className="flex items-center justify-between bg-[#FAFBFD]/60 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/50 dark:border-slate-850">
               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Статус выполнения:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (hasActiveBlockers && !node.completed) return;
-                  const nextCompleted = !node.completed;
-                  onUpdateNode({
-                    ...node,
-                    completed: nextCompleted,
-                    progress: nextCompleted ? 100 : 0
-                  });
-                }}
+              <select
+                value={node.completed ? 'done' : (node.status === 'waiting' ? 'waiting' : (node.progress && node.progress > 0 ? 'progress' : 'todo'))}
                 disabled={hasActiveBlockers && !node.completed}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold select-none cursor-pointer transition-colors ${
-                  node.completed 
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900' 
-                    : hasActiveBlockers
-                      ? 'bg-slate-100 text-slate-400 border border-slate-200 dark:bg-slate-850 dark:text-slate-500 dark:border-slate-800 cursor-not-allowed'
-                      : 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900'
-                }`}
+                onChange={(e) => {
+                  const val = e.target.value as 'todo' | 'progress' | 'waiting' | 'done';
+                  if (val === 'done') {
+                    onUpdateNode({
+                      ...node,
+                      completed: true,
+                      progress: 100,
+                      status: 'done'
+                    });
+                  } else if (val === 'waiting') {
+                    onUpdateNode({
+                      ...node,
+                      completed: false,
+                      status: 'waiting'
+                    });
+                  } else if (val === 'progress') {
+                    onUpdateNode({
+                      ...node,
+                      completed: false,
+                      progress: node.progress && node.progress > 0 ? node.progress : 50,
+                      status: 'progress'
+                    });
+                  } else {
+                    onUpdateNode({
+                      ...node,
+                      completed: false,
+                      progress: 0,
+                      status: 'todo'
+                    });
+                  }
+                }}
+                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold px-2 py-1 focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-700 dark:text-slate-200 cursor-pointer shadow-xs"
               >
-                {node.completed ? '✓ Выполнено' : hasActiveBlockers ? '○ Заблокировано' : '○ В процессе'}
-              </button>
+                <option value="todo">📋 План</option>
+                <option value="progress">▶ В работе</option>
+                <option value="waiting">⏳ В ожидании</option>
+                <option value="done">✓ Готово</option>
+              </select>
             </div>
           </div>
         )}
@@ -5717,6 +5764,7 @@ export default function TaskDetailsPanel({
             <p className="text-xs text-slate-400 italic">Нет вложений.</p>
           )}
         </div>
+      </div>
       </div>
       )}
 

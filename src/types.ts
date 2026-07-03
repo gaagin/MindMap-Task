@@ -54,6 +54,7 @@ export interface TaskNode {
   tags: string[];
   notes: string;
   completed: boolean;
+  status?: 'todo' | 'progress' | 'waiting' | 'done';
   files: AttachmentFile[];
   comments?: Comment[]; // Task chat feedback comments list
   color?: string; // Optional custom border/connector color for the node

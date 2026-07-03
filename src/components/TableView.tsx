@@ -60,6 +60,7 @@ export default function TableView({
   const [sortField, setSortField] = useState<SortField>('text');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filterText, setFilterText] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'todo' | 'progress' | 'waiting' | 'done'>('active');
   const [newInlineText, setNewInlineText] = useState('');
   const [isControlsExpanded, setIsControlsExpanded] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -221,16 +222,31 @@ export default function TableView({
 
   // Filter tasks
   const rawTasks = useMemo(() => {
-    return nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.completed);
+    return nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
   }, [nodes]);
 
   const filteredTasks = useMemo(() => {
     return rawTasks.filter(task => {
+      // 1. Text Filter
       const matchText = task.text.toLowerCase().includes(filterText.toLowerCase());
       const matchNote = task.notes && task.notes.toLowerCase().includes(filterText.toLowerCase());
-      return matchText || matchNote;
+      if (!matchText && !matchNote) return false;
+
+      // 2. Status Filter
+      if (statusFilter === 'active') {
+        return !task.completed;
+      } else if (statusFilter === 'todo') {
+        return !task.completed && (!task.progress || task.progress === 0) && task.status !== 'waiting';
+      } else if (statusFilter === 'progress') {
+        return !task.completed && task.progress !== undefined && task.progress > 0 && task.status !== 'waiting';
+      } else if (statusFilter === 'waiting') {
+        return !task.completed && task.status === 'waiting';
+      } else if (statusFilter === 'done') {
+        return task.completed;
+      }
+      return true; // 'all'
     });
-  }, [rawTasks, filterText]);
+  }, [rawTasks, filterText, statusFilter]);
 
   // Sorted tasks
   const sortedTasks = useMemo(() => {
@@ -280,7 +296,9 @@ export default function TableView({
     const nextVal = current >= 100 ? 0 : current + 25;
     onUpdateNode({
       ...task,
-      progress: nextVal
+      progress: nextVal,
+      completed: nextVal === 100,
+      status: nextVal === 100 ? 'done' : (nextVal > 0 ? 'progress' : 'todo')
     });
   };
 
@@ -460,6 +478,23 @@ export default function TableView({
                   </button>
                 </div>
 
+                {/* Status Filter Selector */}
+                <div className="flex items-center gap-1 p-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs w-full sm:w-auto shadow-sm">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 pl-2 pr-1 select-none whitespace-nowrap">Статус:</span>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    className="bg-transparent border-0 text-slate-700 dark:text-slate-200 text-xs py-1.5 px-2 focus:outline-none font-bold cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-850"
+                  >
+                    <option value="active" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">Все активные</option>
+                    <option value="todo" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">План</option>
+                    <option value="progress" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">В работе</option>
+                    <option value="waiting" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">В ожидании</option>
+                    <option value="done" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">Готово</option>
+                    <option value="all" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">Все задачи</option>
+                  </select>
+                </div>
+
                 {/* Filter Input */}
                 <div className="relative w-full sm:w-64 flex items-center shadow-sm">
                   <input
@@ -572,9 +607,12 @@ export default function TableView({
                         onClick={(e) => {
                           e.stopPropagation();
                           onSelectNode(task.id);
+                          const nextCompleted = !task.completed;
                           onUpdateNode({
                             ...task,
-                            completed: !task.completed
+                            completed: nextCompleted,
+                            progress: nextCompleted ? 100 : 0,
+                            status: nextCompleted ? 'done' : 'todo'
                           });
                         }}
                         className={`text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1 rounded-full transition-transform cursor-pointer ${
@@ -597,6 +635,11 @@ export default function TableView({
                     {/* Inline Rename Text */}
                     <td className="px-4 py-2 border-r border-slate-200 dark:border-slate-800/80">
                       <div className="flex items-center gap-1.5 overflow-hidden w-full">
+                        {task.status === 'waiting' && !task.completed && (
+                          <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-black uppercase bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-150/20" title="В ожидании">
+                            ⏳ Ожидание
+                          </span>
+                        )}
                         <input
                           type="text"
                           value={task.text}
@@ -725,9 +768,12 @@ export default function TableView({
                             onSelectNode(task.id);
                           }}
                           onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
                             onUpdateNode({
                               ...task,
-                              progress: parseInt(e.target.value, 10)
+                              progress: val,
+                              completed: val === 100,
+                              status: val === 100 ? 'done' : (val > 0 ? 'progress' : 'todo')
                             });
                           }}
                           className="w-20 accent-indigo-600 dark:accent-indigo-400 h-1 cursor-pointer"

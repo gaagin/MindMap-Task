@@ -36,7 +36,7 @@ interface KanbanViewProps {
   onSelectNode: (id: string | null, eOrIsMulti?: any, initialTab?: 'details' | 'chat') => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
-  onCreateTask: (text: string, initialTags: string[], priority?: Priority, parentId?: string | null) => void;
+  onCreateTask: (text: string, initialTags: string[], priority?: Priority, parentId?: string | null, dueDate?: string, extraFields?: Partial<TaskNode>) => void;
   onCreateTagCategory: (name: string, color: string) => void;
   selectedNodeIds?: string[];
   onToggleSelectNode?: (id: string) => void;
@@ -60,9 +60,7 @@ export default function KanbanView({
   searchQuery = '',
   onFullScreenChange,
 }: KanbanViewProps) {
-  const [groupBy, setGroupBy] = useState<'category' | 'priority' | 'container'>(() => {
-    return tagCategories.length === 0 ? 'priority' : 'category';
-  });
+  const [groupBy, setGroupBy] = useState<'status' | 'category' | 'priority' | 'container'>(() => 'status');
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   useEffect(() => {
@@ -156,14 +154,14 @@ export default function KanbanView({
   // Dropdown card move menu state for mobile and responsive accessibility
   const [activeMoveMenuCardId, setActiveMoveMenuCardId] = useState<string | null>(null);
 
-  // Inline edit menus state for spot selection (priority, due dates, tags) without opening props sidebar
+  // Inline edit menus state for spot selection (priority, due dates, tags, pomodoro) without opening props sidebar
   const [activeInlineMenu, setActiveInlineMenu] = useState<{
     cardId: string;
-    type: 'priority' | 'date' | 'tag';
+    type: 'priority' | 'date' | 'tag' | 'pomodoro';
   } | null>(null);
   const [openInlineMenuUpwards, setOpenInlineMenuUpwards] = useState<boolean>(false);
 
-  const handleToggleInlineMenu = (e: React.MouseEvent, cardId: string, type: 'priority' | 'date' | 'tag') => {
+  const handleToggleInlineMenu = (e: React.MouseEvent, cardId: string, type: 'priority' | 'date' | 'tag' | 'pomodoro') => {
     e.stopPropagation();
     const isSame = activeInlineMenu?.cardId === cardId && activeInlineMenu?.type === type;
     if (isSame) {
@@ -171,7 +169,7 @@ export default function KanbanView({
     } else {
       const rect = e.currentTarget.getBoundingClientRect();
       const windowHeight = window.innerHeight;
-      const estHeight = type === 'date' ? 260 : type === 'tag' ? 220 : 150;
+      const estHeight = type === 'date' ? 260 : type === 'tag' ? 220 : type === 'pomodoro' ? 180 : 150;
       const shouldOpenUp = rect.bottom + estHeight > windowHeight;
       setOpenInlineMenuUpwards(shouldOpenUp);
       setActiveInlineMenu({ cardId, type });
@@ -334,7 +332,14 @@ export default function KanbanView({
   // Classify nodes in columns based on groupBy
   const columns: { id: string; title: string; color: string; isUncategorized: boolean; items: TaskNode[] }[] = [];
 
-  if (groupBy === 'priority') {
+  if (groupBy === 'status') {
+    columns.push(
+      { id: 'todo', title: 'План', color: '#64748b', isUncategorized: false, items: filteredNodes.filter(n => !n.completed && (!n.progress || n.progress === 0) && n.status !== 'waiting') },
+      { id: 'progress', title: 'В работе', color: '#f59e0b', isUncategorized: false, items: filteredNodes.filter(n => !n.completed && n.progress !== undefined && n.progress > 0 && n.status !== 'waiting') },
+      { id: 'waiting', title: 'В ожидании', color: '#6366f1', isUncategorized: false, items: filteredNodes.filter(n => !n.completed && n.status === 'waiting') },
+      { id: 'done', title: 'Готово', color: '#10b981', isUncategorized: false, items: filteredNodes.filter(n => n.completed) }
+    );
+  } else if (groupBy === 'priority') {
     columns.push(
       { id: 'urgent', title: 'Критический', color: '#f43f5e', isUncategorized: false, items: filteredNodes.filter(n => n.priority === 'urgent') },
       { id: 'high', title: 'Высокий', color: '#f59e0b', isUncategorized: false, items: filteredNodes.filter(n => n.priority === 'high') },
@@ -602,7 +607,40 @@ export default function KanbanView({
       targetParentId = null;
     }
 
-    if (groupBy === 'priority') {
+    if (groupBy === 'status') {
+      if (targetColumnId === 'todo') {
+        onUpdateNode({
+          ...node,
+          completed: false,
+          progress: 0,
+          status: 'todo',
+          parentId: targetParentId
+        });
+      } else if (targetColumnId === 'progress') {
+        onUpdateNode({
+          ...node,
+          completed: false,
+          progress: node.progress && node.progress > 0 ? node.progress : 50,
+          status: 'progress',
+          parentId: targetParentId
+        });
+      } else if (targetColumnId === 'waiting') {
+        onUpdateNode({
+          ...node,
+          completed: false,
+          status: 'waiting',
+          parentId: targetParentId
+        });
+      } else if (targetColumnId === 'done') {
+        onUpdateNode({
+          ...node,
+          completed: true,
+          progress: 100,
+          status: 'done',
+          parentId: targetParentId
+        });
+      }
+    } else if (groupBy === 'priority') {
       onUpdateNode({
         ...node,
         priority: targetColumnId as Priority,
@@ -642,7 +680,17 @@ export default function KanbanView({
       targetParentId = selectedContainerFilterId;
     }
 
-    if (groupBy === 'priority') {
+    if (groupBy === 'status') {
+      if (columnId === 'todo') {
+        onCreateTask(text, [], 'none', targetParentId, undefined, { completed: false, progress: 0, status: 'todo' });
+      } else if (columnId === 'progress') {
+        onCreateTask(text, [], 'none', targetParentId, undefined, { completed: false, progress: 50, status: 'progress' });
+      } else if (columnId === 'waiting') {
+        onCreateTask(text, [], 'none', targetParentId, undefined, { completed: false, status: 'waiting' });
+      } else if (columnId === 'done') {
+        onCreateTask(text, [], 'none', targetParentId, undefined, { completed: true, progress: 100, status: 'done' });
+      }
+    } else if (groupBy === 'priority') {
       onCreateTask(text, [], columnId as Priority, targetParentId);
     } else if (groupBy === 'container') {
       onCreateTask(text, [], 'none', columnId === 'no-container' ? null : columnId);
@@ -1172,6 +1220,72 @@ export default function KanbanView({
             )}
           </div>
 
+          {/* Pomodoro quick start button */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={(e) => handleToggleInlineMenu(e, node.id, 'pomodoro')}
+              className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-lg border font-extrabold shadow-sm hover:scale-[1.03] transition-transform cursor-pointer ${
+                activePomodoroNodeId === node.id
+                  ? 'bg-rose-50/65 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/40 animate-pulse'
+                  : 'bg-white dark:bg-slate-800 text-slate-550 border-slate-205 dark:border-slate-705 hover:bg-slate-50/50 dark:hover:bg-slate-755'
+              }`}
+              title="Запустить Pomodoro таймер быстро"
+            >
+              <span className="shrink-0 text-[12px]">🍅</span>
+              <span>Фокус</span>
+            </button>
+
+            {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'pomodoro' && (
+              <div 
+                className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-755 rounded-2xl shadow-xl p-3 w-48 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-2 ${
+                  openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                }`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider text-left">Время:</p>
+                  <button 
+                    type="button" 
+                    onClick={() => setActiveInlineMenu(null)}
+                    className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[5, 10, 15, 25, 30, 45, 50, 60].map((mins) => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => {
+                        const durationSec = mins * 60;
+                        const newState = {
+                          nodeId: node.id,
+                          nodeText: node.text,
+                          isRunning: true,
+                          isPaused: false,
+                          isBreak: false,
+                          duration: durationSec,
+                          endTime: Date.now() + durationSec * 1000,
+                          timeLeft: durationSec
+                        };
+                        localStorage.setItem('task_mindmap_pomodoro', JSON.stringify(newState));
+                        localStorage.setItem('task_mindmap_pomo_custom_minutes', String(mins));
+                        window.dispatchEvent(new Event('task_mindmap_pomo_update'));
+                        setActiveInlineMenu(null);
+                      }}
+                      className="py-1 px-2 text-[11px] font-bold rounded-lg border border-slate-150 dark:border-slate-700 bg-slate-50 dark:bg-slate-855 text-slate-650 dark:text-slate-300 hover:bg-rose-50 dark:hover:bg-rose-950/20 hover:border-rose-200 dark:hover:border-rose-900/40 hover:text-rose-600 dark:hover:text-rose-400 transition-all cursor-pointer text-center"
+                    >
+                      {mins} мин
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Tags spot edit popup trigger */}
           <div className="relative">
             <button
@@ -1425,7 +1539,12 @@ export default function KanbanView({
   };
 
   const colIdOfNode = (node: TaskNode): string => {
-    if (groupBy === 'priority') {
+    if (groupBy === 'status') {
+      if (node.completed) return 'done';
+      if (node.status === 'waiting') return 'waiting';
+      if (node.progress && node.progress > 0) return 'progress';
+      return 'todo';
+    } else if (groupBy === 'priority') {
       return node.priority || 'none';
     } else if (groupBy === 'category') {
       return getNodeCategoryTag(node) || 'uncategorized';
@@ -1465,7 +1584,7 @@ export default function KanbanView({
             <div className="flex flex-nowrap items-center gap-x-1 text-[11px] shrink-0">
               <span className="text-slate-500 dark:text-slate-400">Группа:</span>
               <span className="text-[#4f46e5] dark:text-indigo-400 font-extrabold px-1 py-0.2 text-[10.5px] rounded bg-indigo-50/40 dark:bg-indigo-950/20 shrink-0 border border-indigo-100/10">
-                {groupBy === 'category' ? 'Категории' : groupBy === 'priority' ? 'Приоритеты' : 'Контейнеры'}
+                {groupBy === 'status' ? 'Статусы' : groupBy === 'category' ? 'Категории' : groupBy === 'priority' ? 'Приоритеты' : 'Контейнеры'}
               </span>
               <span className="text-slate-300 dark:text-slate-700/60 font-normal">|</span>
               <span className="text-slate-500 dark:text-slate-400">Внутри:</span>
@@ -1585,6 +1704,17 @@ export default function KanbanView({
                       Группировка:
                     </span>
                     <div className="flex items-center gap-0.5 bg-slate-200/50 dark:bg-slate-900/50 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800/60 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setGroupBy('status')}
+                        className={`px-1.5 py-0.5 border text-[11.5px] font-black rounded transition-all cursor-pointer whitespace-nowrap ${
+                          groupBy === 'status' 
+                            ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
+                            : 'bg-transparent border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                        }`}
+                      >
+                        Статусы
+                      </button>
                       <button
                         type="button"
                         onClick={() => setGroupBy('category')}
