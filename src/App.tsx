@@ -2463,6 +2463,25 @@ export default function App() {
         }
       }
 
+      // If we have a focused task, we want to see only the task itself and its descendants (subtasks) in all views
+      if (focusedTaskId) {
+        if (node.id !== focusedTaskId) {
+          let isDescendant = false;
+          let currentParentId = node.parentId;
+          while (currentParentId) {
+            if (currentParentId === focusedTaskId) {
+              isDescendant = true;
+              break;
+            }
+            const parent = activeNodes.find(n => n.id === currentParentId);
+            currentParentId = parent ? parent.parentId : null;
+          }
+          if (!isDescendant) {
+            return false;
+          }
+        }
+      }
+
       if (filterStatus === "not_tasks") {
         return !!node.isNotTask;
       } else if (node.isNotTask && viewMode !== 'canvas') {
@@ -2489,7 +2508,7 @@ export default function App() {
       
       return !node.archived;
     });
-  }, [activeNodes, filterStatus, searchQuery, viewMode, focusedContainerId]);
+  }, [activeNodes, filterStatus, searchQuery, viewMode, focusedContainerId, focusedTaskId]);
 
   // Single node or multi-node drag updating coordinates with simultaneous movement of all descendant nodes
   const handleUpdateNodeCoordinates = (id: string, x: number, y: number) => {
@@ -3742,6 +3761,25 @@ export default function App() {
                         }}
                         className="ml-1 px-1 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white text-[8px] font-extrabold uppercase transition-all cursor-pointer shadow-xs border-none"
                         title="Выйти из режима фокусировки"
+                      >
+                        Выйти
+                      </button>
+                    </span>
+                  );
+                })()}
+                {focusedTaskId && (() => {
+                  const taskNode = activeNodes.find(n => n.id === focusedTaskId);
+                  return (
+                    <span className="inline-flex items-center gap-1.5 bg-rose-500/15 dark:bg-rose-550/20 border border-rose-200/50 dark:border-rose-900/40 px-2 py-0.5 rounded-full text-[10px] text-rose-700 dark:text-rose-400 font-bold shrink-0">
+                      <span className="animate-pulse w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                      <span className="truncate max-w-[150px]">🎯 {taskNode?.text || 'Без названия'}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFocusedTaskId(null);
+                        }}
+                        className="ml-1 px-1 py-0.5 rounded bg-rose-500 hover:bg-rose-650 text-white text-[8px] font-extrabold uppercase transition-all cursor-pointer shadow-xs border-none"
+                        title="Выйти из режима фокуса"
                       >
                         Выйти
                       </button>
