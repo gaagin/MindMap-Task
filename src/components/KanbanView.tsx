@@ -1636,7 +1636,7 @@ export default function KanbanView({
             <div className="flex flex-nowrap items-center gap-x-1 text-[11px] shrink-0">
               <span className="text-slate-500 dark:text-slate-400">Группа:</span>
               <span className="text-[#4f46e5] dark:text-indigo-400 font-extrabold px-1 py-0.2 text-[10.5px] rounded bg-indigo-50/40 dark:bg-indigo-950/20 shrink-0 border border-indigo-100/10">
-                {groupBy === 'status' ? 'Статусы' : groupBy === 'category' ? 'Категории' : groupBy === 'priority' ? 'Приоритеты' : 'Контейнеры'}
+                {groupBy === 'status' ? 'Статусы' : groupBy === 'category' ? 'Категории' : groupBy === 'priority' ? 'Приоритеты' : 'Области'}
               </span>
               <span className="text-slate-300 dark:text-slate-700/60 font-normal">|</span>
               <span className="text-slate-500 dark:text-slate-400">Внутри:</span>
@@ -1644,7 +1644,7 @@ export default function KanbanView({
                 {selectedContainerFilterId === 'all' 
                   ? 'Все' 
                   : selectedContainerFilterId === 'no-container' 
-                    ? 'Без контейнера' 
+                    ? 'Вне областей' 
                     : allContainers.find(c => c.id === selectedContainerFilterId)?.text || 'Загрузка'}
               </span>
               {groupBy === 'category' && activeCategory && (
@@ -1724,7 +1724,7 @@ export default function KanbanView({
                   {/* Container Selector as an elegant dropdown */}
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10.5px] font-black text-slate-500 dark:text-slate-400 tracking-wider uppercase shrink-0">
-                      Контейнер:
+                      Область:
                     </span>
                     <div className="relative">
                       <select
@@ -1734,7 +1734,7 @@ export default function KanbanView({
                         className="appearance-none bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[12px] font-extrabold rounded-lg pl-2 pr-6 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
                       >
                         <option value="all">📁 Все ({nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived).length})</option>
-                        <option value="no-container">📦 Без контейнера ({nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived && !isInsideAnyContainer(n)).length})</option>
+                        <option value="no-container">📦 Вне областей ({nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived && !isInsideAnyContainer(n)).length})</option>
                         {allContainers.map(container => {
                           const count = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived && getTaskContainerId(n) === container.id).length;
                           return (
@@ -1798,7 +1798,7 @@ export default function KanbanView({
                             : 'bg-transparent border-transparent text-slate-500 hover:text-[#4f46e5]/85 dark:hover:text-indigo-300'
                         }`}
                       >
-                        Контейнеры
+                        Области
                       </button>
                     </div>
                   </div>

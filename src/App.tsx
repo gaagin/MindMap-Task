@@ -2333,6 +2333,428 @@ export default function App() {
     setSelectedNodeId(defaultRootNode.id);
   };
 
+  const handleCreateGtdWorkflow = () => {
+    const projectId = 'p-gtd-' + generateId();
+    
+    const defaultCategories: TagCategory[] = [];
+
+    const newProject: Project = {
+      id: projectId,
+      name: "⚙️ Мой GTD Воркфлоу",
+      folderId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tagCategories: defaultCategories
+    };
+
+    // GTD node IDs
+    const rootId = 'node-root-' + generateId();
+    const inboxId = 'gtd-inbox-' + generateId();
+    const actionableId = 'gtd-wf-actionable-' + generateId();
+    const somedayId = 'gtd-someday-' + generateId();
+    const referenceId = 'gtd-reference-' + generateId();
+    const timeId = 'gtd-wf-time-' + generateId();
+    const doItId = 'gtd-wf-do-it-' + generateId();
+    const delegateId = 'gtd-delegate-' + generateId();
+    const nextActionsId = 'gtd-next-actions-' + generateId();
+
+    const gtdNodes: TaskNode[] = [
+      // 1. Root / Center Node
+      {
+        id: rootId,
+        projectId: projectId,
+        text: "⚙️ GTD Метод",
+        x: -100,
+        y: -300,
+        parentId: null,
+        priority: 'low',
+        tags: ['Главная'],
+        notes: "Интерактивная карта Getting Things Done (GTD). Слева направо: Входящие -> Анализ -> Действия / Делегирование / Справочник.",
+        completed: false,
+        files: [],
+        color: '#6366f1'
+      },
+
+      // 2. Inbox Container
+      {
+        id: inboxId,
+        projectId: projectId,
+        text: "📥 ВХОДЯЩИЕ (INBOX)",
+        x: -550,
+        y: -100,
+        parentId: null,
+        isFloating: true,
+        isContainer: true,
+        priority: 'low',
+        tags: [],
+        notes: "Сюда поступает все новое. Разбирайте регулярно!",
+        completed: false,
+        files: [],
+        color: '#3b82f6',
+        width: 320,
+        height: 380,
+        workflowConnections: [
+          {
+            id: 'conn-inbox-act-' + generateId(),
+            fromSide: 'right',
+            toNodeId: actionableId,
+            toSide: 'left',
+            text: 'Анализ ➡️'
+          }
+        ]
+      },
+      // Inbox Tasks
+      {
+        id: 'gtd-inbox-t1-' + generateId(),
+        projectId: projectId,
+        text: "📖 Прочесть статью о GTD и Майнд-Картах",
+        x: -550,
+        y: -150,
+        parentId: inboxId,
+        priority: 'medium',
+        tags: ['Входящие'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+      {
+        id: 'gtd-inbox-t2-' + generateId(),
+        projectId: projectId,
+        text: "🚗 Записаться на техобслуживание авто",
+        x: -550,
+        y: -80,
+        parentId: inboxId,
+        priority: 'low',
+        tags: ['Входящие'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+      {
+        id: 'gtd-inbox-t3-' + generateId(),
+        projectId: projectId,
+        text: "💡 Идея нового приложения для путешествий",
+        x: -550,
+        y: -10,
+        parentId: inboxId,
+        priority: 'low',
+        tags: ['Входящие'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+
+      // 3. Workflow Decision "Actionable?"
+      {
+        id: actionableId,
+        projectId: projectId,
+        text: "❓ Требует действий?",
+        x: -100,
+        y: -100,
+        parentId: null,
+        isFloating: true,
+        isWorkflowRectangle: true,
+        workflowShape: 'rhomb',
+        priority: 'low',
+        tags: [],
+        notes: "Примите решение: несет ли эта информация конкретные действия?",
+        completed: false,
+        files: [],
+        color: '#a855f7',
+        workflowConnections: [
+          {
+            id: 'conn-act-some-' + generateId(),
+            fromSide: 'right',
+            toNodeId: somedayId,
+            toSide: 'left',
+            text: 'Нет ➡️'
+          },
+          {
+            id: 'conn-act-time-' + generateId(),
+            fromSide: 'bottom',
+            toNodeId: timeId,
+            toSide: 'top',
+            text: 'Да ⬇️'
+          }
+        ]
+      },
+
+      // 4. Someday/Maybe Container
+      {
+        id: somedayId,
+        projectId: projectId,
+        text: "💭 КОГДА-НИБУДЬ (SOMEDAY/MAYBE)",
+        x: 350,
+        y: -250,
+        parentId: null,
+        isFloating: true,
+        isContainer: true,
+        priority: 'low',
+        tags: [],
+        notes: "Для задач без жестких сроков или долгосрочных мечтаний.",
+        completed: false,
+        files: [],
+        color: '#ec4899',
+        width: 300,
+        height: 250
+      },
+      {
+        id: 'gtd-some-t1-' + generateId(),
+        projectId: projectId,
+        text: "🎸 Научиться играть на электрогитаре",
+        x: 350,
+        y: -280,
+        parentId: somedayId,
+        priority: 'low',
+        tags: ['Мечты'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+      {
+        id: 'gtd-some-t2-' + generateId(),
+        projectId: projectId,
+        text: "✈️ Спланировать поездку в Исландию",
+        x: 350,
+        y: -210,
+        parentId: somedayId,
+        priority: 'low',
+        tags: ['Мечты'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+
+      // 5. Reference Container
+      {
+        id: referenceId,
+        projectId: projectId,
+        text: "📚 СПРАВОЧНИК (REFERENCE)",
+        x: 750,
+        y: -250,
+        parentId: null,
+        isFloating: true,
+        isContainer: true,
+        priority: 'low',
+        tags: [],
+        notes: "Просто информация для быстрого поиска и хранения.",
+        completed: false,
+        files: [],
+        color: '#64748b',
+        width: 300,
+        height: 250
+      },
+      {
+        id: 'gtd-ref-t1-' + generateId(),
+        projectId: projectId,
+        text: "🔑 Ссылка на базу знаний компании",
+        x: 750,
+        y: -280,
+        parentId: referenceId,
+        priority: 'low',
+        tags: ['Справка'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+      {
+        id: 'gtd-ref-t2-' + generateId(),
+        projectId: projectId,
+        text: "📋 Список кодов от ворот офиса",
+        x: 750,
+        y: -210,
+        parentId: referenceId,
+        priority: 'low',
+        tags: ['Справка'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+
+      // 6. Workflow Step "Less than 2 min?"
+      {
+        id: timeId,
+        projectId: projectId,
+        text: "⏱️ Меньше 2 минут?",
+        x: -100,
+        y: 150,
+        parentId: null,
+        isFloating: true,
+        isWorkflowRectangle: true,
+        workflowShape: 'rhomb',
+        priority: 'low',
+        tags: [],
+        notes: "Если задача простая и короткая, сделайте её сразу!",
+        completed: false,
+        files: [],
+        color: '#f59e0b',
+        workflowConnections: [
+          {
+            id: 'conn-time-do-' + generateId(),
+            fromSide: 'left',
+            toNodeId: doItId,
+            toSide: 'right',
+            text: 'Да ⬅️'
+          },
+          {
+            id: 'conn-time-next-' + generateId(),
+            fromSide: 'right',
+            toNodeId: nextActionsId,
+            toSide: 'left',
+            text: 'Нет ➡️'
+          },
+          {
+            id: 'conn-time-del-' + generateId(),
+            fromSide: 'bottom',
+            toNodeId: delegateId,
+            toSide: 'top',
+            text: 'Делегировать ⬇️'
+          }
+        ]
+      },
+
+      // 7. Workflow Step "Do It Immediately!"
+      {
+        id: doItId,
+        projectId: projectId,
+        text: "✅ Сделай прямо сейчас!",
+        x: -380,
+        y: 350,
+        parentId: null,
+        isFloating: true,
+        isWorkflowRectangle: true,
+        workflowShape: 'rectangle',
+        priority: 'low',
+        tags: [],
+        notes: "Задачи до 2 минут делаются мгновенно, чтобы не тратить время на планирование.",
+        completed: false,
+        files: [],
+        color: '#10b981'
+      },
+
+      // 8. Delegate Container
+      {
+        id: delegateId,
+        projectId: projectId,
+        text: "👥 ДЕЛЕГИРОВАНО (WAITING)",
+        x: 200,
+        y: 350,
+        parentId: null,
+        isFloating: true,
+        isContainer: true,
+        priority: 'low',
+        tags: [],
+        notes: "Задачи, переданные команде или ожидающие ответа.",
+        completed: false,
+        files: [],
+        color: '#f59e0b',
+        width: 320,
+        height: 300
+      },
+      {
+        id: 'gtd-del-t1-' + generateId(),
+        projectId: projectId,
+        text: "👤 [Иван] Подготовить фин. отчет",
+        x: 200,
+        y: 300,
+        parentId: delegateId,
+        priority: 'high',
+        tags: ['Делегировано'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+      {
+        id: 'gtd-del-t2-' + generateId(),
+        projectId: projectId,
+        text: "👤 [Анна] Утвердить дизайн-макет",
+        x: 200,
+        y: 370,
+        parentId: delegateId,
+        priority: 'medium',
+        tags: ['Делегировано'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+
+      // 9. Next Actions Container
+      {
+        id: nextActionsId,
+        projectId: projectId,
+        text: "⚡ СЛЕДУЮЩИЕ ДЕЙСТВИЯ",
+        x: 750,
+        y: 250,
+        parentId: null,
+        isFloating: true,
+        isContainer: true,
+        priority: 'low',
+        tags: [],
+        notes: "Главный рабочий список следующих шагов.",
+        completed: false,
+        files: [],
+        color: '#10b981',
+        width: 320,
+        height: 400
+      },
+      {
+        id: 'gtd-next-t1-' + generateId(),
+        projectId: projectId,
+        text: "🔥 Подготовить ТЗ для веб-сайта",
+        x: 750,
+        y: 190,
+        parentId: nextActionsId,
+        priority: 'high',
+        tags: ['Действие'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+      {
+        id: 'gtd-next-t2-' + generateId(),
+        projectId: projectId,
+        text: "📞 Созвониться с клиентом по договору",
+        x: 750,
+        y: 260,
+        parentId: nextActionsId,
+        priority: 'medium',
+        tags: ['Действие'],
+        notes: '',
+        completed: false,
+        files: []
+      },
+      {
+        id: 'gtd-next-t3-' + generateId(),
+        projectId: projectId,
+        text: "✉️ Ответить на важные письма в почте",
+        x: 750,
+        y: 330,
+        parentId: nextActionsId,
+        priority: 'low',
+        tags: ['Действие'],
+        notes: '',
+        completed: false,
+        files: []
+      }
+    ];
+
+    setState(prev => ({
+      ...prev,
+      projects: [...prev.projects, newProject],
+      nodes: {
+        ...prev.nodes,
+        [projectId]: gtdNodes
+      },
+      activeProjectId: projectId
+    }));
+
+    // Recenter nicely around the GTD flow
+    setPanX(150);
+    setPanY(150);
+    setZoom(0.75);
+    setSelectedNodeId(inboxId);
+  };
+
   const handleRenameProject = (id: string, name: string) => {
     setState(prev => ({
       ...prev,
@@ -2990,7 +3412,7 @@ export default function App() {
     const newContainerNode: TaskNode = {
       id: 'node-' + generateId(),
       projectId: pid,
-      text: 'Новый Контейнер',
+      text: 'Новая Область',
       x: Math.round(x),
       y: Math.round(y),
       parentId: null, // independent root
@@ -3697,6 +4119,7 @@ export default function App() {
         version={APP_VERSION}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
+        onCreateGtdWorkflow={handleCreateGtdWorkflow}
       />
 
       {/* Main Workspace Frame */}

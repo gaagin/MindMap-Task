@@ -18,7 +18,8 @@ import {
   Move,
   Sun,
   Moon,
-  Bell
+  Bell,
+  Network
 } from 'lucide-react';
 import { Folder, Project, TagCategory, WorkspaceState } from '../types';
 import { playNotificationChime } from '../utils';
@@ -50,6 +51,7 @@ interface SidebarProps {
   version?: string;
   darkMode: boolean;
   onToggleDarkMode: () => void;
+  onCreateGtdWorkflow?: () => void;
 }
 
 export default function Sidebar({
@@ -77,7 +79,8 @@ export default function Sidebar({
   onApplySyncedState,
   version = "2.5.0",
   darkMode,
-  onToggleDarkMode
+  onToggleDarkMode,
+  onCreateGtdWorkflow
 }: SidebarProps) {
   // Folder tree expansion state, loaded and persisted in localStorage
   const [notificationPermission, setNotificationPermission] = useState<string>(() => {
@@ -614,6 +617,19 @@ export default function Sidebar({
           >
             <FolderPlus className="w-3.5 h-3.5" /> Папку
           </button>
+          {onCreateGtdWorkflow && (
+            <button
+              onClick={() => {
+                onCreateGtdWorkflow();
+                playNotificationChime();
+              }}
+              className="col-span-2 flex items-center justify-center gap-1.5 py-2 px-3 bg-amber-55 hover:bg-amber-100 text-amber-800 text-xs font-bold rounded-lg border border-amber-200/60 dark:bg-amber-950/25 dark:border-amber-900/60 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors cursor-pointer select-none"
+              title="Создать полную рабочую среду GTD (Getting Things Done) с интерактивными контейнерами"
+            >
+              <Network className="w-3.5 h-3.5 text-amber-600 dark:text-amber-450 animate-pulse" />
+              Создать GTD Воркфлоу
+            </button>
+          )}
         </div>
 
         {/* Tree List container */}

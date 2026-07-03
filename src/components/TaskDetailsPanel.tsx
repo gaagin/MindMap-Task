@@ -1816,7 +1816,7 @@ export default function TaskDetailsPanel({
                     Время по проекту
                   </span>
                   <span className="text-[9px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-extrabold uppercase py-0.5 px-2 rounded-full tracking-wider">
-                    Проект / Контейнер
+                    Проект / Область
                   </span>
                 </div>
 
@@ -4041,61 +4041,6 @@ export default function TaskDetailsPanel({
           })()}
         </div>
 
-        {node.isWorkflowRectangle && (
-          <div className="space-y-3 bg-indigo-50/20 dark:bg-slate-800/20 p-3.5 rounded-xl border border-indigo-100/30 dark:border-slate-800">
-            <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">
-              Настройки Workflow Шага
-            </h4>
-            
-            {/* Shape selection */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Форма элемента:
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handlePropChange('workflowShape', 'rectangle')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                    node.workflowShape !== 'rhomb'
-                      ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 border-indigo-500'
-                      : 'bg-slate-50 dark:bg-slate-850 text-slate-500 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750'
-                  }`}
-                >
-                  Прямоугольник
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handlePropChange('workflowShape', 'rhomb')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                    node.workflowShape === 'rhomb'
-                      ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 border-amber-500'
-                      : 'bg-slate-50 dark:bg-slate-850 text-slate-500 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-755'
-                  }`}
-                >
-                  Ромб
-                </button>
-              </div>
-            </div>
-
-            {/* Auto-tag disabled checkbox/switch block */}
-            <label className="flex items-center justify-between cursor-pointer select-none">
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Отключить авто-тег:
-              </span>
-              <div className="relative flex items-center">
-                <input
-                  type="checkbox"
-                  checked={!!node.isZoneTriggerDisabled}
-                  onChange={(e) => handlePropChange('isZoneTriggerDisabled', e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-200 dark:bg-slate-800 rounded-full peer peer-checked:bg-rose-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-350 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
-              </div>
-            </label>
-          </div>
-        )}
-
         {/* State / Done badge */}
         {!node.isWorkflowRectangle && (
           <div className="space-y-2">
@@ -4162,15 +4107,15 @@ export default function TaskDetailsPanel({
           <div className="space-y-2.5 bg-[#FAFBFD]/60 dark:bg-slate-800/30 p-3.5 rounded-xl border border-slate-150 dark:border-slate-800">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                Контейнерные свойства
+                Свойства области задач
               </span>
               {node.parentId && allNodes.find(p => p.id === node.parentId && p.isContainer) ? (
                 <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-extrabold uppercase py-0.5 px-2 rounded-full tracking-wider border border-amber-500/20">
-                  Внутри контейнера
+                  Внутри области
                 </span>
               ) : (
                 <span className="text-[10px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 font-extrabold uppercase py-0.5 px-2 rounded-full tracking-wider">
-                  Вне контейнера
+                  Вне области
                 </span>
               )}
             </div>
@@ -4179,7 +4124,7 @@ export default function TaskDetailsPanel({
             {onUpdateNodeParent && (
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block">
-                  Переместить в контейнер:
+                  Переместить в область:
                 </span>
                 <select
                   value={node.parentId || 'no-container'}
@@ -4193,7 +4138,7 @@ export default function TaskDetailsPanel({
                   }}
                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none dark:text-slate-100 cursor-pointer"
                 >
-                  <option value="no-container">📦 Без контейнера</option>
+                  <option value="no-container">📦 Вне области</option>
                   {allNodes
                     .filter(n => n.isContainer && n.id !== node.id)
                     .map(container => (
@@ -4208,7 +4153,7 @@ export default function TaskDetailsPanel({
             {node.containerPlace && (
               <div className="pt-1.5 space-y-1">
                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block">
-                  Место добавления контейнера:
+                  Место добавления:
                 </span>
                 <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800/55 break-words">
                   📦 {node.containerPlace}
@@ -4289,7 +4234,7 @@ export default function TaskDetailsPanel({
                 Время работы над проектом
               </span>
               <span className="text-[9px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-extrabold uppercase py-0.5 px-2 rounded-full tracking-wider">
-                Проект / Контейнер
+                Проект / Область
               </span>
             </div>
 

@@ -251,7 +251,7 @@ function getNodeWidth(n: TaskNode): number {
     return n.width || (n.workflowShape === 'rhomb' ? 120 : 170);
   }
   if (n.isContainer) {
-    return n.width || 520;
+    return n.collapsed ? 220 : (n.width || 520);
   }
   return n.width || 210;
 }
@@ -261,7 +261,7 @@ function getNodeHeight(n: TaskNode): number {
     return n.height || (n.workflowShape === 'rhomb' ? 120 : 70);
   }
   if (n.isContainer) {
-    return n.height || 400;
+    return n.collapsed ? 100 : (n.height || 400);
   }
   return n.height || 110;
 }
@@ -697,6 +697,13 @@ export default function MindMapCanvas({
   const wheelTimeoutRef = useRef<any>(null);
   const fullscreenSubtaskInputRef = useRef<HTMLInputElement>(null);
 
+  // Resize states for containers/cards
+  const [resizingNodeId, setResizingNodeId] = useState<string | null>(null);
+  const [resizeDirection, setResizeDirection] = useState<string | null>(null);
+  const [resizeStartPos, setResizeStartPos] = useState({ x: 0, y: 0 });
+  const [resizeStartSize, setResizeStartSize] = useState({ width: 520, height: 400 });
+  const [resizeStartCenter, setResizeStartCenter] = useState({ x: 0, y: 0 });
+
   // Drag states for dragging a specific card
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [draggingConn, setDraggingConn] = useState<{
@@ -711,7 +718,7 @@ export default function MindMapCanvas({
     setLocalNodes(incomingNodes);
   }, [incomingNodes]);
 
-  const nodes = (draggingNodeId || draggingConn) ? localNodes : incomingNodes;
+  const nodes = (draggingNodeId || draggingConn || resizingNodeId) ? localNodes : incomingNodes;
 
   const checkHasActiveBlockers = (nodeId: string) => {
     const target = nodes.find(n => n.id === nodeId);
@@ -2891,13 +2898,6 @@ export default function MindMapCanvas({
     }
   }, [nodes, lastActiveContainerId]);
 
-  // Resize states for containers
-  const [resizingNodeId, setResizingNodeId] = useState<string | null>(null);
-  const [resizeDirection, setResizeDirection] = useState<string | null>(null);
-  const [resizeStartPos, setResizeStartPos] = useState({ x: 0, y: 0 });
-  const [resizeStartSize, setResizeStartSize] = useState({ width: 520, height: 400 });
-  const [resizeStartCenter, setResizeStartCenter] = useState({ x: 0, y: 0 });
-
   // Pinch-to-zoom tracking refs
   const pinchStartDistRef = useRef<number | null>(null);
   const pinchStartZoomRef = useRef<number>(1);
@@ -3375,13 +3375,19 @@ export default function MindMapCanvas({
         const newOffsetX = parseFloat((newLeft + newWidth / 2).toFixed(1));
         const newOffsetY = parseFloat((newTop + newHeight / 2).toFixed(1));
 
-        onUpdateNode({
-          ...node,
-          zoneWidth: Math.round(newWidth),
-          zoneHeight: Math.round(newHeight),
-          zoneOffsetX: Math.round(newOffsetX),
-          zoneOffsetY: Math.round(newOffsetY)
-        });
+        setLocalNodes(prev =>
+          prev.map(n =>
+            n.id === resizingNodeId
+              ? {
+                  ...n,
+                  zoneWidth: Math.round(newWidth),
+                  zoneHeight: Math.round(newHeight),
+                  zoneOffsetX: Math.round(newOffsetX),
+                  zoneOffsetY: Math.round(newOffsetY)
+                }
+              : n
+          )
+        );
         return;
       }
 
@@ -3432,13 +3438,19 @@ export default function MindMapCanvas({
       const newCenterX = newLeft + newWidth / 2;
       const newCenterY = newTop + newHeight / 2;
 
-      onUpdateNode({
-        ...node,
-        x: newCenterX,
-        y: newCenterY,
-        width: newWidth,
-        height: newHeight
-      });
+      setLocalNodes(prev =>
+        prev.map(n =>
+          n.id === resizingNodeId
+            ? {
+                ...n,
+                x: newCenterX,
+                y: newCenterY,
+                width: newWidth,
+                height: newHeight
+              }
+            : n
+        )
+      );
       return;
     }
 
@@ -3551,8 +3563,16 @@ export default function MindMapCanvas({
 
   const handleMouseUp = () => {
     setIsPanning(false);
-    setResizingNodeId(null);
-    setResizeDirection(null);
+
+    if (resizingNodeId) {
+      const finalResized = localNodes.find(n => n.id === resizingNodeId);
+      if (finalResized) {
+        onUpdateNode(finalResized);
+      }
+      setResizingNodeId(null);
+      setResizeDirection(null);
+      return;
+    }
 
     if (draggingConn) {
       const targetNode = nodes.find(n => n.id === draggingConn.nodeId);
@@ -4029,13 +4049,19 @@ export default function MindMapCanvas({
         const newOffsetX = parseFloat((newLeft + newWidth / 2).toFixed(1));
         const newOffsetY = parseFloat((newTop + newHeight / 2).toFixed(1));
 
-        onUpdateNode({
-          ...node,
-          zoneWidth: Math.round(newWidth),
-          zoneHeight: Math.round(newHeight),
-          zoneOffsetX: Math.round(newOffsetX),
-          zoneOffsetY: Math.round(newOffsetY)
-        });
+        setLocalNodes(prev =>
+          prev.map(n =>
+            n.id === resizingNodeId
+              ? {
+                  ...n,
+                  zoneWidth: Math.round(newWidth),
+                  zoneHeight: Math.round(newHeight),
+                  zoneOffsetX: Math.round(newOffsetX),
+                  zoneOffsetY: Math.round(newOffsetY)
+                }
+              : n
+          )
+        );
         e.preventDefault();
         return;
       }
@@ -4087,13 +4113,19 @@ export default function MindMapCanvas({
       const newCenterX = newLeft + newWidth / 2;
       const newCenterY = newTop + newHeight / 2;
 
-      onUpdateNode({
-        ...node,
-        x: newCenterX,
-        y: newCenterY,
-        width: newWidth,
-        height: newHeight
-      });
+      setLocalNodes(prev =>
+        prev.map(n =>
+          n.id === resizingNodeId
+            ? {
+                ...n,
+                x: newCenterX,
+                y: newCenterY,
+                width: newWidth,
+                height: newHeight
+              }
+            : n
+        )
+      );
       e.preventDefault();
       return;
     }
@@ -4224,6 +4256,12 @@ export default function MindMapCanvas({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (resizingNodeId) {
+      const finalResized = localNodes.find(n => n.id === resizingNodeId);
+      if (finalResized) {
+        onUpdateNode(finalResized);
+      }
+    }
     setResizingNodeId(null);
     setResizeDirection(null);
 
@@ -4772,6 +4810,7 @@ export default function MindMapCanvas({
   const startResize = (e: React.MouseEvent, node: TaskNode, direction: string = 'se') => {
     e.stopPropagation();
     e.preventDefault();
+    setLocalNodes(incomingNodes); // Pre-sync state to prevent jump
     onSelectNode(node.id);
     setResizingNodeId(node.id);
     setResizeDirection(direction);
@@ -4787,6 +4826,7 @@ export default function MindMapCanvas({
   const startResizeTouch = (e: React.TouchEvent, node: TaskNode, direction: string = 'se') => {
     if (e.touches.length === 0) return;
     e.stopPropagation();
+    setLocalNodes(incomingNodes); // Pre-sync state to prevent jump
     onSelectNode(node.id);
     setResizingNodeId(node.id);
     setResizeDirection(direction);
@@ -5532,7 +5572,7 @@ export default function MindMapCanvas({
                   📦
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Контейнер задач</span>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Группа задач</span>
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Группировка и свертывание</span>
                 </div>
               </button>
@@ -6003,6 +6043,21 @@ export default function MindMapCanvas({
             const matches = isNodeMatched(node);
             const isDimmed = isAnyFilterActive && !matches;
             const isOverdueCont = isContainerOverdue(node, nodes);
+            const isOpponentHovered = hoveredNodeId === node.id;
+
+            // Stats calculations for detailed display on the card
+            const todoCount = containerChildren.filter(n => !n.completed && (n.status === 'todo' || !n.status)).length;
+            const progressCount = containerChildren.filter(n => !n.completed && n.status === 'progress').length;
+            const waitingCount = containerChildren.filter(n => !n.completed && n.status === 'waiting').length;
+            const doneCount = containerChildren.filter(n => n.completed || n.status === 'done').length;
+
+            const urgentCount = containerChildren.filter(n => !n.completed && n.priority === 'urgent').length;
+            const highCount = containerChildren.filter(n => !n.completed && n.priority === 'high').length;
+
+            const overdueCount = containerChildren.filter(n => !n.completed && isNodeOverdue(n, nodes)).length;
+
+            const totalEstimated = containerChildren.reduce((acc, child) => acc + (child.estimatedTime || 0), 0);
+            const totalPomoTime = getPomoStatsForNode(node, nodes).pomodoroTotalTime;
 
             return (
               <div
@@ -6052,7 +6107,7 @@ export default function MindMapCanvas({
                     }
                   }
                 }}
-                className={`absolute rounded-2xl border-2 ${(isDraggingThisNode || resizingNodeId === node.id) ? '' : 'transition-[background-color,border-color,opacity,box-shadow,transform] duration-150'} ${
+                className={`absolute group rounded-2xl border-2 ${(isDraggingThisNode || resizingNodeId === node.id) ? '' : 'transition-[background-color,border-color,opacity,box-shadow,transform] duration-150'} ${
                   isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                 } ${
                   draggedOverTagNodeId === node.id
@@ -6153,7 +6208,7 @@ export default function MindMapCanvas({
                         onMouseDown={(e) => e.stopPropagation()}
                       />
                     ) : (
-                      <span>{node.text || 'КОНТЕЙНЕР'}</span>
+                      <span>{node.text || 'ОБЛАСТЬ'}</span>
                     )}
                     {node.collapsed && (
                       <span className={`text-[9px] font-mono rounded px-1 ${isContainerSelected ? 'bg-amber-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
@@ -6194,12 +6249,12 @@ export default function MindMapCanvas({
                         {containerProgress}%
                       </span>
                     </div>
-                    {/* Compact layout placeholder instead of duplicated text */}
-                    <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 truncate font-sans tracking-wide">
-                      Контейнер
+                    {/* Display title name instead of duplicated static label 'Контейнер' */}
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-350 truncate font-sans tracking-wide">
+                      {node.text || 'Область задач'}
                     </span>
                   </div>
-                  
+
                   {/* Container Action Buttons */}
                   <div className="flex items-center gap-1.5 shrink-0 ml-2">
                     {/* Add child task/branch inside container */}
@@ -6232,69 +6287,44 @@ export default function MindMapCanvas({
                         <Network className="w-3.5 h-3.5" />
                       </button>
                     )}
-                    {/* Focus Mode toggle */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (focusedContainerId === node.id) {
-                          setFocusedContainerId(null);
-                        } else {
-                          setFocusedContainerId(node.id);
-                          // pan and zoom to center it nicely
-                          const centerZoom = 0.85;
-                          setZoom(centerZoom);
-                          setPanX(-node.x * centerZoom);
-                          setPanY(-node.y * centerZoom);
-                          onSelectNode(node.id);
-                        }
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      data-drag-ignore
-                      title={focusedContainerId === node.id ? "Выйти из режима фокусировки" : "Раскрыть на весь экран (режим фокусировки)"}
-                      className={`p-1 rounded-md transition-all cursor-pointer ${
-                        focusedContainerId === node.id
-                          ? 'text-amber-600 dark:text-amber-400 bg-amber-100/80 dark:bg-amber-950/60 ring-2 ring-amber-500/20'
-                          : 'text-slate-500 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      {focusedContainerId === node.id ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                    </button>
-                    {/* Expand/Collapse Container */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleNodeCollapse(node.id);
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      data-drag-ignore
-                      title={node.collapsed ? "Развернуть контейнер" : "Свернуть контейнер"}
-                      className="p-1 rounded-md text-slate-500 hover:text-amber-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                    >
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${node.collapsed ? '-rotate-90' : 'rotate-0'}`} />
-                    </button>
-                    {/* Delete Container */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteNode(node.id);
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      data-drag-ignore
-                      title="Удалить контейнер"
-                      className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-850 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 </div>
 
                 {/* Body / Workspace Area */}
                 <div className="relative flex-1 p-3 flex flex-col justify-between min-h-0 bg-transparent rounded-b-2xl">
                   {isContainerCollapsed ? (
-                    <div className="flex-1 flex flex-col items-center justify-center select-none">
-                      <span className="text-[10px] bg-amber-100/85 dark:bg-amber-950 text-amber-800 dark:text-amber-400 px-2.5 py-1 rounded-full font-bold">
-                        📦 Свернуто: {totalChildren} задач ({containerProgress}%) • ⏱️ {formatTotalPomoTime(getPomoStatsForNode(node, nodes).pomodoroTotalTime)}
-                      </span>
+                    <div className="flex-1 flex flex-col justify-center p-2.5 select-none space-y-1.5 bg-slate-50/40 dark:bg-slate-900/10 rounded-b-2xl animate-fade-in">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-slate-700 dark:text-slate-200">
+                          📦 Свернуто: {totalChildren} задач
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                          {containerProgress}%
+                        </span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-amber-500 transition-all duration-300"
+                          style={{ width: `${containerProgress}%` }}
+                        />
+                      </div>
+
+                      {/* Quick Status and Time Breakdown */}
+                      <div className="flex items-center justify-between text-[9px] text-slate-500 dark:text-slate-400">
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <span title="В планах">⚪ {todoCount}</span>
+                          <span title="В работе">🔵 {progressCount}</span>
+                          <span title="Ожидают">🟡 {waitingCount}</span>
+                          <span title="Выполнено">🟢 {doneCount}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 font-medium">
+                          {overdueCount > 0 && <span className="text-rose-500 font-bold" title="Просрочено">📅 {overdueCount}</span>}
+                          {urgentCount > 0 && <span className="text-red-500 font-bold" title="Критических">🚨 {urgentCount}</span>}
+                          <span>⏱️ {formatTotalPomoTime(totalPomoTime)}</span>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <>
@@ -6303,25 +6333,62 @@ export default function MindMapCanvas({
                         {renderContainerBody(node, containerChildren)}
                       </div>
 
+                      {/* Detailed task stats breakdown panel */}
+                      <div className="mt-1 mb-2 px-2.5 py-1.5 flex flex-wrap items-center justify-between text-[9px] bg-slate-50/55 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/60 rounded-md select-none gap-2 font-medium z-10 shrink-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-slate-400 dark:text-slate-500 font-bold">Задачи:</span>
+                          <span className="inline-flex items-center gap-0.5 text-slate-600 dark:text-slate-300" title="В планах">
+                            ⚪ {todoCount}
+                          </span>
+                          <span className="inline-flex items-center gap-0.5 text-blue-600 dark:text-blue-400" title="В работе">
+                            🔵 {progressCount}
+                          </span>
+                          <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400" title="Ожидают">
+                            🟡 {waitingCount}
+                          </span>
+                          <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400" title="Выполнено">
+                            🟢 {doneCount}
+                          </span>
+                        </div>
+                        
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {overdueCount > 0 && (
+                            <span className="bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-black px-1.5 py-0.5 rounded border border-rose-100 dark:border-rose-900/40 animate-pulse flex items-center gap-0.5" title="Просроченные задачи">
+                              📅 {overdueCount}
+                            </span>
+                          )}
+                          {urgentCount > 0 && (
+                            <span className="bg-red-50 dark:bg-red-950/40 text-red-650 dark:text-red-400 font-black px-1.5 py-0.5 rounded border border-red-100 dark:border-red-900/40 flex items-center gap-0.5" title="Критические приоритеты">
+                              🚨 {urgentCount}
+                            </span>
+                          )}
+                          {totalEstimated > 0 && (
+                            <span className="text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-850 px-1 py-0.5 rounded font-black" title="Общая оценка времени">
+                              ⏱️ {totalEstimated}ч
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
                       {/* Small dynamic status overview bar at the bottom */}
-                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex items-center justify-between select-none bg-white dark:bg-slate-950 px-2 py-1.5 rounded-lg z-10 shrink-0">
-                        <div className="flex items-center gap-1.5">
+                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex flex-wrap items-center justify-between select-none bg-white dark:bg-slate-950 px-2 py-1.5 rounded-lg z-10 shrink-0 gap-y-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5 min-w-0 flex-1">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setNotesModalNodeId(node.id);
                             }}
-                            className="text-[9px] text-slate-500 dark:text-slate-400 hover:text-amber-600 shadow-sm flex items-center gap-1 py-0.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md transition-all font-semibold cursor-pointer border border-slate-205 dark:border-slate-755 bg-white/50 dark:bg-slate-900/50"
+                            className="text-[9px] text-slate-500 dark:text-slate-400 hover:text-amber-600 shadow-sm flex items-center gap-1 py-0.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md transition-all font-semibold cursor-pointer border border-slate-205 dark:border-slate-755 bg-white/50 dark:bg-slate-900/50 shrink-0"
                           >
                             <FileText className="w-3 h-3 text-amber-500" /> Описание
                           </button>
 
-                          <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 font-sans">
-                            {totalChildren} задач ({completedChildren} вып.) • ⏱️ {formatTotalPomoTime(getPomoStatsForNode(node, nodes).pomodoroTotalTime)}
+                          <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 font-sans truncate">
+                            {totalChildren} задач ({completedChildren} вып.) • ⏱️ {formatTotalPomoTime(totalPomoTime)}
                           </span>
                         </div>
                         
-                        <div className="w-24 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div className="w-20 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden shrink-0">
                           <div 
                             className="h-full bg-amber-500 transition-all duration-300"
                             style={{ width: `${containerProgress}%` }}
@@ -6332,70 +6399,125 @@ export default function MindMapCanvas({
                   )}
                 </div>
 
-                {/* Resize Handles for container from all sides */}
+                {/* Resize Handles for container from all sides (Large touch-responsive targets) */}
                 {!isContainerCollapsed && (
                   <>
                     {/* Top border resizer */}
                     <div
                       onMouseDown={(e) => startResize(e, node, 'n')}
                       onTouchStart={(e) => startResizeTouch(e, node, 'n')}
-                      className="absolute -top-1 left-2 right-2 h-2 cursor-ns-resize z-30 select-none hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-colors duration-150"
+                      data-drag-ignore
+                      className="absolute -top-1.5 left-4 right-4 h-3 cursor-ns-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
                       title="Изменить высоту (вверх)"
                     />
                     {/* Bottom border resizer */}
                     <div
                       onMouseDown={(e) => startResize(e, node, 's')}
                       onTouchStart={(e) => startResizeTouch(e, node, 's')}
-                      className="absolute -bottom-1 left-2 right-2 h-2 cursor-ns-resize z-30 select-none hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-colors duration-150"
+                      data-drag-ignore
+                      className="absolute -bottom-1.5 left-4 right-4 h-3 cursor-ns-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
                       title="Изменить высоту (вниз)"
                     />
                     {/* Left border resizer */}
                     <div
                       onMouseDown={(e) => startResize(e, node, 'w')}
                       onTouchStart={(e) => startResizeTouch(e, node, 'w')}
-                      className="absolute top-2 bottom-2 -left-1 w-2 cursor-ew-resize z-30 select-none hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-colors duration-150"
+                      data-drag-ignore
+                      className="absolute top-4 bottom-4 -left-1.5 w-3 cursor-ew-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
                       title="Изменить ширину (влево)"
                     />
                     {/* Right border resizer */}
                     <div
                       onMouseDown={(e) => startResize(e, node, 'e')}
                       onTouchStart={(e) => startResizeTouch(e, node, 'e')}
-                      className="absolute top-2 bottom-2 -right-1 w-2 cursor-ew-resize z-30 select-none hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-colors duration-150"
+                      data-drag-ignore
+                      className="absolute top-4 bottom-4 -right-1.5 w-3 cursor-ew-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
                       title="Изменить ширину (вправо)"
                     />
 
-                    {/* Top-Left corner resizer */}
+                    {/* Corner resizers */}
                     <div
                       onMouseDown={(e) => startResize(e, node, 'nw')}
                       onTouchStart={(e) => startResizeTouch(e, node, 'nw')}
-                      className="absolute -top-1.5 -left-1.5 w-4 h-4 cursor-nwse-resize z-40 select-none hover:bg-amber-500/40 active:bg-amber-500/60 rounded-full border border-amber-500/20 transition-colors duration-150"
-                      title="Изменить размер (сверху-слева)"
+                      data-drag-ignore
+                      className="absolute -top-2 -left-2 w-4 h-4 cursor-nwse-resize z-40 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded-full border border-amber-500/30 bg-white dark:bg-slate-900 transition-all duration-150"
+                      title="Сверху-слева"
                     />
-                    {/* Top-Right corner resizer */}
                     <div
                       onMouseDown={(e) => startResize(e, node, 'ne')}
                       onTouchStart={(e) => startResizeTouch(e, node, 'ne')}
-                      className="absolute -top-1.5 -right-1.5 w-4 h-4 cursor-nesw-resize z-40 select-none hover:bg-amber-500/40 active:bg-amber-500/60 rounded-full border border-amber-500/20 transition-colors duration-150"
-                      title="Изменить размер (сверху-справа)"
+                      data-drag-ignore
+                      className="absolute -top-2 -right-2 w-4 h-4 cursor-nesw-resize z-40 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded-full border border-amber-500/30 bg-white dark:bg-slate-900 transition-all duration-150"
+                      title="Сверху-справа"
                     />
-                    {/* Bottom-Left corner resizer */}
                     <div
                       onMouseDown={(e) => startResize(e, node, 'sw')}
                       onTouchStart={(e) => startResizeTouch(e, node, 'sw')}
-                      className="absolute -bottom-1.5 -left-1.5 w-4 h-4 cursor-nesw-resize z-40 select-none hover:bg-amber-500/40 active:bg-amber-500/60 rounded-full border border-amber-500/20 transition-colors duration-150"
-                      title="Изменить размер (снизу-слева)"
+                      data-drag-ignore
+                      className="absolute -bottom-2 -left-2 w-4 h-4 cursor-nesw-resize z-40 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded-full border border-amber-500/30 bg-white dark:bg-slate-900 transition-all duration-150"
+                      title="Снизу-слева"
                     />
-                    {/* Bottom-Right corner resizer */}
                     <div
                       onMouseDown={(e) => startResize(e, node, 'se')}
                       onTouchStart={(e) => startResizeTouch(e, node, 'se')}
-                      className="absolute -bottom-1.5 -right-1.5 w-4 h-4 cursor-nwse-resize z-40 select-none hover:bg-amber-500/40 active:bg-amber-500/60 rounded-full border border-amber-500/20 transition-colors duration-150 flex items-center justify-center p-0.5"
-                      title="Изменить размер (снизу-справа)"
+                      data-drag-ignore
+                      className="absolute -bottom-2.5 -right-2.5 w-5 h-5 cursor-nwse-resize z-40 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded-full border border-amber-500/30 bg-white dark:bg-slate-900 transition-all duration-150 flex items-center justify-center"
+                      title="Снизу-справа"
                     >
-                      <svg width="6" height="6" viewBox="0 0 6 6" className="text-amber-600 dark:text-amber-450 opacity-60">
+                      <svg width="6" height="6" viewBox="0 0 6 6" className="text-amber-600 dark:text-amber-450 opacity-80">
                         <line x1="6" y1="0" x2="0" y2="6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
                         <line x1="6" y1="3" x2="3" y2="6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
                       </svg>
+                    </div>
+                  </>
+                )}
+
+                {/* Anchor connection handles on active select/hover */}
+                {(isSelected || isOpponentHovered || hoveredNodeId === node.id || activeConnector) && (
+                  <>
+                    {/* Top Anchor Dot */}
+                    <div
+                      onMouseDown={(e) => startConnectorDrag(e, node.id, 'top')}
+                      onTouchStart={(e) => startConnectorDrag(e, node.id, 'top')}
+                      className={`absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
+                        isOpponentHovered && hoveredSide === 'top' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
+                      }`}
+                      title="Тянуть связь вверх"
+                    >
+                      <div className={`w-1 h-1 rounded-full ${isOpponentHovered && hoveredSide === 'top' ? 'bg-white' : 'bg-indigo-500 dark:bg-indigo-400'}`} />
+                    </div>
+                    {/* Right Anchor Dot */}
+                    <div
+                      onMouseDown={(e) => startConnectorDrag(e, node.id, 'right')}
+                      onTouchStart={(e) => startConnectorDrag(e, node.id, 'right')}
+                      className={`absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
+                        isOpponentHovered && hoveredSide === 'right' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
+                      }`}
+                      title="Тянуть связь вправо"
+                    >
+                      <div className={`w-1 h-1 rounded-full ${isOpponentHovered && hoveredSide === 'right' ? 'bg-white' : 'bg-indigo-500 dark:bg-indigo-400'}`} />
+                    </div>
+                    {/* Bottom Anchor Dot */}
+                    <div
+                      onMouseDown={(e) => startConnectorDrag(e, node.id, 'bottom')}
+                      onTouchStart={(e) => startConnectorDrag(e, node.id, 'bottom')}
+                      className={`absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
+                        isOpponentHovered && hoveredSide === 'bottom' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
+                      }`}
+                      title="Тянуть связь вниз"
+                    >
+                      <div className={`w-1 h-1 rounded-full ${isOpponentHovered && hoveredSide === 'bottom' ? 'bg-white' : 'bg-indigo-500 dark:bg-indigo-400'}`} />
+                    </div>
+                    {/* Left Anchor Dot */}
+                    <div
+                      onMouseDown={(e) => startConnectorDrag(e, node.id, 'left')}
+                      onTouchStart={(e) => startConnectorDrag(e, node.id, 'left')}
+                      className={`absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-indigo-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs ${
+                        isOpponentHovered && hoveredSide === 'left' ? 'bg-indigo-600 text-white scale-125 ring-2 ring-indigo-500/30' : ''
+                      }`}
+                      title="Тянуть связь влево"
+                    >
+                      <div className={`w-1 h-1 rounded-full ${isOpponentHovered && hoveredSide === 'left' ? 'bg-white' : 'bg-indigo-500 dark:bg-indigo-400'}`} />
                     </div>
                   </>
                 )}
