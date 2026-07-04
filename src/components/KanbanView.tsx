@@ -900,6 +900,24 @@ export default function KanbanView({
                 </span>
               )}
             </p>
+            {node.mirrorParentText && (
+              <div 
+                className="text-[9px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100/30 dark:border-purple-900/30 px-1.5 py-0.5 rounded select-none max-w-max mt-1 truncate flex items-center gap-1 cursor-pointer hover:bg-purple-100/40 dark:hover:bg-purple-900/25"
+                title={`Связано с родительской задачей: ${node.mirrorParentText}. Нажмите для перехода.`}
+                onClick={(e) => {
+                  if (node.mirrorParentId && onSelectNode) {
+                    const exists = nodes.some(n => n.id === node.mirrorParentId);
+                    if (exists) {
+                      e.stopPropagation();
+                      onSelectNode(node.mirrorParentId);
+                    }
+                  }
+                }}
+              >
+                <span>🔗</span>
+                <span className="truncate max-w-[125px]">{node.mirrorParentText}</span>
+              </div>
+            )}
           </div>
 
           {/* Move category drop down for mobile touch responsiveness triggers */}

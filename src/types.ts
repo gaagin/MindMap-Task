@@ -97,6 +97,9 @@ export interface TaskNode {
   blockedBy?: string[]; // Optional array of node IDs that block this node
   defaultView?: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'; // Optional view mode to display by default when focused
   useExactCoordinates?: boolean; // Special flag to skip radial placement and use click coordinates
+  mirrorGroupId?: string; // Optional ID linking mirrored/synchronized tasks
+  mirrorParentId?: string; // Optional ID of the original parent task of a mirrored subtask
+  mirrorParentText?: string; // Optional text of the original parent task of a mirrored subtask
 }
 
 export interface Project {

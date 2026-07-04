@@ -7412,6 +7412,29 @@ export default function MindMapCanvas({
                         )}
                       </p>
                     )}
+                    {node.mirrorParentText && (
+                      <div 
+                        className={`text-[9px] font-bold mt-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded border select-none max-w-max truncate transition-colors cursor-pointer ${
+                          isRoot 
+                            ? 'bg-indigo-900/40 text-indigo-200 border-indigo-700/50 hover:bg-indigo-900/60' 
+                            : 'bg-purple-50/55 dark:bg-purple-950/20 text-purple-600 dark:text-purple-400 border-purple-100/30 dark:border-purple-900/30 hover:bg-purple-100/40 dark:hover:bg-purple-900/25'
+                        }`} 
+                        title={`Синхронизированная копия задачи. Исходный родитель: ${node.mirrorParentText}. Нажмите, чтобы перейти к нему.`}
+                        onClick={(e) => {
+                          if (node.mirrorParentId) {
+                            const exists = nodes.some(n => n.id === node.mirrorParentId);
+                            if (exists) {
+                              e.stopPropagation();
+                              onSelectNode(node.mirrorParentId);
+                            }
+                          }
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <span className="text-purple-500 text-[10px]">🔗</span>
+                        <span className="truncate max-w-[120px]">{node.mirrorParentText}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Quick add subtask plus button */}

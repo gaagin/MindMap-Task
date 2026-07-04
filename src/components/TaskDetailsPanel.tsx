@@ -1694,6 +1694,28 @@ export default function TaskDetailsPanel({
                 );
               }
             })()}
+            {node.mirrorParentId && (() => {
+              const parentNode = allNodes.find(n => n.id === node.mirrorParentId);
+              if (parentNode && onSelectNode) {
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onSelectNode(parentNode.id)}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-purple-50/40 hover:bg-purple-100/40 dark:bg-purple-950/20 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-400 text-xs font-bold rounded-lg border border-purple-100/20 dark:border-purple-900/20 transition-all cursor-pointer"
+                    title={`Перейти к исходной родительской задаче: ${parentNode.text}`}
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5 text-purple-500" />
+                    <span className="truncate max-w-[150px]">Родительская: {parentNode.text}</span>
+                  </button>
+                );
+              } else if (node.mirrorParentText) {
+                return (
+                  <span className="text-xs font-bold text-slate-450 dark:text-slate-500 px-3 py-1 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200/50 dark:border-slate-800/50 rounded-lg">
+                    Родительская: {node.mirrorParentText}
+                  </span>
+                );
+              }
+            })()}
           </div>
 
           {/* Core Title input centered */}
@@ -3656,8 +3678,12 @@ export default function TaskDetailsPanel({
 
           <button 
             type="button"
-            onClick={() => setIsFullscreen(true)}
-            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-500 transition-colors cursor-pointer"
+            onClick={() => {
+              if (window.innerWidth >= 768) {
+                setIsFullscreen(true);
+              }
+            }}
+            className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-500 transition-colors cursor-pointer"
             title="Открыть во весь экран"
           >
             <Maximize2 className="w-4 h-4" />
@@ -3712,18 +3738,42 @@ export default function TaskDetailsPanel({
 
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
             {node.parentId && (() => {
-              const parentNode = allNodes.find(n => n.id === node.parentId);
+               const parentNode = allNodes.find(n => n.id === node.parentId);
+               if (parentNode && onSelectNode) {
+                 return (
+                   <button
+                     type="button"
+                     onClick={() => onSelectNode(parentNode.id)}
+                     className="w-full flex items-center gap-2 px-3 py-2 bg-indigo-50/50 hover:bg-indigo-100/50 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 text-xs font-bold rounded-lg border border-indigo-100/30 dark:border-indigo-900/30 transition-all cursor-pointer mb-2"
+                     title={`Вернуться к главной задаче: ${parentNode.text}`}
+                   >
+                     <ChevronLeft className="w-4 h-4 shrink-0 text-indigo-500" />
+                     <span className="truncate">Назад к: <span className="font-semibold">{parentNode.text}</span></span>
+                   </button>
+                 );
+               }
+               return null;
+             })()}
+            {node.mirrorParentId && (() => {
+              const parentNode = allNodes.find(n => n.id === node.mirrorParentId);
               if (parentNode && onSelectNode) {
                 return (
                   <button
                     type="button"
                     onClick={() => onSelectNode(parentNode.id)}
-                    className="w-full flex items-center gap-2 px-3 py-2 bg-indigo-50/50 hover:bg-indigo-100/50 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 text-xs font-bold rounded-lg border border-indigo-100/30 dark:border-indigo-900/30 transition-all cursor-pointer mb-2"
-                    title={`Вернуться к главной задаче: ${parentNode.text}`}
+                    className="w-full flex items-center gap-2 px-3 py-2 bg-purple-50/50 hover:bg-purple-100/50 dark:bg-purple-950/20 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-400 text-xs font-bold rounded-lg border border-purple-100/30 dark:border-purple-900/30 transition-all cursor-pointer mb-2"
+                    title={`Перейти к исходной родительской задаче: ${parentNode.text}`}
                   >
-                    <ChevronLeft className="w-4 h-4 shrink-0 text-indigo-500" />
-                    <span className="truncate">Назад к: <span className="font-semibold">{parentNode.text}</span></span>
+                    <ChevronLeft className="w-4 h-4 shrink-0 text-purple-500" />
+                    <span className="truncate">Родительская: <span className="font-semibold">{parentNode.text}</span></span>
                   </button>
+                );
+              } else if (node.mirrorParentText) {
+                return (
+                  <div className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50/50 dark:bg-slate-900/40 text-slate-500 dark:text-slate-450 text-xs font-bold rounded-lg border border-slate-200/50 dark:border-slate-800/50 mb-2">
+                    <span className="text-purple-500">🔗</span>
+                    <span className="truncate">Родительская: <span className="font-semibold">{node.mirrorParentText}</span></span>
+                  </div>
                 );
               }
               return null;
@@ -5056,6 +5106,27 @@ export default function TaskDetailsPanel({
                 </span>
                 <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800/55 break-words">
                   📦 {node.containerPlace}
+                </p>
+              </div>
+            )}
+
+            {node.mirrorParentText && (
+              <div className="pt-1.5 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block">
+                  Связано с родительской задачей:
+                </span>
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800/55 break-words flex items-center gap-1.5">
+                  <span>🔗</span>
+                  <span className="truncate max-w-[200px]">{node.mirrorParentText}</span>
+                  {node.mirrorParentId && allNodes.some(n => n.id === node.mirrorParentId) && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectNode && onSelectNode(node.mirrorParentId!)}
+                      className="ml-auto text-[10px] bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 font-extrabold px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                    >
+                      Перейти
+                    </button>
+                  )}
                 </p>
               </div>
             )}

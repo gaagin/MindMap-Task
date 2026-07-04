@@ -260,6 +260,64 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
     });
     iterations++;
   }
+
+  // --- Start Mirrored Tasks Synchronization ---
+  const mirrorGroups = new Map<string, TaskNode>();
+  
+  // Find the latest updated node for each mirrorGroupId
+  current.forEach(node => {
+    if (node.mirrorGroupId) {
+      const existing = mirrorGroups.get(node.mirrorGroupId);
+      if (!existing || !existing.updatedAt || (node.updatedAt && node.updatedAt > existing.updatedAt)) {
+        mirrorGroups.set(node.mirrorGroupId, node);
+      }
+    }
+  });
+
+  if (mirrorGroups.size > 0) {
+    current = current.map(node => {
+      if (node.mirrorGroupId) {
+        const sourceNode = mirrorGroups.get(node.mirrorGroupId);
+        if (sourceNode && sourceNode.id !== node.id) {
+          return {
+            ...node,
+            text: sourceNode.text,
+            completed: sourceNode.completed,
+            priority: sourceNode.priority,
+            tags: sourceNode.tags ? [...sourceNode.tags] : [],
+            notes: sourceNode.notes,
+            files: sourceNode.files ? [...sourceNode.files] : [],
+            comments: sourceNode.comments ? [...sourceNode.comments] : [],
+            color: sourceNode.color,
+            collapsed: sourceNode.collapsed,
+            isCardCollapsed: sourceNode.isCardCollapsed,
+            dueDate: sourceNode.dueDate,
+            dueTime: sourceNode.dueTime,
+            startDate: sourceNode.startDate,
+            startTime: sourceNode.startTime,
+            progress: sourceNode.progress,
+            updatedAt: sourceNode.updatedAt,
+            reminderDate: sourceNode.reminderDate,
+            reminderTime: sourceNode.reminderTime,
+            reminderMinutesBefore: sourceNode.reminderMinutesBefore,
+            reminderDismissed: sourceNode.reminderDismissed,
+            pomodoroTotalTime: sourceNode.pomodoroTotalTime,
+            pomodoroSessionsCount: sourceNode.pomodoroSessionsCount,
+            archived: sourceNode.archived,
+            tagCategories: sourceNode.tagCategories,
+            externalLink: sourceNode.externalLink,
+            estimatedTime: sourceNode.estimatedTime,
+            isNotTask: sourceNode.isNotTask,
+            blockedBy: sourceNode.blockedBy,
+            defaultView: sourceNode.defaultView,
+          };
+        }
+      }
+      return node;
+    });
+  }
+  // --- End Mirrored Tasks Synchronization ---
+
   return current;
 }
 
@@ -270,7 +328,11 @@ export function toggleNodeAndDescendants(nodeId: string, completed: boolean, all
   
   return allNodes.map(n => {
     if (idsToToggle.includes(n.id)) {
-      const updatedNode = { ...n, completed: completed };
+      const updatedNode = { 
+        ...n, 
+        completed: completed,
+        updatedAt: new Date().toISOString()
+      };
       if (n.id === nodeId) {
         updatedNode.collapsed = completed; // Automatically collapse branch if completed, expand if active
       }
@@ -287,7 +349,11 @@ export function toggleNodeArchive(nodeId: string, archived: boolean, allNodes: T
   
   return allNodes.map(n => {
     if (idsToToggle.includes(n.id)) {
-      return { ...n, archived: archived };
+      return { 
+        ...n, 
+        archived: archived,
+        updatedAt: new Date().toISOString()
+      };
     }
     return n;
   });

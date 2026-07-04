@@ -3106,8 +3106,63 @@ export default function App() {
         });
       };
 
+      const targetNode = currentNodes.find(n => n.id === id);
+      let isMirrorTriggered = false;
+      let assignedMirrorGroupId = '';
+      let mirrorCloneNode: TaskNode | null = null;
+      let targetOldParent: TaskNode | null = null;
+
+      if (targetNode) {
+        const oldParentId = targetNode.parentId;
+        const oldParent = oldParentId ? currentNodes.find(p => p.id === oldParentId) : null;
+        targetOldParent = oldParent;
+        const isOldParentSubtask = oldParent && !oldParent.isContainer;
+        const isNewParentContainer = parent && parent.isContainer;
+
+        if (isOldParentSubtask && isNewParentContainer) {
+          isMirrorTriggered = true;
+          assignedMirrorGroupId = targetNode.mirrorGroupId || `mirror-${targetNode.id}-${Date.now()}`;
+        }
+      }
+
       const updatedList = currentNodes.map(n => {
         if (n.id === id) {
+          if (isMirrorTriggered) {
+            // Keep original parent/coordinates, but add mirrorGroupId and update timestamp
+            const updatedOriginal = {
+              ...n,
+              mirrorGroupId: assignedMirrorGroupId,
+              mirrorParentId: targetOldParent ? targetOldParent.id : undefined,
+              mirrorParentText: targetOldParent ? targetOldParent.text : undefined,
+              updatedAt: new Date().toISOString()
+            };
+
+            // Compute mirror clone coordinates and container place
+            let targetX = newX !== undefined ? newX : n.x;
+            let targetY = newY !== undefined ? newY : n.y;
+            let updatedContainerPlace = undefined;
+            if (parent && parent.isContainer) {
+              updatedContainerPlace = `${parent.text} (X: ${Math.round(parent.x)}, Y: ${Math.round(parent.y)})`;
+            }
+
+            mirrorCloneNode = {
+              ...n,
+              id: 'node-' + generateId(),
+              x: Math.round(targetX),
+              y: Math.round(targetY),
+              parentId: newParentId,
+              color: parentColor || n.color,
+              isFloating: false,
+              containerPlace: updatedContainerPlace,
+              mirrorGroupId: assignedMirrorGroupId,
+              mirrorParentId: targetOldParent ? targetOldParent.id : undefined,
+              mirrorParentText: targetOldParent ? targetOldParent.text : undefined,
+              updatedAt: new Date().toISOString()
+            };
+
+            return updatedOriginal;
+          }
+
           // Calculate non-overlapping coordinates if re-parented to a non-container task node
           let targetX = newX !== undefined ? newX : n.x;
           let targetY = newY !== undefined ? newY : n.y;
@@ -3194,11 +3249,16 @@ export default function App() {
         return n;
       });
 
+      let finalList = updatedList;
+      if (mirrorCloneNode) {
+        finalList = [...updatedList, mirrorCloneNode];
+      }
+
       return {
         ...prev,
         nodes: {
           ...prev.nodes,
-          [pid]: syncCompletion(updatedList)
+          [pid]: syncCompletion(finalList)
         }
       };
     });
@@ -3962,39 +4022,91 @@ export default function App() {
       const currentNodes = prev.nodes[pid] || [];
       const targetNode = currentNodes.find(n => n.id === updatedNode.id);
       
+      let mirrorCloneNode: TaskNode | null = null;
+      let assignedMirrorGroupId = '';
+      let isMirrorTriggered = false;
+
+      let adjustedUpdatedNode = { ...updatedNode };
+
+      if (targetNode) {
+        const oldParentId = targetNode.parentId;
+        const oldParent = oldParentId ? currentNodes.find(p => p.id === oldParentId) : null;
+        const isOldParentSubtask = oldParent && !oldParent.isContainer;
+
+        const newParentId = updatedNode.parentId;
+        const newParent = newParentId ? currentNodes.find(p => p.id === newParentId) : null;
+        const isNewParentContainer = newParent && newParent.isContainer;
+
+        if (isOldParentSubtask && isNewParentContainer) {
+          isMirrorTriggered = true;
+          assignedMirrorGroupId = targetNode.mirrorGroupId || `mirror-${targetNode.id}-${Date.now()}`;
+          
+          adjustedUpdatedNode = {
+            ...updatedNode,
+            parentId: targetNode.parentId,
+            x: targetNode.x,
+            y: targetNode.y,
+            isFloating: targetNode.isFloating,
+            containerPlace: targetNode.containerPlace,
+            mirrorGroupId: assignedMirrorGroupId,
+            mirrorParentId: oldParent ? oldParent.id : undefined,
+            mirrorParentText: oldParent ? oldParent.text : undefined
+          };
+
+          const parentColor = newParent ? newParent.color : '';
+          const updatedContainerPlace = `${newParent.text} (X: ${Math.round(newParent.x)}, Y: ${Math.round(newParent.y)})`;
+
+          mirrorCloneNode = {
+            ...updatedNode,
+            id: 'node-' + generateId(),
+            parentId: newParentId,
+            color: parentColor || updatedNode.color,
+            isFloating: false,
+            containerPlace: updatedContainerPlace,
+            mirrorGroupId: assignedMirrorGroupId,
+            mirrorParentId: oldParent ? oldParent.id : undefined,
+            mirrorParentText: oldParent ? oldParent.text : undefined,
+            updatedAt: new Date().toISOString()
+          };
+        }
+      }
+
       const nodeWithTimeStamp = {
-        ...updatedNode,
+        ...adjustedUpdatedNode,
         updatedAt: new Date().toISOString()
       };
 
-      if (targetNode && targetNode.text !== updatedNode.text) {
+      if (targetNode && targetNode.text !== adjustedUpdatedNode.text) {
         const isPlaceholder = (t: string) => {
           const lower = t.toLowerCase();
           return lower.includes('новая подзадача') || lower.includes('плавающая задача') || lower.includes('новые задачи') || lower.includes('новый контейнер') || lower.includes('новая задача') || t.trim() === '';
         };
 
         const wasPlaceholder = isPlaceholder(targetNode.text);
-        const isNowPlaceholder = isPlaceholder(updatedNode.text);
+        const isNowPlaceholder = isPlaceholder(adjustedUpdatedNode.text);
 
-        if ((wasPlaceholder && !isNowPlaceholder) || updatedNode.estimatedTime === 30 || updatedNode.estimatedTime === undefined) {
+        if ((wasPlaceholder && !isNowPlaceholder) || adjustedUpdatedNode.estimatedTime === 30 || adjustedUpdatedNode.estimatedTime === undefined) {
           const allWorkspaceNodes = Object.values(prev.nodes).flat();
-          const suggested = suggestEstimatedTime(updatedNode.text, allWorkspaceNodes);
+          const suggested = suggestEstimatedTime(adjustedUpdatedNode.text, allWorkspaceNodes);
           if (suggested !== undefined) {
             nodeWithTimeStamp.estimatedTime = suggested;
           }
         }
       }
 
-      let updatedList = currentNodes.map(n => n.id === updatedNode.id ? nodeWithTimeStamp : n);
+      let updatedList = currentNodes.map(n => n.id === adjustedUpdatedNode.id ? nodeWithTimeStamp : n);
+      if (mirrorCloneNode) {
+        updatedList = [...updatedList, mirrorCloneNode];
+      }
       
       // If completed state was toggled from details panel, sync all descendants
-      if (targetNode && targetNode.completed !== updatedNode.completed) {
-        updatedList = toggleNodeAndDescendants(updatedNode.id, updatedNode.completed, updatedList);
+      if (targetNode && targetNode.completed !== adjustedUpdatedNode.completed) {
+        updatedList = toggleNodeAndDescendants(adjustedUpdatedNode.id, adjustedUpdatedNode.completed, updatedList);
       }
 
       // If archived state was toggled, sync all descendants
-      if (targetNode && targetNode.archived !== updatedNode.archived) {
-        updatedList = toggleNodeArchive(updatedNode.id, !!updatedNode.archived, updatedList);
+      if (targetNode && targetNode.archived !== adjustedUpdatedNode.archived) {
+        updatedList = toggleNodeArchive(adjustedUpdatedNode.id, !!adjustedUpdatedNode.archived, updatedList);
       }
 
       // Automatically reconcile bottom-up completion constraints

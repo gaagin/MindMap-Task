@@ -935,6 +935,25 @@ export default function MobileListView({
 
                         {/* Highly compressed inline metadata on main line to avoid extra height lines */}
                         <div className="inline-flex items-center gap-1.5 text-[9.5px] font-mono select-none">
+                          {node.mirrorParentText && (
+                            <span 
+                              className="inline-flex items-center gap-1 px-1 bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 text-[8.5px] font-bold rounded-sm uppercase cursor-pointer"
+                              title={`Связано с родительской задачей: ${node.mirrorParentText}. Нажмите, чтобы перейти.`}
+                              onClick={(e) => {
+                                if (node.mirrorParentId && onSelectNode) {
+                                  const exists = nodes.some(n => n.id === node.mirrorParentId);
+                                  if (exists) {
+                                    e.stopPropagation();
+                                    onSelectNode(node.mirrorParentId);
+                                  }
+                                }
+                              }}
+                            >
+                              <span>🔗</span>
+                              <span className="truncate max-w-[80px]">{node.mirrorParentText}</span>
+                            </span>
+                          )}
+
                           {node.priority !== 'none' && (
                             <span className={`px-1 rounded-sm font-bold text-[9px] uppercase border ${pMeta.bg} ${pMeta.border} ${pMeta.text}`}>
                               {node.priority}
