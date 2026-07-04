@@ -4770,7 +4770,7 @@ export default function App() {
         )}
 
         {/* ALWAYS VISIBLE Mobile Bottom Action and Views Bar */}
-        <div className="fixed bottom-0 left-0 right-0 z-[110] flex sm:hidden flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_12px_rgba(0,0,0,0.08)] border-t border-slate-200 dark:border-slate-800 shrink-0 select-none">
+        <div className={`fixed bottom-0 left-0 right-0 z-[110] ${isDrawerOpen ? 'hidden' : 'flex'} sm:hidden flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_12px_rgba(0,0,0,0.08)] border-t border-slate-200 dark:border-slate-800 shrink-0 select-none`}>
           {/* Row 2: Action controls */}
           <header className="h-14 flex items-center justify-between px-3 w-full">
             {/* Left: Hamburger menu & Undo/Cancel */}

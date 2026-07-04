@@ -1671,7 +1671,7 @@ export default function TaskDetailsPanel({
     return (
       <div 
         onPaste={handleAsidePaste}
-        className="fixed inset-0 bg-slate-100 dark:bg-slate-950 z-[100] flex flex-col h-screen w-screen overflow-hidden font-sans select-none pb-[100px] sm:pb-0"
+        className="fixed inset-0 bg-slate-100 dark:bg-slate-950 z-[100] flex flex-col h-screen w-screen overflow-hidden font-sans select-none"
       >
         {/* HEADER BAR */}
         <div className="h-14 px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 shadow-xs">
@@ -3611,13 +3611,29 @@ export default function TaskDetailsPanel({
     <>
       <aside 
         onPaste={handleAsidePaste}
-        className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out pb-[100px] sm:pb-0"
+        className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out"
       >
       {/* Header */}
-      <div className="h-16 px-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 font-sans flex items-center gap-2 truncate max-w-[180px] sm:max-w-[250px] md:max-w-[280px]">
-          <Layers className="w-4 h-4 text-indigo-500 shrink-0" /> <span className="truncate">{node.text}</span>
-        </h3>
+      <div className="h-16 px-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <Layers className="w-4 h-4 text-indigo-500 shrink-0" />
+          <input
+            type="text"
+            value={node.text}
+            onChange={(e) => handlePropChange('text', e.target.value)}
+            onFocus={() => {
+              setOriginalText(node.text);
+              setOriginalNotes(node.notes || '');
+            }}
+            onBlur={() => {
+              if (node.text !== originalText) {
+                recordHistoryVersion(originalText, originalNotes, 'Правка названия (боковая панель)');
+              }
+            }}
+            className="w-full text-sm font-semibold bg-transparent border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 focus:bg-slate-50 focus:dark:bg-slate-800 px-2 py-1 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 font-sans transition-colors"
+            placeholder="Введите название задачи..."
+          />
+        </div>
         <div className="flex items-center gap-1.55">
           {/* Quick header copy link button */}
           <button 
