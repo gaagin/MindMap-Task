@@ -192,6 +192,54 @@ export default function TaskDetailsPanel({
   const [detailsSubTab, setDetailsSubTab] = useState<'main' | 'dates' | 'tags'>('main');
   const [blockerSearch, setBlockerSearch] = useState('');
 
+  // GTD sorting wizard states
+  const [isGTDWizardOpen, setIsGTDWizardOpen] = useState(false);
+  const [gtdFlow, setGtdFlow] = useState<'inbox' | 'next_actions' | 'waiting' | 'projects' | 'calendar' | 'generic'>('inbox');
+  const [gtdStep, setGtdStep] = useState<string>('start');
+  const [gtdMoveResult, setGtdMoveResult] = useState<string | null>(null);
+  const [selectedGtdDate, setSelectedGtdDate] = useState<string>('');
+  const [manualContainerId, setManualContainerId] = useState<string>('');
+  const [gtdWaitingComment, setGtdWaitingComment] = useState<string>('');
+
+  const detectAndResetGTDFlow = () => {
+    if (!node) return;
+    const parentContainer = node.parentId ? allNodes.find(p => p.id === node.parentId && (p.isContainer || p.isWorkflowRectangle)) : null;
+    const text = parentContainer?.text?.toLowerCase() || '';
+    
+    if (!parentContainer || text.includes('входящ') || text.includes('inbox') || text.includes('вход')) {
+      setGtdFlow('inbox');
+    } else if (text.includes('следующ') || text.includes('next') || text.includes('очередь')) {
+      setGtdFlow('next_actions');
+    } else if (text.includes('ожидан') || text.includes('wait') || text.includes('делегир')) {
+      setGtdFlow('waiting');
+    } else if (text.includes('проект') || text.includes('project')) {
+      setGtdFlow('projects');
+    } else if (text.includes('календар') || text.includes('calendar') || text.includes('дата')) {
+      setGtdFlow('calendar');
+    } else {
+      setGtdFlow('generic');
+    }
+    setGtdStep('start');
+    setGtdMoveResult(null);
+    setSelectedGtdDate('');
+    setManualContainerId('');
+    setGtdWaitingComment('');
+  };
+
+  React.useEffect(() => {
+    detectAndResetGTDFlow();
+    
+    // Automatically expand GTD assistant for Inbox tasks or nodes with no container parent
+    if (node && !node.isContainer && !node.isWorkflowRectangle) {
+      const parentContainer = node.parentId ? allNodes.find(n => n.id === node.parentId && n.isContainer) : null;
+      const text = parentContainer?.text?.toLowerCase() || '';
+      const isInbox = !parentContainer || text.includes('входящ') || text.includes('inbox') || text.includes('вход');
+      if (isInbox) {
+        setIsGTDWizardOpen(true);
+      }
+    }
+  }, [node?.id]);
+
   React.useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab, node?.id]);
@@ -1036,6 +1084,94 @@ export default function TaskDetailsPanel({
       [key]: value,
       updatedAt: new Date().toISOString()
     });
+  };
+
+  // GTD Sorter Action Resolvers
+  const [pendingGtdType, setPendingGtdType] = useState<string>('');
+  const [pendingGtdDate, setPendingGtdDate] = useState<string>('');
+
+  const findGTDContainer = (type: string) => {
+    if (!node) return null;
+    const projectContainers = allNodes.filter(n => n.projectId === node.projectId && (n.isContainer || n.isWorkflowRectangle));
+    
+    const searchTerms: Record<string, string[]> = {
+      inbox: ['inbox', 'входящ', 'вход'],
+      trash: ['trash', 'корзин', 'удалить', 'delete'],
+      someday: ['someday', 'maybe', 'когда-нибудь', 'может быть', 'инкубатор'],
+      reference: ['reference', 'справоч', 'справка', 'материал', 'ссылк'],
+      do_it: ['do it', 'сделать', 'выполнить', 'прямо сейчас', '2 мин', 'do_it'],
+      waiting: ['waiting', 'ожида', 'делегир', 'delegate'],
+      calendar: ['calendar', 'календар', 'дата', 'время'],
+      next_actions: ['next action', 'следующие действия', 'следующ', 'очередь'],
+      projects: ['project', 'проект', 'многошаг']
+    };
+
+    const terms = searchTerms[type];
+    if (!terms) return null;
+    
+    for (const term of terms) {
+      const found = projectContainers.find(c => c.text && c.text.toLowerCase().includes(term.toLowerCase()));
+      if (found) return found;
+    }
+    
+    return null;
+  };
+
+  const handleGtdAction = (
+    type: 'inbox' | 'trash' | 'someday' | 'reference' | 'do_it' | 'waiting' | 'calendar' | 'next_actions' | 'projects', 
+    dateStr?: string
+  ) => {
+    if (!node || !onUpdateNodeParent) return;
+    
+    const container = findGTDContainer(type);
+    if (container) {
+      onUpdateNodeParent(node.id, container.id, container.x, container.y);
+      
+      let updatedNode = { ...node };
+      let updatedPlace = `${container.text} (X: ${Math.round(container.x)}, Y: ${Math.round(container.y)})`;
+
+      if (type === 'calendar' && dateStr) {
+        updatedNode.dueDate = dateStr;
+      }
+      
+      onUpdateNode({
+        ...updatedNode,
+        parentId: container.id,
+        containerPlace: updatedPlace
+      });
+
+      setGtdMoveResult(`Задача успешно перемещена в контейнер «${container.text}»!`);
+      setGtdStep('done');
+    } else {
+      setPendingGtdType(type);
+      setPendingGtdDate(dateStr || '');
+      setGtdStep('manual_mapping');
+    }
+  };
+
+  const handleManualMappingSubmit = () => {
+    if (!node || !onUpdateNodeParent || !manualContainerId) return;
+    
+    const container = allNodes.find(c => c.id === manualContainerId);
+    if (!container) return;
+
+    onUpdateNodeParent(node.id, container.id, container.x, container.y);
+
+    let updatedNode = { ...node };
+    let updatedPlace = `${container.text} (X: ${Math.round(container.x)}, Y: ${Math.round(container.y)})`;
+
+    if (pendingGtdType === 'calendar' && pendingGtdDate) {
+      updatedNode.dueDate = pendingGtdDate;
+    }
+
+    onUpdateNode({
+      ...updatedNode,
+      parentId: container.id,
+      containerPlace: updatedPlace
+    });
+
+    setGtdMoveResult(`Задача успешно перемещена в контейнер «${container.text}»!`);
+    setGtdStep('done');
   };
 
   // Version History record helper
@@ -3556,48 +3692,7 @@ export default function TaskDetailsPanel({
 
       {activeTab === 'details' && (
         <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900">
-          {/* Sticky Name / Heading Header - Always on View */}
-          <div className="px-6 py-4 border-b border-slate-150 dark:border-slate-805 bg-slate-50/15 dark:bg-slate-900/10 space-y-2 shrink-0 shadow-xs">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                Текст задачи (ветвь)
-              </label>
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className={`text-[10px] font-bold flex items-center gap-1 cursor-pointer hover:underline transition-colors ${
-                  copied ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400 font-semibold'
-                }`}
-                title="Получить прямую ссылку"
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-3 h-3 text-emerald-500" /> Ссылка скопирована!
-                  </>
-                ) : (
-                  <>
-                    <LinkIcon className="w-3 h-3" /> Копировать ссылку на задачу
-                  </>
-                )}
-              </button>
-            </div>
-            <textarea
-              value={node.text}
-              onChange={(e) => handlePropChange('text', e.target.value)}
-              onFocus={() => {
-                setOriginalText(node.text);
-                setOriginalNotes(node.notes || '');
-              }}
-              onBlur={() => {
-                if (node.text !== originalText) {
-                  recordHistoryVersion(originalText, originalNotes, 'Правка названия');
-                }
-              }}
-              className="w-full text-base font-semibold px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-sans"
-              rows={2}
-              placeholder="Введите название задачи..."
-            />
-          </div>
+
 
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
             {node.parentId && (() => {
@@ -3690,6 +3785,794 @@ export default function TaskDetailsPanel({
 
         {/* Main Sub-tab Container */}
         <div className={detailsSubTab === 'main' ? 'space-y-6' : 'hidden'}>
+          {/* GTD Decision Tree Assistant */}
+          {!node.isContainer && !node.isWorkflowRectangle && (
+            <div className="space-y-3 bg-gradient-to-br from-indigo-50/70 to-purple-50/70 dark:from-indigo-950/20 dark:to-purple-950/20 p-4 rounded-xl border border-indigo-100/80 dark:border-indigo-900/50 shadow-xs">
+              <div 
+                className="flex items-center justify-between cursor-pointer select-none"
+                onClick={() => setIsGTDWizardOpen(!isGTDWizardOpen)}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base">⚡</span>
+                  <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">
+                    GTD Помощник Сортировки
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    {isGTDWizardOpen ? 'Скрыть' : 'Открыть'}
+                  </span>
+                  {isGTDWizardOpen ? (
+                    <ChevronUp className="w-4 h-4 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                  )}
+                </div>
+              </div>
+
+              {isGTDWizardOpen && (
+                <div className="pt-2 border-t border-indigo-100/50 dark:border-indigo-900/40 space-y-3 text-xs text-slate-700 dark:text-slate-300">
+                  {/* Flow Header with dynamic current place info */}
+                  <div className="bg-white/60 dark:bg-slate-900/40 p-2.5 rounded-lg border border-indigo-50 dark:border-indigo-950/50 flex flex-col gap-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Текущий поток:</span>
+                      <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full font-bold uppercase">
+                        {gtdFlow === 'inbox' && 'Входящие 📥'}
+                        {gtdFlow === 'next_actions' && 'Следующие действия ⚡'}
+                        {gtdFlow === 'waiting' && 'В ожидании ⏳'}
+                        {gtdFlow === 'projects' && 'Проекты 📁'}
+                        {gtdFlow === 'calendar' && 'Календарь 📅'}
+                        {gtdFlow === 'generic' && 'Общий поток 📋'}
+                      </span>
+                    </div>
+                    {node.containerPlace && (
+                      <span className="text-[9px] text-slate-500 font-mono mt-1 block">
+                        📍 Расположение: {node.containerPlace}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* STEP 1: Inbox standard flow */}
+                  {gtdFlow === 'inbox' && (
+                    <div className="space-y-3">
+                      {gtdStep === 'start' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Требует ли эта задача какого-либо физического действия в будущем?
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('is_multi_step')}
+                              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Да 👍
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('non_actionable')}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Нет 👎
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {gtdStep === 'non_actionable' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Так как действие не требуется, что нужно сделать с этим элементом?
+                          </p>
+                          <div className="flex flex-col gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('trash')}
+                              className="w-full text-left p-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 text-rose-700 dark:text-rose-300 rounded-lg font-medium flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              🗑️ Выбросить в Корзину / Удалить
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('someday')}
+                              className="w-full text-left p-2.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/20 dark:hover:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-lg font-medium flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              ⏳ Отложить в Когда-нибудь / Может быть
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('reference')}
+                              className="w-full text-left p-2.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/20 dark:hover:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg font-medium flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              📂 Сохранить как Справочный материал
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('start')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-2"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+
+                      {gtdStep === 'is_multi_step' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Это многошаговое дело (Проект)?
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            Требуется ли для достижения желаемого результата более одного физического действия/шага?
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('projects')}
+                              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Да (Проект) 📁
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('under_2_mins')}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Нет (1 действие) ⚡
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('start')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-2"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+
+                      {gtdStep === 'under_2_mins' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Займет ли выполнение действия меньше 2 минут?
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            Правило 2 минут: если дело можно сделать быстро, сделайте это немедленно, чтобы не тратить время на учет задачи.
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('do_it')}
+                              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Да (Сделать сейчас)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('delegate_or_defer')}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Нет (Займет больше)
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('is_multi_step')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-2"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+
+                      {gtdStep === 'delegate_or_defer' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Должны ли вы делать это лично?
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            Если задачу можно перепоручить другому человеку — делегируйте её.
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('waiting')}
+                              className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Нет (Делегировать)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('defer_options')}
+                              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Да (Сделать самому)
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('under_2_mins')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-2"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+
+                      {gtdStep === 'defer_options' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Нужно ли сделать это в строго определенный день или время?
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('set_date')}
+                              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Да (В Календарь) 📅
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('next_actions')}
+                              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Нет (В Следующие действия) ⚡
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('delegate_or_defer')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-1"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+
+                      {gtdStep === 'set_date' && (
+                        <div className="space-y-2.5 bg-white/40 dark:bg-slate-900/40 p-3 rounded-lg border border-indigo-100/50 dark:border-indigo-900/30">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase block">
+                            Установите дату для Календаря:
+                          </label>
+                          <input
+                            type="date"
+                            value={selectedGtdDate}
+                            onChange={(e) => setSelectedGtdDate(e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs dark:text-slate-100"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleGtdAction('calendar', selectedGtdDate)}
+                            disabled={!selectedGtdDate}
+                            className={`w-full py-1.5 rounded-md font-bold text-xs cursor-pointer transition-colors text-center ${
+                              selectedGtdDate ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-slate-200 dark:bg-slate-850 text-slate-400 cursor-not-allowed'
+                            }`}
+                          >
+                            Подтвердить и перенести 📅
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('defer_options')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-1"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* STEP 2: Next Actions flow */}
+                  {gtdFlow === 'next_actions' && (
+                    <div className="space-y-3">
+                      {gtdStep === 'start' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Эта задача в списке Следующих действий. Каков текущий статус?
+                          </p>
+                          <div className="flex flex-col gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateNode({
+                                  ...node,
+                                  completed: true,
+                                  progress: 100,
+                                  status: 'done'
+                                });
+                                setGtdMoveResult('Отлично! Задача успешно отмечена как выполненная ✓');
+                                setGtdStep('done');
+                              }}
+                              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              ✓ Выполнено прямо сейчас!
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('delegate_or_defer_next')}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              ⏳ Отложить / Делегировать / Сдвинуть
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('non_actionable_next')}
+                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 text-rose-700 dark:text-rose-300 font-bold rounded-lg cursor-pointer text-center text-[11px]"
+                            >
+                              🗑️ Потеряла актуальность (В Корзину / Архив)
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {gtdStep === 'delegate_or_defer_next' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Что сделать с этой задачей?
+                          </p>
+                          <div className="flex flex-col gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('waiting')}
+                              className="w-full text-left p-2 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/10 dark:hover:bg-amber-950/20 text-amber-700 dark:text-amber-300 rounded-lg font-medium flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              👥 Делегировать (В список Ожидания)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('set_date_next')}
+                              className="w-full text-left p-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/10 dark:hover:bg-indigo-950/20 text-indigo-700 dark:text-indigo-300 rounded-lg font-medium flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              📅 Перенести на конкретную дату (Календарь)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('someday')}
+                              className="w-full text-left p-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg font-medium flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              ✨ Отправить в Когда-нибудь / Может быть
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('start')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-1"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+
+                      {gtdStep === 'set_date_next' && (
+                        <div className="space-y-2.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase block">
+                            Установите новую дату выполнения:
+                          </label>
+                          <input
+                            type="date"
+                            value={selectedGtdDate}
+                            onChange={(e) => setSelectedGtdDate(e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-xs dark:text-slate-100"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleGtdAction('calendar', selectedGtdDate)}
+                            disabled={!selectedGtdDate}
+                            className={`w-full py-1.5 rounded-md font-bold text-xs cursor-pointer text-center ${
+                              selectedGtdDate ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-slate-200 dark:bg-slate-850 text-slate-400 cursor-not-allowed'
+                            }`}
+                          >
+                            Перенести в Календарь 📅
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('delegate_or_defer_next')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-1"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+
+                      {gtdStep === 'non_actionable_next' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Куда отправить потерявшую актуальность задачу?
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('trash')}
+                              className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              В Корзину 🗑️
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handlePropChange('archived', true);
+                                setGtdMoveResult('Задача успешно отправлена в архив!');
+                                setGtdStep('done');
+                              }}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              В Архив 📦
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('start')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-1"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* STEP 3: Waiting Flow */}
+                  {gtdFlow === 'waiting' && (
+                    <div className="space-y-3">
+                      {gtdStep === 'start' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Задача находится в списке Ожидания. Ответ получен или исполнитель завершил работу?
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('received')}
+                              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Да, готово! 👍
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('not_received')}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Нет, жду ⏳
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {gtdStep === 'received' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Куда направить задачу для дальнейших шагов?
+                          </p>
+                          <div className="flex flex-col gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('next_actions')}
+                              className="w-full text-left p-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/10 dark:hover:bg-indigo-950/20 text-indigo-700 dark:text-indigo-300 rounded-lg font-medium flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              ⚡ В список Следующих действий
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateNode({
+                                  ...node,
+                                  completed: true,
+                                  progress: 100,
+                                  status: 'done'
+                                });
+                                setGtdMoveResult('Поздравляем! Задача успешно завершена ✓');
+                                setGtdStep('done');
+                              }}
+                              className="w-full text-left p-2.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/10 dark:hover:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 rounded-lg font-medium flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              ✓ Полностью закрыть задачу
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('start')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-1"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+
+                      {gtdStep === 'not_received' && (
+                        <div className="space-y-2.5 bg-white/40 dark:bg-slate-900/40 p-3 rounded-lg border border-indigo-150/40 dark:border-indigo-900/30">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Хотите добавить примечание/комментарий о текущем статусе ожидания?
+                          </p>
+                          <textarea
+                            value={gtdWaitingComment}
+                            onChange={(e) => setGtdWaitingComment(e.target.value)}
+                            placeholder="Например: напомнил Сергею 04.07, обещал сделать к среде..."
+                            rows={2}
+                            className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-xs dark:text-slate-100 font-sans"
+                          />
+                          <div className="grid grid-cols-2 gap-2 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (gtdWaitingComment.trim()) {
+                                  const user = auth.currentUser;
+                                  const commenterName = user?.displayName || user?.email || 'Пользователь';
+                                  const commenterPhoto = user?.photoURL || '';
+                                  const commenterUid = user?.uid || 'anonymous';
+
+                                  const newComment = {
+                                    id: 'comment-' + generateId(),
+                                    userId: commenterUid,
+                                    userName: commenterName,
+                                    userPhoto: commenterPhoto,
+                                    text: gtdWaitingComment,
+                                    createdAt: new Date().toISOString()
+                                  };
+                                  onUpdateNode({
+                                    ...node,
+                                    comments: [...(node.comments || []), newComment]
+                                  });
+                                }
+                                setGtdMoveResult('Статус зафиксирован! Продолжаем ожидать.');
+                                setGtdStep('done');
+                              }}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer text-center text-xs"
+                            >
+                              Сохранить статус
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('start')}
+                              className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg cursor-pointer text-center text-xs"
+                            >
+                              Отмена
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* STEP 4: Projects Flow */}
+                  {gtdFlow === 'projects' && (
+                    <div className="space-y-3">
+                      {gtdStep === 'start' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Этот элемент является Проектом. Сформулировано ли следующее конкретное действие для проекта?
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('has_action')}
+                              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Да 👍
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (onAddChildNode) {
+                                  onAddChildNode(node.id, true);
+                                  setGtdMoveResult('Подзадача успешно добавлена в структуру проекта! Вы можете переименовать её в списке подзадач ниже.');
+                                  setGtdStep('done');
+                                }
+                              }}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              Создать шаг ➕
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {gtdStep === 'has_action' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Где находится это действие сейчас?
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            Все подзадачи проекта должны быть распределены по соответствующим спискам (Следующие действия, Календарь и т.д.) для своевременного выполнения.
+                          </p>
+                          <div className="flex flex-col gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setGtdMoveResult('Отлично! Продолжайте регулярно планировать и проводить обзоры этого проекта.');
+                                setGtdStep('done');
+                              }}
+                              className="w-full text-center p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold cursor-pointer"
+                            >
+                              Они уже в списках! 👍
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('start')}
+                              className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-1"
+                            >
+                              ← Назад
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* STEP 5: Calendar Flow */}
+                  {gtdFlow === 'calendar' && (
+                    <div className="space-y-3">
+                      {gtdStep === 'start' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Задача запланирована в Календаре {node.dueDate ? `на ${node.dueDate}` : ''}. Наступил ли запланированный день?
+                          </p>
+                          <div className="flex flex-col gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateNode({
+                                  ...node,
+                                  completed: true,
+                                  progress: 100,
+                                  status: 'done'
+                                });
+                                setGtdMoveResult('Ура! Задача успешно выполнена в намеченный срок ✓');
+                                setGtdStep('done');
+                              }}
+                              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              ✓ Да, я выполнил задачу!
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGtdStep('reschedule')}
+                              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer text-center"
+                            >
+                              ⏳ Нет, нужно перенести дату
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleGtdAction('next_actions')}
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg cursor-pointer text-center text-[11px]"
+                            >
+                              ⚡ Перенести в Следующие действия (без жесткой даты)
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {gtdStep === 'reschedule' && (
+                        <div className="space-y-2.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase block">
+                            Выберите новую дату:
+                          </label>
+                          <input
+                            type="date"
+                            value={selectedGtdDate}
+                            onChange={(e) => setSelectedGtdDate(e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-xs dark:text-slate-100"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onUpdateNode({
+                                ...node,
+                                dueDate: selectedGtdDate
+                              });
+                              setGtdMoveResult(`Дата успешно обновлена на ${selectedGtdDate}!`);
+                              setGtdStep('done');
+                            }}
+                            disabled={!selectedGtdDate}
+                            className={`w-full py-1.5 rounded-md font-bold text-xs cursor-pointer text-center ${
+                              selectedGtdDate ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-slate-200 dark:bg-slate-850 text-slate-400 cursor-not-allowed'
+                            }`}
+                          >
+                            Обновить дату 📅
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGtdStep('start')}
+                            className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-1"
+                          >
+                            ← Назад
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* STEP 6: Generic / Fallback Flow */}
+                  {gtdFlow === 'generic' && (
+                    <div className="space-y-3">
+                      {gtdStep === 'start' && (
+                        <div className="space-y-2.5">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">
+                            Эта задача находится во внесистемной области. Вы хотите провести её классификацию по методу GTD?
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGtdFlow('inbox');
+                              setGtdStep('start');
+                            }}
+                            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer text-center font-bold"
+                          >
+                            Начать классификацию 🚀
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* MANUAL CONTAINER MAPPING FALLBACK (If fuzzy matching fails) */}
+                  {gtdStep === 'manual_mapping' && (
+                    <div className="space-y-2.5 p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-900/50">
+                      <p className="font-semibold text-slate-800 dark:text-slate-200">
+                        Контейнер не найден автоматически 🔍
+                      </p>
+                      <p className="text-[11px] text-slate-500 leading-normal">
+                        В текущем проекте не обнаружен контейнер, соответствующий шагу "{pendingGtdType === 'trash' ? 'Корзина' : pendingGtdType === 'someday' ? 'Когда-нибудь / Может быть' : pendingGtdType === 'reference' ? 'Справочник' : pendingGtdType === 'projects' ? 'Проекты' : pendingGtdType === 'waiting' ? 'В ожидании' : pendingGtdType === 'calendar' ? 'Календарь' : 'Следующие действия'}".
+                        Пожалуйста, выберите нужную область вручную:
+                      </p>
+                      <select
+                        value={manualContainerId}
+                        onChange={(e) => setManualContainerId(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-xs dark:text-slate-100 cursor-pointer"
+                      >
+                        <option value="">-- Выберите контейнер --</option>
+                        {allNodes
+                          .filter(n => (n.isContainer || n.isWorkflowRectangle) && n.id !== node.id && n.projectId === node.projectId)
+                          .map(c => (
+                            <option key={c.id} value={c.id}>
+                              📥 {c.text || 'Без названия'}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleManualMappingSubmit}
+                        disabled={!manualContainerId}
+                        className={`w-full py-1.5 rounded-md font-bold text-xs cursor-pointer text-center ${
+                          manualContainerId ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        Переместить в выбранный контейнер
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGtdStep('start')}
+                        className="text-[10px] text-slate-400 hover:underline cursor-pointer block mt-1 text-center w-full"
+                      >
+                        ← Сбросить / Назад
+                      </button>
+                    </div>
+                  )}
+
+                  {/* DONE STATE */}
+                  {gtdStep === 'done' && (
+                    <div className="space-y-3 bg-emerald-50 dark:bg-emerald-950/15 p-3.5 rounded-lg border border-emerald-100 dark:border-emerald-900/40 text-center">
+                      <div className="text-emerald-500 text-xl">🎉</div>
+                      <p className="font-bold text-slate-800 dark:text-slate-200 text-[13px]">
+                        Отлично! Сортировка шага завершена
+                      </p>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+                        {gtdMoveResult}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={detectAndResetGTDFlow}
+                        className="mt-1 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer text-xs"
+                      >
+                        Сортировать ещё раз 🚀
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Subtasks Section */}
         <div className="space-y-2 bg-[#FAFBFD]/40 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80">
           <div className="flex items-center justify-between">
