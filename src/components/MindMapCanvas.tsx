@@ -71,7 +71,7 @@ interface MindMapCanvasProps {
   onUpdateNodeParent: (id: string, newParentId: string | null, newX?: number, newY?: number) => void;
   onAddChildNode: (parentId: string) => void;
   onAddFloatingNode: (x: number, y: number, parentId?: string | null, customText?: string, extraFields?: Partial<TaskNode>) => void;
-  onAddContainerNode: (x: number, y: number) => void;
+  onAddContainerNode: (x: number, y: number, parentId?: string | null) => void;
   onAddInboxTask?: (text: string) => void;
   onDeleteNode: (id: string) => void;
   onToggleNodeCompleted: (id: string) => void;
@@ -387,6 +387,12 @@ export default function MindMapCanvas({
   const [isTouchSelecting, setIsTouchSelecting] = useState(false);
   const touchSelectionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isTouchSelectingRef = useRef(false);
+
+  // Click and tap tracking references for background node creation
+  const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const mouseDownTargetRef = useRef<HTMLElement | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const touchStartTargetRef = useRef<HTMLElement | null>(null);
 
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isAutoArranging, setIsAutoArranging] = useState(false);
@@ -904,6 +910,16 @@ export default function MindMapCanvas({
             >
               <Network className="w-3 h-3 text-white" />
               🟦 Прямоугольник Workflow
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddContainerNode(node.x, node.y, node.id);
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wide uppercase bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-transform hover:scale-105 cursor-pointer"
+            >
+              <span className="text-xs">📦</span>
+              Группа задач
             </button>
             <button
               onClick={(e) => {
@@ -2948,7 +2964,7 @@ export default function MindMapCanvas({
     if (target.closest('[data-node-id]')) return; // ignore nodes double clicks
 
     const coords = getCanvasCoordinates(e.clientX, e.clientY);
-    onAddFloatingNode(coords.x, coords.y, focusedContainerId);
+    onAddFloatingNode(coords.x, coords.y, focusedContainerId || focusedTaskId, undefined, { useExactCoordinates: true });
   };
 
   // Zoom limits
@@ -3118,11 +3134,11 @@ export default function MindMapCanvas({
   const getOverlapParent = (draggingId: string, newX: number, newY: number): TaskNode | undefined => {
     const draggingNode = nodes.find(n => n.id === draggingId);
     if (!draggingNode) return undefined;
-    if (draggingNode.isContainer) return undefined; // Containers can NEVER be parented or nested under other nodes
 
     // First attempt: Check for hover/overlap with regular non-container task nodes (containers can also overlap and snap here)
     const normalNodeOverlap = visibleNodes.find(otherNode => {
       if (otherNode.id === draggingId) return false;
+      if (draggingNode.isContainer) return false; // Containers cannot be parented under normal task nodes
       if (isDescendantOrSelf(otherNode.id, draggingId, nodes)) return false;
       if (otherNode.isContainer) return false;
 
@@ -3139,7 +3155,7 @@ export default function MindMapCanvas({
       if (isDescendantOrSelf(otherNode.id, draggingId, nodes)) return false;
       if (!otherNode.isContainer) return false;
 
-      if (draggingNode.isContainer) return false; // Containers cannot go inside other containers
+      // Relaxed constraint: Containers CAN go inside other containers
       if (focusedContainerId === otherNode.id) return false; // Do not overlap with the focused container itself in focus mode
 
       // Do not instantly snap to container during active drag if currently nested under a standard task parent
@@ -3182,6 +3198,10 @@ export default function MindMapCanvas({
     
     // Close dropdowns
     setIsElementDropdownOpen(false);
+
+    // Record mouse click start position and target
+    mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
+    mouseDownTargetRef.current = e.target as HTMLElement;
 
     // Deselect selected node when clicking on an empty space
     onSelectNode(null);
@@ -3564,8 +3584,35 @@ export default function MindMapCanvas({
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e?: React.MouseEvent) => {
     setIsPanning(false);
+
+    // If in focus mode, check if this was a simple click on empty space to create a task
+    const isFocusMode = !!(focusedContainerId || focusedTaskId);
+    if (e && isFocusMode && mouseDownPosRef.current && mouseDownTargetRef.current) {
+      const dx = e.clientX - mouseDownPosRef.current.x;
+      const dy = e.clientY - mouseDownPosRef.current.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      const target = mouseDownTargetRef.current;
+      // Ensure we clicked on empty canvas background, not on buttons, cards, inputs, etc.
+      if (
+        distance < 5 && 
+        !isButtonOrCardInput(e) && 
+        !target.closest('[data-node-id]') &&
+        !target.closest('button') &&
+        !target.closest('input') &&
+        !target.closest('select') &&
+        !target.closest('[data-drag-ignore]')
+      ) {
+        const coords = getCanvasCoordinates(e.clientX, e.clientY);
+        onAddFloatingNode(coords.x, coords.y, focusedContainerId || focusedTaskId, undefined, { useExactCoordinates: true });
+        
+        // Reset refs
+        mouseDownPosRef.current = null;
+        mouseDownTargetRef.current = null;
+      }
+    }
 
     if (resizingNodeId) {
       const finalResized = localNodes.find(n => n.id === resizingNodeId);
@@ -3721,6 +3768,10 @@ export default function MindMapCanvas({
     const touch = e.touches[0];
     const target = e.target as HTMLElement;
     
+    // Record touch start position and target for tap detection
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    touchStartTargetRef.current = target;
+
     // Ignore canvas pan if interacting with buttons
     if (
       target.closest('button') || 
@@ -4259,6 +4310,33 @@ export default function MindMapCanvas({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    // If in focus mode, check if this was a simple tap on empty space to create a task on touch screen
+    const isFocusMode = !!(focusedContainerId || focusedTaskId);
+    if (e.changedTouches && e.changedTouches.length === 1 && isFocusMode && touchStartPosRef.current && touchStartTargetRef.current) {
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - touchStartPosRef.current.x;
+      const dy = touch.clientY - touchStartPosRef.current.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      const target = touchStartTargetRef.current;
+      // Ensure we tapped on empty canvas background, not on buttons, cards, inputs, etc.
+      if (
+        distance < 10 && 
+        !target.closest('[data-node-id]') &&
+        !target.closest('button') &&
+        !target.closest('input') &&
+        !target.closest('select') &&
+        !target.closest('[data-drag-ignore]')
+      ) {
+        const coords = getCanvasCoordinates(touch.clientX, touch.clientY);
+        onAddFloatingNode(coords.x, coords.y, focusedContainerId || focusedTaskId, undefined, { useExactCoordinates: true });
+        
+        // Reset refs
+        touchStartPosRef.current = null;
+        touchStartTargetRef.current = null;
+      }
+    }
+
     if (resizingNodeId) {
       const finalResized = localNodes.find(n => n.id === resizingNodeId);
       if (finalResized) {
@@ -5486,7 +5564,7 @@ export default function MindMapCanvas({
         </div>
       </div>
 
-      <div className="absolute bottom-24 right-4 sm:bottom-6 sm:right-6 z-40">
+      <div className="absolute bottom-12 right-4 sm:bottom-4 sm:right-4 z-40">
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -5565,7 +5643,7 @@ export default function MindMapCanvas({
               onClick={() => {
                 const x = Math.round(-panX / zoom);
                 const y = Math.round(-panY / zoom);
-                onAddContainerNode(x, y);
+                onAddContainerNode(x, y, focusedTaskId || focusedContainerId || null);
                 setIsElementDropdownOpen(false);
               }}
               className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"

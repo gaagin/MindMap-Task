@@ -3361,7 +3361,7 @@ export default function App() {
     let targetX = Math.round(x);
     let targetY = Math.round(y);
 
-    if (parentId) {
+    if (parentId && !extraFields?.useExactCoordinates) {
       const parentNode = currentNodes.find(n => n.id === parentId);
       if (parentNode) {
         // Find a beautiful non-overlapping position radially on the appropriate side
@@ -3476,13 +3476,17 @@ export default function App() {
     setLastCreatedNodeId(newFloatingNode.id);
   };
 
-  // Add a fully independent styled container box anywhere on the canvas
-  const handleAddContainerNode = (x: number, y: number) => {
+  // Add a fully independent styled container box anywhere on the canvas (supports parenting)
+  const handleAddContainerNode = (x: number, y: number, parentId: string | null = null) => {
     const pid = state.activeProjectId;
     if (!pid) return;
 
     const currentNodes = state.nodes[pid] || [];
     pushToUndo(pid, currentNodes);
+
+    // If there is a parent container, set its color or position offset slightly if needed
+    const parentContainer = parentId ? currentNodes.find(n => n.id === parentId) : null;
+    const initialColor = parentContainer ? parentContainer.color : '#f59e0b';
 
     const newContainerNode: TaskNode = {
       id: 'node-' + generateId(),
@@ -3490,7 +3494,7 @@ export default function App() {
       text: 'Новая Область',
       x: Math.round(x),
       y: Math.round(y),
-      parentId: null, // independent root
+      parentId: parentId, // support adding inside a parent container
       isFloating: true,
       isContainer: true,
       priority: 'low',
@@ -3498,7 +3502,7 @@ export default function App() {
       notes: '',
       completed: false,
       files: [],
-      color: '#f59e0b' // Amber/orange default for container
+      color: initialColor
     };
 
     setState(prev => ({
@@ -4381,7 +4385,7 @@ export default function App() {
         )}
         
         {/* Workspace Top Action Bar Header */}
-        <header className={`${isViewFullScreen ? 'hidden' : ((focusedTaskId || focusedContainerId) ? 'hidden md:flex' : (isContainerFocused ? 'hidden md:flex' : 'flex'))} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
+        <header className={`${isViewFullScreen ? 'hidden' : 'hidden md:flex'} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
           (!currentUser || !googleToken)
             ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-900/40'
             : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800'
@@ -5068,7 +5072,7 @@ export default function App() {
 
         {/* The Mind Map Interactive Canvas Frame. Occupies 100% space! */}
         <div 
-          className="flex-1 w-full min-h-0 relative bg-[#FAFBFD] dark:bg-slate-950/20 pb-[140px] sm:pb-24 flex flex-col"
+          className="flex-1 w-full min-h-0 relative bg-[#FAFBFD] dark:bg-slate-950/20 pb-14 sm:pb-0 flex flex-col"
           onMouseDown={handleGlobalMouseDown}
           onMouseMove={handleGlobalMouseMove}
           onMouseUp={handleGlobalMouseUp}

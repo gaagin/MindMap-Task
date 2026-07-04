@@ -1915,7 +1915,7 @@ export default function CalendarView({
                     </div>
 
                     {/* Scrollable Time blocking timeline */}
-                    <div id="daily-time-blocking-scroll" className="flex-1 overflow-y-auto relative custom-scrollbar flex min-h-0" style={{ height: '480px' }}>
+                    <div id="daily-time-blocking-scroll" className="flex-1 overflow-y-auto relative custom-scrollbar flex min-h-0" style={{ minHeight: '300px' }}>
                       {/* Hour indicators labels */}
                       <div className="w-16 shrink-0 flex flex-col relative select-none pr-3">
                         {Array.from({ length: 24 }).map((_, h) => (

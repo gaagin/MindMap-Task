@@ -96,6 +96,7 @@ export interface TaskNode {
   isNotTask?: boolean; // Optional flag to mark task as a non-task (hide from all views)
   blockedBy?: string[]; // Optional array of node IDs that block this node
   defaultView?: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'; // Optional view mode to display by default when focused
+  useExactCoordinates?: boolean; // Special flag to skip radial placement and use click coordinates
 }
 
 export interface Project {

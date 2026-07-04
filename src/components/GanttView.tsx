@@ -277,7 +277,7 @@ export default function GanttView({
       className={`flex flex-col bg-[#FAFBFD] dark:bg-slate-900 font-sans overflow-hidden transition-all duration-200 ${
         isFullScreen 
           ? 'fixed inset-0 z-[150] w-screen h-screen' 
-          : 'w-full h-[calc(100vh-130px)] dark:bg-slate-950/20'
+          : 'w-full h-full dark:bg-slate-950/20'
       }`}
     >
       
