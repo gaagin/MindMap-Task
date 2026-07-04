@@ -1535,7 +1535,7 @@ export default function TaskDetailsPanel({
     return (
       <div 
         onPaste={handleAsidePaste}
-        className="fixed inset-0 bg-slate-100 dark:bg-slate-950 z-[100] flex flex-col h-screen w-screen overflow-hidden font-sans select-none"
+        className="fixed inset-0 bg-slate-100 dark:bg-slate-950 z-[100] flex flex-col h-screen w-screen overflow-hidden font-sans select-none pb-[100px] sm:pb-0"
       >
         {/* HEADER BAR */}
         <div className="h-14 px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 shadow-xs">
@@ -3475,7 +3475,7 @@ export default function TaskDetailsPanel({
     <>
       <aside 
         onPaste={handleAsidePaste}
-        className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out"
+        className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out pb-[100px] sm:pb-0"
       >
       {/* Header */}
       <div className="h-16 px-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">

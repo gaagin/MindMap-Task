@@ -16,6 +16,8 @@ import {
   Smartphone,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
+  Star,
   Cloud,
   Database,
   RefreshCw,
@@ -43,7 +45,9 @@ import {
   Maximize2,
   Minimize2,
   Shield,
-  Plus
+  Plus,
+  Copy,
+  FolderPlus
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime } from './utils';
@@ -832,6 +836,11 @@ export default function App() {
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
 
+  // Copying nodes / projects state
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [copySourceNodeIds, setCopySourceNodeIds] = useState<string[]>([]); // empty list indicates copying ALL nodes of current project
+  const [copyTargetProjectId, setCopyTargetProjectId] = useState<string>('');
+
   // Sync isDrawerOpen when selectedNodeId becomes null
   useEffect(() => {
     if (selectedNodeId === null) {
@@ -1266,6 +1275,33 @@ export default function App() {
   const [isContainerFocused, setIsContainerFocused] = useState(false);
   const [focusedContainerId, setFocusedContainerId] = useState<string | null>(null);
   const [isViewFullScreen, setIsViewFullScreen] = useState(false);
+
+  const [isBottomViewsExpanded, setIsBottomViewsExpanded] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_views_expanded');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('task_mindmap_views_expanded', String(isBottomViewsExpanded));
+  }, [isBottomViewsExpanded]);
+
+  // Auto-switch viewMode when a container or task enters focus
+  useEffect(() => {
+    const focusId = focusedTaskId || focusedContainerId;
+    if (focusId && state.activeProjectId) {
+      const activeProjectNodes = state.nodes[state.activeProjectId] || [];
+      const node = activeProjectNodes.find(n => n.id === focusId);
+      if (node && node.defaultView) {
+        setViewMode(node.defaultView);
+      } else {
+        setViewMode('canvas');
+      }
+    }
+  }, [focusedTaskId, focusedContainerId, state.activeProjectId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2331,6 +2367,45 @@ export default function App() {
     setPanY(0);
     setZoom(1);
     setSelectedNodeId(defaultRootNode.id);
+  };
+
+  const handleCreateTargetProject = (name: string) => {
+    if (!name.trim()) return;
+    const newProjId = 'p-' + generateId();
+    const defaultRootNode: TaskNode = {
+      id: 'node-' + generateId(),
+      projectId: newProjId,
+      text: `👑 ${name}`,
+      x: 0,
+      y: 0,
+      parentId: null,
+      priority: 'low',
+      tags: ['Главная'],
+      notes: `Вы создали новую интеллект-карту задач "${name}". Нажмите на кнопку "+" внизу карты, чтобы создать новую ветку!`,
+      completed: false,
+      files: [],
+      color: '#6366f1'
+    };
+
+    const newProject: Project = {
+      id: newProjId,
+      name,
+      folderId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tagCategories: []
+    };
+
+    setState(prev => ({
+      ...prev,
+      projects: [...prev.projects, newProject],
+      nodes: {
+        ...prev.nodes,
+        [newProjId]: [defaultRootNode]
+      }
+    }));
+
+    setCopyTargetProjectId(newProjId);
   };
 
   const handleCreateGtdWorkflow = () => {
@@ -3542,6 +3617,146 @@ export default function App() {
     }));
   };
 
+  const handlePerformCopy = (sourceNodeIds: string[], targetProjId: string, switchProject: boolean = true) => {
+    const sourceProjId = state.activeProjectId;
+    if (!sourceProjId || !targetProjId) return;
+
+    const sourceNodes = state.nodes[sourceProjId] || [];
+    const targetNodes = state.nodes[targetProjId] || [];
+
+    // If sourceNodeIds is empty, we copy ALL non-archived nodes of the current project!
+    const nodesToCopy = sourceNodeIds.length === 0 
+      ? sourceNodes.filter(n => !n.archived)
+      : sourceNodes.filter(n => sourceNodeIds.includes(n.id));
+
+    if (nodesToCopy.length === 0) return;
+
+    // Create a mapping of old ID -> new ID to maintain internal parent-child relationships
+    const idMap = new Map<string, string>();
+    nodesToCopy.forEach(n => {
+      idMap.set(n.id, 'node-' + generateId());
+    });
+
+    const duplicatedNodes = nodesToCopy.map(n => {
+      const newId = idMap.get(n.id)!;
+      
+      let newParentId: string | null = null;
+      if (n.parentId && idMap.has(n.parentId)) {
+        newParentId = idMap.get(n.parentId)!;
+      } else if (n.parentId && n.parentId === 'inbox') {
+        newParentId = 'inbox';
+      } else if (n.parentId && targetProjId === sourceProjId) {
+        newParentId = n.parentId;
+      }
+
+      // Symmetrical position adjustment: if copying to the SAME project, offset coordinates slightly to avoid direct overlaps!
+      const offset = targetProjId === sourceProjId ? 50 : 0;
+
+      // Update workflow connections internal links
+      const updatedWorkflowConnections = n.workflowConnections?.map(wc => {
+        return {
+          ...wc,
+          id: 'conn-' + generateId(),
+          toNodeId: idMap.has(wc.toNodeId) ? idMap.get(wc.toNodeId)! : wc.toNodeId
+        };
+      });
+
+      return {
+        ...n,
+        id: newId,
+        projectId: targetProjId,
+        parentId: newParentId,
+        x: n.x + offset,
+        y: n.y + offset,
+        workflowConnections: updatedWorkflowConnections,
+        updatedAt: new Date().toISOString()
+      };
+    });
+
+    pushToUndo(targetProjId, targetNodes);
+
+    setState(prev => {
+      const prevTargetNodes = prev.nodes[targetProjId] || [];
+      const mergedNodes = syncCompletion([...prevTargetNodes, ...duplicatedNodes]);
+      return {
+        ...prev,
+        activeProjectId: switchProject ? targetProjId : prev.activeProjectId,
+        nodes: {
+          ...prev.nodes,
+          [targetProjId]: mergedNodes
+        }
+      };
+    });
+
+    // Reset selection and close modal
+    setSelectedNodeIds([]);
+    setIsMultiSelectMode(false);
+    setIsCopyModalOpen(false);
+  };
+
+  const handleDuplicateProject = (projectId: string) => {
+    const projectToCopy = state.projects.find(p => p.id === projectId);
+    if (!projectToCopy) return;
+
+    const newProjectId = 'proj-' + generateId();
+    const newProjectName = `${projectToCopy.name} (Копия)`;
+
+    const newProject: Project = {
+      ...projectToCopy,
+      id: newProjectId,
+      name: newProjectName,
+      updatedAt: new Date().toISOString()
+    };
+
+    // Copy all nodes in this project
+    const originalNodes = state.nodes[projectId] || [];
+    const idMap = new Map<string, string>();
+    originalNodes.forEach(n => {
+      idMap.set(n.id, 'node-' + generateId());
+    });
+
+    const duplicatedNodes = originalNodes.map(n => {
+      const newId = idMap.get(n.id)!;
+      let newParentId: string | null = null;
+      if (n.parentId && idMap.has(n.parentId)) {
+        newParentId = idMap.get(n.parentId)!;
+      } else if (n.parentId && n.parentId === 'inbox') {
+        newParentId = 'inbox';
+      }
+
+      const updatedWorkflowConnections = n.workflowConnections?.map(wc => {
+        return {
+          ...wc,
+          id: 'conn-' + generateId(),
+          toNodeId: idMap.has(wc.toNodeId) ? idMap.get(wc.toNodeId)! : wc.toNodeId
+        };
+      });
+
+      return {
+        ...n,
+        id: newId,
+        projectId: newProjectId,
+        parentId: newParentId,
+        workflowConnections: updatedWorkflowConnections,
+        updatedAt: new Date().toISOString()
+      };
+    });
+
+    setState(prev => {
+      return {
+        ...prev,
+        projects: [...prev.projects, newProject],
+        nodes: {
+          ...prev.nodes,
+          [newProjectId]: syncCompletion(duplicatedNodes)
+        }
+      };
+    });
+
+    // Automatically select the new duplicated project
+    handleSelectProject(newProjectId);
+  };
+
   const handleBulkAddTag = (tag: string) => {
     const pid = state.activeProjectId;
     if (!pid || !tag.trim() || selectedNodeIds.length === 0) return;
@@ -4084,6 +4299,30 @@ export default function App() {
     window.location.reload();
   };
 
+  const focusedNodeId = focusedTaskId || focusedContainerId;
+  const focusedNode = state.activeProjectId && focusedNodeId
+    ? (state.nodes[state.activeProjectId] || []).find(n => n.id === focusedNodeId) || null
+    : null;
+
+  const handleToggleDefaultView = () => {
+    if (!focusedNode || !state.activeProjectId) return;
+    const isAlreadyDefault = focusedNode.defaultView === viewMode;
+    handleUpdateNode({
+      ...focusedNode,
+      defaultView: isAlreadyDefault ? undefined : viewMode
+    });
+  };
+
+  const viewsList = [
+    { id: 'canvas', name: 'Холст', icon: Network },
+    { id: 'kanban', name: 'Канбан', icon: Kanban },
+    { id: 'mobile-list', name: 'Списки', icon: Smartphone },
+    { id: 'calendar', name: 'Календарь', icon: Calendar },
+    { id: 'gantt', name: 'Ганнт', icon: GanttChart },
+    { id: 'table', name: 'Таблица', icon: Table },
+    { id: 'eisenhower', name: 'Матрица', icon: LayoutGrid },
+  ];
+
   const selectedNode = activeNodes.find(n => n.id === selectedNodeId) || null;
 
   const isNetworkFailure = sheetsError?.includes('Failed to fetch') || sheetsError?.includes('NetworkError');
@@ -4104,6 +4343,7 @@ export default function App() {
         onCreateProject={handleCreateProject}
         onRenameProject={handleRenameProject}
         onDeleteProject={handleDeleteProject}
+        onDuplicateProject={handleDuplicateProject}
         onMoveProject={handleMoveProject}
         onExportData={handleExportData}
         onImportData={handleImportData}
@@ -4141,7 +4381,7 @@ export default function App() {
         )}
         
         {/* Workspace Top Action Bar Header */}
-        <header className={`${isViewFullScreen ? 'hidden' : (isContainerFocused ? 'hidden md:flex' : 'hidden sm:flex')} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
+        <header className={`${isViewFullScreen ? 'hidden' : ((focusedTaskId || focusedContainerId) ? 'hidden md:flex' : (isContainerFocused ? 'hidden md:flex' : 'flex'))} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
           (!currentUser || !googleToken)
             ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-900/40'
             : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800'
@@ -4287,7 +4527,7 @@ export default function App() {
           </div>
 
           {/* Center search bar & operations */}
-          <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-3">
             
             {/* Global running Pomodoro indicator widget */}
             {globalPomo && globalPomo.isRunning && (
@@ -4368,6 +4608,21 @@ export default function App() {
               )}
             </button>
 
+            {/* Symmetrical Copy/Duplicate Project Tasks Button */}
+            {state.activeProjectId && (
+              <button
+                onClick={() => {
+                  setCopySourceNodeIds([]); // Empty array indicates copying ALL elements of active project
+                  setIsCopyModalOpen(true);
+                }}
+                className="p-1.5 hover:scale-[1.02] border border-slate-200 dark:border-slate-850 bg-slate-50 dark:bg-slate-800 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 hover:bg-slate-100/70 rounded-lg flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-all duration-200 shrink-0"
+                title="Копировать / дублировать задачи этого проекта"
+              >
+                <Copy className="w-3.5 h-3.5 text-indigo-500" />
+                <span className="hidden lg:inline">Копировать задачи</span>
+              </button>
+            )}
+
             {/* Micro search results list box if search query is set */}
             {searchQuery.trim().length > 0 && (
               <div className="absolute top-15 right-2 sm:right-24 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl p-2 w-[calc(100vw-2rem)] sm:w-72 max-h-56 overflow-y-auto z-50">
@@ -4434,244 +4689,6 @@ export default function App() {
               </button>
             )}
 
-            {/* View Mode Switching Tabs */}
-            {state.activeProjectId && (
-              <>
-                {/* Desktop Switcher: Hidden on Mobile */}
-                <div id="view-mode-toggle-group" className="hidden sm:flex bg-slate-100 dark:bg-slate-850 p-1 rounded-lg border border-slate-200 dark:border-slate-800 items-center shrink-0">
-                  <button
-                    id="view-mode-canvas-btn"
-                    type="button"
-                    onClick={() => setViewMode('canvas')}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                      viewMode === 'canvas'
-                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                    }`}
-                    title="Режим интеллект-карты"
-                  >
-                    <Network className="w-3.5 h-3.5" />
-                    <span>Холст</span>
-                  </button>
-                  <button
-                    id="view-mode-kanban-btn"
-                    type="button"
-                    onClick={() => setViewMode('kanban')}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                      viewMode === 'kanban'
-                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                    }`}
-                    title="Режим Канбан-доски"
-                  >
-                    <Kanban className="w-3.5 h-3.5" />
-                    <span>Канбан</span>
-                  </button>
-                  <button
-                    id="view-mode-mobile-btn"
-                    type="button"
-                    onClick={() => setViewMode('mobile-list')}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                      viewMode === 'mobile-list'
-                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                    }`}
-                    title="Мобильный список (TickTick)"
-                  >
-                    <Smartphone className="w-3.5 h-3.5" />
-                    <span>Мобильный</span>
-                  </button>
-                  <button
-                    id="view-mode-calendar-btn"
-                    type="button"
-                    onClick={() => setViewMode('calendar')}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                      viewMode === 'calendar'
-                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                    }`}
-                    title="Календарный вид"
-                  >
-                    <Calendar className="w-3.5 h-3.5" />
-                    <span>Календарь</span>
-                  </button>
-                  <button
-                    id="view-mode-gantt-btn"
-                    type="button"
-                    onClick={() => setViewMode('gantt')}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                      viewMode === 'gantt'
-                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                    }`}
-                    title="Линейный график Ганнта"
-                  >
-                    <GanttChart className="w-3.5 h-3.5" />
-                    <span>Ганнт</span>
-                  </button>
-                  <button
-                    id="view-mode-table-btn"
-                    type="button"
-                    onClick={() => setViewMode('table')}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                      viewMode === 'table'
-                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                    }`}
-                    title="Табличный вид"
-                  >
-                    <Table className="w-3.5 h-3.5" />
-                    <span>Таблица</span>
-                  </button>
-                  <button
-                    id="view-mode-eisenhower-btn"
-                    type="button"
-                    onClick={() => setViewMode('eisenhower')}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
-                      viewMode === 'eisenhower'
-                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                    }`}
-                    title="Матрица Эйзенхауэра"
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                    <span>Эйзенхауэр</span>
-                  </button>
-                </div>
-
-                {/* Mobile Selector Dropdown: Visible on Mobile Only */}
-                <div className="relative sm:hidden shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setIsMobileViewSwitcherOpen(!isMobileViewSwitcherOpen)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-indigo-650 dark:text-indigo-400 shadow-xs hover:bg-slate-100 dark:hover:bg-slate-750 transition-all cursor-pointer select-none"
-                  >
-                    {viewMode === 'canvas' && <Network className="w-3.5 h-3.5" />}
-                    {viewMode === 'kanban' && <Kanban className="w-3.5 h-3.5" />}
-                    {viewMode === 'mobile-list' && <Smartphone className="w-3.5 h-3.5" />}
-                    {viewMode === 'calendar' && <Calendar className="w-3.5 h-3.5" />}
-                    {viewMode === 'gantt' && <GanttChart className="w-3.5 h-3.5" />}
-                    {viewMode === 'table' && <Table className="w-3.5 h-3.5" />}
-                    {viewMode === 'eisenhower' && <LayoutGrid className="w-3.5 h-3.5" />}
-                    
-                    <span>
-                      {viewMode === 'canvas' && 'Холст'}
-                      {viewMode === 'kanban' && 'Канбан'}
-                      {viewMode === 'mobile-list' && 'Мобильный'}
-                      {viewMode === 'calendar' && 'Календарь'}
-                      {viewMode === 'gantt' && 'Ганнт'}
-                      {viewMode === 'table' && 'Таблица'}
-                      {viewMode === 'eisenhower' && 'Эйзенхауэр'}
-                    </span>
-                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMobileViewSwitcherOpen ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {isMobileViewSwitcherOpen && (
-                    <>
-                      {/* Full-width transparent overlay backdrop for click-away behavior */}
-                      <div 
-                        className="fixed inset-0 z-30" 
-                        onClick={() => setIsMobileViewSwitcherOpen(false)} 
-                      />
-                      <div className="absolute right-0 mt-1.5 w-40 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl py-1 z-40">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setViewMode('canvas');
-                            setIsMobileViewSwitcherOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
-                            viewMode === 'canvas' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <Network className="w-3.5 h-3.5" />
-                          <span>Холст</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setViewMode('kanban');
-                            setIsMobileViewSwitcherOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
-                            viewMode === 'kanban' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <Kanban className="w-3.5 h-3.5" />
-                          <span>Канбан</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setViewMode('mobile-list');
-                            setIsMobileViewSwitcherOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
-                            viewMode === 'mobile-list' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <Smartphone className="w-3.5 h-3.5" />
-                          <span>Мобильный</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setViewMode('calendar');
-                            setIsMobileViewSwitcherOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
-                            viewMode === 'calendar' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-950/25' : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <Calendar className="w-3.5 h-3.5" />
-                          <span>Календарь</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setViewMode('gantt');
-                            setIsMobileViewSwitcherOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
-                            viewMode === 'gantt' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-955/25' : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <GanttChart className="w-3.5 h-3.5" />
-                          <span>Ганнт</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setViewMode('table');
-                            setIsMobileViewSwitcherOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
-                            viewMode === 'table' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-955/25' : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <Table className="w-3.5 h-3.5" />
-                          <span>Таблица</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setViewMode('eisenhower');
-                            setIsMobileViewSwitcherOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
-                            viewMode === 'eisenhower' ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/25 dark:bg-indigo-955/25' : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <LayoutGrid className="w-3.5 h-3.5" />
-                          <span>Эйзенхауэр</span>
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </>
-            )}
-
             {/* Symmetrical Sync and Backup Trigger Button */}
             <button
               id="milli-sync-dashboard-btn"
@@ -4718,188 +4735,204 @@ export default function App() {
           </div>
         </header>
 
-      {/* Floating search panel for mobile when toggled */}
-      {isMobileSearchOpen && (
-        <div className="absolute bottom-16 left-3 right-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-2 z-40 flex items-center gap-1.5 sm:hidden animate-in slide-in-from-bottom-2 duration-200">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="Поиск..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full transition-all duration-200 leading-none py-1.5 pl-8 pr-12 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
-            />
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
-            {searchQuery.trim().length > 0 && (
-              <span className="absolute right-2 top-2 text-[10px] text-slate-400/80 font-mono font-medium">
-                {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
-              </span>
-            )}
-          </div>
-          {searchedIds.length > 1 && (
-            <button
-              type="button"
-              onClick={handleNextSearchMatch}
-              className="p-1.5 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg flex items-center justify-center cursor-pointer"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Mobile Bottom Action Bar Header */}
-      <header className={`${isViewFullScreen ? 'hidden' : (isContainerFocused ? 'hidden' : 'flex sm:hidden')} order-last h-14 border-t border-slate-200 dark:border-slate-800 items-center justify-between px-2.5 backdrop-blur-md z-35 bg-white/90 dark:bg-slate-900/90 transition-all duration-300 relative`}>
-        {/* Left: Hamburger menu & Undo/Cancel without text */}
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-850 cursor-pointer"
-            title="Меню"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-
-          {state.activeProjectId && (undoStack[state.activeProjectId] || []).length > 0 && (
-            <button
-              type="button"
-              onClick={handleUndo}
-              title="Отменить (Ctrl+Z)"
-              className="p-1.5 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-center cursor-pointer"
-            >
-              <Undo2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-            </button>
-          )}
-        </div>
-
-        {/* Middle: Dropdown View Selector */}
-        {state.activeProjectId && (() => {
-          const activeView = [
-            { id: 'canvas', name: 'Холст', icon: Network },
-            { id: 'kanban', name: 'Канбан', icon: Kanban },
-            { id: 'mobile-list', name: 'Списки', icon: Smartphone },
-            { id: 'calendar', name: 'Календарь', icon: Calendar },
-            { id: 'gantt', name: 'Ганнт', icon: GanttChart },
-            { id: 'table', name: 'Таблица', icon: Table },
-            { id: 'eisenhower', name: 'Матрица', icon: LayoutGrid },
-          ].find(v => v.id === viewMode) || { id: 'canvas', name: 'Холст', icon: Network };
-
-          const ActiveIcon = activeView.icon;
-
-          return (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsMobileViewDropdownOpen(!isMobileViewDropdownOpen);
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-indigo-600 dark:text-indigo-400 font-bold text-xs rounded-xl cursor-pointer border border-slate-200/60 dark:border-slate-700 focus:outline-none transition-all shadow-xs"
-              >
-                <ActiveIcon className="w-3.5 h-3.5 text-indigo-500" />
-                <span className="max-w-[70px] truncate">{activeView.name}</span>
-                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isMobileViewDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {isMobileViewDropdownOpen && (
-                <div 
-                  className="absolute bottom-11 left-1/2 -translate-x-1/2 mb-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-1 w-44 z-50 flex flex-col gap-0.5 max-h-[280px] overflow-y-auto no-scrollbar"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {[
-                    { id: 'canvas', name: 'Холст', icon: Network },
-                    { id: 'kanban', name: 'Канбан', icon: Kanban },
-                    { id: 'mobile-list', name: 'Списки', icon: Smartphone },
-                    { id: 'calendar', name: 'Календарь', icon: Calendar },
-                    { id: 'gantt', name: 'Ганнт', icon: GanttChart },
-                    { id: 'table', name: 'Таблица', icon: Table },
-                    { id: 'eisenhower', name: 'Матрица', icon: LayoutGrid },
-                  ].map(option => {
-                    const OptionIcon = option.icon;
-                    const isSelected = viewMode === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => {
-                          setViewMode(option.id as any);
-                          setIsMobileViewDropdownOpen(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2.5 text-xs transition-colors cursor-pointer font-semibold ${
-                          isSelected
-                            ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold'
-                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <OptionIcon className={`w-3.5 h-3.5 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
-                        <span>{option.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+        {/* Floating search panel for mobile when toggled */}
+        {isMobileSearchOpen && (
+          <div className="fixed bottom-28 left-3 right-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-2 z-[120] flex items-center gap-1.5 sm:hidden animate-in slide-in-from-bottom-2 duration-200">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="Поиск..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full transition-all duration-200 leading-none py-1.5 pl-8 pr-12 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
+              />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+              {searchQuery.trim().length > 0 && (
+                <span className="absolute right-2 top-2 text-[10px] text-slate-400/80 font-mono font-medium">
+                  {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
+                </span>
               )}
             </div>
-          );
-        })()}
+            {searchedIds.length > 1 && (
+              <button
+                type="button"
+                onClick={handleNextSearchMatch}
+                className="p-1.5 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg flex items-center justify-center cursor-pointer"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
 
-        {/* Right: Compact buttons for Search, Filters, Sync */}
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
-            className={`p-1.5 rounded-lg border cursor-pointer transition-all ${
-              searchQuery.trim().length > 0 || isMobileSearchOpen
-                ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
-                : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-            title="Поиск"
-          >
-            <Search className="w-3.5 h-3.5" />
-          </button>
+        {/* ALWAYS VISIBLE Mobile Bottom Action and Views Bar */}
+        <div className="fixed bottom-0 left-0 right-0 z-[110] flex sm:hidden flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_12px_rgba(0,0,0,0.08)] border-t border-slate-200 dark:border-slate-800 shrink-0 select-none">
+          {/* Row 2: Action controls */}
+          <header className="h-14 flex items-center justify-between px-3 w-full">
+            {/* Left: Hamburger menu & Undo/Cancel */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-850 cursor-pointer"
+                title="Меню"
+              >
+                <Menu className="w-4 h-4" />
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
-            className={`p-1.5 border rounded-lg cursor-pointer transition-all ${
-              isAnyFilterActive
-                ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
-                : isFilterPanelOpen
-                  ? 'border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-850 text-slate-800 dark:text-slate-100'
-                  : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-            title="Фильтры"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-          </button>
+              {state.activeProjectId && (undoStack[state.activeProjectId] || []).length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  title="Отменить (Ctrl+Z)"
+                  className="p-2 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-center cursor-pointer"
+                >
+                  <Undo2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                </button>
+              )}
+            </div>
 
-          <button
-            type="button"
-            onClick={() => setIsSyncMenuOpen(true)}
-            className={`p-1.5 border rounded-lg cursor-pointer transition-all ${
-              isSyncingSheets || syncStatus.firebase === 'syncing'
-                ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
-                : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-            title="Синхронизация"
-          >
-            <Database className="w-3.5 h-3.5 text-indigo-500" />
-          </button>
+            {/* Center: Views Picker / Switcher */}
+            {state.activeProjectId && (
+              <div className="flex-1 flex justify-center relative">
+                {/* Backdrop overlay for click-away */}
+                {isMobileViewSwitcherOpen && (
+                  <div 
+                    className="fixed inset-0 z-[115]" 
+                    onClick={() => setIsMobileViewSwitcherOpen(false)}
+                  />
+                )}
 
-          <button
-            type="button"
-            onClick={handleQuickSheetsSync}
-            className={`p-1.5 border rounded-lg cursor-pointer transition-all ${
-              isSyncingSheets
-                ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse'
-                : 'border-slate-200 dark:border-slate-850 text-emerald-600 dark:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-            title="Google Sheets"
-          >
-            <FileSpreadsheet className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-          </button>
+                {(() => {
+                  const activeOption = viewsList.find(o => o.id === viewMode);
+                  if (!activeOption) return null;
+                  const OptionIcon = activeOption.icon;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setIsMobileViewSwitcherOpen(!isMobileViewSwitcherOpen)}
+                      className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl flex items-center gap-1.5 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750 cursor-pointer transition-colors shadow-xs relative z-[120]"
+                    >
+                      <OptionIcon className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>{activeOption.name}</span>
+                      <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isMobileViewSwitcherOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  );
+                })()}
+
+                {/* Mobile views dropdown popover */}
+                {isMobileViewSwitcherOpen && (
+                  <div className="fixed bottom-16 left-1/2 -translate-x-1/2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-2 w-56 z-[120] flex flex-col gap-1 select-text animate-in slide-in-from-bottom-2 duration-200">
+                    <div className="px-2.5 py-1.5 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 tracking-wider uppercase flex items-center justify-between">
+                      <span>Режим просмотра</span>
+                      {focusedNode && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleDefaultView();
+                          }}
+                          className={`p-1 rounded-lg transition-colors cursor-pointer border ${
+                            focusedNode.defaultView === viewMode
+                              ? 'bg-amber-500/10 text-amber-600 border-amber-300'
+                              : 'text-slate-400 hover:text-slate-600 border-transparent hover:bg-slate-50 dark:hover:bg-slate-850'
+                          }`}
+                          title="Сделать по умолчанию"
+                        >
+                          <Star className={`w-3.5 h-3.5 ${focusedNode.defaultView === viewMode ? 'fill-amber-500 text-amber-500' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+                    {viewsList.map(option => {
+                      const OptionIcon = option.icon;
+                      const isSelected = viewMode === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => {
+                            setViewMode(option.id as any);
+                            setIsMobileViewSwitcherOpen(false);
+                          }}
+                          className={`w-full text-left font-bold px-3 py-2 rounded-xl flex items-center justify-between transition-colors cursor-pointer text-xs ${
+                            isSelected
+                              ? 'bg-indigo-50 dark:bg-indigo-950/45 text-indigo-600 dark:text-indigo-400'
+                              : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <OptionIcon className={`w-4 h-4 ${isSelected ? 'text-indigo-500' : 'text-slate-400'}`} />
+                            <span>{option.name}</span>
+                          </div>
+                          {focusedNode && focusedNode.defaultView === option.id && (
+                            <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Right: Search, Filters, Sync, Sheets */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
+                className={`p-2 rounded-lg border cursor-pointer transition-all ${
+                  searchQuery.trim().length > 0 || isMobileSearchOpen
+                    ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
+                    : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title="Поиск"
+              >
+                <Search className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
+                className={`p-2 border rounded-lg cursor-pointer transition-all ${
+                  isAnyFilterActive
+                    ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
+                    : isFilterPanelOpen
+                      ? 'border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-850 text-slate-800 dark:text-slate-100'
+                      : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title="Фильтры"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsSyncMenuOpen(true)}
+                className={`p-2 border rounded-lg cursor-pointer transition-all ${
+                  isSyncingSheets || syncStatus.firebase === 'syncing'
+                    ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
+                    : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title="Синхронизация"
+              >
+                <Database className="w-4 h-4 text-indigo-500" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleQuickSheetsSync}
+                className={`p-2 border rounded-lg cursor-pointer transition-all ${
+                  isSyncingSheets
+                    ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse'
+                    : 'border-slate-200 dark:border-slate-850 text-emerald-600 dark:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title="Google Sheets"
+              >
+                <FileSpreadsheet className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </header>
         </div>
-      </header>
 
 
 
@@ -5035,7 +5068,7 @@ export default function App() {
 
         {/* The Mind Map Interactive Canvas Frame. Occupies 100% space! */}
         <div 
-          className="flex-1 w-full min-h-0 relative bg-[#FAFBFD] dark:bg-slate-950/20"
+          className="flex-1 w-full min-h-0 relative bg-[#FAFBFD] dark:bg-slate-950/20 pb-[140px] sm:pb-24 flex flex-col"
           onMouseDown={handleGlobalMouseDown}
           onMouseMove={handleGlobalMouseMove}
           onMouseUp={handleGlobalMouseUp}
@@ -5053,6 +5086,67 @@ export default function App() {
                 zIndex: 9999
               }}
             />
+          )}
+
+          {/* Universal Focus Mode Banner for all non-canvas views */}
+          {state.activeProjectId && viewMode !== 'canvas' && (focusedTaskId || focusedContainerId) && (
+            <div className="mx-4 sm:mx-6 mt-3 mb-1 p-2 px-3 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs flex items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top-2 z-30 shrink-0 pointer-events-auto">
+              <div className="flex items-center gap-2 min-w-0">
+                {focusedContainerId ? (
+                  <>
+                    <span className="flex h-2 w-2 relative shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </span>
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
+                      📦 Контейнер: <strong className="font-extrabold text-amber-600 dark:text-amber-400">
+                        {activeNodes.find(n => n.id === focusedContainerId)?.text || 'Без названия'}
+                      </strong>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex h-2 w-2 relative shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-450 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                    </span>
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
+                      🎯 Задача: <strong className="font-extrabold text-rose-600 dark:text-rose-400">
+                        {activeNodes.find(n => n.id === focusedTaskId)?.text || 'Без названия'}
+                      </strong>
+                    </span>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {focusedTaskId && (() => {
+                  const focusedTask = activeNodes.find(n => n.id === focusedTaskId);
+                  if (focusedTask && focusedTask.parentId) {
+                    const parentTask = activeNodes.find(n => n.id === focusedTask.parentId);
+                    return (
+                      <button
+                        onClick={() => setFocusedTaskId(focusedTask.parentId)}
+                        className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
+                        title={`Вернуться к родителю: ${parentTask?.text || 'Без названия'}`}
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
+                <button
+                  onClick={() => {
+                    if (focusedContainerId) setFocusedContainerId(null);
+                    if (focusedTaskId) setFocusedTaskId(null);
+                  }}
+                  className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-450 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
+                  title="Выйти из режима фокуса (назад к общему списку)"
+                >
+                  <Undo2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           )}
           
           {state.activeProjectId ? (
@@ -5191,6 +5285,10 @@ export default function App() {
                 onAddFloatingNode={handleAddFloatingNode}
                 onAddContainerNode={handleAddContainerNode}
                 onAddInboxTask={handleAddInboxTask}
+                onCopyNodes={(ids) => {
+                  setCopySourceNodeIds(ids);
+                  setIsCopyModalOpen(true);
+                }}
                 onDeleteNode={handleDeleteNode}
                 onToggleNodeCompleted={handleToggleNodeCompleted}
                 onToggleNodeCollapse={handleToggleNodeCollapse}
@@ -5216,12 +5314,7 @@ export default function App() {
                 focusedTaskId={focusedTaskId}
                 onFocusedTaskIdChange={setFocusedTaskId}
                 focusedContainerId={focusedContainerId}
-                onFocusedContainerIdChange={(id) => {
-                  setFocusedContainerId(id);
-                  if (id) {
-                    setViewMode('canvas');
-                  }
-                }}
+                onFocusedContainerIdChange={setFocusedContainerId}
               />
             )
           ) : (
@@ -5235,7 +5328,106 @@ export default function App() {
 
         </div>
 
+        {/* Unified Gorgeous Collapsible Bottom Views Panel */}
+        {state.activeProjectId && (
+          <div 
+            className="hidden sm:block fixed z-[110] bottom-4 left-1/2 -translate-x-1/2"
+          >
+            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-2 flex flex-col md:flex-row items-center gap-2 select-none">
+              
+              {/* Toggle Expand/Collapse Button (Header on mobile when expanded) */}
+              <div className="flex items-center justify-between w-full md:w-auto shrink-0 gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-extrabold text-indigo-600 dark:text-indigo-400 pl-1">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                  <span>Виды</span>
+                </div>
+                
+                <button
+                  type="button"
+                  onClick={() => setIsBottomViewsExpanded(!isBottomViewsExpanded)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  title={isBottomViewsExpanded ? "Свернуть панель" : "Развернуть панель"}
+                >
+                  {isBottomViewsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                </button>
+              </div>
 
+              {isBottomViewsExpanded ? (
+                <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
+                  {viewsList.map(option => {
+                    const OptionIcon = option.icon;
+                    const isSelected = viewMode === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setViewMode(option.id as any)}
+                        className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold transition-all shrink-0 cursor-pointer border ${
+                          isSelected
+                            ? 'bg-indigo-50 dark:bg-indigo-950/45 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900/60 shadow-xs'
+                            : 'text-slate-600 dark:text-slate-350 border-slate-100/50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-200 dark:hover:border-slate-700'
+                        }`}
+                      >
+                        <OptionIcon className="w-3.5 h-3.5" />
+                        <span>{option.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  {/* Compact Mode View Label */}
+                  {(() => {
+                    const activeOption = viewsList.find(o => o.id === viewMode);
+                    if (!activeOption) return null;
+                    const OptionIcon = activeOption.icon;
+                    return (
+                      <div className="px-3 py-1 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center gap-1.5 text-xs font-bold border border-indigo-200 dark:border-indigo-900/40">
+                        <OptionIcon className="w-3.5 h-3.5 animate-bounce" style={{ animationDuration: '3s' }} />
+                        <span>{activeOption.name}</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Focus Default View Controls */}
+              {focusedNode && (
+                <div className={`flex items-center gap-2 border-slate-200 dark:border-slate-800 shrink-0 ${
+                  isBottomViewsExpanded ? 'w-full md:w-auto border-t md:border-t-0 md:border-l pt-2 md:pt-0 md:pl-3' : 'border-l pl-2'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={handleToggleDefaultView}
+                    className={`px-2.5 py-1 rounded-xl flex items-center gap-1.5 text-[11px] font-extrabold transition-all border shrink-0 cursor-pointer ${
+                      focusedNode.defaultView === viewMode
+                        ? 'bg-amber-500/10 dark:bg-amber-500/25 text-amber-600 dark:text-amber-450 border-amber-300 dark:border-amber-800 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300 border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800/50'
+                    }`}
+                    title={
+                      focusedNode.defaultView === viewMode
+                        ? "Этот вид установлен по умолчанию для текущего фокуса. Нажмите, чтобы сбросить."
+                        : "Сделать этот вид по умолчанию при открывании текущего контейнера/задачи в фокусе."
+                    }
+                  >
+                    <Star className={`w-3.5 h-3.5 ${focusedNode.defaultView === viewMode ? 'fill-amber-500 text-amber-500' : 'text-slate-400'}`} />
+                    <span className={isBottomViewsExpanded ? 'inline' : 'hidden md:inline'}>
+                      {focusedNode.defaultView === viewMode ? 'По умолчанию' : 'Сделать по умолчанию'}
+                    </span>
+                  </button>
+                  
+                  {/* Tiny Indicator / Text showing current default view */}
+                  {isBottomViewsExpanded && focusedNode.defaultView && (
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 italic font-bold truncate max-w-[150px]">
+                      (дефолт: {viewsList.find(v => v.id === focusedNode.defaultView)?.name})
+                    </span>
+                  )}
+                </div>
+              )}
+              
+            </div>
+          </div>
+        )}
 
         {/* Task Properties slide-out drawer displays only on explicit open clicking Eye button */}
         {isDrawerOpen && selectedNode && (
@@ -6079,6 +6271,72 @@ export default function App() {
         );
       })()}
 
+      {/* ================= COPY MODAL OVERLAY ================= */}
+      {isCopyModalOpen && (() => {
+        const sourceProjId = state.activeProjectId;
+        if (!sourceProjId) return null;
+
+        const sourceProject = state.projects.find(p => p.id === sourceProjId);
+        const sourceNodes = state.nodes[sourceProjId] || [];
+        const totalNodes = sourceNodes.filter(n => !n.archived).length;
+        const selectedCount = copySourceNodeIds.length;
+        
+        return (
+          <div 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+            onClick={() => setIsCopyModalOpen(false)}
+          >
+            <div 
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col my-4 max-h-[92vh] relative text-left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="border-b border-slate-200 dark:border-slate-800 px-6 py-4.5 flex items-center justify-between bg-slate-50 dark:bg-slate-900/60">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl shrink-0 text-indigo-600 dark:text-indigo-400">
+                    <Copy className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-extrabold text-slate-800 dark:text-slate-100 leading-tight">
+                      Копирование задач
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                      Перенос или дублирование задач между интеллект-картами
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCopyModalOpen(false)}
+                  className="p-1 px-2.5 py-1.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer transition-all text-xs font-semibold"
+                >
+                  Отмена
+                </button>
+              </div>
+
+              {/* Modal Content Inner Form */}
+              <CopyModalInner 
+                sourceProjId={sourceProjId}
+                sourceProject={sourceProject}
+                totalNodes={totalNodes}
+                selectedCount={selectedCount}
+                copySourceNodeIds={copySourceNodeIds}
+                sourceNodes={sourceNodes}
+                projects={state.projects}
+                copyTargetProjectId={copyTargetProjectId}
+                setCopyTargetProjectId={setCopyTargetProjectId}
+                onPerformCopy={(scope, targetId, openTarget) => {
+                  const nodeIdsToCopy = scope === 'selected' ? copySourceNodeIds : [];
+                  handlePerformCopy(nodeIdsToCopy, targetId, openTarget);
+                  setIsCopyModalOpen(false);
+                }}
+                onCreateProject={handleCreateTargetProject}
+              />
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ================= ACTIVE REMINDERS FLOATING NOTIFICATIONS OVERLAY ================= */}
       {triggeredReminders.length > 0 && (() => {
         const reminder = triggeredReminders[activeReminderIndex] || triggeredReminders[0];
@@ -6482,6 +6740,18 @@ export default function App() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  setCopySourceNodeIds(selectedNodeIds);
+                  setIsCopyModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-indigo-650 dark:hover:text-indigo-400 transition-all cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Копировать</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
                   setSelectedNodeIds([]);
                   setIsMultiSelectMode(false);
                 }}
@@ -6494,6 +6764,231 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ============================================================================
+// COPY / DUPLICATE TASKS INTERNAL MODAL COMPONENT
+// ============================================================================
+
+interface CopyModalInnerProps {
+  sourceProjId: string;
+  sourceProject: any;
+  totalNodes: number;
+  selectedCount: number;
+  copySourceNodeIds: string[];
+  sourceNodes: any[];
+  projects: any[];
+  copyTargetProjectId: string | null;
+  setCopyTargetProjectId: (id: string | null) => void;
+  onPerformCopy: (scope: 'selected' | 'all', targetId: string, openTarget: boolean) => void;
+  onCreateProject: (name: string) => void;
+}
+
+function CopyModalInner({
+  sourceProjId,
+  sourceProject,
+  totalNodes,
+  selectedCount,
+  copySourceNodeIds,
+  projects,
+  copyTargetProjectId,
+  setCopyTargetProjectId,
+  onPerformCopy,
+  onCreateProject
+}: CopyModalInnerProps) {
+  const [scope, setScope] = useState<'selected' | 'all'>(selectedCount > 0 ? 'selected' : 'all');
+  const [projSearch, setProjSearch] = useState('');
+  const [newProjName, setNewProjName] = useState('');
+  const [openTarget, setOpenTarget] = useState(true);
+  const [showNewProjForm, setShowNewProjForm] = useState(false);
+
+  const filteredProjects = projects.filter(p => 
+    p.name.toLowerCase().includes(projSearch.toLowerCase())
+  );
+
+  const handleCreateAndSelect = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProjName.trim()) return;
+    onCreateProject(newProjName.trim());
+    setNewProjName('');
+    setShowNewProjForm(false);
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6 space-y-5.5 max-h-[70vh] text-slate-700 dark:text-slate-300">
+      {/* 1. Scope Selection (Only if we have selected nodes) */}
+      {selectedCount > 0 && (
+        <div className="space-y-2">
+          <label className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500 block">
+            Область копирования
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Option A: Selected tasks */}
+            <div 
+              onClick={() => setScope('selected')}
+              className={`p-4 rounded-xl border-2 cursor-pointer flex flex-col justify-between gap-1.5 transition-all duration-200 select-none ${
+                scope === 'selected'
+                  ? 'border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/15 text-indigo-700 dark:text-indigo-400 font-bold'
+                  : 'border-slate-150 dark:border-slate-800 bg-slate-50/30 hover:bg-slate-50 dark:bg-slate-900/10 dark:hover:bg-slate-900/30 text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold truncate">Выбранные задачи</span>
+                <span className="text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 px-2 py-0.5 rounded-md shrink-0">
+                  {selectedCount} шт
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal font-medium">
+                Будут скопированы только выделенные на данный момент задачи и их связи.
+              </p>
+            </div>
+
+            {/* Option B: All project tasks */}
+            <div 
+              onClick={() => setScope('all')}
+              className={`p-4 rounded-xl border-2 cursor-pointer flex flex-col justify-between gap-1.5 transition-all duration-200 select-none ${
+                scope === 'all'
+                  ? 'border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/15 text-indigo-700 dark:text-indigo-400 font-bold'
+                  : 'border-slate-150 dark:border-slate-800 bg-slate-50/30 hover:bg-slate-50 dark:bg-slate-900/10 dark:hover:bg-slate-900/30 text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold truncate">Весь проект целиком</span>
+                <span className="text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-md shrink-0">
+                  {totalNodes} шт
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal font-medium">
+                Будет скопирован весь активный граф задач текущего проекта "{sourceProject?.name || ''}".
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Target Project Selection */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500 block">
+            Целевая интеллект-карта
+          </label>
+          <button
+            type="button"
+            onClick={() => setShowNewProjForm(!showNewProjForm)}
+            className="text-[11px] font-extrabold text-indigo-650 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 flex items-center gap-1 cursor-pointer"
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+            <span>Новая карта...</span>
+          </button>
+        </div>
+
+        {/* Create new project inline form */}
+        {showNewProjForm && (
+          <form 
+            onSubmit={handleCreateAndSelect} 
+            className="flex gap-2 p-3 bg-indigo-500/5 dark:bg-indigo-400/5 border border-indigo-150 dark:border-indigo-950/40 rounded-xl animate-in slide-in-from-top-2 duration-150"
+          >
+            <input
+              type="text"
+              placeholder="Введите название новой карты..."
+              value={newProjName}
+              onChange={(e) => setNewProjName(e.target.value)}
+              className="flex-1 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-lg py-1 px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:text-slate-100"
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={!newProjName.trim()}
+              className="bg-indigo-600 hover:bg-indigo-750 text-white disabled:opacity-50 text-[10px] font-extrabold uppercase tracking-wider py-1 px-3 rounded-lg flex items-center gap-1 shrink-0 cursor-pointer"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Создать</span>
+            </button>
+          </form>
+        )}
+
+        {/* Project List Search */}
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Поиск по интеллект-картам..."
+            value={projSearch}
+            onChange={(e) => setProjSearch(e.target.value)}
+            className="w-full bg-slate-55 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-lg py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-405"
+          />
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+        </div>
+
+        {/* Project List Selection Container */}
+        <div className="max-h-[190px] overflow-y-auto border border-slate-150 dark:border-slate-800/80 rounded-xl divide-y divide-slate-100 dark:divide-slate-800/40 bg-slate-50/20 dark:bg-slate-900/20 p-1 space-y-0.5">
+          {filteredProjects.length > 0 ? (
+            filteredProjects.map(p => {
+              const isSelected = copyTargetProjectId === p.id;
+              const isCurrent = p.id === sourceProjId;
+              
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => setCopyTargetProjectId(p.id)}
+                  className={`w-full text-left py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-between gap-3 cursor-pointer select-none transition-all ${
+                    isSelected
+                      ? 'bg-indigo-600 text-white shadow-sm font-bold'
+                      : 'text-slate-705 dark:text-slate-300 hover:bg-slate-100/70 dark:hover:bg-slate-800/60'
+                  }`}
+                  style={{ minHeight: '40px' }} // Touch target size friendly
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-sm shrink-0">🗺️</span>
+                    <div className="truncate">
+                      <span className="truncate block leading-tight">{p.name}</span>
+                      <span className={`text-[9px] font-mono block mt-0.5 ${isSelected ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                        {isCurrent ? 'Текущая карта (Задачи продублируются со смещением)' : 'Копирование в стороннюю карту'}
+                      </span>
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <Check className="w-4 h-4 text-white shrink-0" />
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            <div className="text-center py-6 text-xs text-slate-400 italic">Интеллект-карты не найдены</div>
+          )}
+        </div>
+      </div>
+
+      {/* 3. Post Copy Switch Action Option */}
+      <div className="flex items-center gap-2.5 pt-1">
+        <input
+          id="openTargetProjectAfterCopyCheckbox"
+          type="checkbox"
+          checked={openTarget}
+          onChange={(e) => setOpenTarget(e.target.checked)}
+          className="w-4 h-4 text-indigo-650 bg-slate-50 border-slate-200 rounded-md focus:ring-indigo-500 dark:bg-slate-800 dark:border-slate-700 cursor-pointer"
+        />
+        <label 
+          htmlFor="openTargetProjectAfterCopyCheckbox"
+          className="text-xs text-slate-600 dark:text-slate-400 font-medium select-none cursor-pointer"
+        >
+          Автоматически перейти в выбранную карту после копирования
+        </label>
+      </div>
+
+      {/* 4. Action Buttons Footer */}
+      <div className="border-t border-slate-150 dark:border-slate-800 pt-4 flex gap-3 justify-end">
+        <button
+          type="button"
+          onClick={() => onPerformCopy(scope, copyTargetProjectId!, openTarget)}
+          disabled={!copyTargetProjectId}
+          className="bg-indigo-600 hover:bg-indigo-750 text-white disabled:opacity-40 disabled:cursor-not-allowed font-extrabold text-xs px-5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-[0.98]"
+        >
+          <Copy className="w-3.5 h-3.5" />
+          <span>Копировать задачи ({scope === 'selected' ? selectedCount : totalNodes} шт)</span>
+        </button>
+      </div>
     </div>
   );
 }

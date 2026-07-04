@@ -19,7 +19,8 @@ import {
   Sun,
   Moon,
   Bell,
-  Network
+  Network,
+  Copy
 } from 'lucide-react';
 import { Folder, Project, TagCategory, WorkspaceState } from '../types';
 import { playNotificationChime } from '../utils';
@@ -36,6 +37,7 @@ interface SidebarProps {
   onCreateProject: (name: string, folderId: string | null) => void;
   onRenameProject: (id: string, name: string) => void;
   onDeleteProject: (id: string) => void;
+  onDuplicateProject: (id: string) => void;
   onMoveProject: (id: string, folderId: string | null) => void;
   onExportData: () => void;
   onImportData: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -65,6 +67,7 @@ export default function Sidebar({
   onCreateProject,
   onRenameProject,
   onDeleteProject,
+  onDuplicateProject,
   onMoveProject,
   onExportData,
   onImportData,
@@ -494,6 +497,16 @@ export default function Sidebar({
                 className="p-0.5 hover:text-emerald-600 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850"
               >
                 <Move className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDuplicateProject(project.id);
+                }}
+                title="Дублировать интеллект-карту"
+                className="p-0.5 hover:text-indigo-600 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850"
+              >
+                <Copy className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={(e) => {
