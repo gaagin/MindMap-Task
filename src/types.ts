@@ -100,6 +100,14 @@ export interface TaskNode {
   mirrorGroupId?: string; // Optional ID linking mirrored/synchronized tasks
   mirrorParentId?: string; // Optional ID of the original parent task of a mirrored subtask
   mirrorParentText?: string; // Optional text of the original parent task of a mirrored subtask
+  savedFilters?: {
+    filterStatus?: string;
+    filterPriority?: string;
+    filterTag?: string;
+    filterDueDate?: string;
+    filterAttachments?: string;
+    filterNotes?: string;
+  };
 }
 
 export interface Project {

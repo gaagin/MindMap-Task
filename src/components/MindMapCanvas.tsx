@@ -3587,31 +3587,10 @@ export default function MindMapCanvas({
   const handleMouseUp = (e?: React.MouseEvent) => {
     setIsPanning(false);
 
-    // If in focus mode, check if this was a simple click on empty space to create a task
-    const isFocusMode = !!(focusedContainerId || focusedTaskId);
-    if (e && isFocusMode && mouseDownPosRef.current && mouseDownTargetRef.current) {
-      const dx = e.clientX - mouseDownPosRef.current.x;
-      const dy = e.clientY - mouseDownPosRef.current.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      const target = mouseDownTargetRef.current;
-      // Ensure we clicked on empty canvas background, not on buttons, cards, inputs, etc.
-      if (
-        distance < 5 && 
-        !isButtonOrCardInput(e) && 
-        !target.closest('[data-node-id]') &&
-        !target.closest('button') &&
-        !target.closest('input') &&
-        !target.closest('select') &&
-        !target.closest('[data-drag-ignore]')
-      ) {
-        const coords = getCanvasCoordinates(e.clientX, e.clientY);
-        onAddFloatingNode(coords.x, coords.y, focusedContainerId || focusedTaskId, undefined, { useExactCoordinates: true });
-        
-        // Reset refs
-        mouseDownPosRef.current = null;
-        mouseDownTargetRef.current = null;
-      }
+    // If in focus mode, single click task creation is disabled. Tasks are created on double click.
+    if (e && mouseDownPosRef.current && mouseDownTargetRef.current) {
+      mouseDownPosRef.current = null;
+      mouseDownTargetRef.current = null;
     }
 
     if (resizingNodeId) {
@@ -4310,31 +4289,10 @@ export default function MindMapCanvas({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    // If in focus mode, check if this was a simple tap on empty space to create a task on touch screen
-    const isFocusMode = !!(focusedContainerId || focusedTaskId);
-    if (e.changedTouches && e.changedTouches.length === 1 && isFocusMode && touchStartPosRef.current && touchStartTargetRef.current) {
-      const touch = e.changedTouches[0];
-      const dx = touch.clientX - touchStartPosRef.current.x;
-      const dy = touch.clientY - touchStartPosRef.current.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      const target = touchStartTargetRef.current;
-      // Ensure we tapped on empty canvas background, not on buttons, cards, inputs, etc.
-      if (
-        distance < 10 && 
-        !target.closest('[data-node-id]') &&
-        !target.closest('button') &&
-        !target.closest('input') &&
-        !target.closest('select') &&
-        !target.closest('[data-drag-ignore]')
-      ) {
-        const coords = getCanvasCoordinates(touch.clientX, touch.clientY);
-        onAddFloatingNode(coords.x, coords.y, focusedContainerId || focusedTaskId, undefined, { useExactCoordinates: true });
-        
-        // Reset refs
-        touchStartPosRef.current = null;
-        touchStartTargetRef.current = null;
-      }
+    // If in focus mode, single tap task creation is disabled.
+    if (touchStartPosRef.current && touchStartTargetRef.current) {
+      touchStartPosRef.current = null;
+      touchStartTargetRef.current = null;
     }
 
     if (resizingNodeId) {

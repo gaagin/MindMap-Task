@@ -155,7 +155,8 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         JSON.stringify(pn.tags) !== JSON.stringify(nn.tags) ||
         JSON.stringify(pn.history) !== JSON.stringify(nn.history) ||
         JSON.stringify(pn.tagCategories) !== JSON.stringify(nn.tagCategories) ||
-        JSON.stringify(pn.workflowConnections) !== JSON.stringify(nn.workflowConnections);
+        JSON.stringify(pn.workflowConnections) !== JSON.stringify(nn.workflowConnections) ||
+        JSON.stringify(pn.savedFilters) !== JSON.stringify(nn.savedFilters);
 
       if (changed) {
         return { ...nn, updatedAt: now };
@@ -383,6 +384,14 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         history: (n.history || []).map(h => ({ id: h.id, text: h.text, notes: h.notes, timestamp: h.timestamp })),
         tagCategories: (n.tagCategories || []).map(t => ({ id: t.id, name: t.name, color: t.color, tags: [...(t.tags || [])].sort() })),
         files: (n.files || []).map(f => ({ id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl })),
+        savedFilters: n.savedFilters ? {
+          filterStatus: n.savedFilters.filterStatus || null,
+          filterPriority: n.savedFilters.filterPriority || null,
+          filterTag: n.savedFilters.filterTag || null,
+          filterDueDate: n.savedFilters.filterDueDate || null,
+          filterAttachments: n.savedFilters.filterAttachments || null,
+          filterNotes: n.savedFilters.filterNotes || null,
+        } : null,
         workflowConnections: (n.workflowConnections || [])
           .map(wc => ({
             id: wc.id,
@@ -1263,6 +1272,32 @@ export default function App() {
   const [filterAttachments, setFilterAttachments] = useState<string>('all');
   const [filterNotes, setFilterNotes] = useState<string>('all');
 
+  const [preFocusFilters, setPreFocusFilters] = useState<{
+    filterStatus: string;
+    filterPriority: string;
+    filterTag: string;
+    filterDueDate: string;
+    filterAttachments: string;
+    filterNotes: string;
+  } | null>(null);
+
+  const filtersRef = React.useRef({
+    filterStatus,
+    filterPriority,
+    filterTag,
+    filterDueDate,
+    filterAttachments,
+    filterNotes
+  });
+  filtersRef.current = {
+    filterStatus,
+    filterPriority,
+    filterTag,
+    filterDueDate,
+    filterAttachments,
+    filterNotes
+  };
+
   // Canvas zoom & pan view attributes
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
@@ -1289,19 +1324,58 @@ export default function App() {
     localStorage.setItem('task_mindmap_views_expanded', String(isBottomViewsExpanded));
   }, [isBottomViewsExpanded]);
 
-  // Auto-switch viewMode when a container or task enters focus
+  // Track focus transitions to restore/apply filters
+  const prevFocusIdRef = React.useRef<string | null>(null);
+
+  // Auto-switch viewMode and load/restore filters on focused node change
   useEffect(() => {
     const focusId = focusedTaskId || focusedContainerId;
-    if (focusId && state.activeProjectId) {
-      const activeProjectNodes = state.nodes[state.activeProjectId] || [];
-      const node = activeProjectNodes.find(n => n.id === focusId);
-      if (node && node.defaultView) {
-        setViewMode(node.defaultView);
+    const prevFocusId = prevFocusIdRef.current;
+    
+    if (focusId !== prevFocusId) {
+      if (focusId) {
+        // Entering focus mode!
+        // If we were NOT in focus mode, save the current filters as pre-focus filters
+        if (!prevFocusId) {
+          setPreFocusFilters(filtersRef.current);
+        }
+        
+        if (state.activeProjectId) {
+          const activeProjectNodes = state.nodes[state.activeProjectId] || [];
+          const node = activeProjectNodes.find(n => n.id === focusId);
+          if (node) {
+            if (node.defaultView) {
+              setViewMode(node.defaultView);
+            } else {
+              setViewMode('canvas');
+            }
+            
+            if (node.savedFilters) {
+              if (node.savedFilters.filterStatus !== undefined) setFilterStatus(node.savedFilters.filterStatus);
+              if (node.savedFilters.filterPriority !== undefined) setFilterPriority(node.savedFilters.filterPriority);
+              if (node.savedFilters.filterTag !== undefined) setFilterTag(node.savedFilters.filterTag);
+              if (node.savedFilters.filterDueDate !== undefined) setFilterDueDate(node.savedFilters.filterDueDate);
+              if (node.savedFilters.filterAttachments !== undefined) setFilterAttachments(node.savedFilters.filterAttachments);
+              if (node.savedFilters.filterNotes !== undefined) setFilterNotes(node.savedFilters.filterNotes);
+            }
+          }
+        }
       } else {
-        setViewMode('canvas');
+        // Exiting focus mode!
+        // Restore pre-focus filters if they exist
+        if (preFocusFilters) {
+          setFilterStatus(preFocusFilters.filterStatus);
+          setFilterPriority(preFocusFilters.filterPriority);
+          setFilterTag(preFocusFilters.filterTag);
+          setFilterDueDate(preFocusFilters.filterDueDate);
+          setFilterAttachments(preFocusFilters.filterAttachments);
+          setFilterNotes(preFocusFilters.filterNotes);
+          setPreFocusFilters(null);
+        }
       }
+      prevFocusIdRef.current = focusId;
     }
-  }, [focusedTaskId, focusedContainerId, state.activeProjectId]);
+  }, [focusedTaskId, focusedContainerId, state.activeProjectId, preFocusFilters]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -4281,6 +4355,66 @@ export default function App() {
     setSearchQuery("");
   };
 
+  const handleSaveFiltersForFocusedNode = () => {
+    const focusId = focusedTaskId || focusedContainerId;
+    if (!focusId || !state.activeProjectId) return;
+    
+    setState(prev => {
+      const currentNodes = prev.nodes[state.activeProjectId!] || [];
+      const updatedNodes = currentNodes.map(node => {
+        if (node.id === focusId) {
+          return {
+            ...node,
+            savedFilters: {
+              filterStatus,
+              filterPriority,
+              filterTag,
+              filterDueDate,
+              filterAttachments,
+              filterNotes
+            },
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return node;
+      });
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [state.activeProjectId!]: updatedNodes
+        }
+      };
+    });
+  };
+
+  const handleClearSavedFiltersForFocusedNode = () => {
+    const focusId = focusedTaskId || focusedContainerId;
+    if (!focusId || !state.activeProjectId) return;
+    
+    setState(prev => {
+      const currentNodes = prev.nodes[state.activeProjectId!] || [];
+      const updatedNodes = currentNodes.map(node => {
+        if (node.id === focusId) {
+          const updatedNode = { ...node };
+          delete updatedNode.savedFilters;
+          return {
+            ...updatedNode,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return node;
+      });
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [state.activeProjectId!]: updatedNodes
+        }
+      };
+    });
+  };
+
   const allAvailableTags = Array.from(
     new Set(activeNodes.flatMap(n => n.tags || []))
   ).filter(Boolean);
@@ -4369,7 +4503,6 @@ export default function App() {
       setCurrentSearchIndex(0);
     }
   }, [searchQuery, state.activeProjectId]);
-
 
   // ----- DATA PERSISTENCE IMPORT & EXPORT -----
   const handleExportData = () => {
@@ -4532,7 +4665,7 @@ export default function App() {
                   const containerNode = activeNodes.find(n => n.id === focusedContainerId);
                   return (
                     <span className="inline-flex items-center gap-1.5 bg-amber-500/15 dark:bg-amber-550/20 border border-amber-200/50 dark:border-amber-900/40 px-2 py-0.5 rounded-full text-[10px] text-amber-700 dark:text-amber-400 font-bold shrink-0">
-                      <span>📦 {containerNode?.text || 'Без названия'}</span>
+                      <span>📦 {containerNode?.text || 'Без названия'}{containerNode?.savedFilters && ' ★'}</span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -4551,13 +4684,13 @@ export default function App() {
                   return (
                     <span className="inline-flex items-center gap-1.5 bg-rose-500/15 dark:bg-rose-550/20 border border-rose-200/50 dark:border-rose-900/40 px-2 py-0.5 rounded-full text-[10px] text-rose-700 dark:text-rose-400 font-bold shrink-0">
                       <span className="animate-pulse w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
-                      <span className="truncate max-w-[150px]">🎯 {taskNode?.text || 'Без названия'}</span>
+                      <span className="truncate max-w-[150px]">🎯 {taskNode?.text || 'Без названия'}{taskNode?.savedFilters && ' ★'}</span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setFocusedTaskId(null);
                         }}
-                        className="ml-1 px-1 py-0.5 rounded bg-rose-500 hover:bg-rose-650 text-white text-[8px] font-extrabold uppercase transition-all cursor-pointer shadow-xs border-none"
+                        className="ml-1 px-1 py-0.5 rounded bg-rose-50 hover:bg-rose-650 text-white text-[8px] font-extrabold uppercase transition-all cursor-pointer shadow-xs border-none"
                         title="Выйти из режима фокуса"
                       >
                         Выйти
@@ -4566,81 +4699,82 @@ export default function App() {
                   );
                 })()}
               </h2>
-              {viewMode !== 'mobile-list' && (() => {
-                const actualTasks = activeNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
-                return (
-                  <div className="hidden sm:flex items-center gap-3.5 text-[11px] text-slate-500 dark:text-slate-400 font-sans select-none relative group z-30">
-                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 rounded-2xl border border-slate-150 dark:border-slate-800/60 shadow-xs cursor-pointer hover:border-indigo-200 dark:hover:border-indigo-950 transition-all duration-200">
-                      {/* Symmetrical SVG Pie/Donut Chart */}
-                      <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
-                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 32 32">
-                          {/* Background total / pending circle */}
-                          <circle
-                            cx="16"
-                            cy="16"
-                            r="12"
-                            className="text-slate-205 dark:text-slate-800"
-                            strokeWidth="3.5"
-                            stroke="currentColor"
-                            fill="transparent"
-                          />
-                          {/* Completed tasks sector circle */}
-                          <circle
-                            cx="16"
-                            cy="16"
-                            r="12"
-                            className="text-emerald-500 dark:text-emerald-400 transition-all duration-500"
-                            strokeWidth="3.5"
-                            strokeDasharray={2 * Math.PI * 12}
-                            strokeDashoffset={2 * Math.PI * 12 * (1 - (actualTasks.length > 0 ? actualTasks.filter(n => n.completed).length / actualTasks.length : 0))}
-                            strokeLinecap="round"
-                            stroke="currentColor"
-                            fill="transparent"
-                          />
-                        </svg>
-                        <span className="absolute text-[8px] font-extrabold text-slate-700 dark:text-slate-300 font-mono">
-                          {actualTasks.length > 0 ? Math.round((actualTasks.filter(n => n.completed).length / actualTasks.length) * 100) : 0}%
-                        </span>
-                      </div>
-
-                      {/* Stats Texts */}
-                      <div className="flex flex-col text-[10px] leading-tight font-serif">
-                        <div className="flex items-center gap-1">
-                          <span className="text-slate-400 dark:text-slate-500">Задач:</span>
-                          <span className="font-extrabold text-slate-700 dark:text-slate-300 font-mono">{actualTasks.length}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-slate-400 dark:text-slate-500">Выполнено:</span>
-                          <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">{actualTasks.filter(n => n.completed).length}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Elegant Tooltip Popover on Hover */}
-                    <div className="absolute top-12 left-0 z-50 hidden group-hover:block bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 p-3 rounded-xl shadow-2xl min-w-[180px] text-xs pointer-events-none select-none">
-                      <div className="font-bold text-slate-800 dark:text-slate-200 mb-1.5 border-b pb-1 border-slate-100 dark:border-slate-800">
-                        Статистика прогресса
-                      </div>
-                      <div className="space-y-1 font-mono text-[11px] text-slate-605 dark:text-slate-400">
-                        <div className="flex justify-between">
-                          <span>Всего задач:</span>
-                          <span className="font-bold text-slate-800 dark:text-slate-200">{actualTasks.length}</span>
-                        </div>
-                        <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-                          <span>Выполнено:</span>
-                          <span className="font-bold">{actualTasks.filter(n => n.completed).length} ({actualTasks.length > 0 ? Math.round((actualTasks.filter(n => n.completed).length / actualTasks.length) * 100) : 0}%)</span>
-                        </div>
-                        <div className="flex justify-between text-amber-500 dark:text-amber-400">
-                          <span>В процессе:</span>
-                          <span className="font-bold">{actualTasks.length - actualTasks.filter(n => n.completed).length} ({actualTasks.length > 0 ? Math.round(((actualTasks.length - actualTasks.filter(n => n.completed).length) / actualTasks.length) * 100) : 0}%)</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
           </div>
+
+          {viewMode !== 'mobile-list' && (() => {
+            const actualTasks = activeNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
+            return (
+              <div className="hidden sm:flex items-center gap-3.5 text-[11px] text-slate-500 dark:text-slate-400 font-sans select-none relative group z-30">
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 rounded-2xl border border-slate-150 dark:border-slate-800/60 shadow-xs cursor-pointer hover:border-indigo-200 dark:hover:border-indigo-950 transition-all duration-200">
+                  {/* Symmetrical SVG Pie/Donut Chart */}
+                  <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 32 32">
+                      {/* Background total / pending circle */}
+                      <circle
+                        cx="16"
+                        cy="16"
+                        r="12"
+                        className="text-slate-200 dark:text-slate-800"
+                        strokeWidth="3.5"
+                        stroke="currentColor"
+                        fill="transparent"
+                      />
+                      {/* Completed tasks sector circle */}
+                      <circle
+                        cx="16"
+                        cy="16"
+                        r="12"
+                        className="text-emerald-500 dark:text-emerald-400 transition-all duration-500"
+                        strokeWidth="3.5"
+                        strokeDasharray={2 * Math.PI * 12}
+                        strokeDashoffset={2 * Math.PI * 12 * (1 - (actualTasks.length > 0 ? actualTasks.filter(n => n.completed).length / actualTasks.length : 0))}
+                        strokeLinecap="round"
+                        stroke="currentColor"
+                        fill="transparent"
+                      />
+                    </svg>
+                    <span className="absolute text-[8px] font-extrabold text-slate-700 dark:text-slate-300 font-mono">
+                      {actualTasks.length > 0 ? Math.round((actualTasks.filter(n => n.completed).length / actualTasks.length) * 100) : 0}%
+                    </span>
+                  </div>
+
+                  {/* Stats Texts */}
+                  <div className="flex flex-col text-[10px] leading-tight font-serif">
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-400 dark:text-slate-500">Задач:</span>
+                      <span className="font-extrabold text-slate-700 dark:text-slate-300 font-mono">{actualTasks.length}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-400 dark:text-slate-500">Выполнено:</span>
+                      <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">{actualTasks.filter(n => n.completed).length}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Elegant Tooltip Popover on Hover */}
+                <div className="absolute top-12 left-0 z-50 hidden group-hover:block bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 p-3 rounded-xl shadow-2xl min-w-[180px] text-xs pointer-events-none select-none">
+                  <div className="font-bold text-slate-800 dark:text-slate-200 mb-1.5 border-b pb-1 border-slate-100 dark:border-slate-800">
+                    Статистика прогресса
+                  </div>
+                  <div className="space-y-1 font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                    <div className="flex justify-between">
+                      <span>Всего задач:</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">{actualTasks.length}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                      <span>Выполнено:</span>
+                      <span className="font-bold">{actualTasks.filter(n => n.completed).length} ({actualTasks.length > 0 ? Math.round((actualTasks.filter(n => n.completed).length / actualTasks.length) * 100) : 0}%)</span>
+                    </div>
+                    <div className="flex justify-between text-amber-500 dark:text-amber-400">
+                      <span>В процессе:</span>
+                      <span className="font-bold">{actualTasks.length - actualTasks.filter(n => n.completed).length} ({actualTasks.length > 0 ? Math.round(((actualTasks.length - actualTasks.filter(n => n.completed).length) / actualTasks.length) * 100) : 0}%)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Center search bar & operations */}
           <div className="hidden sm:flex items-center gap-3">
@@ -5170,15 +5304,49 @@ export default function App() {
               </select>
             </div>
 
-            {isAnyFilterActive && (
-              <button
-                onClick={handleClearAllFilters}
-                className="ml-auto text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 font-semibold flex items-center gap-1 cursor-pointer hover:underline py-1 px-2 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors border border-transparent hover:border-rose-200"
-              >
-                <X className="w-3.5 h-3.5" />
-                Сбросить
-              </button>
-            )}
+            <div className="ml-auto flex items-center gap-2 flex-wrap">
+              {(focusedTaskId || focusedContainerId) && (() => {
+                const focusId = focusedTaskId || focusedContainerId;
+                const node = activeNodes.find(n => n.id === focusId);
+                const hasSaved = node && !!node.savedFilters;
+                return (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={handleSaveFiltersForFocusedNode}
+                      className={`text-xs font-semibold flex items-center gap-1 cursor-pointer hover:underline py-1 px-2 rounded-lg transition-all border border-transparent ${
+                        hasSaved 
+                          ? 'text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/15' 
+                          : 'text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 bg-indigo-50/20'
+                      }`}
+                      title={hasSaved ? 'Обновить сохраненные настройки фильтров по умолчанию' : 'Сохранить текущие настройки фильтров по умолчанию'}
+                    >
+                      <Star className={`w-3.5 h-3.5 ${hasSaved ? 'fill-amber-500 text-amber-500' : ''}`} />
+                      {hasSaved ? 'Обновить запомненные' : 'Запомнить фильтры'}
+                    </button>
+                    {hasSaved && (
+                      <button
+                        onClick={handleClearSavedFiltersForFocusedNode}
+                        className="text-slate-400 hover:text-rose-500 dark:text-slate-500 dark:hover:text-rose-450 font-semibold flex items-center gap-1 cursor-pointer hover:underline py-1 px-2 rounded-lg transition-colors hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                        title="Удалить сохраненные настройки фильтров по умолчанию"
+                      >
+                        <Trash className="w-3.5 h-3.5" />
+                        Сбросить по умолчанию
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {isAnyFilterActive && (
+                <button
+                  onClick={handleClearAllFilters}
+                  className="text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 font-semibold flex items-center gap-1 cursor-pointer hover:underline py-1 px-2 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors border border-transparent hover:border-rose-200"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Сбросить все
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -5205,65 +5373,110 @@ export default function App() {
           )}
 
           {/* Universal Focus Mode Banner for all non-canvas views */}
-          {state.activeProjectId && viewMode !== 'canvas' && (focusedTaskId || focusedContainerId) && (
-            <div className="mx-4 sm:mx-6 mt-3 mb-1 p-2 px-3 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs flex items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top-2 z-30 shrink-0 pointer-events-auto">
-              <div className="flex items-center gap-2 min-w-0">
-                {focusedContainerId ? (
-                  <>
-                    <span className="flex h-2 w-2 relative shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                    </span>
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
-                      📦 Контейнер: <strong className="font-extrabold text-amber-600 dark:text-amber-400">
-                        {activeNodes.find(n => n.id === focusedContainerId)?.text || 'Без названия'}
-                      </strong>
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex h-2 w-2 relative shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-450 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                    </span>
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
-                      🎯 Задача: <strong className="font-extrabold text-rose-600 dark:text-rose-400">
-                        {activeNodes.find(n => n.id === focusedTaskId)?.text || 'Без названия'}
-                      </strong>
-                    </span>
-                  </>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {focusedTaskId && (() => {
-                  const focusedTask = activeNodes.find(n => n.id === focusedTaskId);
-                  if (focusedTask && focusedTask.parentId) {
-                    const parentTask = activeNodes.find(n => n.id === focusedTask.parentId);
-                    return (
+          {state.activeProjectId && viewMode !== 'canvas' && (focusedTaskId || focusedContainerId) && (() => {
+            const focusId = focusedTaskId || focusedContainerId;
+            const focusedNode = activeNodes.find(n => n.id === focusId);
+            const hasSavedFilters = focusedNode && !!focusedNode.savedFilters;
+            
+            return (
+              <div className="mx-4 sm:mx-6 mt-3 mb-1 p-2 px-3 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs flex items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top-2 z-30 shrink-0 pointer-events-auto">
+                <div className="flex items-center gap-2 min-w-0">
+                  {focusedContainerId ? (
+                    <>
+                      <span className="flex h-2 w-2 relative shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                      </span>
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5 min-w-0">
+                        <span className="shrink-0">📦 Контейнер:</span>
+                        <strong className="font-extrabold text-amber-600 dark:text-amber-400 truncate">
+                          {focusedNode?.text || 'Без названия'}
+                        </strong>
+                        {hasSavedFilters && (
+                          <span className="shrink-0 text-[9px] font-extrabold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20" title="Применены фильтры по умолчанию">
+                            ★ по умолчанию
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex h-2 w-2 relative shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-450 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                      </span>
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5 min-w-0">
+                        <span className="shrink-0">🎯 Задача:</span>
+                        <strong className="font-extrabold text-rose-600 dark:text-rose-400 truncate">
+                          {focusedNode?.text || 'Без названия'}
+                        </strong>
+                        {hasSavedFilters && (
+                          <span className="shrink-0 text-[9px] font-extrabold text-rose-500 bg-rose-500/10 px-1.5 py-0.5 rounded-full border border-rose-500/20" title="Применены фильтры по умолчанию">
+                            ★ по умолчанию
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Remember/Reset Filters default configuration buttons */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={handleSaveFiltersForFocusedNode}
+                      className={`p-1.5 rounded-lg border shadow-3xs cursor-pointer transition-colors flex items-center gap-1 ${
+                        hasSavedFilters
+                          ? 'border-amber-300 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+                          : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900'
+                      }`}
+                      title={hasSavedFilters ? 'Фильтры сохранены по умолчанию. Кликните, чтобы обновить их текущими.' : 'Сохранить текущие фильтры как настройки по умолчанию для этого элемента'}
+                    >
+                      <Star className={`w-3.5 h-3.5 ${hasSavedFilters ? 'fill-amber-500 text-amber-500' : ''}`} />
+                      <span className="text-[10px] font-bold hidden md:inline">
+                        {hasSavedFilters ? 'Фильтры сохранены' : 'Запомнить фильтры'}
+                      </span>
+                    </button>
+                    {hasSavedFilters && (
                       <button
-                        onClick={() => setFocusedTaskId(focusedTask.parentId)}
-                        className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
-                        title={`Вернуться к родителю: ${parentTask?.text || 'Без названия'}`}
+                        onClick={handleClearSavedFiltersForFocusedNode}
+                        className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
+                        title="Удалить сохраненные фильтры по умолчанию"
                       >
-                        <ChevronLeft className="w-4 h-4" />
+                        <Trash className="w-3.5 h-3.5" />
                       </button>
-                    );
-                  }
-                  return null;
-                })()}
-                <button
-                  onClick={() => {
-                    if (focusedContainerId) setFocusedContainerId(null);
-                    if (focusedTaskId) setFocusedTaskId(null);
-                  }}
-                  className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-450 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
-                  title="Выйти из режима фокуса (назад к общему списку)"
-                >
-                  <Undo2 className="w-4 h-4" />
-                </button>
+                    )}
+                  </div>
+
+                  {focusedTaskId && (() => {
+                    const focusedTask = activeNodes.find(n => n.id === focusedTaskId);
+                    if (focusedTask && focusedTask.parentId) {
+                      const parentTask = activeNodes.find(n => n.id === focusedTask.parentId);
+                      return (
+                        <button
+                          onClick={() => setFocusedTaskId(focusedTask.parentId)}
+                          className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
+                          title={`Вернуться к родителю: ${parentTask?.text || 'Без названия'}`}
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                      );
+                    }
+                    return null;
+                  })()}
+                  <button
+                    onClick={() => {
+                      if (focusedContainerId) setFocusedContainerId(null);
+                      if (focusedTaskId) setFocusedTaskId(null);
+                    }}
+                    className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-450 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
+                    title="Выйти из режима фокуса (назад к общему списку)"
+                  >
+                    <Undo2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
           
           {state.activeProjectId ? (
             viewMode === 'mobile-list' ? (
