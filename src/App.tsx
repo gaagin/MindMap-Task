@@ -5625,6 +5625,7 @@ export default function App() {
                 onFiltersCollapsedChange={handleKanbanFiltersCollapsedChange}
                 isCategoriesExpanded={state.globalSettings?.categoriesExpanded}
                 onCategoriesExpandedChange={handleCategoriesExpandedChange}
+                focusedContainerId={focusedContainerId}
               />
             ) : viewMode === 'calendar' ? (
               <CalendarView

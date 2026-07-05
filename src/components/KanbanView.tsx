@@ -58,6 +58,7 @@ interface KanbanViewProps {
   onFiltersCollapsedChange?: (val: boolean) => void;
   isCategoriesExpanded?: boolean;
   onCategoriesExpandedChange?: (val: boolean) => void;
+  focusedContainerId?: string | null;
 }
 
 export default function KanbanView({
@@ -91,6 +92,7 @@ export default function KanbanView({
   onFiltersCollapsedChange,
   isCategoriesExpanded: propsIsCategoriesExpanded,
   onCategoriesExpandedChange,
+  focusedContainerId,
 }: KanbanViewProps) {
   const [internalGroupBy, setInternalGroupBy] = useState<'status' | 'category' | 'priority' | 'container'>(() => 'status');
   const groupBy = propsKanbanGroupBy !== undefined && propsKanbanGroupBy !== null ? propsKanbanGroupBy : internalGroupBy;
@@ -158,7 +160,25 @@ export default function KanbanView({
     }
   };
 
-  const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>({});
+  const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_kanban_collapsed_columns');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Failed to parse collapsedColumns from localStorage:', e);
+    }
+    return {};
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('task_mindmap_kanban_collapsed_columns', JSON.stringify(collapsedColumns));
+    } catch (e) {
+      console.error('Failed to save collapsedColumns to localStorage:', e);
+    }
+  }, [collapsedColumns]);
 
   // State to manage whether subtasks are shown in lists
   const [localShowSubtasks, setLocalShowSubtasks] = useState<boolean>(() => {
@@ -863,6 +883,8 @@ export default function KanbanView({
     let targetParentId: string | null = null;
     if (selectedContainerFilterId !== 'all' && selectedContainerFilterId !== 'no-container') {
       targetParentId = selectedContainerFilterId;
+    } else if (selectedContainerFilterId === 'all' && focusedContainerId) {
+      targetParentId = focusedContainerId;
     }
 
     if (groupBy === 'status') {
