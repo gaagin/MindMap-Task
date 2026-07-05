@@ -325,6 +325,118 @@ export default function KanbanView({
     };
   }, [touchDrag]);
 
+  // Ref to store the current drag coordinates (for auto-scrolling)
+  const dragCoordsRef = React.useRef<{ x: number; y: number } | null>(null);
+
+  // Auto-scroll logic during mouse dragging and touch dragging
+  React.useEffect(() => {
+    if (!draggedCardId && !touchDrag) {
+      dragCoordsRef.current = null;
+      return;
+    }
+
+    let animationFrameId: number;
+
+    const scrollContainer = document.getElementById('kanban-columns-container');
+    if (!scrollContainer) return;
+
+    const handleDragOver = (e: DragEvent) => {
+      dragCoordsRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches && e.touches.length > 0) {
+        const touch = e.touches[0];
+        dragCoordsRef.current = { x: touch.clientX, y: touch.clientY };
+      }
+    };
+
+    window.addEventListener('dragover', handleDragOver, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+
+    const threshold = 80; // distance from edge in px to trigger scroll
+    const maxSpeed = 16; // maximum scrolling speed in px per frame
+
+    const tick = () => {
+      if (dragCoordsRef.current && scrollContainer) {
+        const { x, y } = dragCoordsRef.current;
+        const rect = scrollContainer.getBoundingClientRect();
+
+        // 1. Horizontal Scroll of columns container
+        const leftEdge = rect.left + threshold;
+        const rightEdge = rect.right - threshold;
+        let scrollXAmount = 0;
+
+        if (x < leftEdge) {
+          const intensity = Math.max(0, Math.min(1, (leftEdge - x) / threshold));
+          scrollXAmount = -maxSpeed * intensity;
+        } else if (x > rightEdge) {
+          const intensity = Math.max(0, Math.min(1, (x - rightEdge) / threshold));
+          scrollXAmount = maxSpeed * intensity;
+        }
+
+        if (scrollXAmount !== 0) {
+          scrollContainer.scrollLeft += scrollXAmount;
+        }
+
+        // 2. Vertical Scroll of specific columns if hovered
+        let scrollYContainer: HTMLElement | null = null;
+        const elements = document.elementsFromPoint(x, y);
+        for (const el of elements) {
+          if (el.id && el.id.startsWith('kanban-column-cards-')) {
+            scrollYContainer = el as HTMLElement;
+            break;
+          }
+        }
+
+        if (scrollYContainer) {
+          const colRect = scrollYContainer.getBoundingClientRect();
+          const topEdge = colRect.top + threshold / 1.5;
+          const bottomEdge = colRect.bottom - threshold / 1.5;
+          let scrollYAmount = 0;
+
+          if (y < topEdge) {
+            const intensity = Math.max(0, Math.min(1, (topEdge - y) / (threshold / 1.5)));
+            scrollYAmount = -maxSpeed * intensity;
+          } else if (y > bottomEdge) {
+            const intensity = Math.max(0, Math.min(1, (y - bottomEdge) / (threshold / 1.5)));
+            scrollYAmount = maxSpeed * intensity;
+          }
+
+          if (scrollYAmount !== 0) {
+            scrollYContainer.scrollTop += scrollYAmount;
+          }
+        }
+
+        // 3. Highlight the correct column as it scrolls under a stationary finger/cursor
+        if (touchDrag) {
+          const matchedEl = document.elementFromPoint(x, y);
+          if (matchedEl) {
+            const colContainer = matchedEl.closest('[data-column-id]');
+            if (colContainer) {
+              const colId = colContainer.getAttribute('data-column-id');
+              if (colId) {
+                setDraggedOverColumn(prev => prev !== colId ? colId : prev);
+              }
+            } else {
+              setDraggedOverColumn(prev => prev !== null ? null : prev);
+            }
+          }
+        }
+      }
+
+      animationFrameId = requestAnimationFrame(tick);
+    };
+
+    animationFrameId = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, [draggedCardId, touchDrag]);
+
   // Clean up any pending touch timeouts on unmount
   React.useEffect(() => {
     return () => {
