@@ -1716,6 +1716,25 @@ export default function TaskDetailsPanel({
                 );
               }
             })()}
+            {node.mirrorGroupId && (() => {
+              const mirrorCopies = allNodes.filter(n => n.mirrorGroupId === node.mirrorGroupId && n.id !== node.id);
+              return mirrorCopies.map(mCopy => {
+                const mParent = mCopy.parentId ? allNodes.find(n => n.id === mCopy.parentId) : null;
+                const placeLabel = mParent ? mParent.text : 'Свободная';
+                return (
+                  <button
+                    key={mCopy.id}
+                    type="button"
+                    onClick={() => onSelectNode && onSelectNode(mCopy.id)}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-lg border border-purple-100 dark:border-purple-900/30 transition-all cursor-pointer"
+                    title={`Перейти к зеркальной копии в "${placeLabel}"`}
+                  >
+                    <span>🪞</span>
+                    <span className="truncate max-w-[150px]">Зеркало: {placeLabel}</span>
+                  </button>
+                );
+              });
+            })()}
           </div>
 
           {/* Core Title input centered */}
@@ -3778,6 +3797,25 @@ export default function TaskDetailsPanel({
               }
               return null;
             })()}
+            {node.mirrorGroupId && (() => {
+              const mirrorCopies = allNodes.filter(n => n.mirrorGroupId === node.mirrorGroupId && n.id !== node.id);
+              return mirrorCopies.map(mCopy => {
+                const mParent = mCopy.parentId ? allNodes.find(n => n.id === mCopy.parentId) : null;
+                const placeLabel = mParent ? mParent.text : 'Свободная';
+                return (
+                  <button
+                    key={mCopy.id}
+                    type="button"
+                    onClick={() => onSelectNode && onSelectNode(mCopy.id)}
+                    className="w-full flex items-center gap-2 px-3 py-2 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-lg border border-purple-100/30 dark:border-purple-900/30 transition-all cursor-pointer mb-2"
+                    title={`Перейти к зеркальной копии в "${placeLabel}"`}
+                  >
+                    <span className="text-purple-500">🪞</span>
+                    <span className="truncate">Перейти к зеркалу: <span className="font-semibold">{placeLabel}</span></span>
+                  </button>
+                );
+              });
+            })()}
 
         {/* Quick Access Info Dashboard & Sub-tabs Switcher */}
         <div className="space-y-3 bg-slate-50/50 dark:bg-slate-900/30 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/60 shadow-xs mb-4 shrink-0">
@@ -5130,6 +5168,47 @@ export default function TaskDetailsPanel({
                 </p>
               </div>
             )}
+
+            {(() => {
+              const mirrorCopies = node.mirrorGroupId 
+                ? allNodes.filter(n => n.mirrorGroupId === node.mirrorGroupId && n.id !== node.id)
+                : [];
+              if (mirrorCopies.length === 0) return null;
+              return (
+                <div className="pt-1.5 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block">
+                    Зеркальные копии (переход):
+                  </span>
+                  <div className="space-y-1.5">
+                    {mirrorCopies.map(mCopy => {
+                      const mParent = mCopy.parentId ? allNodes.find(n => n.id === mCopy.parentId) : null;
+                      const placeLabel = mParent 
+                        ? (mParent.isContainer ? `Область: ${mParent.text}` : `Подзадача в: ${mParent.text}`)
+                        : 'Свободная задача';
+
+                      return (
+                        <div key={mCopy.id} className="text-xs font-semibold text-slate-700 dark:text-slate-300 bg-purple-500/5 dark:bg-purple-950/10 p-2 rounded-lg border border-purple-100/30 dark:border-purple-900/40 break-words flex items-center gap-1.5 font-sans">
+                          <span>🪞</span>
+                          <div className="flex flex-col min-w-0 flex-1">
+                            <span className="truncate max-w-[170px] font-bold">{mCopy.text}</span>
+                            <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">{placeLabel}</span>
+                          </div>
+                          {onSelectNode && (
+                            <button
+                              type="button"
+                              onClick={() => onSelectNode(mCopy.id)}
+                              className="text-[10px] bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/40 dark:hover:bg-purple-800/40 text-purple-700 dark:text-purple-300 font-extrabold px-2 py-1 rounded transition-colors cursor-pointer shrink-0"
+                            >
+                              Перейти
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 

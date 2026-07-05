@@ -7435,6 +7435,24 @@ export default function MindMapCanvas({
                         <span className="truncate max-w-[120px]">{node.mirrorParentText}</span>
                       </div>
                     )}
+                    {node.mirrorGroupId && (() => {
+                      const mirrorCopies = nodes.filter(n => n.mirrorGroupId === node.mirrorGroupId && n.id !== node.id);
+                      if (mirrorCopies.length === 0) return null;
+                      return (
+                        <div 
+                          className="text-[9px] font-bold mt-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded border border-purple-100/30 dark:border-purple-900/30 select-none max-w-max truncate transition-colors cursor-pointer bg-purple-50/55 dark:bg-purple-950/20 text-purple-600 dark:text-purple-400 hover:bg-purple-100/40 dark:hover:bg-purple-900/25"
+                          title={`Эта задача имеет зеркальные копии. Нажмите, чтобы открыть свойства и перейти к ним.`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectNode(node.id);
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          <span className="text-purple-500 text-[10px]">🪞</span>
+                          <span className="truncate max-w-[120px]">Зеркала ({mirrorCopies.length})</span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Quick add subtask plus button */}

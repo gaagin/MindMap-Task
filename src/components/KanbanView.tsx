@@ -918,6 +918,23 @@ export default function KanbanView({
                 <span className="truncate max-w-[125px]">{node.mirrorParentText}</span>
               </div>
             )}
+            {node.mirrorGroupId && (() => {
+              const mirrorCopies = nodes.filter(n => n.mirrorGroupId === node.mirrorGroupId && n.id !== node.id);
+              if (mirrorCopies.length === 0) return null;
+              return (
+                <div 
+                  className="text-[9px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100/30 dark:border-purple-900/30 px-1.5 py-0.5 rounded select-none max-w-max mt-1 truncate flex items-center gap-1 cursor-pointer hover:bg-purple-100/40 dark:hover:bg-purple-900/25"
+                  title="Эта задача имеет зеркальные копии. Нажмите, чтобы открыть свойства и перейти."
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectNode && onSelectNode(node.id);
+                  }}
+                >
+                  <span>🪞</span>
+                  <span className="truncate max-w-[125px]">Зеркала ({mirrorCopies.length})</span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Move category drop down for mobile touch responsiveness triggers */}

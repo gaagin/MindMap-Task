@@ -954,6 +954,24 @@ export default function MobileListView({
                             </span>
                           )}
 
+                          {node.mirrorGroupId && (() => {
+                            const mirrorCopies = nodes.filter(n => n.mirrorGroupId === node.mirrorGroupId && n.id !== node.id);
+                            if (mirrorCopies.length === 0) return null;
+                            return (
+                              <span 
+                                className="inline-flex items-center gap-1 px-1 bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 text-[8.5px] font-bold rounded-sm uppercase cursor-pointer"
+                                title="Эта задача имеет зеркальные копии. Нажмите, чтобы открыть свойства."
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectNode && onSelectNode(node.id);
+                                }}
+                              >
+                                <span>🪞</span>
+                                <span className="truncate max-w-[80px]">Зеркала ({mirrorCopies.length})</span>
+                              </span>
+                            );
+                          })()}
+
                           {node.priority !== 'none' && (
                             <span className={`px-1 rounded-sm font-bold text-[9px] uppercase border ${pMeta.bg} ${pMeta.border} ${pMeta.text}`}>
                               {node.priority}
