@@ -107,6 +107,9 @@ export interface TaskNode {
     filterDueDate?: string;
     filterAttachments?: string;
     filterNotes?: string;
+    filterCategoryId?: string | null;
+    kanbanGroupBy?: 'status' | 'category' | 'priority' | 'container' | null;
+    kanbanContainerFilterId?: string | null;
   };
 }
 

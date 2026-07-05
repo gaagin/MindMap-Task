@@ -391,6 +391,9 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
           filterDueDate: n.savedFilters.filterDueDate || null,
           filterAttachments: n.savedFilters.filterAttachments || null,
           filterNotes: n.savedFilters.filterNotes || null,
+          filterCategoryId: n.savedFilters.filterCategoryId || null,
+          kanbanGroupBy: n.savedFilters.kanbanGroupBy || null,
+          kanbanContainerFilterId: n.savedFilters.kanbanContainerFilterId || null,
         } : null,
         workflowConnections: (n.workflowConnections || [])
           .map(wc => ({
@@ -1271,6 +1274,9 @@ export default function App() {
   const [filterDueDate, setFilterDueDate] = useState<string>('all');
   const [filterAttachments, setFilterAttachments] = useState<string>('all');
   const [filterNotes, setFilterNotes] = useState<string>('all');
+  const [filterCategoryId, setFilterCategoryId] = useState<string | null>(null);
+  const [kanbanGroupBy, setKanbanGroupBy] = useState<'status' | 'category' | 'priority' | 'container' | null>('status');
+  const [kanbanContainerFilterId, setKanbanContainerFilterId] = useState<string | null>('all');
 
   const [preFocusFilters, setPreFocusFilters] = useState<{
     filterStatus: string;
@@ -1279,6 +1285,9 @@ export default function App() {
     filterDueDate: string;
     filterAttachments: string;
     filterNotes: string;
+    filterCategoryId: string | null;
+    kanbanGroupBy: 'status' | 'category' | 'priority' | 'container' | null;
+    kanbanContainerFilterId: string | null;
   } | null>(null);
 
   const filtersRef = React.useRef({
@@ -1287,7 +1296,10 @@ export default function App() {
     filterTag,
     filterDueDate,
     filterAttachments,
-    filterNotes
+    filterNotes,
+    filterCategoryId,
+    kanbanGroupBy,
+    kanbanContainerFilterId
   });
   filtersRef.current = {
     filterStatus,
@@ -1295,7 +1307,10 @@ export default function App() {
     filterTag,
     filterDueDate,
     filterAttachments,
-    filterNotes
+    filterNotes,
+    filterCategoryId,
+    kanbanGroupBy,
+    kanbanContainerFilterId
   };
 
   // Canvas zoom & pan view attributes
@@ -1357,6 +1372,9 @@ export default function App() {
               if (node.savedFilters.filterDueDate !== undefined) setFilterDueDate(node.savedFilters.filterDueDate);
               if (node.savedFilters.filterAttachments !== undefined) setFilterAttachments(node.savedFilters.filterAttachments);
               if (node.savedFilters.filterNotes !== undefined) setFilterNotes(node.savedFilters.filterNotes);
+              if (node.savedFilters.filterCategoryId !== undefined) setFilterCategoryId(node.savedFilters.filterCategoryId);
+              if (node.savedFilters.kanbanGroupBy !== undefined) setKanbanGroupBy(node.savedFilters.kanbanGroupBy);
+              if (node.savedFilters.kanbanContainerFilterId !== undefined) setKanbanContainerFilterId(node.savedFilters.kanbanContainerFilterId);
             }
           }
         }
@@ -1370,6 +1388,9 @@ export default function App() {
           setFilterDueDate(preFocusFilters.filterDueDate);
           setFilterAttachments(preFocusFilters.filterAttachments);
           setFilterNotes(preFocusFilters.filterNotes);
+          setFilterCategoryId(preFocusFilters.filterCategoryId);
+          setKanbanGroupBy(preFocusFilters.kanbanGroupBy);
+          setKanbanContainerFilterId(preFocusFilters.kanbanContainerFilterId);
           setPreFocusFilters(null);
         }
       }
@@ -4352,6 +4373,9 @@ export default function App() {
     setFilterDueDate("all");
     setFilterAttachments("all");
     setFilterNotes("all");
+    setFilterCategoryId(null);
+    setKanbanGroupBy("status");
+    setKanbanContainerFilterId("all");
     setSearchQuery("");
   };
 
@@ -4371,7 +4395,10 @@ export default function App() {
               filterTag,
               filterDueDate,
               filterAttachments,
-              filterNotes
+              filterNotes,
+              filterCategoryId,
+              kanbanGroupBy,
+              kanbanContainerFilterId
             },
             updatedAt: new Date().toISOString()
           };
@@ -5525,6 +5552,12 @@ export default function App() {
                 onToggleSelectNode={handleToggleSelectNode}
                 searchQuery={searchQuery}
                 onFullScreenChange={setIsViewFullScreen}
+                selectedCategoryId={filterCategoryId}
+                onSelectCategoryId={setFilterCategoryId}
+                kanbanGroupBy={kanbanGroupBy}
+                onKanbanGroupByChange={setKanbanGroupBy}
+                kanbanContainerFilterId={kanbanContainerFilterId}
+                onKanbanContainerFilterIdChange={setKanbanContainerFilterId}
               />
             ) : viewMode === 'calendar' ? (
               <CalendarView

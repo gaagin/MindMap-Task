@@ -567,7 +567,9 @@ export default function MindMapCanvas({
       const priority = colId === 'none' ? 'none' : colId as Priority;
       onUpdateNode({ ...node, priority });
     } else if (currentGroupBy === 'category') {
-      const currentActiveCategoryId = containerKanbanActiveCategory[containerId] || (tagCategories.length > 0 ? tagCategories[0].id : null);
+      const containerNode = nodes.find(n => n.id === containerId);
+      const containerSavedCatId = containerNode?.savedFilters?.filterCategoryId;
+      const currentActiveCategoryId = containerKanbanActiveCategory[containerId] || containerSavedCatId || (tagCategories.length > 0 ? tagCategories[0].id : null);
       const activeCategory = tagCategories.find(c => c.id === currentActiveCategoryId) || tagCategories[0];
       const activeTags = activeCategory?.tags || [];
 
@@ -1323,7 +1325,8 @@ export default function MindMapCanvas({
 
     if (viewMode === 'kanban') {
       const currentGroupBy = containerKanbanGroupBy[node.id] || 'status';
-      const currentActiveCategoryId = containerKanbanActiveCategory[node.id] || (tagCategories.length > 0 ? tagCategories[0].id : '');
+      const containerSavedCatId = node.savedFilters?.filterCategoryId;
+      const currentActiveCategoryId = containerKanbanActiveCategory[node.id] || containerSavedCatId || (tagCategories.length > 0 ? tagCategories[0].id : '');
       const activeCategory = tagCategories.find(c => c.id === currentActiveCategoryId) || tagCategories[0];
       const activeTags = activeCategory?.tags || [];
 
@@ -1424,7 +1427,17 @@ export default function MindMapCanvas({
                         <button
                           key={cat.id}
                           type="button"
-                          onClick={() => setContainerKanbanActiveCategory(prev => ({ ...prev, [node.id]: cat.id }))}
+                          onClick={() => {
+                            setContainerKanbanActiveCategory(prev => ({ ...prev, [node.id]: cat.id }));
+                            onUpdateNode({
+                              ...node,
+                              savedFilters: {
+                                ...(node.savedFilters || {}),
+                                filterCategoryId: cat.id
+                              },
+                              updatedAt: new Date().toISOString()
+                            });
+                          }}
                           className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold border transition-all cursor-pointer ${
                             isSelected
                               ? 'bg-indigo-50/20 dark:bg-indigo-950/20 border-indigo-500 text-indigo-600 dark:text-indigo-400'

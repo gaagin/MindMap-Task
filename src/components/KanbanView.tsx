@@ -42,6 +42,12 @@ interface KanbanViewProps {
   onToggleSelectNode?: (id: string) => void;
   searchQuery?: string;
   onFullScreenChange?: (isFullScreen: boolean) => void;
+  selectedCategoryId?: string | null;
+  onSelectCategoryId?: (catId: string | null) => void;
+  kanbanGroupBy?: 'status' | 'category' | 'priority' | 'container' | null;
+  onKanbanGroupByChange?: (groupBy: 'status' | 'category' | 'priority' | 'container') => void;
+  kanbanContainerFilterId?: string | null;
+  onKanbanContainerFilterIdChange?: (containerId: string) => void;
 }
 
 export default function KanbanView({
@@ -59,8 +65,22 @@ export default function KanbanView({
   onToggleSelectNode,
   searchQuery = '',
   onFullScreenChange,
+  selectedCategoryId: propsSelectedCategoryId,
+  onSelectCategoryId,
+  kanbanGroupBy: propsKanbanGroupBy,
+  onKanbanGroupByChange,
+  kanbanContainerFilterId: propsKanbanContainerFilterId,
+  onKanbanContainerFilterIdChange,
 }: KanbanViewProps) {
-  const [groupBy, setGroupBy] = useState<'status' | 'category' | 'priority' | 'container'>(() => 'status');
+  const [internalGroupBy, setInternalGroupBy] = useState<'status' | 'category' | 'priority' | 'container'>(() => 'status');
+  const groupBy = propsKanbanGroupBy !== undefined && propsKanbanGroupBy !== null ? propsKanbanGroupBy : internalGroupBy;
+  const setGroupBy = (g: 'status' | 'category' | 'priority' | 'container') => {
+    setInternalGroupBy(g);
+    if (onKanbanGroupByChange) {
+      onKanbanGroupByChange(g);
+    }
+  };
+
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   useEffect(() => {
@@ -142,6 +162,35 @@ export default function KanbanView({
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(() => {
     return tagCategories.length > 0 ? tagCategories[0].id : null;
   });
+
+  // Sync with prop if passed
+  React.useEffect(() => {
+    if (propsSelectedCategoryId !== undefined && propsSelectedCategoryId !== null) {
+      setSelectedCategoryId(propsSelectedCategoryId);
+    }
+  }, [propsSelectedCategoryId]);
+
+  const handleSelectCategory = (catId: string | null) => {
+    setSelectedCategoryId(catId);
+    if (onSelectCategoryId) {
+      onSelectCategoryId(catId);
+    }
+    
+    // Auto-save category selection to the active container if we are viewing a specific container ("Область")!
+    if (selectedContainerFilterId && selectedContainerFilterId !== 'all' && selectedContainerFilterId !== 'no-container') {
+      const containerNode = nodes.find(n => n.id === selectedContainerFilterId);
+      if (containerNode) {
+        onUpdateNode({
+          ...containerNode,
+          savedFilters: {
+            ...(containerNode.savedFilters || {}),
+            filterCategoryId: catId
+          },
+          updatedAt: new Date().toISOString()
+        });
+      }
+    }
+  };
 
   // State to manage inline card creation inputs for each column
   // Map of column key (either 'uncategorized' or tag name) to boolean and text value
@@ -288,8 +337,100 @@ export default function KanbanView({
   };
 
   // Container filter states and helper methods
-  const [selectedContainerFilterId, setSelectedContainerFilterId] = useState<string>('all');
+  const [internalSelectedContainerFilterId, setInternalSelectedContainerFilterId] = useState<string>('all');
+  const selectedContainerFilterId = propsKanbanContainerFilterId !== undefined && propsKanbanContainerFilterId !== null ? propsKanbanContainerFilterId : internalSelectedContainerFilterId;
+
+  const handleSelectContainerFilter = (id: string) => {
+    setInternalSelectedContainerFilterId(id);
+    if (onKanbanContainerFilterIdChange) {
+      onKanbanContainerFilterIdChange(id);
+    }
+
+    // Load saved default filters from the selected container if applicable
+    if (id && id !== 'all' && id !== 'no-container') {
+      const containerNode = nodes.find(n => n.id === id);
+      if (containerNode && containerNode.savedFilters) {
+        if (containerNode.savedFilters.kanbanGroupBy) {
+          setGroupBy(containerNode.savedFilters.kanbanGroupBy);
+        }
+        if (containerNode.savedFilters.filterCategoryId !== undefined) {
+          setSelectedCategoryId(containerNode.savedFilters.filterCategoryId);
+          if (onSelectCategoryId) {
+            onSelectCategoryId(containerNode.savedFilters.filterCategoryId);
+          }
+        }
+      }
+    }
+
+    // Auto-save container selection to the currently focused/selected node!
+    if (selectedNodeId) {
+      const focusedNode = nodes.find(n => n.id === selectedNodeId);
+      if (focusedNode) {
+        onUpdateNode({
+          ...focusedNode,
+          savedFilters: {
+            ...(focusedNode.savedFilters || {}),
+            kanbanContainerFilterId: id
+          },
+          updatedAt: new Date().toISOString()
+        });
+      }
+    }
+  };
+
+  const handleGroupByChange = (newGroupBy: 'status' | 'category' | 'priority' | 'container') => {
+    setGroupBy(newGroupBy);
+
+    // Auto-save grouping selection to the active container if we are viewing a specific container ("Область")!
+    if (selectedContainerFilterId && selectedContainerFilterId !== 'all' && selectedContainerFilterId !== 'no-container') {
+      const containerNode = nodes.find(n => n.id === selectedContainerFilterId);
+      if (containerNode) {
+        onUpdateNode({
+          ...containerNode,
+          savedFilters: {
+            ...(containerNode.savedFilters || {}),
+            kanbanGroupBy: newGroupBy
+          },
+          updatedAt: new Date().toISOString()
+        });
+      }
+    }
+
+    // Also auto-save grouping selection to the currently focused/selected node!
+    if (selectedNodeId) {
+      const focusedNode = nodes.find(n => n.id === selectedNodeId);
+      if (focusedNode) {
+        onUpdateNode({
+          ...focusedNode,
+          savedFilters: {
+            ...(focusedNode.savedFilters || {}),
+            kanbanGroupBy: newGroupBy
+          },
+          updatedAt: new Date().toISOString()
+        });
+      }
+    }
+  };
+
   const allContainers = nodes.filter(n => n.isContainer && !n.archived);
+
+  // Load saved default category filter when selecting a container
+  React.useEffect(() => {
+    if (selectedContainerFilterId && selectedContainerFilterId !== 'all' && selectedContainerFilterId !== 'no-container') {
+      const containerNode = nodes.find(n => n.id === selectedContainerFilterId);
+      if (containerNode && containerNode.savedFilters) {
+        if (containerNode.savedFilters.filterCategoryId) {
+          setSelectedCategoryId(containerNode.savedFilters.filterCategoryId);
+          if (onSelectCategoryId) {
+            onSelectCategoryId(containerNode.savedFilters.filterCategoryId);
+          }
+        }
+        if (containerNode.savedFilters.kanbanGroupBy) {
+          setGroupBy(containerNode.savedFilters.kanbanGroupBy);
+        }
+      }
+    }
+  }, [selectedContainerFilterId, nodes, onSelectCategoryId]);
 
   const getTaskContainerId = (node: TaskNode): string | null => {
     let curr: TaskNode | undefined = node;
@@ -1717,6 +1858,7 @@ export default function KanbanView({
               </div>
             </div>
 
+            {/* Фильтры Toggle */}
             <button
               type="button"
               onClick={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
@@ -1735,37 +1877,43 @@ export default function KanbanView({
                   ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-850 dark:text-amber-400' 
                   : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-slate-700 dark:text-slate-300 border-slate-200/50 dark:border-slate-800'
               }`}
-              title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
+              title={isFullScreen ? "Выйти из полноэкранного режима" : "Войти в полноэкранный режим"}
             >
-              {isFullScreen ? <Minimize2 className="w-2.5 h-2.5 text-current" /> : <Maximize2 className="w-2.5 h-2.5 text-current" />}
-              <span className="hidden sm:inline-block font-black">{isFullScreen ? "Свернуть" : "На весь экран"}</span>
+              {isFullScreen ? (
+                <>
+                  <Minimize2 className="w-2.5 h-2.5" />
+                  <span>Окно</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-2.5 h-2.5" />
+                  <span>Экран</span>
+                </>
+              )}
             </button>
           </div>
         </div>
 
-        {/* Collapsible advanced filter controls with nice expand/collapse animation */}
         <AnimatePresence initial={false}>
           {!isFiltersCollapsed && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="overflow-hidden border-t border-slate-200/60 dark:border-slate-800/50 bg-slate-50/30 dark:bg-slate-950/20"
             >
-              <div className="flex flex-col gap-1.5 p-2 md:p-3 border-b border-indigo-100/10 dark:border-indigo-950/10 bg-slate-50/30 dark:bg-slate-950/20">
-                {/* Clean side-by-side flex layout to save max vertical space */}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                  
-                  {/* Container Selector as an elegant dropdown */}
+              <div className="px-3 py-1.5 md:px-4 md:py-2 space-y-1.5">
+                <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10.5px] font-black text-slate-500 dark:text-slate-400 tracking-wider uppercase shrink-0">
                       Область:
                     </span>
-                    <div className="relative">
+                    <div className="relative shrink-0">
                       <select
                         id="kanban-container-filter-select"
                         value={selectedContainerFilterId}
-                        onChange={(e) => setSelectedContainerFilterId(e.target.value)}
+                        onChange={(e) => handleSelectContainerFilter(e.target.value)}
                         className="appearance-none bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[12px] font-extrabold rounded-lg pl-2 pr-6 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
                       >
                         <option value="all">📁 Все ({nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived).length})</option>
@@ -1793,7 +1941,7 @@ export default function KanbanView({
                     <div className="flex items-center gap-0.5 bg-slate-200/50 dark:bg-slate-900/50 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800/60 shrink-0">
                       <button
                         type="button"
-                        onClick={() => setGroupBy('status')}
+                        onClick={() => handleGroupByChange('status')}
                         className={`px-1.5 py-0.5 border text-[11.5px] font-black rounded transition-all cursor-pointer whitespace-nowrap ${
                           groupBy === 'status' 
                             ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
@@ -1804,7 +1952,7 @@ export default function KanbanView({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setGroupBy('category')}
+                        onClick={() => handleGroupByChange('category')}
                         className={`px-1.5 py-0.5 border text-[11.5px] font-black rounded transition-all cursor-pointer whitespace-nowrap ${
                           groupBy === 'category' 
                             ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
@@ -1815,7 +1963,7 @@ export default function KanbanView({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setGroupBy('priority')}
+                        onClick={() => handleGroupByChange('priority')}
                         className={`px-1.5 py-0.5 border text-[11.5px] font-black rounded transition-all cursor-pointer whitespace-nowrap ${
                           groupBy === 'priority' 
                             ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
@@ -1826,7 +1974,7 @@ export default function KanbanView({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setGroupBy('container')}
+                        onClick={() => handleGroupByChange('container')}
                         className={`px-1.5 py-0.5 border text-[11.5px] font-black rounded transition-all cursor-pointer whitespace-nowrap ${
                           groupBy === 'container' 
                             ? 'bg-white dark:bg-slate-800 border-slate-200/50 dark:border-slate-700 text-[#4f46e5] dark:text-indigo-400 shadow-sm' 
@@ -1899,7 +2047,7 @@ export default function KanbanView({
                           <button
                             key={cat.id}
                             id={`kanban-cat-tab-${cat.id}`}
-                            onClick={() => setSelectedCategoryId(cat.id)}
+                            onClick={() => handleSelectCategory(cat.id)}
                             className={`px-1.5 py-0.5 text-[11.5px] font-extrabold flex items-center gap-1.5 cursor-pointer transition-all duration-150 shrink-0 rounded border ${
                               isSelected 
                                 ? 'bg-white dark:bg-slate-900 border-[#4f46e5] text-[#4f46e5] dark:text-indigo-400 ring-1 ring-indigo-500/10'
