@@ -48,7 +48,8 @@ import {
   Hexagon,
   Bell,
   Target,
-  GripVertical
+  GripVertical,
+  Layers
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, pruneTaskNodeHistory, suggestEstimatedTime } from '../utils';
@@ -490,6 +491,7 @@ export default function MindMapCanvas({
   };
 
   const [isElementDropdownOpen, setIsElementDropdownOpen] = useState(false);
+  const [isContainersDropdownOpen, setIsContainersDropdownOpen] = useState(false);
 
   useEffect(() => {
     if (lastCreatedNodeId) {
@@ -5535,25 +5537,127 @@ export default function MindMapCanvas({
         </div>
       </div>
 
-      <div className="absolute bottom-12 right-4 sm:bottom-4 sm:right-4 z-40">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsElementDropdownOpen(!isElementDropdownOpen);
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all duration-250 cursor-pointer text-white bg-indigo-600 hover:bg-indigo-700 hover:scale-110 active:scale-95 border-none focus:outline-none`}
-          title="Добавить элемент"
-        >
-          <Plus className={`w-7 h-7 transition-transform duration-250 ${isElementDropdownOpen ? 'rotate-45' : ''}`} />
-        </button>
-
-        {isElementDropdownOpen && (
-          <div
-            className="absolute bottom-16 right-0 mb-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-2 w-64 z-50 flex flex-col gap-1 select-text origin-bottom-right"
-            onClick={(e) => e.stopPropagation()}
+      <div className="absolute bottom-12 right-4 sm:bottom-4 sm:right-4 z-40 flex flex-col gap-3 items-end">
+        {/* Кнопка списка контейнеров */}
+        <div className="relative">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsContainersDropdownOpen(!isContainersDropdownOpen);
+            }}
             onMouseDown={(e) => e.stopPropagation()}
+            className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:scale-110 active:scale-95 transition-all duration-200 cursor-pointer focus:outline-none`}
+            title="Контейнеры проекта"
           >
+            <Layers className="w-5 h-5" />
+          </button>
+
+          {isContainersDropdownOpen && (
+            <div
+              className="absolute bottom-12 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-3.5 w-72 z-50 flex flex-col gap-2 origin-bottom-right animate-in fade-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                <span className="text-xs font-extrabold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+                  Контейнеры проекта
+                </span>
+                <span className="text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded">
+                  {nodes.filter(n => n.isContainer && !n.archived).length}
+                </span>
+              </div>
+
+              <div className="max-h-60 overflow-y-auto pr-1 space-y-1 custom-scrollbar">
+                {(() => {
+                  const containers = nodes.filter(n => n.isContainer && !n.archived);
+                  if (containers.length === 0) {
+                    return (
+                      <div className="text-center py-6 text-slate-400 dark:text-slate-500 flex flex-col items-center gap-1.5">
+                        <Layers className="w-8 h-8 opacity-40 stroke-[1.5]" />
+                        <span className="text-xs font-medium">Нет активных контейнеров</span>
+                        <p className="text-[10px] opacity-75 max-w-[180px]">
+                          Создайте контейнер на холсте через меню кнопки «+»
+                        </p>
+                      </div>
+                    );
+                  }
+                  return containers.map(container => {
+                    const childCount = nodes.filter(n => n.parentId === container.id && !n.archived).length;
+                    const progress = calculateProgress(container.id, nodes) || 0;
+                    
+                    return (
+                      <button
+                        key={container.id}
+                        onClick={() => {
+                          const targetZoom = 0.85;
+                          setZoom(targetZoom);
+                          
+                          const viewportWidth = window.innerWidth;
+                          const viewportHeight = window.innerHeight;
+                          const cWidth = container.width || 520;
+                          const cHeight = container.height || 400;
+                          
+                          // Center container on the viewport
+                          const targetPanX = (viewportWidth / 2) - (container.x + cWidth / 2) * targetZoom;
+                          const targetPanY = (viewportHeight / 2) - (container.y + cHeight / 2) * targetZoom;
+                          
+                          setPanX(targetPanX);
+                          setPanY(targetPanY);
+                          
+                          onSelectNode(container.id);
+                          setFocusedContainerId(container.id);
+                          setIsContainersDropdownOpen(false);
+                        }}
+                        className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer group animate-in fade-in duration-100"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform">
+                          <Layers className="w-4 h-4 text-indigo-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                              {container.text || 'Без названия'}
+                            </span>
+                            <span className="text-[9px] text-slate-400 dark:text-slate-500 shrink-0 font-medium font-mono">
+                              Задач: {childCount}
+                            </span>
+                          </div>
+                          {/* Progress bar inside dropdown item */}
+                          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full mt-1 overflow-hidden">
+                            <div 
+                              className="bg-indigo-500 h-full rounded-full transition-all duration-300" 
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="relative">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsElementDropdownOpen(!isElementDropdownOpen);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all duration-250 cursor-pointer text-white bg-indigo-600 hover:bg-indigo-700 hover:scale-110 active:scale-95 border-none focus:outline-none`}
+            title="Добавить элемент"
+          >
+            <Plus className={`w-7 h-7 transition-transform duration-250 ${isElementDropdownOpen ? 'rotate-45' : ''}`} />
+          </button>
+
+          {isElementDropdownOpen && (
+            <div
+              className="absolute bottom-16 right-0 mb-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-2 w-64 z-50 flex flex-col gap-1 select-text origin-bottom-right"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
             {/* Floating Node Button */}
             <button
               onClick={() => {
@@ -5629,6 +5733,7 @@ export default function MindMapCanvas({
             </button>
           </div>
         )}
+        </div>
       </div>
 
       {/* Origin coordinates center dot (0, 0) */}
