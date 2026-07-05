@@ -336,6 +336,15 @@ export function mergeWorkspaceStates(
     finalActiveProjectId = null;
   }
 
+  // Merge Global Settings
+  const localSettings = local.globalSettings || {};
+  const cloudSettings = cloud.globalSettings || {};
+  const localSettingsTime = new Date(localSettings.updatedAt || 0).getTime();
+  const cloudSettingsTime = new Date(cloudSettings.updatedAt || 0).getTime();
+  const mergedGlobalSettings = cloudSettingsTime > localSettingsTime 
+    ? cloudSettings 
+    : { ...cloudSettings, ...localSettings };
+
   return {
     folders: finalFolders,
     projects: finalProjects,
@@ -344,7 +353,8 @@ export function mergeWorkspaceStates(
     tagCategories: finalTagCats,
     googleSheetsFileId: local.googleSheetsFileId || cloud.googleSheetsFileId,
     taskSheetsSpreadsheetId: local.taskSheetsSpreadsheetId || cloud.taskSheetsSpreadsheetId,
-    deletions: mergedDeletions
+    deletions: mergedDeletions,
+    globalSettings: Object.keys(mergedGlobalSettings).length > 0 ? mergedGlobalSettings : undefined
   };
 }
 
@@ -437,6 +447,7 @@ export async function saveToFirebaseDirectly(
       taskSheetsSpreadsheetId: mergedState.taskSheetsSpreadsheetId || localStorage.getItem('task_sheets_spreadsheet_id') || null,
       activePomodoro,
       deletions: mergedDeletions,
+      globalSettings: mergedState.globalSettings || null,
       updatedAt: new Date().toISOString()
     };
     

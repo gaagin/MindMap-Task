@@ -48,6 +48,16 @@ interface KanbanViewProps {
   onKanbanGroupByChange?: (groupBy: 'status' | 'category' | 'priority' | 'container') => void;
   kanbanContainerFilterId?: string | null;
   onKanbanContainerFilterIdChange?: (containerId: string) => void;
+  sortBy?: 'default' | 'priority' | 'dueDate';
+  onSortByChange?: (val: 'default' | 'priority' | 'dueDate') => void;
+  collapseCompleted?: boolean;
+  onCollapseCompletedChange?: (val: boolean) => void;
+  showSubtasks?: boolean;
+  onShowSubtasksChange?: (val: boolean) => void;
+  isFiltersCollapsed?: boolean;
+  onFiltersCollapsedChange?: (val: boolean) => void;
+  isCategoriesExpanded?: boolean;
+  onCategoriesExpandedChange?: (val: boolean) => void;
 }
 
 export default function KanbanView({
@@ -71,6 +81,16 @@ export default function KanbanView({
   onKanbanGroupByChange,
   kanbanContainerFilterId: propsKanbanContainerFilterId,
   onKanbanContainerFilterIdChange,
+  sortBy: propsSortBy,
+  onSortByChange,
+  collapseCompleted: propsCollapseCompleted,
+  onCollapseCompletedChange,
+  showSubtasks: propsShowSubtasks,
+  onShowSubtasksChange,
+  isFiltersCollapsed: propsIsFiltersCollapsed,
+  onFiltersCollapsedChange,
+  isCategoriesExpanded: propsIsCategoriesExpanded,
+  onCategoriesExpandedChange,
 }: KanbanViewProps) {
   const [internalGroupBy, setInternalGroupBy] = useState<'status' | 'category' | 'priority' | 'container'>(() => 'status');
   const groupBy = propsKanbanGroupBy !== undefined && propsKanbanGroupBy !== null ? propsKanbanGroupBy : internalGroupBy;
@@ -101,51 +121,63 @@ export default function KanbanView({
     };
   }, [isFullScreen]);
 
-  const [sortBy, setSortBy] = useState<'default' | 'priority' | 'dueDate'>(() => {
+  const [localSortBy, setLocalSortBy] = useState<'default' | 'priority' | 'dueDate'>(() => {
     try {
       const saved = localStorage.getItem('task_mindmap_kanban_sort_by');
       if (saved) return saved as any;
     } catch {}
     return 'default';
   });
-
-  React.useEffect(() => {
+  const sortBy = propsSortBy !== undefined ? propsSortBy : localSortBy;
+  const setSortBy = (val: 'default' | 'priority' | 'dueDate') => {
+    setLocalSortBy(val);
     try {
-      localStorage.setItem('task_mindmap_kanban_sort_by', sortBy);
+      localStorage.setItem('task_mindmap_kanban_sort_by', val);
     } catch {}
-  }, [sortBy]);
+    if (onSortByChange) {
+      onSortByChange(val);
+    }
+  };
 
   // State to manage whether completed tasks are globally collapsed
-  const [collapseCompleted, setCollapseCompleted] = useState<boolean>(() => {
+  const [localCollapseCompleted, setLocalCollapseCompleted] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('task_mindmap_kanban_collapse_completed');
       if (saved !== null) return saved === 'true';
     } catch {}
     return false;
   });
+  const collapseCompleted = propsCollapseCompleted !== undefined ? propsCollapseCompleted : localCollapseCompleted;
+  const setCollapseCompleted = (val: boolean) => {
+    setLocalCollapseCompleted(val);
+    try {
+      localStorage.setItem('task_mindmap_kanban_collapse_completed', String(val));
+    } catch {}
+    if (onCollapseCompletedChange) {
+      onCollapseCompletedChange(val);
+    }
+  };
 
   const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>({});
 
-  React.useEffect(() => {
-    try {
-      localStorage.setItem('task_mindmap_kanban_collapse_completed', String(collapseCompleted));
-    } catch {}
-  }, [collapseCompleted]);
-
   // State to manage whether subtasks are shown in lists
-  const [showSubtasks, setShowSubtasks] = useState<boolean>(() => {
+  const [localShowSubtasks, setLocalShowSubtasks] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('task_mindmap_kanban_show_subtasks');
       if (saved !== null) return saved === 'true';
     } catch {}
     return true;
   });
-
-  React.useEffect(() => {
+  const showSubtasks = propsShowSubtasks !== undefined ? propsShowSubtasks : localShowSubtasks;
+  const setShowSubtasks = (val: boolean) => {
+    setLocalShowSubtasks(val);
     try {
-      localStorage.setItem('task_mindmap_kanban_show_subtasks', String(showSubtasks));
+      localStorage.setItem('task_mindmap_kanban_show_subtasks', String(val));
     } catch {}
-  }, [showSubtasks]);
+    if (onShowSubtasksChange) {
+      onShowSubtasksChange(val);
+    }
+  };
 
   const isSubtask = (node: TaskNode): boolean => {
     if (!node.parentId) return false;
@@ -283,7 +315,7 @@ export default function KanbanView({
   }, []);
 
   // Collapsible state for category select on mobile/tablet screens
-  const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(() => {
+  const [localIsCategoriesExpanded, setLocalIsCategoriesExpanded] = useState(() => {
     try {
       const saved = localStorage.getItem('task_mindmap_categories_expanded');
       if (saved !== null) return saved === 'true';
@@ -291,24 +323,36 @@ export default function KanbanView({
     // Default collapsed on mobile/tablet (< 768px), expanded on desktop
     return typeof window !== 'undefined' ? window.innerWidth >= 768 : false;
   });
+  const isCategoriesExpanded = propsIsCategoriesExpanded !== undefined ? propsIsCategoriesExpanded : localIsCategoriesExpanded;
+  const setIsCategoriesExpanded = (val: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal = typeof val === 'function' ? val(isCategoriesExpanded) : val;
+    setLocalIsCategoriesExpanded(nextVal);
+    try {
+      localStorage.setItem('task_mindmap_categories_expanded', String(nextVal));
+    } catch {}
+    if (onCategoriesExpandedChange) {
+      onCategoriesExpandedChange(nextVal);
+    }
+  };
 
-  React.useEffect(() => {
-    localStorage.setItem('task_mindmap_categories_expanded', String(isCategoriesExpanded));
-  }, [isCategoriesExpanded]);
-
-  const [isFiltersCollapsed, setIsFiltersCollapsed] = useState<boolean>(() => {
+  const [localIsFiltersCollapsed, setLocalIsFiltersCollapsed] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('task_mindmap_kanban_filters_collapsed');
       if (saved !== null) return saved === 'true';
     } catch {}
     return true;
   });
-
-  React.useEffect(() => {
+  const isFiltersCollapsed = propsIsFiltersCollapsed !== undefined ? propsIsFiltersCollapsed : localIsFiltersCollapsed;
+  const setIsFiltersCollapsed = (val: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal = typeof val === 'function' ? val(isFiltersCollapsed) : val;
+    setLocalIsFiltersCollapsed(nextVal);
     try {
-      localStorage.setItem('task_mindmap_kanban_filters_collapsed', String(isFiltersCollapsed));
+      localStorage.setItem('task_mindmap_kanban_filters_collapsed', String(nextVal));
     } catch {}
-  }, [isFiltersCollapsed]);
+    if (onFiltersCollapsedChange) {
+      onFiltersCollapsedChange(nextVal);
+    }
+  };
 
   const activeCategory = tagCategories.find(c => c.id === selectedCategoryId) || tagCategories[0];
 

@@ -442,7 +442,8 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
     tagCategories,
     googleSheetsFileId: wsState.googleSheetsFileId || null,
     taskSheetsSpreadsheetId: wsState.taskSheetsSpreadsheetId || null,
-    deletions
+    deletions,
+    globalSettings: wsState.globalSettings || null
   });
 }
 
@@ -990,6 +991,61 @@ export default function App() {
 
       setSelectedNodeIds(selectedIds);
     }
+  };
+
+  const handleKanbanSortByChange = (val: 'default' | 'priority' | 'dueDate') => {
+    setState(prev => ({
+      ...prev,
+      globalSettings: {
+        ...(prev.globalSettings || {}),
+        kanbanSortBy: val,
+        updatedAt: new Date().toISOString()
+      }
+    }));
+  };
+
+  const handleKanbanCollapseCompletedChange = (val: boolean) => {
+    setState(prev => ({
+      ...prev,
+      globalSettings: {
+        ...(prev.globalSettings || {}),
+        kanbanCollapseCompleted: val,
+        updatedAt: new Date().toISOString()
+      }
+    }));
+  };
+
+  const handleKanbanShowSubtasksChange = (val: boolean) => {
+    setState(prev => ({
+      ...prev,
+      globalSettings: {
+        ...(prev.globalSettings || {}),
+        kanbanShowSubtasks: val,
+        updatedAt: new Date().toISOString()
+      }
+    }));
+  };
+
+  const handleKanbanFiltersCollapsedChange = (val: boolean) => {
+    setState(prev => ({
+      ...prev,
+      globalSettings: {
+        ...(prev.globalSettings || {}),
+        kanbanFiltersCollapsed: val,
+        updatedAt: new Date().toISOString()
+      }
+    }));
+  };
+
+  const handleCategoriesExpandedChange = (val: boolean) => {
+    setState(prev => ({
+      ...prev,
+      globalSettings: {
+        ...(prev.globalSettings || {}),
+        categoriesExpanded: val,
+        updatedAt: new Date().toISOString()
+      }
+    }));
   };
 
   const handleGlobalMouseUp = () => {
@@ -1689,7 +1745,8 @@ export default function App() {
         tagCategories: filteredTagCats,
         googleSheetsFileId: cloudData.googleSheetsFileId || undefined,
         taskSheetsSpreadsheetId: cloudData.taskSheetsSpreadsheetId || undefined,
-        deletions: mergedDeletions
+        deletions: mergedDeletions,
+        globalSettings: cloudData.globalSettings || undefined
       };
 
       const currentState = stateRef.current;
@@ -5558,6 +5615,16 @@ export default function App() {
                 onKanbanGroupByChange={setKanbanGroupBy}
                 kanbanContainerFilterId={kanbanContainerFilterId}
                 onKanbanContainerFilterIdChange={setKanbanContainerFilterId}
+                sortBy={state.globalSettings?.kanbanSortBy}
+                onSortByChange={handleKanbanSortByChange}
+                collapseCompleted={state.globalSettings?.kanbanCollapseCompleted}
+                onCollapseCompletedChange={handleKanbanCollapseCompletedChange}
+                showSubtasks={state.globalSettings?.kanbanShowSubtasks}
+                onShowSubtasksChange={handleKanbanShowSubtasksChange}
+                isFiltersCollapsed={state.globalSettings?.kanbanFiltersCollapsed}
+                onFiltersCollapsedChange={handleKanbanFiltersCollapsedChange}
+                isCategoriesExpanded={state.globalSettings?.categoriesExpanded}
+                onCategoriesExpandedChange={handleCategoriesExpandedChange}
               />
             ) : viewMode === 'calendar' ? (
               <CalendarView
