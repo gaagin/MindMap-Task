@@ -2289,6 +2289,62 @@ export default function App() {
 
     try {
       const urlParams = new URLSearchParams(window.location.search);
+      const urlAction = urlParams.get('action');
+
+      if (urlAction === 'new-task') {
+        hasCheckedUrlParamRef.current = true;
+        
+        let pid = state.activeProjectId;
+        if (!pid && nodeKeys.length > 0) {
+          pid = nodeKeys[0];
+          setState(prev => ({ ...prev, activeProjectId: pid! }));
+        }
+
+        if (pid) {
+          const currentNodes = [...(state.nodes[pid] || [])];
+          pushToUndo(pid, currentNodes);
+
+          const newTaskId = 'node-' + generateId();
+          const newTaskNode: TaskNode = {
+            id: newTaskId,
+            projectId: pid,
+            text: 'Новая задача',
+            x: 350 + Math.random() * 200,
+            y: 350 + Math.random() * 200,
+            parentId: null,
+            isFloating: true,
+            priority: 'none',
+            tags: [],
+            notes: '',
+            completed: false,
+            files: [],
+            color: '#6366f1',
+            estimatedTime: 30
+          };
+
+          setState(prev => ({
+            ...prev,
+            nodes: {
+              ...prev.nodes,
+              [pid!]: [...(prev.nodes[pid!] || []), newTaskNode]
+            }
+          }));
+
+          setSelectedNodeId(newTaskId);
+          setIsDrawerOpen(true);
+
+          // Clear action parameter from browser URL
+          try {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('action');
+            window.history.replaceState(null, '', cleanUrl.toString());
+          } catch (e) {
+            console.error('Failed to clean URL parameters:', e);
+          }
+          return;
+        }
+      }
+
       const urlTaskId = urlParams.get('task') || urlParams.get('t');
       if (!urlTaskId) {
         hasCheckedUrlParamRef.current = true;
@@ -3572,6 +3628,7 @@ export default function App() {
     if (!preventSelection) {
       setLastCreatedNodeId(newChild.id);
       setSelectedNodeId(newChild.id);
+      setIsDrawerOpen(true);
     }
   };
 
@@ -3640,6 +3697,9 @@ export default function App() {
         [pid]: [...currentNodes, newInboxNode]
       }
     }));
+
+    setSelectedNodeId(newInboxNode.id);
+    setIsDrawerOpen(true);
   };
 
   // Add a fully independent floating node anywhere on the canvas
@@ -3763,10 +3823,9 @@ export default function App() {
       }
     }));
 
-    // Auto select the new floating node only if it's a root level item (not a subtask)
-    if (!isInsideContainer) {
-      setSelectedNodeId(newFloatingNode.id);
-    }
+    // Auto select the new floating node and open properties so user can rename/configure instantly
+    setSelectedNodeId(newFloatingNode.id);
+    setIsDrawerOpen(true);
     setLastCreatedNodeId(newFloatingNode.id);
   };
 
@@ -3809,6 +3868,7 @@ export default function App() {
 
     // Auto select the new container node so user can rename instantly!
     setSelectedNodeId(newContainerNode.id);
+    setIsDrawerOpen(true);
     setLastCreatedNodeId(newContainerNode.id);
   };
 
@@ -4330,6 +4390,7 @@ export default function App() {
     });
     
     setSelectedNodeId(finalNewNode.id);
+    setIsDrawerOpen(true);
   };
 
   // Create a new task originating from the Mobile list view (TickTick style)
@@ -4363,6 +4424,9 @@ export default function App() {
         }
       };
     });
+
+    setSelectedNodeId(finalNewNode.id);
+    setIsDrawerOpen(true);
   };
 
   // Single node attribute editor update
