@@ -1398,11 +1398,16 @@ export default function App() {
 
   // Track focus transitions to restore/apply filters
   const prevFocusIdRef = React.useRef<string | null>(null);
+  const prevFocusedContainerIdRef = React.useRef<string | null>(null);
 
   // Auto-switch viewMode and load/restore filters on focused node change
   useEffect(() => {
     const focusId = focusedTaskId || focusedContainerId;
     const prevFocusId = prevFocusIdRef.current;
+    const prevFocusedContainerId = prevFocusedContainerIdRef.current;
+    
+    // Check if we just exited container focus mode (was focusing a container, now none)
+    const exitedContainerFocus = prevFocusedContainerId !== null && focusedContainerId === null;
     
     if (focusId !== prevFocusId) {
       if (focusId) {
@@ -1451,14 +1456,25 @@ export default function App() {
           setFilterCategoryId(preFocusFilters.filterCategoryId);
           setKanbanGroupBy(preFocusFilters.kanbanGroupBy);
           setKanbanContainerFilterId(preFocusFilters.kanbanContainerFilterId);
-          if (preFocusFilters.viewMode) {
+          if (exitedContainerFocus) {
+            setViewMode('canvas');
+          } else if (preFocusFilters.viewMode) {
             setViewMode(preFocusFilters.viewMode);
           }
           setPreFocusFilters(null);
+        } else if (exitedContainerFocus) {
+          setViewMode('canvas');
         }
       }
       prevFocusIdRef.current = focusId;
+    } else {
+      // If overall focusId did not change, but we exited container focus mode (e.g. nested transitions)
+      if (exitedContainerFocus) {
+        setViewMode('canvas');
+      }
     }
+    
+    prevFocusedContainerIdRef.current = focusedContainerId;
   }, [focusedTaskId, focusedContainerId, state.activeProjectId, preFocusFilters, viewMode]);
 
   useEffect(() => {
