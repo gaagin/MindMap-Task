@@ -2568,26 +2568,6 @@ export default function MindMapCanvas({
     return null;
   };
 
-// INBOX Container off-canvas persistent states
-  const [isInboxCollapsed, setIsInboxCollapsed] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('task_mindmap_inbox_collapsed');
-      return saved !== null ? JSON.parse(saved) : true;
-    } catch {
-      return true;
-    }
-  });
-
-  const [inboxInputText, setInboxInputText] = useState<string>('');
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('task_mindmap_inbox_collapsed', JSON.stringify(isInboxCollapsed));
-    } catch (e) {
-      console.error('Failed to persist inbox state:', e);
-    }
-  }, [isInboxCollapsed]);
-
   // --- WEB SPEECH API INTEGRATION ---
   const [speechSupported, setSpeechSupported] = useState<boolean>(false);
   const [speechLanguage, setSpeechLanguage] = useState<'ru-RU' | 'az-AZ' | 'en-US'>(() => {
@@ -2598,11 +2578,9 @@ export default function MindMapCanvas({
       return 'ru-RU';
     }
   });
-  const [isInboxListening, setIsInboxListening] = useState<boolean>(false);
   const [isCanvasListening, setIsCanvasListening] = useState<boolean>(false);
   const [canvasSpeechText, setCanvasSpeechText] = useState<string>('');
   
-  const inboxRecRef = useRef<any>(null);
   const canvasRecRef = useRef<any>(null);
 
   useEffect(() => {
@@ -2619,88 +2597,16 @@ export default function MindMapCanvas({
 
     return () => {
       // Clean up on unmount
-      if (inboxRecRef.current) {
-        try { inboxRecRef.current.stop(); } catch (e) {}
-      }
       if (canvasRecRef.current) {
         try { canvasRecRef.current.stop(); } catch (e) {}
       }
     };
   }, []);
 
-  const toggleInboxListening = () => {
-    if (!speechSupported) {
-      alert('Голосовой ввод не поддерживается вашим браузером. Попробуйте Google Chrome.');
-      return;
-    }
-
-    if (isInboxListening) {
-      if (inboxRecRef.current) {
-        try { inboxRecRef.current.stop(); } catch (e) {}
-      }
-      setIsInboxListening(false);
-      return;
-    }
-
-    if (isCanvasListening) {
-      stopCanvasListening();
-    }
-
-    try {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      const rec = new SpeechRecognition();
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = speechLanguage;
-
-      rec.onstart = () => {
-        setIsInboxListening(true);
-      };
-
-      rec.onresult = (event: any) => {
-        let finalTranscript = '';
-        let interimTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-        const text = finalTranscript || interimTranscript;
-        if (text) {
-          setInboxInputText(text);
-        }
-      };
-
-      rec.onerror = (e: any) => {
-        console.error('Inbox Speech Error:', e);
-        setIsInboxListening(false);
-      };
-
-      rec.onend = () => {
-        setIsInboxListening(false);
-      };
-
-      inboxRecRef.current = rec;
-      rec.start();
-    } catch (err) {
-      console.error('Error starting inbox speech:', err);
-      setIsInboxListening(false);
-    }
-  };
-
   const startCanvasDictation = () => {
     if (!speechSupported) {
       alert('Голосовой ввод не поддерживается вашим браузером. Попробуйте Google Chrome.');
       return;
-    }
-
-    if (isInboxListening) {
-      if (inboxRecRef.current) {
-        try { inboxRecRef.current.stop(); } catch (e) {}
-      }
-      setIsInboxListening(false);
     }
 
     setCanvasSpeechText('');
@@ -2883,6 +2789,64 @@ export default function MindMapCanvas({
   const [isFocusStatsMobileExpanded, setIsFocusStatsMobileExpanded] = useState<boolean>(false);
   const [isMobileViewsListExpanded, setIsMobileViewsListExpanded] = useState<boolean>(false);
 
+  // Image resizing state
+  const [imageResizingNodeId, setImageResizingNodeId] = useState<string | null>(null);
+  const resizeStartWidthRef = useRef<number>(300);
+  const resizeStartMouseXRef = useRef<number>(0);
+
+  const handleImageResizeStart = (e: React.MouseEvent, node: TaskNode) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setImageResizingNodeId(node.id);
+    resizeStartWidthRef.current = node.width || 300;
+    resizeStartMouseXRef.current = e.clientX;
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const dx = moveEvent.clientX - resizeStartMouseXRef.current;
+      const newWidth = Math.max(100, Math.min(1200, resizeStartWidthRef.current + dx * 2));
+      onUpdateNode({
+        ...node,
+        width: newWidth
+      });
+    };
+    
+    const handleMouseUp = () => {
+      setImageResizingNodeId(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleImageResizeTouchStart = (e: React.TouchEvent, node: TaskNode) => {
+    e.stopPropagation();
+    if (e.touches.length === 0) return;
+    setImageResizingNodeId(node.id);
+    resizeStartWidthRef.current = node.width || 300;
+    resizeStartMouseXRef.current = e.touches[0].clientX;
+    
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      if (moveEvent.touches.length === 0) return;
+      const dx = moveEvent.touches[0].clientX - resizeStartMouseXRef.current;
+      const newWidth = Math.max(100, Math.min(1200, resizeStartWidthRef.current + dx * 2));
+      onUpdateNode({
+        ...node,
+        width: newWidth
+      });
+    };
+    
+    const handleTouchEnd = () => {
+      setImageResizingNodeId(null);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+    
+    document.addEventListener('touchmove', handleTouchMove);
+    document.addEventListener('touchend', handleTouchEnd);
+  };
+
   // Reset focus mode if the focused container is deleted or project is switched
   useEffect(() => {
     if (focusedContainerId && !nodes.some(n => n.id === focusedContainerId)) {
@@ -2896,6 +2860,57 @@ export default function MindMapCanvas({
       onContainerFocusChange(!!focusedContainerId);
     }
   }, [focusedContainerId, onContainerFocusChange]);
+
+  const canvasImageFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAddImageToCanvas = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64Data = reader.result as string;
+      const newAttachment = {
+        id: generateId(),
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        dataUrl: base64Data,
+      };
+
+      const x = Math.round(-panX / zoom);
+      const y = Math.round(-panY / zoom);
+
+      onAddFloatingNode(
+        x,
+        y,
+        focusedContainerId || focusedTaskId || null,
+        file.name.substring(0, file.name.lastIndexOf('.')) || 'Изображение',
+        { files: [newAttachment], isNotTask: true, useExactCoordinates: !!focusedContainerId }
+      );
+    };
+    reader.readAsDataURL(file);
+  };
+
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.hasAttribute('contenteditable'))) {
+        return;
+      }
+
+      const files = e.clipboardData?.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        if (file.type.startsWith('image/')) {
+          e.preventDefault();
+          handleAddImageToCanvas(file);
+        }
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => {
+      window.removeEventListener('paste', handleGlobalPaste);
+    };
+  }, [panX, panY, zoom, focusedContainerId, focusedTaskId, nodes]);
 
   // Keep track of the last active container ID to layer it higher than other containers even after focus is removed
   const [lastActiveContainerId, setLastActiveContainerId] = useState<string | null>(null);
@@ -3539,41 +3554,42 @@ export default function MindMapCanvas({
         const padding = 35;
 
         let needsResize = false;
-        let nextLeft = currentLeft;
-        let nextRight = currentRight;
-        let nextTop = currentTop;
-        let nextBottom = currentBottom;
 
         if (nodeLeft - padding < currentLeft) {
-          nextLeft = nodeLeft - padding;
           needsResize = true;
         }
         if (nodeRight + padding > currentRight) {
-          nextRight = nodeRight + padding;
           needsResize = true;
         }
         if (nodeTop - padding < currentTop) {
-          nextTop = nodeTop - padding;
           needsResize = true;
         }
         if (nodeBottom + padding > currentBottom) {
-          nextBottom = nodeBottom + padding;
           needsResize = true;
         }
 
         if (needsResize) {
-          const newW = Math.round(nextRight - nextLeft);
-          const newH = Math.round(nextBottom - nextTop);
-          const newCX = Math.round(nextLeft + newW / 2);
-          const newCY = Math.round(nextTop + newH / 2);
+          // Keep x and y center coordinates strictly unchanged.
+          // Grow W and H symmetrically around the center.
+          const currentX = parentContainer.x;
+          const currentY = parentContainer.y;
+          
+          const halfW = Math.max(W / 2, Math.abs(currentX - (nodeLeft - padding)), Math.abs((nodeRight + padding) - currentX));
+          const halfH = Math.max(H / 2, Math.abs(currentY - (nodeTop - padding)), Math.abs((nodeBottom + padding) - currentY));
+          
+          const newW = Math.round(halfW * 2);
+          const newH = Math.round(halfH * 2);
 
-          onUpdateNode({
-            ...parentContainer,
-            width: newW,
-            height: newH,
-            x: newCX,
-            y: newCY
-          });
+          setLocalNodes(prev => prev.map(n => {
+            if (n.id === parentContainer.id) {
+              return {
+                ...n,
+                width: newW,
+                height: newH
+              };
+            }
+            return n;
+          }));
         }
       }
 
@@ -3602,8 +3618,13 @@ export default function MindMapCanvas({
   const handleMouseUp = (e?: React.MouseEvent) => {
     setIsPanning(false);
 
-    // If in focus mode, single click task creation is disabled. Tasks are created on double click.
     if (e && mouseDownPosRef.current && mouseDownTargetRef.current) {
+      const dx = Math.abs(e.clientX - mouseDownPosRef.current.x);
+      const dy = Math.abs(e.clientY - mouseDownPosRef.current.y);
+      const target = e.target as HTMLElement;
+
+
+
       mouseDownPosRef.current = null;
       mouseDownTargetRef.current = null;
     }
@@ -3663,6 +3684,13 @@ export default function MindMapCanvas({
     if (draggingNodeId && hasDraggedNode) {
       const node = nodes.find(n => n.id === draggingNodeId);
       if (node) {
+        if (node.parentId) {
+          const localParent = localNodes.find(p => p.id === node.parentId);
+          const incomingParent = incomingNodes.find(p => p.id === node.parentId);
+          if (localParent && incomingParent && (localParent.width !== incomingParent.width || localParent.height !== incomingParent.height)) {
+            onUpdateNode(localParent);
+          }
+        }
         const updatedTags = checkWorkflowTriggerCollisions(node, node.x, node.y);
         if (updatedTags) {
           onUpdateNode({
@@ -4241,41 +4269,42 @@ export default function MindMapCanvas({
         const padding = 35;
 
         let needsResize = false;
-        let nextLeft = currentLeft;
-        let nextRight = currentRight;
-        let nextTop = currentTop;
-        let nextBottom = currentBottom;
 
         if (nodeLeft - padding < currentLeft) {
-          nextLeft = nodeLeft - padding;
           needsResize = true;
         }
         if (nodeRight + padding > currentRight) {
-          nextRight = nodeRight + padding;
           needsResize = true;
         }
         if (nodeTop - padding < currentTop) {
-          nextTop = nodeTop - padding;
           needsResize = true;
         }
         if (nodeBottom + padding > currentBottom) {
-          nextBottom = nodeBottom + padding;
           needsResize = true;
         }
 
         if (needsResize) {
-          const newW = Math.round(nextRight - nextLeft);
-          const newH = Math.round(nextBottom - nextTop);
-          const newCX = Math.round(nextLeft + newW / 2);
-          const newCY = Math.round(nextTop + newH / 2);
+          // Keep x and y center coordinates strictly unchanged.
+          // Grow W and H symmetrically around the center.
+          const currentX = parentContainer.x;
+          const currentY = parentContainer.y;
+          
+          const halfW = Math.max(W / 2, Math.abs(currentX - (nodeLeft - padding)), Math.abs((nodeRight + padding) - currentX));
+          const halfH = Math.max(H / 2, Math.abs(currentY - (nodeTop - padding)), Math.abs((nodeBottom + padding) - currentY));
+          
+          const newW = Math.round(halfW * 2);
+          const newH = Math.round(halfH * 2);
 
-          onUpdateNode({
-            ...parentContainer,
-            width: newW,
-            height: newH,
-            x: newCX,
-            y: newCY
-          });
+          setLocalNodes(prev => prev.map(n => {
+            if (n.id === parentContainer.id) {
+              return {
+                ...n,
+                width: newW,
+                height: newH
+              };
+            }
+            return n;
+          }));
         }
       }
 
@@ -4441,6 +4470,13 @@ export default function MindMapCanvas({
       if (draggingNodeId && hasDraggedNode) {
         const node = nodes.find(n => n.id === draggingNodeId);
         if (node) {
+          if (node.parentId) {
+            const localParent = localNodes.find(p => p.id === node.parentId);
+            const incomingParent = incomingNodes.find(p => p.id === node.parentId);
+            if (localParent && incomingParent && (localParent.width !== incomingParent.width || localParent.height !== incomingParent.height)) {
+              onUpdateNode(localParent);
+            }
+          }
           const updatedTags = checkWorkflowTriggerCollisions(node, node.x, node.y);
           if (updatedTags) {
             onUpdateNode({
@@ -5113,17 +5149,7 @@ export default function MindMapCanvas({
       return true;
     }
 
-    // Hide child nodes from main canvas view if parent is a container in list/kanban/calendar/gantt/table view (unless focused)
-    if (node.parentId) {
-      const parentNode = nodes.find(n => n.id === node.parentId);
-      if (parentNode && parentNode.isContainer) {
-        const parentMode = containerViewModes[parentNode.id] || 'canvas';
-        if (parentMode !== 'canvas' && focusedContainerId !== parentNode.id) {
-          return false;
-        }
-      }
-    }
-
+    // Normal / Focus container modes
     if (focusedContainerId) {
       // In focus mode, we only show the container itself or its descendants
       if (node.id === focusedContainerId) return true;
@@ -5143,11 +5169,14 @@ export default function MindMapCanvas({
       
       if (!isDescendantOfFocused) return false;
       
-      // Since it is a descendant, it must not have collapsed ancestors *between* itself and the focused container
+      // Since it is a descendant, it must not have collapsed ancestors OR any nested container ancestors *between* itself and the focused container
       currentParentId = node.parentId;
       while (currentParentId !== null && currentParentId !== focusedContainerId) {
         const parent = nodes.find(n => n.id === currentParentId);
         if (!parent) break;
+        if (parent.isContainer) {
+          return false; // Hidden because it's inside a nested sub-container which is not focused
+        }
         if (parent.collapsed) {
           return false; // Hidden because some ancestor inside the container is collapsed
         }
@@ -5156,11 +5185,14 @@ export default function MindMapCanvas({
       return true;
     }
 
-    // Normal mode: trace all the way to the root
+    // Normal mode (not focused on any container): hide all descendants of any container
     let currentParentId = node.parentId;
     while (currentParentId !== null) {
       const parent = nodes.find(n => n.id === currentParentId);
       if (!parent) break;
+      if (parent.isContainer) {
+        return false; // Hidden from main canvas because it is inside a container
+      }
       if (parent.collapsed) {
         return false; // Hidden because parent or higher ancestor is collapsed
       }
@@ -5661,9 +5693,13 @@ export default function MindMapCanvas({
             {/* Floating Node Button */}
             <button
               onClick={() => {
-                const x = Math.round(-panX / zoom);
-                const y = Math.round(-panY / zoom);
-                onAddFloatingNode(x, y, focusedTaskId || focusedContainerId || null);
+                if (onAddInboxTask) {
+                  onAddInboxTask('Новая задача');
+                } else {
+                  const x = Math.round(-panX / zoom);
+                  const y = Math.round(-panY / zoom);
+                  onAddFloatingNode(x, y, focusedTaskId || focusedContainerId || null);
+                }
                 setIsElementDropdownOpen(false);
               }}
               className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"
@@ -5672,8 +5708,8 @@ export default function MindMapCanvas({
                 <PlusCircle className="w-5 h-5 text-emerald-500" />
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Плавающая задача</span>
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Свободная карточка на холсте</span>
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Новая задача</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Создать задачу в INBOX</span>
               </div>
             </button>
 
@@ -5731,6 +5767,23 @@ export default function MindMapCanvas({
                 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Группировка и свертывание</span>
               </div>
             </button>
+
+            {/* Insert Image Button */}
+            <button
+              onClick={() => {
+                canvasImageFileInputRef.current?.click();
+                setIsElementDropdownOpen(false);
+              }}
+              className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"
+            >
+              <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/30 flex items-center justify-center shrink-0 border border-purple-100 dark:border-purple-900/20 group-hover:scale-105 transition-transform text-xs flex items-center justify-center">
+                🖼️
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 font-sans">Вставить изображение</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Загрузить картинку на холст</span>
+              </div>
+            </button>
           </div>
         )}
         </div>
@@ -5751,7 +5804,7 @@ export default function MindMapCanvas({
 
       {/* Infinite Canvas transform container */}
       <div 
-        className="absolute left-1/2 top-1/2 h-0 w-0 overflow-visible origin-center"
+        className="absolute left-1/2 top-1/2 h-0 w-0 overflow-visible origin-center infinite-canvas"
         style={{
           transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
           transition: isTransitioningTransform ? 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)' : 'none'
@@ -6193,7 +6246,7 @@ export default function MindMapCanvas({
             const completedChildren = containerChildren.filter(n => n.completed).length;
             const containerProgress = calculateProgress(node.id, nodes) || 0;
             const isContainerSelected = isSelected;
-            const isContainerCollapsed = !!node.collapsed;
+            const isContainerCollapsed = true; // Always collapsed on the main canvas!
             const isDraggingThisNode = draggingNodeId === node.id || (isLongPressDragging && potentialDragNodeIdRef.current === node.id);
             const matches = isNodeMatched(node);
             const isDimmed = isAnyFilterActive && !matches;
@@ -6711,26 +6764,6 @@ export default function MindMapCanvas({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onUpdateNode({
-                          ...node,
-                          collapsed: !node.collapsed
-                        });
-                      }}
-                      title={node.collapsed ? "Развернуть контейнер" : "Свернуть контейнер"}
-                      className="flex items-center justify-center w-8 h-8 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
-                    >
-                      {node.collapsed ? (
-                        <FolderPlus className="w-4 h-4 text-amber-505" />
-                      ) : (
-                        <FolderMinus className="w-4 h-4 text-slate-500" />
-                      )}
-                    </button>
-
-                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
                         setFocusedContainerId(node.id);
                       }}
                       title="Войти внутрь (Фокусировка)"
@@ -7187,14 +7220,129 @@ export default function MindMapCanvas({
                       className="flex items-center justify-center w-8 h-8 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors animate-pulse"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </button>
+                  </button>
+                </div>
+              )}
+            </React.Fragment>
+          );
+        }
+
+        const isImgNode = !!node.isNotTask && node.files && node.files.length > 0 && node.files.some(f => f.type && f.type.startsWith('image/'));
+        if (isImgNode) {
+          const imgFile = node.files.find(f => f.type && f.type.startsWith('image/'))!;
+          const imgUrl = imgFile.googleDriveId ? `https://drive.google.com/thumbnail?id=${imgFile.googleDriveId}&sz=w400` : imgFile.dataUrl;
+
+          // Render a beautiful, minimal frame for the image
+          const imageWidth = node.width || 300;
+          const cardZIndex = isSelected ? 1000 : 5;
+
+          return (
+            <div
+              key={node.id}
+              data-node-id={node.id}
+              style={{
+                left: node.x,
+                top: node.y,
+                transform: 'translate(-50%, -50%)',
+                zIndex: cardZIndex,
+                width: `${imageWidth}px`,
+                transition: isAutoArranging ? 'left 0.8s cubic-bezier(0.16, 1, 0.3, 1), top 0.8s cubic-bezier(0.16, 1, 0.3, 1)' : undefined,
+              }}
+              className={`absolute group cursor-grab active:cursor-grabbing rounded-xl p-1.5 border-2 bg-white dark:bg-slate-900 shadow-md ${
+                isSelected 
+                  ? 'border-indigo-500 ring-4 ring-indigo-500/20 shadow-lg' 
+                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+              }`}
+              onMouseDown={(e) => {
+                const target = e.target as HTMLElement;
+                if (target.closest('button') || target.closest('.resize-handle')) return;
+                if (editingNodeId) {
+                  (document.activeElement as HTMLElement)?.blur();
+                }
+                startDragNode(e, node);
+              }}
+              onClick={(e) => {
+                if (hasDraggedNode || didDragRef.current) return;
+                e.stopPropagation();
+                onSelectNode(node.id, e);
+              }}
+            >
+              {/* Image element */}
+              <div className="relative w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-950">
+                <img
+                  src={imgUrl}
+                  alt={node.text || 'Изображение'}
+                  className="w-full h-auto select-none pointer-events-none max-h-[500px] object-contain"
+                  referrerPolicy="no-referrer"
+                />
+                
+                {/* Floating caption overlay at bottom */}
+                {node.text && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2.5">
+                    <p className="text-[11px] font-semibold text-white truncate text-center">
+                      {node.text}
+                    </p>
                   </div>
                 )}
-              </React.Fragment>
-            );
-          }
+              </div>
 
-          const pInfo = getPriorityInfo(node.priority);
+              {/* Floating Image Action Buttons overlay on hover */}
+              <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xs p-1 rounded-lg border border-slate-200/60 dark:border-slate-800 shadow-sm z-20">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newWidth = Math.max(100, (node.width || 300) - 40);
+                    onUpdateNode({ ...node, width: newWidth });
+                  }}
+                  title="Уменьшить размер изображения"
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors cursor-pointer"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newWidth = Math.min(1200, (node.width || 300) + 40);
+                    onUpdateNode({ ...node, width: newWidth });
+                  }}
+                  title="Увеличить размер изображения"
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors cursor-pointer"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+
+                <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteNode(node.id);
+                  }}
+                  title="Удалить изображение"
+                  className="p-1 rounded hover:bg-rose-50 dark:hover:bg-slate-800 text-rose-500 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Corner drag resize handle */}
+              <div
+                onMouseDown={(e) => handleImageResizeStart(e, node)}
+                onTouchStart={(e) => handleImageResizeTouchStart(e, node)}
+                title="Перетащите край для изменения размера"
+                className="resize-handle absolute bottom-1 right-1 w-4 h-4 cursor-se-resize flex items-center justify-center opacity-40 hover:opacity-100 group-hover:opacity-70 transition-opacity z-20"
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" className="text-slate-400 dark:text-slate-600">
+                  <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.5" />
+                  <line x1="10" y1="4" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" />
+                  <line x1="10" y1="8" x2="8" y2="10" stroke="currentColor" strokeWidth="1.5" />
+                </svg>
+              </div>
+            </div>
+          );
+        }
+
+        const pInfo = getPriorityInfo(node.priority);
           const hasNotes = node.notes && node.notes.trim().length > 0;
           const hasFiles = node.files && node.files.length > 0;
           const linkPattern = /(\[([^\]]+)\]\(task:([a-zA-Z0-9\-]+)\)|\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]|task:\/\/([a-zA-Z0-9\-]+))/;
@@ -8733,270 +8881,27 @@ export default function MindMapCanvas({
         </div>
       )}
 
-      {/* Off-canvas Sticky INBOX Container Widget */}
-      <div 
-        className={`absolute ${focusedContainerId ? 'bottom-20 sm:bottom-auto sm:top-4' : 'top-4'} ${
-          isInboxCollapsed ? 'right-16 z-40' : 'right-4 left-4 sm:left-auto sm:right-16 z-[60]'
-        } pointer-events-auto select-none`}
-        onMouseDown={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()}
-      >
-        {isInboxCollapsed ? (
-          <button
-            onClick={() => setIsInboxCollapsed(false)}
-            className="flex items-center gap-2 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600 rounded-xl shadow-[0_8px_30px_rgba(99,102,241,0.35)] hover:shadow-[0_8px_30px_rgba(99,102,241,0.5)] border border-indigo-500 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer font-sans text-xs font-extrabold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <span className="text-sm shrink-0">📥</span>
-            <span>INBOX</span>
-            <span className="bg-indigo-700 dark:bg-indigo-750 text-indigo-100 px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold">
-              {nodes.filter(n => n.parentId === 'inbox').length}
-            </span>
-          </button>
-        ) : (
-          <div className="w-full sm:w-80 max-h-[320px] sm:max-h-[460px] bg-white dark:bg-slate-900 rounded-2xl border border-slate-205 dark:border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.18)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            {/* INBOX Header */}
-            <div className="px-4 py-3 bg-slate-50 dark:bg-slate-850/60 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-base">📥</span>
-                <span className="font-extrabold text-[11px] tracking-wider uppercase text-slate-800 dark:text-slate-100 font-sans">
-                  INBOX (Входящие)
-                </span>
-                <span className="bg-indigo-100 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full font-mono">
-                  {nodes.filter(n => n.parentId === 'inbox').length}
-                </span>
-              </div>
-              <button
-                onClick={() => setIsInboxCollapsed(true)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 sm:p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-850 transition-colors cursor-pointer flex items-center justify-center min-w-[32px] min-h-[32px]"
-                title="Свернуть Inbox"
-              >
-                <ChevronUp className="w-4 h-4" />
-              </button>
-            </div>
-
-             {/* Quick-add Input */}
-             <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2">
-               <div className="relative flex items-center">
-                 <input
-                   type="text"
-                   placeholder="Запишите быструю мысль... (Enter)"
-                   value={inboxInputText}
-                   onChange={(e) => setInboxInputText(e.target.value)}
-                   onKeyDown={(e) => {
-                     e.stopPropagation();
-                     if (e.key === 'Enter' && inboxInputText.trim() && onAddInboxTask) {
-                       onAddInboxTask(inboxInputText);
-                       setInboxInputText('');
-                     }
-                   }}
-                   className="w-full text-xs py-2 pl-3 pr-16 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-slate-800 dark:text-slate-100 rounded-xl border border-slate-205 dark:border-slate-755 focus:border-indigo-500 focus:outline-none transition-all placeholder-slate-450"
-                 />
-                 <button
-                   onClick={toggleInboxListening}
-                   title={isInboxListening ? 'Остановить запись голоса' : 'Надиктуйте задачу голосом'}
-                   className={`absolute right-8 p-1 rounded-lg transition-all cursor-pointer ${
-                     isInboxListening 
-                       ? 'bg-rose-100 dark:bg-rose-950/45 text-rose-600 dark:text-rose-450 animate-pulse' 
-                       : 'text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-805 hover:text-slate-700 dark:hover:text-slate-300'
-                   }`}
-                 >
-                   {isInboxListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                 </button>
-                 <button
-                   onClick={() => {
-                     if (inboxInputText.trim() && onAddInboxTask) {
-                       onAddInboxTask(inboxInputText);
-                       setInboxInputText('');
-                     }
-                   }}
-                   disabled={!inboxInputText.trim()}
-                   className="absolute right-1.5 p-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-650 hover:text-white rounded-lg transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 cursor-pointer"
-                 >
-                   <Plus className="w-3.5 h-3.5" />
-                 </button>
-               </div>
-               
-               {/* Speech Language Switcher for Inbox */}
-               <div className="flex items-center justify-between text-[10px]">
-                 <span className="font-semibold text-slate-400 dark:text-slate-500">Язык диктовки:</span>
-                 <div className="flex gap-1 bg-slate-100/55 dark:bg-slate-950/40 p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-800/40">
-                   <button
-                     onClick={() => setSpeechLanguage('ru-RU')}
-                     title="Русский язык"
-                     className={`px-1.5 py-0.5 rounded-md font-bold text-[9px] transition-all cursor-pointer ${
-                       speechLanguage === 'ru-RU' 
-                         ? 'bg-white dark:bg-slate-850 shadow-sm text-indigo-600 dark:text-indigo-400' 
-                         : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-350'
-                     }`}
-                   >
-                     🇷🇺 RU
-                   </button>
-                   <button
-                     onClick={() => setSpeechLanguage('az-AZ')}
-                     title="Azərbaycan dili"
-                     className={`px-1.5 py-0.5 rounded-md font-bold text-[9px] transition-all cursor-pointer ${
-                       speechLanguage === 'az-AZ' 
-                         ? 'bg-white dark:bg-slate-850 shadow-sm text-indigo-600 dark:text-indigo-400' 
-                         : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-350'
-                     }`}
-                   >
-                     🇦🇿 AZ
-                   </button>
-                   <button
-                     onClick={() => setSpeechLanguage('en-US')}
-                     title="English Language"
-                     className={`px-1.5 py-0.5 rounded-md font-bold text-[9px] transition-all cursor-pointer ${
-                       speechLanguage === 'en-US' 
-                         ? 'bg-white dark:bg-slate-850 shadow-sm text-indigo-600 dark:text-indigo-400' 
-                         : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-350'
-                     }`}
-                   >
-                     🇺🇸 EN
-                   </button>
-                 </div>
-               </div>
-             </div>
-
-            {/* Task list */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1.5 max-h-[280px] custom-scrollbar bg-slate-50/40 dark:bg-slate-950/20">
-              {nodes.filter(n => n.parentId === 'inbox').length === 0 ? (
-                <div className="py-8 text-center flex flex-col items-center justify-center gap-1 select-none">
-                  <span className="text-xl">💭</span>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 max-w-[180px] leading-relaxed">
-                    Здесь будут ваши свежие идеи. Запишите все мысли в Inbox, чтобы потом разобрать их по холсту!
-                  </p>
-                </div>
-              ) : (
-                nodes
-                  .filter(n => n.parentId === 'inbox')
-                  .map(task => {
-                    return (
-                      <div 
-                        key={task.id}
-                        className="p-2 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl flex items-center gap-2 shadow-sm group hover:border-indigo-150 dark:hover:border-indigo-950 transition-all duration-200"
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        {/* Task completing checkbox */}
-                        <button
-                          onClick={() => {
-                            if (checkHasActiveBlockers(task.id)) return;
-                            onToggleNodeCompleted(task.id);
-                          }}
-                          title={
-                            task.completed 
-                              ? "Отметить невыполненной" 
-                              : checkHasActiveBlockers(task.id)
-                                ? "Задача заблокирована блокирующими связями"
-                                : "Отметить выполненной"
-                          }
-                          className={`p-0.5 rounded-full hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer ${
-                            task.completed 
-                              ? 'text-indigo-600 dark:text-indigo-400' 
-                              : checkHasActiveBlockers(task.id)
-                                ? 'text-rose-500 hover:text-rose-600'
-                                : 'text-slate-400 dark:text-slate-600'
-                          }`}
-                        >
-                          {task.completed ? (
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                          ) : checkHasActiveBlockers(task.id) ? (
-                            <Lock className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400 animate-in zoom-in-50" />
-                          ) : activePomodoroNodeId === task.id ? (
-                            <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                              <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
-                              <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                            </span>
-                          ) : (
-                            <Circle className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-
-                        {/* Editable task title inside Inbox */}
-                        <input
-                          type="text"
-                          value={task.text}
-                          onChange={(e) => {
-                            onUpdateNode({
-                              ...task,
-                              text: e.target.value
-                            });
-                          }}
-                          className={`flex-1 text-xs bg-transparent border-0 focus:ring-0 p-0.5 text-slate-800 dark:text-slate-100 focus:outline-none max-w-[130px] truncate-none hover:bg-slate-50/50 dark:hover:bg-slate-800/50 focus:bg-slate-50 dark:focus:bg-slate-850 px-1 rounded transition-colors ${
-                            task.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
-                          }`}
-                          placeholder="Имя задачи..."
-                        />
-
-                        {/* View / Detail Button */}
-                        <button
-                          onClick={() => {
-                            onSelectNode(task.id);
-                            onOpenDrawer();
-                          }}
-                          title="Просмотреть детали задачи"
-                          className={`p-1 rounded-lg transition-colors cursor-pointer shrink-0 opacity-80 group-hover:opacity-100 ${
-                            selectedNodeId === task.id
-                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
-                              : 'text-slate-450 dark:text-slate-500 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/20'
-                          }`}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Release / Deploy Button */}
-                        <button
-                          onClick={() => {
-                            // Calculate screen center coordinates relative to canvas bounding box
-                            let cx = window.innerWidth / 2;
-                            let cy = window.innerHeight / 2;
-                            if (containerRef.current) {
-                              const rect = containerRef.current.getBoundingClientRect();
-                              cx = rect.left + rect.width / 2;
-                              cy = rect.top + rect.height / 2;
-                            }
-                            const canvasCoords = getCanvasCoordinates(cx, cy);
-                            onUpdateNode({
-                              ...task,
-                              parentId: null,
-                              x: canvasCoords.x,
-                              y: canvasCoords.y,
-                            });
-                            onSelectNode(task.id);
-                          }}
-                          title="Разместить на холсте по центру экрана"
-                          className="p-1 text-indigo-500 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 rounded-lg transition-colors cursor-pointer shrink-0 opacity-80 group-hover:opacity-100"
-                        >
-                          <Move className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Delete Button */}
-                        <button
-                          onClick={() => onDeleteNode(task.id)}
-                          title="Удалить безвозвратно"
-                          className="p-1 text-slate-450 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors cursor-pointer shrink-0 opacity-80 group-hover:opacity-100"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-            
-            {/* Help Info Footer */}
-            <div className="bg-slate-50 dark:bg-slate-800 p-2 text-[10px] text-slate-400 dark:text-slate-500 text-center border-t border-slate-200 dark:border-slate-800 select-none leading-relaxed">
-              Нажмите кнопку <span className="font-extrabold text-indigo-600 dark:text-indigo-400">переноса</span>, чтобы отправить задачу в центр карты.
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* Hidden file input for file uploading in nodes */}
       <input 
         type="file"
         ref={cardFileInputRef}
         onChange={handleCardFileUpload}
         className="hidden pointer-events-none"
+      />
+
+      {/* Hidden file input for file uploading on canvas background */}
+      <input 
+        type="file"
+        ref={canvasImageFileInputRef}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleAddImageToCanvas(file);
+          }
+          e.target.value = '';
+        }}
+        className="hidden pointer-events-none"
+        accept="image/*"
       />
 
       {/* Edit Notes & Properties Modal */}

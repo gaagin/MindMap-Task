@@ -1344,6 +1344,7 @@ export default function App() {
     filterCategoryId: string | null;
     kanbanGroupBy: 'status' | 'category' | 'priority' | 'container' | null;
     kanbanContainerFilterId: string | null;
+    viewMode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
   } | null>(null);
 
   const filtersRef = React.useRef({
@@ -1408,7 +1409,10 @@ export default function App() {
         // Entering focus mode!
         // If we were NOT in focus mode, save the current filters as pre-focus filters
         if (!prevFocusId) {
-          setPreFocusFilters(filtersRef.current);
+          setPreFocusFilters({
+            ...filtersRef.current,
+            viewMode: viewMode
+          });
         }
         
         if (state.activeProjectId) {
@@ -1447,12 +1451,15 @@ export default function App() {
           setFilterCategoryId(preFocusFilters.filterCategoryId);
           setKanbanGroupBy(preFocusFilters.kanbanGroupBy);
           setKanbanContainerFilterId(preFocusFilters.kanbanContainerFilterId);
+          if (preFocusFilters.viewMode) {
+            setViewMode(preFocusFilters.viewMode);
+          }
           setPreFocusFilters(null);
         }
       }
       prevFocusIdRef.current = focusId;
     }
-  }, [focusedTaskId, focusedContainerId, state.activeProjectId, preFocusFilters]);
+  }, [focusedTaskId, focusedContainerId, state.activeProjectId, preFocusFilters, viewMode]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -3131,6 +3138,31 @@ export default function App() {
         }
       }
 
+      // Hide sub-container descendants or general container descendants in all views
+      if (!focusedTaskId) {
+        if (focusedContainerId) {
+          // If we have a focused container, hide descendants of nested sub-containers
+          let currentParentId = node.parentId;
+          while (currentParentId && currentParentId !== focusedContainerId) {
+            const parent = activeNodes.find(n => n.id === currentParentId);
+            if (parent && parent.isContainer) {
+              return false; // Hidden because it belongs to a nested sub-container
+            }
+            currentParentId = parent ? parent.parentId : null;
+          }
+        } else {
+          // No focused container: hide descendants of any container
+          let currentParentId = node.parentId;
+          while (currentParentId) {
+            const parent = activeNodes.find(n => n.id === currentParentId);
+            if (parent && parent.isContainer) {
+              return false; // Hidden because it belongs to a container
+            }
+            currentParentId = parent ? parent.parentId : null;
+          }
+        }
+      }
+
       if (filterStatus === "not_tasks") {
         return !!node.isNotTask;
       } else if (node.isNotTask && viewMode !== 'canvas') {
@@ -3532,20 +3564,54 @@ export default function App() {
     const pid = state.activeProjectId;
     if (!pid) return;
 
-    const currentNodes = state.nodes[pid] || [];
+    const currentNodes = [...(state.nodes[pid] || [])];
     pushToUndo(pid, currentNodes);
+
+    // Find the container node representing INBOX
+    let inboxContainer = currentNodes.find(n => n.isContainer && (n.text.includes('INBOX') || n.text.includes('ВХОДЯЩИЕ')));
+    let finalParentId = 'inbox';
+    let posX = 0;
+    let posY = 0;
+
+    if (inboxContainer) {
+      finalParentId = inboxContainer.id;
+      posX = inboxContainer.x + (Math.random() - 0.5) * 40;
+      posY = inboxContainer.y + (Math.random() - 0.5) * 40;
+    } else {
+      // Create a container named "📥 ВХОДЯЩИЕ (INBOX)" first!
+      const newContainerId = 'gtd-inbox-' + generateId();
+      inboxContainer = {
+        id: newContainerId,
+        projectId: pid,
+        text: "📥 ВХОДЯЩИЕ (INBOX)",
+        x: -500,
+        y: -100,
+        parentId: null,
+        isFloating: true,
+        isContainer: true,
+        priority: 'none',
+        tags: [],
+        notes: "Контейнер Входящих задач.",
+        completed: false,
+        files: []
+      };
+      finalParentId = newContainerId;
+      posX = -500;
+      posY = -100;
+      currentNodes.push(inboxContainer);
+    }
 
     const newInboxNode: TaskNode = {
       id: 'node-' + generateId(),
       projectId: pid,
       text: text.trim(),
-      x: 0,
-      y: 0,
-      parentId: 'inbox',
+      x: posX,
+      y: posY,
+      parentId: finalParentId,
       isFloating: true,
       priority: 'none',
-      tags: [],
-      notes: 'Эта задача была записана в INBOX. Нажмите "На холст", чтобы разместить её на интеллект-карте.',
+      tags: ['Входящие'],
+      notes: 'Эта задача была записана во Входящие (INBOX).',
       completed: false,
       files: [],
       estimatedTime: suggestEstimatedTime(text, Object.values(state.nodes).flat() as TaskNode[]) ?? 30
@@ -3656,7 +3722,7 @@ export default function App() {
     const newFloatingNode: TaskNode = {
       id: 'node-' + generateId(),
       projectId: pid,
-      text: customText?.trim() || (isInsideContainer ? 'Новая подзадача' : 'Плавающая задача'),
+      text: customText?.trim() || (isInsideContainer ? 'Новая подзадача' : 'Новая задача'),
       x: targetX,
       y: targetY,
       parentId: parentId, // can be a container or branch root
