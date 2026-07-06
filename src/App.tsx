@@ -6071,7 +6071,7 @@ export default function App() {
               </div>
 
               {isBottomViewsExpanded ? (
-                <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
+                <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5 w-full md:w-auto">
                   {viewsList.map(option => {
                     const OptionIcon = option.icon;
                     const isSelected = viewMode === option.id;
