@@ -4083,28 +4083,74 @@ export default function App() {
     }));
   };
 
-  // Create a new task originating from the Kanban Board view
-  const handleCreateKanbanTask = (text: string, initialTags: string[], initialPriority: Priority = 'none', parentId: string | null = null, dueDate?: string, extraFields?: Partial<TaskNode>) => {
+  // Helpers for Personal Tag Category to Delegate Container rules
+  const getPersonalTags = (stateVal: WorkspaceState, projectId: string): string[] => {
+    const rootCats = stateVal.tagCategories || [];
+    const project = stateVal.projects.find(p => p.id === projectId);
+    const projCats = project?.tagCategories || [];
+    const allCats = [...rootCats, ...projCats];
+    const personalCats = allCats.filter(cat => cat && cat.name && cat.name.toLowerCase() === 'personal');
+    return Array.from(new Set(personalCats.flatMap(cat => cat.tags || [])));
+  };
+
+  const findDelegateContainer = (nodesList: TaskNode[]): TaskNode | null => {
+    return nodesList.find(n => 
+      !!n.isContainer && 
+      (n.text.toLowerCase().includes('delegate') || n.text.toLowerCase().includes('делегир'))
+    ) || null;
+  };
+
+  const createDelegateContainer = (projectId: string, currentNodes: TaskNode[]): TaskNode => {
+    const minX = currentNodes.length > 0 ? Math.min(...currentNodes.map(n => n.x)) : 0;
+    const maxY = currentNodes.length > 0 ? Math.max(...currentNodes.map(n => n.y)) : 0;
+    
+    return {
+      id: 'gtd-delegate-' + generateId(),
+      projectId: projectId,
+      text: "👥 ДЕЛЕГИРОВАНО (WAITING)",
+      x: minX + 500,
+      y: maxY + 200,
+      parentId: null,
+      isFloating: true,
+      isContainer: true,
+      priority: 'low',
+      tags: [],
+      notes: "Задачи, переданные команде или ожидающие ответа.",
+      completed: false,
+      files: [],
+      color: '#f59e0b',
+      width: 320,
+      height: 300,
+      updatedAt: new Date().toISOString()
+    };
+  };
+
+  const processNewTaskForPersonalTags = (
+    text: string,
+    tags: string[],
+    priority: Priority,
+    parentId: string | null,
+    dueDate: string | undefined,
+    extraFields?: Partial<TaskNode>
+  ): { finalNewNode: TaskNode; mirrorCloneNode: TaskNode | null; extraNodesToAdd: TaskNode[] } => {
     const pid = state.activeProjectId;
-    if (!pid) return;
-
-    const currentNodes = state.nodes[pid] || [];
-    pushToUndo(pid, currentNodes);
-
+    const currentNodes = state.nodes[pid || ''] || [];
+    
+    // Create the base new target node exactly as before
     const parentNode = parentId ? currentNodes.find(n => n.id === parentId) : null;
     const parentX = parentNode ? parentNode.x : 350;
     const parentY = parentNode ? parentNode.y : 350;
-
+    
     const newTargetNode: TaskNode = {
       id: 'node-' + generateId(),
-      projectId: pid,
+      projectId: pid || '',
       text,
       x: parentNode ? parentX + Math.random() * 100 : 350 + Math.random() * 200,
       y: parentNode ? parentY + 120 + Math.random() * 80 : 350 + Math.random() * 200,
       parentId,
       isFloating: parentId ? undefined : true,
-      priority: initialPriority,
-      tags: initialTags,
+      priority,
+      tags,
       notes: '',
       completed: false,
       files: [],
@@ -4114,15 +4160,94 @@ export default function App() {
       ...extraFields
     };
 
-    setState(prev => ({
-      ...prev,
-      nodes: {
-        ...prev.nodes,
-        [pid]: syncCompletion([...currentNodes, newTargetNode])
+    const personalTags = getPersonalTags(state, pid || '');
+    const hasPersonalTag = (newTargetNode.tags || []).some(tag => personalTags.includes(tag));
+
+    if (!hasPersonalTag) {
+      return { finalNewNode: newTargetNode, mirrorCloneNode: null, extraNodesToAdd: [] };
+    }
+
+    // Has a personal tag!
+    let delegateContainer = findDelegateContainer(currentNodes);
+    const extraNodesToAdd: TaskNode[] = [];
+    if (!delegateContainer) {
+      delegateContainer = createDelegateContainer(pid || '', currentNodes);
+      extraNodesToAdd.push(delegateContainer);
+    }
+
+    const isSubtask = parentNode && !parentNode.isContainer && !parentNode.isWorkflowRectangle;
+
+    if (isSubtask) {
+      const assignedMirrorGroupId = `mirror-${newTargetNode.id}-${Date.now()}`;
+      newTargetNode.mirrorGroupId = assignedMirrorGroupId;
+      newTargetNode.mirrorParentId = parentNode ? parentNode.id : undefined;
+      newTargetNode.mirrorParentText = parentNode ? parentNode.text : undefined;
+      newTargetNode.updatedAt = new Date().toISOString();
+
+      const parentColor = delegateContainer ? delegateContainer.color : '';
+      const updatedContainerPlace = delegateContainer ? `${delegateContainer.text} (X: ${Math.round(delegateContainer.x)}, Y: ${Math.round(delegateContainer.y)})` : '';
+
+      const mirrorCloneNode: TaskNode = {
+        ...newTargetNode,
+        id: 'node-' + generateId(),
+        parentId: delegateContainer.id,
+        color: parentColor || newTargetNode.color,
+        isFloating: false,
+        containerPlace: updatedContainerPlace,
+        mirrorGroupId: assignedMirrorGroupId,
+        mirrorParentId: parentNode ? parentNode.id : undefined,
+        mirrorParentText: parentNode ? parentNode.text : undefined,
+        updatedAt: new Date().toISOString()
+      };
+
+      return { finalNewNode: newTargetNode, mirrorCloneNode, extraNodesToAdd };
+    } else {
+      const parentColor = delegateContainer ? delegateContainer.color : '';
+      const updatedContainerPlace = delegateContainer ? `${delegateContainer.text} (X: ${Math.round(delegateContainer.x)}, Y: ${Math.round(delegateContainer.y)})` : '';
+
+      newTargetNode.parentId = delegateContainer.id;
+      newTargetNode.isFloating = false;
+      newTargetNode.color = parentColor || newTargetNode.color;
+      newTargetNode.containerPlace = updatedContainerPlace;
+      newTargetNode.updatedAt = new Date().toISOString();
+
+      return { finalNewNode: newTargetNode, mirrorCloneNode: null, extraNodesToAdd };
+    }
+  };
+
+  // Create a new task originating from the Kanban Board view
+  const handleCreateKanbanTask = (text: string, initialTags: string[], initialPriority: Priority = 'none', parentId: string | null = null, dueDate?: string, extraFields?: Partial<TaskNode>) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const { finalNewNode, mirrorCloneNode, extraNodesToAdd } = processNewTaskForPersonalTags(
+      text,
+      initialTags,
+      initialPriority,
+      parentId,
+      dueDate,
+      extraFields
+    );
+
+    setState(prev => {
+      const current = prev.nodes[pid] || [];
+      const nodesToAdd = [finalNewNode];
+      if (mirrorCloneNode) {
+        nodesToAdd.push(mirrorCloneNode);
       }
-    }));
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncCompletion([...current, ...extraNodesToAdd, ...nodesToAdd])
+        }
+      };
+    });
     
-    setSelectedNodeId(newTargetNode.id);
+    setSelectedNodeId(finalNewNode.id);
   };
 
   // Create a new task originating from the Mobile list view (TickTick style)
@@ -4133,36 +4258,29 @@ export default function App() {
     const currentNodes = state.nodes[pid] || [];
     pushToUndo(pid, currentNodes);
 
-    const parentNode = parentId ? currentNodes.find(n => n.id === parentId) : null;
-    const parentX = parentNode ? parentNode.x : 350;
-    const parentY = parentNode ? parentNode.y : 350;
-
-    const newTargetNode: TaskNode = {
-      id: 'node-' + generateId(),
-      projectId: pid,
+    const { finalNewNode, mirrorCloneNode, extraNodesToAdd } = processNewTaskForPersonalTags(
       text,
-      x: parentX + (Math.random() - 0.5) * 120 + 100,
-      y: parentY + (Math.random() - 0.5) * 120 + 80,
-      parentId: parentId || null,
-      isFloating: parentId ? false : true,
-      priority,
       tags,
-      notes: '',
-      completed: false,
-      files: [],
+      priority,
+      parentId || null,
       dueDate,
-      dueTime,
-      color: parentNode ? parentNode.color : '#6366f1',
-      estimatedTime: suggestEstimatedTime(text, Object.values(state.nodes).flat() as TaskNode[]) ?? 30
-    };
+      dueTime ? { dueTime } : undefined
+    );
 
-    setState(prev => ({
-      ...prev,
-      nodes: {
-        ...prev.nodes,
-        [pid]: syncCompletion([...currentNodes, newTargetNode])
+    setState(prev => {
+      const current = prev.nodes[pid] || [];
+      const nodesToAdd = [finalNewNode];
+      if (mirrorCloneNode) {
+        nodesToAdd.push(mirrorCloneNode);
       }
-    }));
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncCompletion([...current, ...extraNodesToAdd, ...nodesToAdd])
+        }
+      };
+    });
   };
 
   // Single node attribute editor update
@@ -4179,6 +4297,89 @@ export default function App() {
       let isMirrorTriggered = false;
 
       let adjustedUpdatedNode = { ...updatedNode };
+
+      // --- INTEGRATE PERSONAL TAG LOGIC ---
+      const personalTags = getPersonalTags(prev, pid);
+      const newTags = updatedNode.tags || [];
+      const oldTags = targetNode ? (targetNode.tags || []) : [];
+      const hasPersonalTagNow = newTags.some(tag => personalTags.includes(tag));
+      const hadPersonalTagBefore = oldTags.some(tag => personalTags.includes(tag));
+      const newlyAddedPersonalTag = hasPersonalTagNow && (!targetNode || !hadPersonalTagBefore);
+
+      if (newlyAddedPersonalTag) {
+        let delegateContainer = findDelegateContainer(currentNodes);
+        let updatedNodesWithContainer = [...currentNodes];
+        if (!delegateContainer) {
+          delegateContainer = createDelegateContainer(pid, currentNodes);
+          updatedNodesWithContainer.push(delegateContainer);
+        }
+
+        const parentNode = updatedNode.parentId ? updatedNodesWithContainer.find(n => n.id === updatedNode.parentId) : null;
+        const isSubtask = parentNode && !parentNode.isContainer && !parentNode.isWorkflowRectangle;
+
+        if (isSubtask) {
+          assignedMirrorGroupId = updatedNode.mirrorGroupId || `mirror-${updatedNode.id}-${Date.now()}`;
+          adjustedUpdatedNode = {
+            ...updatedNode,
+            mirrorGroupId: assignedMirrorGroupId,
+            mirrorParentId: parentNode ? parentNode.id : undefined,
+            mirrorParentText: parentNode ? parentNode.text : undefined,
+            updatedAt: new Date().toISOString()
+          };
+
+          const parentColor = delegateContainer ? delegateContainer.color : '';
+          const updatedContainerPlace = delegateContainer ? `${delegateContainer.text} (X: ${Math.round(delegateContainer.x)}, Y: ${Math.round(delegateContainer.y)})` : '';
+
+          mirrorCloneNode = {
+            ...adjustedUpdatedNode,
+            id: 'node-' + generateId(),
+            parentId: delegateContainer.id,
+            color: parentColor || adjustedUpdatedNode.color,
+            isFloating: false,
+            containerPlace: updatedContainerPlace,
+            mirrorGroupId: assignedMirrorGroupId,
+            mirrorParentId: parentNode ? parentNode.id : undefined,
+            mirrorParentText: parentNode ? parentNode.text : undefined,
+            updatedAt: new Date().toISOString()
+          };
+        } else {
+          const parentColor = delegateContainer ? delegateContainer.color : '';
+          const updatedContainerPlace = delegateContainer ? `${delegateContainer.text} (X: ${Math.round(delegateContainer.x)}, Y: ${Math.round(delegateContainer.y)})` : '';
+
+          adjustedUpdatedNode = {
+            ...updatedNode,
+            parentId: delegateContainer.id,
+            isFloating: false,
+            color: parentColor || updatedNode.color,
+            containerPlace: updatedContainerPlace,
+            updatedAt: new Date().toISOString()
+          };
+        }
+
+        let updatedList = updatedNodesWithContainer.map(n => n.id === adjustedUpdatedNode.id ? adjustedUpdatedNode : n);
+        if (mirrorCloneNode) {
+          updatedList = [...updatedList, mirrorCloneNode];
+        }
+
+        if (targetNode && targetNode.completed !== adjustedUpdatedNode.completed) {
+          updatedList = toggleNodeAndDescendants(adjustedUpdatedNode.id, adjustedUpdatedNode.completed, updatedList);
+        }
+
+        if (targetNode && targetNode.archived !== adjustedUpdatedNode.archived) {
+          updatedList = toggleNodeArchive(adjustedUpdatedNode.id, !!adjustedUpdatedNode.archived, updatedList);
+        }
+
+        const syncedNodes = syncCompletion(updatedList);
+
+        return {
+          ...prev,
+          nodes: {
+            ...prev.nodes,
+            [pid]: syncedNodes
+          }
+        };
+      }
+      // --- END INTEGRATE PERSONAL TAG LOGIC ---
 
       if (targetNode) {
         const oldParentId = targetNode.parentId;
@@ -4279,6 +4480,93 @@ export default function App() {
     setState(prev => {
       const currentNodes = prev.nodes[projId] || [];
       const targetNode = currentNodes.find(n => n.id === updatedNode.id);
+
+      // --- INTEGRATE PERSONAL TAG LOGIC ---
+      const personalTags = getPersonalTags(prev, projId);
+      const newTags = updatedNode.tags || [];
+      const oldTags = targetNode ? (targetNode.tags || []) : [];
+      const hasPersonalTagNow = newTags.some(tag => personalTags.includes(tag));
+      const hadPersonalTagBefore = oldTags.some(tag => personalTags.includes(tag));
+      const newlyAddedPersonalTag = hasPersonalTagNow && (!targetNode || !hadPersonalTagBefore);
+
+      if (newlyAddedPersonalTag) {
+        let delegateContainer = findDelegateContainer(currentNodes);
+        let updatedNodesWithContainer = [...currentNodes];
+        if (!delegateContainer) {
+          delegateContainer = createDelegateContainer(projId, currentNodes);
+          updatedNodesWithContainer.push(delegateContainer);
+        }
+
+        const parentNode = updatedNode.parentId ? updatedNodesWithContainer.find(n => n.id === updatedNode.parentId) : null;
+        const isSubtask = parentNode && !parentNode.isContainer && !parentNode.isWorkflowRectangle;
+
+        let adjustedUpdatedNode = { ...updatedNode };
+        let mirrorCloneNode: TaskNode | null = null;
+        let assignedMirrorGroupId = '';
+
+        if (isSubtask) {
+          assignedMirrorGroupId = updatedNode.mirrorGroupId || `mirror-${updatedNode.id}-${Date.now()}`;
+          adjustedUpdatedNode = {
+            ...updatedNode,
+            mirrorGroupId: assignedMirrorGroupId,
+            mirrorParentId: parentNode ? parentNode.id : undefined,
+            mirrorParentText: parentNode ? parentNode.text : undefined,
+            updatedAt: new Date().toISOString()
+          };
+
+          const parentColor = delegateContainer ? delegateContainer.color : '';
+          const updatedContainerPlace = delegateContainer ? `${delegateContainer.text} (X: ${Math.round(delegateContainer.x)}, Y: ${Math.round(delegateContainer.y)})` : '';
+
+          mirrorCloneNode = {
+            ...adjustedUpdatedNode,
+            id: 'node-' + generateId(),
+            parentId: delegateContainer.id,
+            color: parentColor || adjustedUpdatedNode.color,
+            isFloating: false,
+            containerPlace: updatedContainerPlace,
+            mirrorGroupId: assignedMirrorGroupId,
+            mirrorParentId: parentNode ? parentNode.id : undefined,
+            mirrorParentText: parentNode ? parentNode.text : undefined,
+            updatedAt: new Date().toISOString()
+          };
+        } else {
+          const parentColor = delegateContainer ? delegateContainer.color : '';
+          const updatedContainerPlace = delegateContainer ? `${delegateContainer.text} (X: ${Math.round(delegateContainer.x)}, Y: ${Math.round(delegateContainer.y)})` : '';
+
+          adjustedUpdatedNode = {
+            ...updatedNode,
+            parentId: delegateContainer.id,
+            isFloating: false,
+            color: parentColor || updatedNode.color,
+            containerPlace: updatedContainerPlace,
+            updatedAt: new Date().toISOString()
+          };
+        }
+
+        let updatedList = updatedNodesWithContainer.map(n => n.id === adjustedUpdatedNode.id ? adjustedUpdatedNode : n);
+        if (mirrorCloneNode) {
+          updatedList = [...updatedList, mirrorCloneNode];
+        }
+
+        if (targetNode && targetNode.completed !== adjustedUpdatedNode.completed) {
+          updatedList = toggleNodeAndDescendants(adjustedUpdatedNode.id, adjustedUpdatedNode.completed, updatedList);
+        }
+
+        if (targetNode && targetNode.archived !== adjustedUpdatedNode.archived) {
+          updatedList = toggleNodeArchive(adjustedUpdatedNode.id, !!adjustedUpdatedNode.archived, updatedList);
+        }
+
+        const syncedNodes = syncCompletion(updatedList);
+
+        return {
+          ...prev,
+          nodes: {
+            ...prev.nodes,
+            [projId]: syncedNodes
+          }
+        };
+      }
+      // --- END INTEGRATE PERSONAL TAG LOGIC ---
       
       const nodeWithTimeStamp = {
         ...updatedNode,
