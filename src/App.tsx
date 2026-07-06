@@ -2304,18 +2304,51 @@ export default function App() {
           const currentNodes = [...(state.nodes[pid] || [])];
           pushToUndo(pid, currentNodes);
 
+          // Find or create the inbox container
+          let inboxContainer = currentNodes.find(n => n.isContainer && (n.text.includes('INBOX') || n.text.includes('ВХОДЯЩИЕ')));
+          let finalParentId = 'inbox';
+          let posX = 0;
+          let posY = 0;
+
+          if (inboxContainer) {
+            finalParentId = inboxContainer.id;
+            posX = inboxContainer.x + (Math.random() - 0.5) * 40;
+            posY = inboxContainer.y + (Math.random() - 0.5) * 40;
+          } else {
+            const newContainerId = 'gtd-inbox-' + generateId();
+            inboxContainer = {
+              id: newContainerId,
+              projectId: pid,
+              text: "📥 ВХОДЯЩИЕ (INBOX)",
+              x: -500,
+              y: -100,
+              parentId: null,
+              isFloating: true,
+              isContainer: true,
+              priority: 'none',
+              tags: [],
+              notes: "Контейнер Входящих задач.",
+              completed: false,
+              files: []
+            };
+            finalParentId = newContainerId;
+            posX = -500;
+            posY = -100;
+            currentNodes.push(inboxContainer);
+          }
+
           const newTaskId = 'node-' + generateId();
           const newTaskNode: TaskNode = {
             id: newTaskId,
             projectId: pid,
             text: 'Новая задача',
-            x: 350 + Math.random() * 200,
-            y: 350 + Math.random() * 200,
-            parentId: null,
+            x: posX,
+            y: posY,
+            parentId: finalParentId,
             isFloating: true,
             priority: 'none',
-            tags: [],
-            notes: '',
+            tags: ['Входящие'],
+            notes: 'Эта задача была записана во Входящие (INBOX).',
             completed: false,
             files: [],
             color: '#6366f1',
@@ -2326,7 +2359,7 @@ export default function App() {
             ...prev,
             nodes: {
               ...prev.nodes,
-              [pid!]: [...(prev.nodes[pid!] || []), newTaskNode]
+              [pid!]: [...currentNodes, newTaskNode]
             }
           }));
 
