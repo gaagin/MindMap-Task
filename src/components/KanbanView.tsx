@@ -2252,7 +2252,22 @@ export default function KanbanView({
       {/* Pillars Columns Area */}
       <div 
         id="kanban-columns-container" 
-        className="flex-1 overflow-x-auto min-h-0 bg-slate-50/10 dark:bg-slate-950/5 p-3 md:p-6"
+        className="flex-1 overflow-x-auto custom-scrollbar min-h-0 bg-slate-50/10 dark:bg-slate-950/5 p-3 md:p-6"
+        onWheel={(e) => {
+          // Translate vertical mouse wheel scrolling to horizontal scrolling for desktop users without a trackpad
+          if (e.deltaY !== 0 && Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
+            const target = e.target as HTMLElement;
+            // Only translate if not scrolling a vertically scrollable card container list
+            const scrollableColumn = target.closest('[id^="kanban-column-cards-"]');
+            if (scrollableColumn) {
+              const hasVerticalOverflow = scrollableColumn.scrollHeight > scrollableColumn.clientHeight;
+              if (hasVerticalOverflow) {
+                return;
+              }
+            }
+            e.currentTarget.scrollLeft += e.deltaY;
+          }
+        }}
       >
         <div className="flex gap-5 h-full items-stretch pb-2">
           {columns.map(col => {
