@@ -102,6 +102,7 @@ interface MindMapCanvasProps {
   onFocusedTaskIdChange?: (id: string | null) => void;
   focusedContainerId?: string | null;
   onFocusedContainerIdChange?: (id: string | null) => void;
+  googleToken?: string | null;
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -378,7 +379,8 @@ export default function MindMapCanvas({
   focusedTaskId = null,
   onFocusedTaskIdChange,
   focusedContainerId: propFocusedContainerId,
-  onFocusedContainerIdChange
+  onFocusedContainerIdChange,
+  googleToken
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -659,43 +661,185 @@ export default function MindMapCanvas({
   const cardFileInputRef = useRef<HTMLInputElement>(null);
   const [fileUploadNodeId, setFileUploadNodeId] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
 
-  const handleCardFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Helper to get or create a folder on Google Drive
+  const getOrCreateGoogleDriveFolder = async (token: string): Promise<string | null> => {
+    try {
+      const q = encodeURIComponent("name='MindMap_Attachments' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        if (searchData.files && searchData.files.length > 0) {
+          return searchData.files[0].id;
+        }
+      }
+
+      // Create folder if not found
+      const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: 'MindMap_Attachments',
+          mimeType: 'application/vnd.google-apps.folder'
+        })
+      });
+      if (createRes.ok) {
+        const createData = await createRes.json();
+        return createData.id;
+      }
+    } catch (e) {
+      console.error('Error getting/creating Drive folder:', e);
+    }
+    return null;
+  };
+
+  const uploadFileWithToken = async (file: File): Promise<any> => {
+    let finalFile = file;
+    if (file.name === 'image.png' || !file.name) {
+      const extension = file.type ? file.type.split('/')[1] || 'png' : 'png';
+      const formattedDate = new Date().toISOString().split('T')[0] + '_' + new Date().toTimeString().split(' ')[0].replace(/:/g, '-');
+      finalFile = new File([file], `Pasted_File_${formattedDate}.${extension}`, { type: file.type });
+    }
+
+    if (googleToken) {
+      setIsUploadingFile(true);
+      try {
+        const folderId = await getOrCreateGoogleDriveFolder(googleToken);
+
+        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${googleToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: finalFile.name,
+            mimeType: finalFile.type || 'application/octet-stream',
+            parents: folderId ? [folderId] : undefined
+          })
+        });
+
+        if (!createRes.ok) {
+          const errText = await createRes.text();
+          throw new Error(`Failed to create metadata on Drive: ${errText}`);
+        }
+
+        const createData = await createRes.json();
+        const driveFileId = createData.id;
+
+        const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${googleToken}`,
+            'Content-Type': finalFile.type || 'application/octet-stream'
+          },
+          body: finalFile
+        });
+
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text();
+          throw new Error(`Failed to upload file body: ${errText}`);
+        }
+
+        try {
+          await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${googleToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              role: 'reader',
+              type: 'anyone'
+            })
+          });
+        } catch (permissionErr) {
+          console.warn('[Google Drive Auth] Failed to share file:', permissionErr);
+        }
+
+        const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
+          headers: {
+            'Authorization': `Bearer ${googleToken}`
+          }
+        });
+
+        if (!finalRes.ok) {
+          throw new Error('Failed to retrieve web links');
+        }
+
+        const finalData = await finalRes.json();
+
+        return {
+          id: generateId(),
+          name: finalFile.name,
+          type: finalFile.type,
+          size: finalFile.size,
+          dataUrl: finalData.webViewLink || finalData.webContentLink || '',
+          googleDriveId: driveFileId,
+          webViewLink: finalData.webViewLink,
+          webContentLink: finalData.webContentLink,
+        };
+      } catch (err: any) {
+        console.error(err);
+        setFileError(`Failed to save to Google Drive: ${err.message || err}`);
+        return null;
+      } finally {
+        setIsUploadingFile(false);
+      }
+    } else {
+      const MAX_BYTES = 1.5 * 1024 * 1024;
+      if (finalFile.size > MAX_BYTES) {
+        setFileError('Размер файла превышает 1.5 МБ. Войдите через Google, чтобы разблокировать вложения на Google Диск без ограничений!');
+        setTimeout(() => setFileError(null), 4000);
+        return null;
+      }
+
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64Data = reader.result as string;
+          resolve({
+            id: generateId(),
+            name: finalFile.name,
+            type: finalFile.type,
+            size: finalFile.size,
+            dataUrl: base64Data,
+          });
+        };
+        reader.onerror = () => {
+          setFileError('Ошибка считывания файла.');
+          setTimeout(() => setFileError(null), 4000);
+          resolve(null);
+        };
+        reader.readAsDataURL(finalFile);
+      });
+    }
+  };
+
+  const handleCardFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const filesList = e.target.files;
     const targetNodeId = fileUploadNodeId;
     if (!filesList || filesList.length === 0 || !targetNodeId) return;
     
     setFileError(null);
     const file = filesList[0];
-    const MAX_BYTES = 1.5 * 1024 * 1024;
-    
-    if (file.size > MAX_BYTES) {
-      setFileError('Размер файла превышает 1.5 МБ. Выберите файл меньшего размера.');
-      setTimeout(() => setFileError(null), 4000);
-      return;
-    }
-
     const node = nodes.find(n => n.id === targetNodeId);
     if (!node) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64Data = reader.result as string;
-      const newAttachment = {
-        id: generateId(),
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl: base64Data,
-      };
+    const newAttachment = await uploadFileWithToken(file);
+    if (!newAttachment) return;
 
-      const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
-      onUpdateNode({
-        ...node,
-        files: updatedFiles
-      });
-    };
-    reader.readAsDataURL(file);
+    const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
+    onUpdateNode({
+      ...node,
+      files: updatedFiles
+    });
     
     // Reset file input value
     e.target.value = '';
@@ -2863,30 +3007,21 @@ export default function MindMapCanvas({
 
   const canvasImageFileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleAddImageToCanvas = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64Data = reader.result as string;
-      const newAttachment = {
-        id: generateId(),
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl: base64Data,
-      };
+  const handleAddImageToCanvas = async (file: File) => {
+    setFileError(null);
+    const newAttachment = await uploadFileWithToken(file);
+    if (!newAttachment) return;
 
-      const x = Math.round(-panX / zoom);
-      const y = Math.round(-panY / zoom);
+    const x = Math.round(-panX / zoom);
+    const y = Math.round(-panY / zoom);
 
-      onAddFloatingNode(
-        x,
-        y,
-        focusedContainerId || focusedTaskId || null,
-        file.name.substring(0, file.name.lastIndexOf('.')) || 'Изображение',
-        { files: [newAttachment], isNotTask: true, useExactCoordinates: !!focusedContainerId }
-      );
-    };
-    reader.readAsDataURL(file);
+    onAddFloatingNode(
+      x,
+      y,
+      focusedContainerId || focusedTaskId || null,
+      file.name.substring(0, file.name.lastIndexOf('.')) || 'Изображение',
+      { files: [newAttachment], isNotTask: true, useExactCoordinates: !!focusedContainerId }
+    );
   };
 
   useEffect(() => {
@@ -7230,7 +7365,7 @@ export default function MindMapCanvas({
         const isImgNode = !!node.isNotTask && node.files && node.files.length > 0 && node.files.some(f => f.type && f.type.startsWith('image/'));
         if (isImgNode) {
           const imgFile = node.files.find(f => f.type && f.type.startsWith('image/'))!;
-          const imgUrl = imgFile.googleDriveId ? `https://drive.google.com/thumbnail?id=${imgFile.googleDriveId}&sz=w400` : imgFile.dataUrl;
+          const imgUrl = imgFile.googleDriveId ? `https://lh3.googleusercontent.com/d/${imgFile.googleDriveId}` : imgFile.dataUrl;
 
           // Render a beautiful, minimal frame for the image
           const imageWidth = node.width || 300;
@@ -9046,7 +9181,7 @@ export default function MindMapCanvas({
                     <div className="space-y-1.5 max-h-[140px] overflow-y-auto font-sans">
                       {node.files.map((file) => {
                         const isImg = file.type && file.type.startsWith('image/');
-                        const imgUrl = file.googleDriveId ? `https://drive.google.com/thumbnail?id=${file.googleDriveId}&sz=w150` : file.dataUrl;
+                        const imgUrl = file.googleDriveId ? `https://lh3.googleusercontent.com/d/${file.googleDriveId}` : file.dataUrl;
                         return (
                           <div 
                             key={file.id} 

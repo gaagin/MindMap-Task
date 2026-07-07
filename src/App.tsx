@@ -6162,6 +6162,7 @@ export default function App() {
               <MindMapCanvas
                 nodes={displayedNodesForViews}
                 darkMode={darkMode}
+                googleToken={googleToken}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
                 activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
