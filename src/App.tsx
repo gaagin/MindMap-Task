@@ -142,6 +142,7 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         pn.pomodoroSessionsCount !== nn.pomodoroSessionsCount ||
         pn.archived !== nn.archived ||
         pn.isNotTask !== nn.isNotTask ||
+        pn.defaultView !== nn.defaultView ||
         pn.externalLink !== nn.externalLink ||
         pn.progress !== nn.progress ||
         pn.isFloating !== nn.isFloating ||
@@ -371,6 +372,7 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         estimatedTime: n.estimatedTime !== undefined && n.estimatedTime !== null && !isNaN(n.estimatedTime) ? n.estimatedTime : null,
         archived: !!n.archived,
         isNotTask: !!n.isNotTask,
+        defaultView: n.defaultView || null,
         externalLink: n.externalLink || '',
         isCardCollapsed: !!n.isCardCollapsed,
         progress: n.progress !== undefined ? Math.round(Number(n.progress) || 0) : null,
@@ -1377,11 +1379,47 @@ export default function App() {
 
   // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'
   const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'>('canvas');
-  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('milli_focused_task_id') || null;
+    } catch {
+      return null;
+    }
+  });
   const [isMobileViewSwitcherOpen, setIsMobileViewSwitcherOpen] = useState(false);
   const [isContainerFocused, setIsContainerFocused] = useState(false);
-  const [focusedContainerId, setFocusedContainerId] = useState<string | null>(null);
+  const [focusedContainerId, setFocusedContainerId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('milli_focused_container_id') || null;
+    } catch {
+      return null;
+    }
+  });
   const [isViewFullScreen, setIsViewFullScreen] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (focusedTaskId) {
+        localStorage.setItem('milli_focused_task_id', focusedTaskId);
+      } else {
+        localStorage.removeItem('milli_focused_task_id');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [focusedTaskId]);
+
+  useEffect(() => {
+    try {
+      if (focusedContainerId) {
+        localStorage.setItem('milli_focused_container_id', focusedContainerId);
+      } else {
+        localStorage.removeItem('milli_focused_container_id');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [focusedContainerId]);
 
   const [isBottomViewsExpanded, setIsBottomViewsExpanded] = useState<boolean>(() => {
     try {
@@ -1397,33 +1435,32 @@ export default function App() {
   }, [isBottomViewsExpanded]);
 
   // Track focus transitions to restore/apply filters
-  const prevFocusIdRef = React.useRef<string | null>(null);
+  const lastAppliedFocusIdRef = React.useRef<string | null>(null);
   const prevFocusedContainerIdRef = React.useRef<string | null>(null);
 
   // Auto-switch viewMode and load/restore filters on focused node change
   useEffect(() => {
     const focusId = focusedTaskId || focusedContainerId;
-    const prevFocusId = prevFocusIdRef.current;
     const prevFocusedContainerId = prevFocusedContainerIdRef.current;
     
     // Check if we just exited container focus mode (was focusing a container, now none)
     const exitedContainerFocus = prevFocusedContainerId !== null && focusedContainerId === null;
     
-    if (focusId !== prevFocusId) {
+    if (focusId !== lastAppliedFocusIdRef.current) {
       if (focusId) {
         // Entering focus mode!
-        // If we were NOT in focus mode, save the current filters as pre-focus filters
-        if (!prevFocusId) {
-          setPreFocusFilters({
-            ...filtersRef.current,
-            viewMode: viewMode
-          });
-        }
-        
         if (state.activeProjectId) {
           const activeProjectNodes = state.nodes[state.activeProjectId] || [];
           const node = activeProjectNodes.find(n => n.id === focusId);
           if (node) {
+            // If we were NOT in focus mode, save the current filters as pre-focus filters
+            if (!lastAppliedFocusIdRef.current) {
+              setPreFocusFilters({
+                ...filtersRef.current,
+                viewMode: viewMode
+              });
+            }
+
             if (node.defaultView) {
               setViewMode(node.defaultView);
             } else {
@@ -1441,6 +1478,8 @@ export default function App() {
               if (node.savedFilters.kanbanGroupBy !== undefined) setKanbanGroupBy(node.savedFilters.kanbanGroupBy);
               if (node.savedFilters.kanbanContainerFilterId !== undefined) setKanbanContainerFilterId(node.savedFilters.kanbanContainerFilterId);
             }
+            
+            lastAppliedFocusIdRef.current = focusId;
           }
         }
       } else {
@@ -1465,8 +1504,8 @@ export default function App() {
         } else if (exitedContainerFocus) {
           setViewMode('canvas');
         }
+        lastAppliedFocusIdRef.current = null;
       }
-      prevFocusIdRef.current = focusId;
     } else {
       // If overall focusId did not change, but we exited container focus mode (e.g. nested transitions)
       if (exitedContainerFocus) {
@@ -1475,7 +1514,7 @@ export default function App() {
     }
     
     prevFocusedContainerIdRef.current = focusedContainerId;
-  }, [focusedTaskId, focusedContainerId, state.activeProjectId, preFocusFilters, viewMode]);
+  }, [focusedTaskId, focusedContainerId, state.activeProjectId, state.nodes, preFocusFilters, viewMode]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2540,6 +2579,7 @@ export default function App() {
     setIsMultiSelectMode(false);
     setSearchQuery('');
     setFocusedTaskId(null);
+    setFocusedContainerId(null);
     
     // Automatically close the sidebar overlay drawer on mobile/tablet screen widths
     if (window.innerWidth < 1024) {
@@ -3247,13 +3287,15 @@ export default function App() {
       if (!focusedTaskId) {
         if (focusedContainerId) {
           // If we have a focused container, hide descendants of nested sub-containers
-          let currentParentId = node.parentId;
-          while (currentParentId && currentParentId !== focusedContainerId) {
-            const parent = activeNodes.find(n => n.id === currentParentId);
-            if (parent && parent.isContainer) {
-              return false; // Hidden because it belongs to a nested sub-container
+          if (node.id !== focusedContainerId) {
+            let currentParentId = node.parentId;
+            while (currentParentId && currentParentId !== focusedContainerId) {
+              const parent = activeNodes.find(n => n.id === currentParentId);
+              if (parent && parent.isContainer) {
+                return false; // Hidden because it belongs to a nested sub-container
+              }
+              currentParentId = parent ? parent.parentId : null;
             }
-            currentParentId = parent ? parent.parentId : null;
           }
         } else {
           // No focused container: hide descendants of any container
