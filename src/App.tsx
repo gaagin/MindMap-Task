@@ -846,6 +846,7 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [detailsPanelTab, setDetailsPanelTab] = useState<'details' | 'chat'>('details');
+  const [detailsPanelFullscreen, setDetailsPanelFullscreen] = useState(false);
 
   // Selected task nodes for multiple selection
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
@@ -862,6 +863,13 @@ export default function App() {
       setIsDrawerOpen(false);
     }
   }, [selectedNodeId]);
+
+  // Reset detailsPanelFullscreen when drawer is closed
+  useEffect(() => {
+    if (!isDrawerOpen) {
+      setDetailsPanelFullscreen(false);
+    }
+  }, [isDrawerOpen]);
 
   // Sync selectedNodeId with browser URL search parameters for easy sharing and home screen shortcutting
   useEffect(() => {
@@ -3299,32 +3307,8 @@ export default function App() {
         }
       }
 
-      // Hide sub-container descendants or general container descendants in all views
-      if (!focusedTaskId) {
-        if (focusedContainerId) {
-          // If we have a focused container, hide descendants of nested sub-containers
-          if (node.id !== focusedContainerId) {
-            let currentParentId = node.parentId;
-            while (currentParentId && currentParentId !== focusedContainerId) {
-              const parent = activeNodes.find(n => n.id === currentParentId);
-              if (parent && parent.isContainer) {
-                return false; // Hidden because it belongs to a nested sub-container
-              }
-              currentParentId = parent ? parent.parentId : null;
-            }
-          }
-        } else {
-          // No focused container: hide descendants of any container
-          let currentParentId = node.parentId;
-          while (currentParentId) {
-            const parent = activeNodes.find(n => n.id === currentParentId);
-            if (parent && parent.isContainer) {
-              return false; // Hidden because it belongs to a container
-            }
-            currentParentId = parent ? parent.parentId : null;
-          }
-        }
-      }
+      // We no longer hide container descendants here so they are visible on the main screen in all views.
+      // MindMapCanvas handles its own canvas-specific container visibility filtering internally.
 
       if (filterStatus === "not_tasks") {
         return !!node.isNotTask;
@@ -6314,7 +6298,10 @@ export default function App() {
                 setPanY={setPanY}
                 setZoom={setZoom}
                 onOpenSidebar={() => setSidebarOpen(true)}
-                onOpenDrawer={() => setIsDrawerOpen(true)}
+                onOpenDrawer={(initialFullscreen) => {
+                  setIsDrawerOpen(true);
+                  setDetailsPanelFullscreen(!!initialFullscreen);
+                }}
                 filterStatus={filterStatus}
                 filterPriority={filterPriority}
                 filterTag={filterTag}
@@ -6460,6 +6447,7 @@ export default function App() {
             googleToken={googleToken}
             onUpdateNodeParent={handleUpdateNodeParent}
             initialTab={detailsPanelTab}
+            initialFullscreen={detailsPanelFullscreen}
           />
         )}
 

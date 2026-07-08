@@ -85,7 +85,7 @@ interface MindMapCanvasProps {
   setPanY: (y: number | ((prev: number) => number)) => void;
   setZoom: (z: number | ((prev: number) => number)) => void;
   onOpenSidebar: () => void;
-  onOpenDrawer: () => void;
+  onOpenDrawer: (initialFullscreen?: boolean) => void;
   filterStatus?: string;
   filterPriority?: string;
   filterTag?: string;
@@ -7857,27 +7857,18 @@ export default function MindMapCanvas({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (fullscreenCardId === node.id) {
-                          setFullscreenCardId(null);
-                          setFullscreenHistory([]);
-                        } else {
-                          setFullscreenCardId(node.id);
-                          setFullscreenHistory([]);
-                        }
+                        onSelectNode(node.id);
+                        onOpenDrawer(true);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      title={fullscreenCardId === node.id ? "Выйти из полноэкранного режима" : "Раскрыть на весь экран"}
+                      title="Раскрыть на весь экран"
                       className={`mt-0.5 p-1 rounded hover:bg-slate-150/50 dark:hover:bg-slate-800 cursor-pointer shrink-0 ${
                         isRoot 
                           ? 'text-indigo-200 hover:text-white hover:bg-indigo-700/50' 
                           : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
                       }`}
                     >
-                      {fullscreenCardId === node.id ? (
-                        <Minimize2 className="w-3.5 h-3.5" />
-                      ) : (
-                        <Maximize2 className="w-3.5 h-3.5" />
-                      )}
+                      <Maximize2 className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>

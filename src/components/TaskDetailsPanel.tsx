@@ -9,6 +9,7 @@ import {
   Download, 
   Plus, 
   Maximize2,
+  Minimize2,
   Calendar,
   Layers,
   HelpCircle,
@@ -60,6 +61,7 @@ interface TaskDetailsPanelProps {
   googleToken?: string | null;
   onUpdateNodeParent?: (id: string, newParentId: string | null, newX?: number, newY?: number) => void;
   initialTab?: 'details' | 'chat';
+  initialFullscreen?: boolean;
 }
 
 const PASTEL_COLORS = [
@@ -86,13 +88,19 @@ export default function TaskDetailsPanel({
   onDeleteTagCategory,
   googleToken = null,
   onUpdateNodeParent,
-  initialTab = 'details'
+  initialTab = 'details',
+  initialFullscreen = false
 }: TaskDetailsPanelProps) {
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(initialFullscreen);
+
+  // Synchronize fullscreen state with initialFullscreen prop
+  React.useEffect(() => {
+    setIsFullscreen(initialFullscreen);
+  }, [initialFullscreen, node?.id]);
 
   const activeBlockers = node ? allNodes.filter(n => node.blockedBy?.includes(n.id) && !n.completed) : [];
   const hasActiveBlockers = activeBlockers.length > 0;
@@ -1593,7 +1601,7 @@ export default function TaskDetailsPanel({
     handlePropChange('files', updatedFiles);
   };
 
-  if (isFullscreen) {
+  if (false && isFullscreen) {
     const subtasks = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
     const sortedSubtasks = [...subtasks].sort((a, b) => {
       const orderA = a.subtaskOrder !== undefined ? a.subtaskOrder : 1000000;
@@ -3649,12 +3657,36 @@ export default function TaskDetailsPanel({
     );
   }
 
+  const AsideWrapper = ({ children }: { children: React.ReactNode }) => {
+    if (isFullscreen) {
+      return (
+        <div 
+          className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-0 md:p-6 animate-fade-in"
+          onClick={() => setIsFullscreen(false)}
+        >
+          <div 
+            onClick={e => e.stopPropagation()} 
+            className="w-full max-w-3xl h-full md:h-[92vh] flex flex-col animate-zoom-in"
+          >
+            {children}
+          </div>
+        </div>
+      );
+    }
+    return <>{children}</>;
+  };
+
   return (
     <>
-      <aside 
-        onPaste={handleAsidePaste}
-        className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out"
-      >
+      <AsideWrapper>
+        <aside 
+          onPaste={handleAsidePaste}
+          className={
+            isFullscreen
+              ? "w-full h-full bg-white dark:bg-slate-900 md:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden relative"
+              : "fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out"
+          }
+        >
 
       {/* Header */}
       <div className="h-16 px-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between gap-3">
@@ -3700,14 +3732,20 @@ export default function TaskDetailsPanel({
           <button 
             type="button"
             onClick={() => {
-              if (window.innerWidth >= 768) {
+              if (isFullscreen) {
+                setIsFullscreen(false);
+              } else if (window.innerWidth >= 768) {
                 setIsFullscreen(true);
               }
             }}
-            className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-500 transition-colors cursor-pointer"
-            title="Открыть во весь экран"
+            className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-505 transition-colors cursor-pointer"
+            title={isFullscreen ? "Свернуть" : "Открыть во весь экран"}
           >
-            <Maximize2 className="w-4 h-4" />
+            {isFullscreen ? (
+              <Minimize2 className="w-4 h-4" />
+            ) : (
+              <Maximize2 className="w-4 h-4" />
+            )}
           </button>
 
           <button 
@@ -7147,7 +7185,8 @@ export default function TaskDetailsPanel({
           Это корневой узел интеллект-карты. Его нельзя удалить.
         </div>
       )}
-    </aside>
+        </aside>
+      </AsideWrapper>
 
     {/* Elegant Attachment Image Lightbox Modal */}
     {lightboxImage && (
