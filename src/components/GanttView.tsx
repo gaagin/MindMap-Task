@@ -17,7 +17,8 @@ import {
   Maximize2,
   Minimize2,
   ArrowUpDown,
-  CornerDownRight
+  CornerDownRight,
+  X
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
@@ -143,6 +144,11 @@ export default function GanttView({
 }: GanttViewProps) {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [sortMode, setSortMode] = useState<'hierarchy' | 'startDate' | 'dueDate' | 'flatStartDate' | 'flatDueDate'>('hierarchy');
+  const [zoomTaskId, setZoomTaskId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setZoomTaskId(null);
+  }, [activeProjectId]);
 
   useEffect(() => {
     if (onFullScreenChange) {
@@ -274,8 +280,31 @@ export default function GanttView({
     });
   }, [nodes]);
 
-  // Filter tasks belonging to project
-  const tasks = processedNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
+  // Filter tasks belonging to project and apply zoom filter if zoomTaskId is active
+  const tasks = React.useMemo(() => {
+    const allProjectTasks = processedNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
+    if (!zoomTaskId) {
+      return allProjectTasks;
+    }
+
+    const zoomedTask = allProjectTasks.find(t => t.id === zoomTaskId);
+    if (!zoomedTask) {
+      return allProjectTasks;
+    }
+
+    const descendants = new Set<string>();
+    const collectDescendants = (parentId: string) => {
+      allProjectTasks.forEach(t => {
+        if (t.parentId === parentId && !descendants.has(t.id)) {
+          descendants.add(t.id);
+          collectDescendants(t.id);
+        }
+      });
+    };
+    collectDescendants(zoomTaskId);
+
+    return allProjectTasks.filter(t => t.id === zoomTaskId || descendants.has(t.id));
+  }, [processedNodes, zoomTaskId]);
 
   // Build tree structures and hierarchical order for list rendering
   const orderedTreeItems = React.useMemo(() => {
@@ -451,6 +480,21 @@ export default function GanttView({
               <option value="flatDueDate" className="dark:bg-slate-900">По сроку (списком)</option>
             </select>
           </div>
+
+          {zoomTaskId && (
+            <div className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-900/50 rounded-lg px-2 py-0.5 select-none">
+              <span className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 truncate max-w-[150px]" title={processedNodes.find(t => t.id === zoomTaskId)?.text}>
+                Фокус: {processedNodes.find(t => t.id === zoomTaskId)?.text || 'Задача'}
+              </span>
+              <button
+                onClick={() => setZoomTaskId(null)}
+                className="p-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-900 rounded text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 cursor-pointer flex items-center justify-center"
+                title="Показать весь проект"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
@@ -584,6 +628,10 @@ export default function GanttView({
                       key={task.id}
                       data-task-id={task.id}
                       onClick={(e) => onSelectNode(task.id, e)}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setZoomTaskId(task.id);
+                      }}
                       className={`h-11 px-3.5 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors border-l-4 ${
                         selectedNodeId === task.id 
                           ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-500' 
@@ -746,6 +794,10 @@ export default function GanttView({
                     <div
                       key={`row-${task.id}`}
                       onClick={(e) => onSelectNode(task.id, e)}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setZoomTaskId(task.id);
+                      }}
                       className={`h-11 flex relative items-center transition-colors group cursor-pointer ${
                         isSelected ? 'bg-indigo-50/10 dark:bg-indigo-950/10' : ''
                       }`}
@@ -801,6 +853,10 @@ export default function GanttView({
                             e.stopPropagation();
                             onSelectNode(task.id, e);
                           }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setZoomTaskId(task.id);
+                          }}
                           style={{
                             left: `${(range.start / 28) * 100}%`,
                             width: `${(range.span / 28) * 100}%`
@@ -841,6 +897,10 @@ export default function GanttView({
                               e.stopPropagation();
                               onSelectNode(task.id, e);
                             }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setZoomTaskId(task.id);
+                            }}
                             className="absolute right-0 text-[10px] bg-slate-50 dark:bg-slate-900 border text-slate-400 dark:text-slate-500 py-1 px-2.5 rounded-full z-10 shadow-xs mr-4 hover:text-indigo-500 transition-colors cursor-pointer"
                           >
                             Срок: {task.dueDate} (Вне диапазона)
@@ -850,6 +910,10 @@ export default function GanttView({
                             onClick={(e) => {
                               e.stopPropagation();
                               onSelectNode(task.id, e);
+                            }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setZoomTaskId(task.id);
                             }}
                             className="absolute left-4 h-7 border-2 border-dashed border-slate-200 dark:border-slate-800 bg-transparent text-slate-400 dark:text-slate-500 hover:border-slate-300 dark:hover:border-slate-700 hover:text-slate-600 transition-all py-1 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer z-10 font-bold text-[9.5px]"
                           >
