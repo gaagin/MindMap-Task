@@ -2064,8 +2064,9 @@ export default function TaskDetailsPanel({
                           Накоплено времени:
                         </span>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-bold font-mono text-rose-600 dark:text-rose-450 text-[11px]">
-                            {formatTotalPomoTime(node.pomodoroTotalTime || 0)}
+                          <span className="font-bold font-mono text-rose-600 dark:text-rose-450 text-[11px]" title={getPomoStatsForNode(node, allNodes).isSummed ? "Включая подзадачи" : undefined}>
+                            {formatTotalPomoTime(getPomoStatsForNode(node, allNodes).pomodoroTotalTime)}
+                            {getPomoStatsForNode(node, allNodes).isSummed && <span className="text-[9px] text-slate-400 dark:text-slate-505 ml-1 font-normal">(сумма)</span>}
                           </span>
                           <button 
                             type="button"
@@ -2086,7 +2087,7 @@ export default function TaskDetailsPanel({
                       </div>
                       <div className="flex justify-between items-center text-slate-505 dark:text-slate-500 text-[10px]">
                         <span>Всего запусков («помидоров»):</span>
-                        <span className="font-semibold">{node.pomodoroSessionsCount || 0}</span>
+                        <span className="font-semibold">{getPomoStatsForNode(node, allNodes).pomodoroSessionsCount}</span>
                       </div>
                     </div>
                   ) : (
@@ -5354,8 +5355,9 @@ export default function TaskDetailsPanel({
                       Накоплено времени задачи:
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <span className="font-bold font-mono text-rose-600 dark:text-rose-400 text-[11px]">
-                        {formatTotalPomoTime(node.pomodoroTotalTime || 0)}
+                      <span className="font-bold font-mono text-rose-600 dark:text-rose-400 text-[11px]" title={getPomoStatsForNode(node, allNodes).isSummed ? "Включая подзадачи" : undefined}>
+                        {formatTotalPomoTime(getPomoStatsForNode(node, allNodes).pomodoroTotalTime)}
+                        {getPomoStatsForNode(node, allNodes).isSummed && <span className="text-[9px] text-slate-400 dark:text-slate-500 ml-1 font-normal">(сумма)</span>}
                       </span>
                       <button 
                         type="button"
@@ -5376,7 +5378,7 @@ export default function TaskDetailsPanel({
                   </div>
                   <div className="flex justify-between items-center text-slate-500 dark:text-slate-500 text-[10px]">
                     <span>Всего запусков («помидоров»):</span>
-                    <span className="font-semibold">{node.pomodoroSessionsCount || 0}</span>
+                    <span className="font-semibold">{getPomoStatsForNode(node, allNodes).pomodoroSessionsCount}</span>
                   </div>
                 </div>
               ) : (

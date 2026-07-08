@@ -272,8 +272,8 @@ export default function TableView({
         const dateB = b.dueDate || '9999-12-31';
         comparison = dateA.localeCompare(dateB);
       } else if (sortField === 'pomodoroTotalTime') {
-        const timeA = a.pomodoroTotalTime || 0;
-        const timeB = b.pomodoroTotalTime || 0;
+        const timeA = getPomoStatsForNode(a, nodes).pomodoroTotalTime;
+        const timeB = getPomoStatsForNode(b, nodes).pomodoroTotalTime;
         comparison = timeA - timeB;
       }
 
@@ -847,15 +847,20 @@ export default function TableView({
                     <td className="px-4 py-2 border-r border-slate-200 dark:border-slate-800/80">
                       <div className="flex items-center gap-1.5 font-mono text-[10.5px]">
                         <span className="text-rose-500 font-bold shrink-0">🍅</span>
-                        <span className={task.pomodoroTotalTime ? "font-bold text-slate-700 dark:text-slate-300" : "text-slate-400 dark:text-slate-500 animate-pulse"}>
-                          {task.pomodoroTotalTime ? (() => {
-                            const hrs = Math.floor(task.pomodoroTotalTime / 3600);
-                            const mins = Math.round((task.pomodoroTotalTime % 3600) / 60);
-                            if (hrs > 0) return `${hrs}ч ${mins}м`;
-                            if (mins > 0) return `${mins} м`;
-                            return `${task.pomodoroTotalTime} с`;
-                          })() : '—'}
-                        </span>
+                        {(() => {
+                          const stats = getPomoStatsForNode(task, nodes);
+                          return stats.pomodoroTotalTime > 0 ? (
+                            <span 
+                              className="font-bold text-slate-700 dark:text-slate-300"
+                              title={stats.isSummed ? "Включая подзадачи" : undefined}
+                            >
+                              {formatTotalPomoTime(stats.pomodoroTotalTime)}
+                              {stats.isSummed && <span className="text-[9px] text-slate-400 dark:text-slate-500 ml-1 font-normal">(сумма)</span>}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 dark:text-slate-500">—</span>
+                          );
+                        })()}
                       </div>
                     </td>
 

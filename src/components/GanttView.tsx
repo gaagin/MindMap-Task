@@ -15,11 +15,106 @@ import {
   Calendar,
   Link as LinkIcon,
   Maximize2,
-  Minimize2
+  Minimize2,
+  ArrowUpDown,
+  CornerDownRight
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
 const WEEKDAYS_RU = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+interface TreeTaskItem {
+  task: TaskNode;
+  depth: number;
+  parent: TaskNode | null;
+}
+
+function buildTaskTree(allTasks: TaskNode[], sortMode: string): TreeTaskItem[] {
+  const taskMap = new Map<string, TaskNode>();
+  allTasks.forEach(t => taskMap.set(t.id, t));
+
+  const roots = allTasks.filter(t => !t.parentId || !taskMap.has(t.parentId));
+
+  const getSortDateValue = (t: TaskNode) => {
+    if (sortMode === 'startDate') {
+      return t.startDate || t.dueDate || '9999-12-31';
+    } else if (sortMode === 'dueDate') {
+      return t.dueDate || t.startDate || '9999-12-31';
+    }
+    return t.y !== undefined ? String(t.y).padStart(6, '0') : t.text;
+  };
+
+  const sortCompare = (a: TaskNode, b: TaskNode) => {
+    const valA = getSortDateValue(a);
+    const valB = getSortDateValue(b);
+    if (valA < valB) return -1;
+    if (valA > valB) return 1;
+    return a.text.localeCompare(b.text);
+  };
+
+  if (sortMode === 'flatStartDate' || sortMode === 'flatDueDate') {
+    const sortedTasks = [...allTasks].sort((a, b) => {
+      const d1 = sortMode === 'flatStartDate' ? (a.startDate || a.dueDate || '9999-12-31') : (a.dueDate || a.startDate || '9999-12-31');
+      const d2 = sortMode === 'flatStartDate' ? (b.startDate || b.dueDate || '9999-12-31') : (b.dueDate || b.startDate || '9999-12-31');
+      if (d1 !== d2) return d1.localeCompare(d2);
+      return a.text.localeCompare(b.text);
+    });
+
+    return sortedTasks.map(t => {
+      const parent = t.parentId ? taskMap.get(t.parentId) || null : null;
+      return {
+        task: t,
+        depth: parent ? 1 : 0,
+        parent
+      };
+    });
+  }
+
+  if (sortMode === 'startDate' || sortMode === 'dueDate') {
+    roots.sort(sortCompare);
+  } else {
+    roots.sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
+  }
+
+  const result: TreeTaskItem[] = [];
+  const visited = new Set<string>();
+
+  const traverse = (node: TaskNode, depth: number, parent: TaskNode | null) => {
+    if (visited.has(node.id)) return;
+    visited.add(node.id);
+    result.push({ task: node, depth, parent });
+    
+    const children = allTasks.filter(t => t.parentId === node.id);
+    if (sortMode === 'startDate' || sortMode === 'dueDate') {
+      children.sort(sortCompare);
+    } else {
+      children.sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
+    }
+
+    children.forEach(child => {
+      traverse(child, depth + 1, node);
+    });
+  };
+
+  roots.forEach(root => {
+    traverse(root, 0, null);
+  });
+
+  const processedIds = new Set(result.map(item => item.task.id));
+  const orphans = allTasks.filter(t => !processedIds.has(t.id));
+  if (orphans.length > 0) {
+    if (sortMode === 'startDate' || sortMode === 'dueDate') {
+      orphans.sort(sortCompare);
+    }
+    orphans.forEach(o => {
+      if (!processedIds.has(o.id)) {
+        traverse(o, 0, null);
+      }
+    });
+  }
+
+  return result;
+}
 
 interface GanttViewProps {
   nodes: TaskNode[];
@@ -47,6 +142,7 @@ export default function GanttView({
   onFullScreenChange
 }: GanttViewProps) {
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [sortMode, setSortMode] = useState<'hierarchy' | 'startDate' | 'dueDate' | 'flatStartDate' | 'flatDueDate'>('hierarchy');
 
   useEffect(() => {
     if (onFullScreenChange) {
@@ -147,6 +243,11 @@ export default function GanttView({
 
   // Filter tasks belonging to project
   const tasks = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
+
+  // Build tree structures and hierarchical order for list rendering
+  const orderedTreeItems = React.useMemo(() => {
+    return buildTaskTree(tasks, sortMode);
+  }, [tasks, sortMode]);
 
   const shiftDays = (count: number) => {
     setBaseDate(prev => {
@@ -302,6 +403,21 @@ export default function GanttView({
           <span className="text-[10px] bg-slate-150 dark:bg-slate-800 px-2 py-0.5 rounded-full font-mono font-bold text-slate-500 dark:text-slate-400 shrink-0 whitespace-nowrap">
             {formatCompactDate(timelineDays[0].dateString)} — {formatCompactDate(timelineDays[27].dateString)}
           </span>
+
+          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-lg px-2 py-0.5 select-none">
+            <ArrowUpDown className="w-3 h-3 text-slate-450 dark:text-slate-500 shrink-0" />
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as any)}
+              className="bg-transparent text-[10.5px] font-bold text-slate-600 dark:text-slate-300 focus:outline-none cursor-pointer pr-1"
+            >
+              <option value="hierarchy" className="dark:bg-slate-900">Иерархия (по холсту)</option>
+              <option value="startDate" className="dark:bg-slate-900">Иерархия (по дате начала)</option>
+              <option value="dueDate" className="dark:bg-slate-900">Иерархия (по сроку)</option>
+              <option value="flatStartDate" className="dark:bg-slate-900">Хронологически (списком)</option>
+              <option value="flatDueDate" className="dark:bg-slate-900">По сроку (списком)</option>
+            </select>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
@@ -423,81 +539,97 @@ export default function GanttView({
                 </div>
               )}
 
-              {tasks.length === 0 ? (
+              {orderedTreeItems.length === 0 ? (
                 <div className="py-12 px-4 text-center">
                   <p className="text-xs text-slate-400">Нет доступных задач.</p>
                 </div>
               ) : (
-                tasks.map(task => (
-                  <div
-                    key={task.id}
-                    data-task-id={task.id}
-                    onClick={(e) => onSelectNode(task.id, e)}
-                    className={`h-11 px-3.5 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors border-l-4 ${
-                      selectedNodeId === task.id 
-                        ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-500' 
-                        : 'border-transparent'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 overflow-hidden flex-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onUpdateNode({
-                            ...task,
-                            completed: !task.completed
-                          });
-                        }}
-                        className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-0.5 rounded transition-transform shrink-0"
-                      >
-                        {task.completed ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                        ) : activePomodoroNodeId === task.id ? (
-                          <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                            <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                          </span>
-                        ) : (
-                          <Circle className="w-3.5 h-3.5 shrink-0" />
+                orderedTreeItems.map(({ task, depth, parent }) => {
+                  const isSubtask = depth > 0;
+                  return (
+                    <div
+                      key={task.id}
+                      data-task-id={task.id}
+                      onClick={(e) => onSelectNode(task.id, e)}
+                      className={`h-11 px-3.5 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors border-l-4 ${
+                        selectedNodeId === task.id 
+                          ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-500' 
+                          : 'border-transparent'
+                      }`}
+                      style={{ paddingLeft: `${14 + depth * 14}px` }}
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden flex-1">
+                        {isSubtask && (
+                          <CornerDownRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
                         )}
-                      </button>
-                      <span className={`text-xs font-extrabold truncate text-slate-700 dark:text-slate-200 ${
-                        task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
-                      } flex items-center gap-1`}>
-                        <span>{task.text}</span>
-                        {task.externalLink && (
-                          <a
-                            href={task.externalLink.startsWith('http') ? task.externalLink : `https://${task.externalLink}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                            title={`Открыть внешнюю ссылку: ${task.externalLink}`}
-                          >
-                            <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
-                          </a>
-                        )}
-                        {activePomodoroNodeId === task.id && (
-                          <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
-                        )}
-                      </span>
-                    </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUpdateNode({
+                              ...task,
+                              completed: !task.completed
+                            });
+                          }}
+                          className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-0.5 rounded transition-transform shrink-0"
+                        >
+                          {task.completed ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                          ) : activePomodoroNodeId === task.id ? (
+                            <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
+                              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
+                              <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                            </span>
+                          ) : (
+                            <Circle className="w-3.5 h-3.5 shrink-0" />
+                          )}
+                        </button>
+                        <span className={`text-xs truncate text-slate-700 dark:text-slate-200 ${
+                          depth === 0 ? 'font-extrabold' : 'font-medium text-slate-600 dark:text-slate-300'
+                        } ${
+                          task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
+                        } flex items-center gap-1.5 min-w-0`}
+                        title={task.text}
+                        >
+                          <span className="truncate">{task.text}</span>
+                          {parent && (sortMode === 'flatStartDate' || sortMode === 'flatDueDate') && (
+                            <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1 rounded-sm font-normal shrink-0 truncate max-w-[80px]" title={`Подзадача для: ${parent.text}`}>
+                              ← {parent.text}
+                            </span>
+                          )}
+                          {task.externalLink && (
+                            <a
+                              href={task.externalLink.startsWith('http') ? task.externalLink : `https://${task.externalLink}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                              title={`Открыть внешнюю ссылку: ${task.externalLink}`}
+                            >
+                              <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
+                            </a>
+                          )}
+                          {activePomodoroNodeId === task.id && (
+                            <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
+                          )}
+                        </span>
+                      </div>
 
-                    {/* Short detail indicators */}
-                    <div className="flex items-center gap-1.5 shrink-0 font-mono text-[9px]">
-                      {task.dueDate && (
-                        <span className="text-slate-400 dark:text-slate-500">
-                          {task.dueDate.substring(8, 10)}.{task.dueDate.substring(5, 7)}
-                        </span>
-                      )}
-                      {task.progress !== undefined && task.progress > 0 && (
-                        <span className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 px-1 rounded-md font-bold">
-                          {task.progress}%
-                        </span>
-                      )}
+                      {/* Short detail indicators */}
+                      <div className="flex items-center gap-1.5 shrink-0 font-mono text-[9px]">
+                        {task.dueDate && (
+                          <span className="text-slate-400 dark:text-slate-500">
+                            {task.dueDate.substring(8, 10)}.{task.dueDate.substring(5, 7)}
+                          </span>
+                        )}
+                        {task.progress !== undefined && task.progress > 0 && (
+                          <span className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 px-1 rounded-md font-bold">
+                            {task.progress}%
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -517,7 +649,7 @@ export default function GanttView({
           )}
 
           {/* Sizing scale container relative size matching column ranges */}
-          <div className="min-w-[1120px] h-full flex flex-col relative">
+          <div className="min-w-[2520px] h-full flex flex-col relative">
             
             {/* Timeline Header scale columns */}
             <div className="h-10 flex border-b border-slate-200 dark:border-slate-800 shrink-0 bg-slate-50 dark:bg-slate-900 relative overflow-y-scroll custom-scrollbar">
@@ -566,10 +698,10 @@ export default function GanttView({
               </div>
 
               {/* Loop and render task rows */}
-              {tasks.length === 0 ? (
+              {orderedTreeItems.length === 0 ? (
                 <div className="py-12 text-center text-xs text-slate-400 col-span-28"></div>
               ) : (
-                tasks.map(task => {
+                orderedTreeItems.map(({ task, depth, parent }) => {
                   const range = getTaskRangeColIndices(task);
                   const isSelected = selectedNodeId === task.id;
 

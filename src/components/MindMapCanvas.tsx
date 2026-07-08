@@ -1262,11 +1262,15 @@ export default function MindMapCanvas({
                     
                     <div className="flex items-center gap-1.5 shrink-0 opacity-75 group-hover/item:opacity-100 transition-opacity">
                       {/* Pomodoro Timer Badge */}
-                      {child.pomodoroTotalTime ? (
-                        <span className="text-[8.5px] font-bold text-rose-600 dark:text-rose-400 font-mono shrink-0 flex items-center gap-0.5 bg-rose-500/5 px-1.5 py-0.5 rounded border border-rose-500/10" title="Фокусировка Pomodoro">
-                          🍅 {Math.round(child.pomodoroTotalTime / 60)}м
-                        </span>
-                      ) : null}
+                      {(() => {
+                        const stats = getPomoStatsForNode(child, nodes);
+                        return stats.pomodoroTotalTime > 0 ? (
+                          <span className="text-[8.5px] font-bold text-rose-600 dark:text-rose-400 font-mono shrink-0 flex items-center gap-0.5 bg-rose-500/5 px-1.5 py-0.5 rounded border border-rose-500/10" title={stats.isSummed ? "Включая подзадачи" : "Фокусировка Pomodoro"}>
+                            🍅 {Math.round(stats.pomodoroTotalTime / 60)}м
+                            {stats.isSummed && <span className="text-[7px] font-normal opacity-75">(сумма)</span>}
+                          </span>
+                        ) : null;
+                      })()}
 
                       {/* Progressive cyclic button */}
                       <button
@@ -1706,7 +1710,7 @@ export default function MindMapCanvas({
                         </span>
 
                         {/* Render tags, progress, pomodoros, or priority badges on the cards if present */}
-                        {((child.priority && child.priority !== 'none') || (child.tags && child.tags.length > 0) || child.dueDate || child.pomodoroTotalTime || (child.progress && child.progress > 0)) && (
+                        {((child.priority && child.priority !== 'none') || (child.tags && child.tags.length > 0) || child.dueDate || getPomoStatsForNode(child, nodes).pomodoroTotalTime > 0 || (child.progress && child.progress > 0)) && (
                           <div className="flex flex-wrap gap-1 items-center leading-none">
                             {child.priority && child.priority !== 'none' && (
                               <span className={`text-[7.5px] font-extrabold uppercase px-1 py-0.5 border rounded flex items-center shrink-0 ${getPriorityColorStyle(child.priority)}`}>
@@ -1720,11 +1724,15 @@ export default function MindMapCanvas({
                               </span>
                             )}
 
-                            {child.pomodoroTotalTime ? (
-                              <span className="text-[7.5px] font-bold text-rose-500 dark:text-rose-455 shrink-0 flex items-center gap-0.5 bg-rose-500/5 px-1.5 py-0.5 rounded border border-rose-500/10" title="Фокусировка Pomodoro">
-                                🍅 {Math.round(child.pomodoroTotalTime / 60)}м
-                              </span>
-                            ) : null}
+                            {(() => {
+                              const stats = getPomoStatsForNode(child, nodes);
+                              return stats.pomodoroTotalTime > 0 ? (
+                                <span className="text-[7.5px] font-bold text-rose-500 dark:text-rose-455 shrink-0 flex items-center gap-0.5 bg-rose-500/5 px-1.5 py-0.5 rounded border border-rose-500/10" title={stats.isSummed ? "Включая подзадачи" : "Фокусировка Pomodoro"}>
+                                  🍅 {Math.round(stats.pomodoroTotalTime / 60)}м
+                                  {stats.isSummed && <span className="text-[6.5px] font-normal opacity-75">(сумма)</span>}
+                                </span>
+                              ) : null;
+                            })()}
 
                             {child.dueDate && (
                               <span className="text-[7.5px] shrink-0 font-mono flex items-center gap-0.5 bg-indigo-50/30 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 px-1 py-0.5 border border-indigo-100/50 rounded animate-in fade-in" title="Срок">

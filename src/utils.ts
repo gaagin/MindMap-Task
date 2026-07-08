@@ -430,27 +430,30 @@ export function isDescendantOrSelf(candidateParentId: string, nodeId: string, al
 }
 
 // Calculates Pomodoro total time and sessions count for any node.
-// If the node is a container, it dynamically sums up the statistics from all tasks inside the container.
+// If the node is a container or has subtasks, it dynamically sums up the statistics recursively from descendants.
 export function getPomoStatsForNode(node: TaskNode, allNodes: TaskNode[]) {
-  if (node.isContainer) {
-    let totalTime = 0;
-    let totalSessions = 0;
-    for (const n of allNodes) {
-      if (n.id !== node.id && !n.isContainer && !n.isWorkflowRectangle && isDescendantOrSelf(n.id, node.id, allNodes)) {
-        totalTime += n.pomodoroTotalTime || 0;
-        totalSessions += n.pomodoroSessionsCount || 0;
+  let totalTime = 0;
+  let totalSessions = 0;
+  let hasSubtasksOrIsContainer = !!node.isContainer;
+
+  for (const n of allNodes) {
+    if (!n.isWorkflowRectangle) {
+      if (isDescendantOrSelf(n.id, node.id, allNodes)) {
+        if (!n.isContainer || n.id === node.id) {
+          if (n.id !== node.id) {
+            hasSubtasksOrIsContainer = true;
+          }
+          totalTime += n.pomodoroTotalTime || 0;
+          totalSessions += n.pomodoroSessionsCount || 0;
+        }
       }
     }
-    return {
-      pomodoroTotalTime: totalTime,
-      pomodoroSessionsCount: totalSessions,
-      isSummed: true
-    };
   }
+
   return {
-    pomodoroTotalTime: node.pomodoroTotalTime || 0,
-    pomodoroSessionsCount: node.pomodoroSessionsCount || 0,
-    isSummed: false
+    pomodoroTotalTime: totalTime,
+    pomodoroSessionsCount: totalSessions,
+    isSummed: hasSubtasksOrIsContainer
   };
 }
 
