@@ -5253,6 +5253,11 @@ export default function MindMapCanvas({
   const visibleNodes = nodes.filter(node => {
     if (node.parentId === 'inbox') return false;
 
+    // If search is active and this node matches the search, force it to be visible on the canvas!
+    if (searchQuery.trim() !== "" && isNodeMatched(node)) {
+      return true;
+    }
+
     // Collapse/hide completed child nodes from mindmap canvas view so they collapse and don't obstruct the view (unless under a container list/kanban, or when searching/filtering)
     if (node.completed && node.parentId !== null && filterStatus !== 'completed' && !searchQuery.trim()) {
       const parentNode = nodes.find(n => n.id === node.parentId);

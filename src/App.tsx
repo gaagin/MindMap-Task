@@ -1147,6 +1147,18 @@ export default function App() {
       setSelectedNodeId(null);
     } else {
       setSelectedNodeId(id);
+      if (viewMode === 'canvas' && searchQuery.trim() !== "") {
+        const node = activeNodes.find(n => n.id === id);
+        if (node && isNodeMatched(node)) {
+          if (node.isContainer) {
+            setFocusedContainerId(id);
+            setFocusedTaskId(null);
+          } else {
+            setFocusedTaskId(id);
+            setFocusedContainerId(null);
+          }
+        }
+      }
     }
   };
 
@@ -1461,7 +1473,9 @@ export default function App() {
               });
             }
 
-            if (node.defaultView) {
+            if (searchQuery.trim() !== "" && (viewMode === 'canvas' || (!lastAppliedFocusIdRef.current && viewMode === 'canvas'))) {
+              setViewMode('canvas');
+            } else if (node.defaultView) {
               setViewMode(node.defaultView);
             } else {
               setViewMode('canvas');
@@ -1514,7 +1528,7 @@ export default function App() {
     }
     
     prevFocusedContainerIdRef.current = focusedContainerId;
-  }, [focusedTaskId, focusedContainerId, state.activeProjectId, state.nodes, preFocusFilters, viewMode]);
+  }, [focusedTaskId, focusedContainerId, state.activeProjectId, state.nodes, preFocusFilters, viewMode, searchQuery]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -5061,6 +5075,15 @@ export default function App() {
     // Pan canvas to center this searched node!
     const node = activeNodes.find(n => n.id === nodeId);
     if (node) {
+      if (viewMode === 'canvas') {
+        if (node.isContainer) {
+          setFocusedContainerId(nodeId);
+          setFocusedTaskId(null);
+        } else {
+          setFocusedTaskId(nodeId);
+          setFocusedContainerId(null);
+        }
+      }
       setPanX(-node.x * zoom);
       setPanY(-node.y * zoom);
 
@@ -5083,6 +5106,13 @@ export default function App() {
     const nextIdx = (currentSearchIndex + 1) % searchedIds.length;
     setCurrentSearchIndex(nextIdx);
     handleSelectSearchedNode(searchedIds[nextIdx]);
+  };
+
+  const handlePrevSearchMatch = () => {
+    if (searchedIds.length <= 1) return;
+    const prevIdx = (currentSearchIndex - 1 + searchedIds.length) % searchedIds.length;
+    setCurrentSearchIndex(prevIdx);
+    handleSelectSearchedNode(searchedIds[prevIdx]);
   };
 
   // Auto focus first found node on search query change
@@ -5404,29 +5434,48 @@ export default function App() {
                   placeholder="Поиск..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-24 sm:w-40 md:w-56 focus:w-36 sm:focus:w-48 md:focus:w-56 transition-all duration-200 leading-none py-1.5 pl-7 sm:pl-8 pr-7 sm:pr-12 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
+                  className="w-24 sm:w-40 md:w-56 focus:w-36 sm:focus:w-48 md:focus:w-56 transition-all duration-200 leading-none py-1.5 pl-7 sm:pl-8 pr-12 sm:pr-18 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
                 />
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 sm:left-2.5 top-2" />
                 
-                {/* Micro Counter Indicator */}
+                {/* Clear button & Micro Counter Indicator */}
                 {searchQuery.trim().length > 0 && (
-                  <span className="absolute right-1.5 sm:right-2 top-2 text-[10px] text-slate-400/80 font-mono font-medium select-none pointer-events-none">
-                    {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
-                  </span>
+                  <div className="absolute right-1.5 sm:right-2 top-1.5 flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400/80 font-mono font-medium select-none">
+                      {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                      title="Очистить поиск"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
                 )}
               </div>
 
-              {/* Next Match button */}
+              {/* Prev / Next Match buttons */}
               {searchedIds.length > 1 && (
-                <button
-                  type="button"
-                  onClick={handleNextSearchMatch}
-                  title="Перейти к следующей найденной задаче"
-                  className="flex items-center gap-0.5 sm:gap-1 py-1 px-1.5 sm:px-2 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 hover:bg-indigo-150 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold rounded-lg transition-all cursor-pointer shadow-xs"
-                >
-                  <span className="hidden sm:inline">След.</span>
-                  <ChevronRight className="w-3 h-3" />
-                </button>
+                <div className="flex items-center border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 rounded-lg overflow-hidden divide-x divide-indigo-200 dark:divide-indigo-900 shadow-xs shrink-0">
+                  <button
+                    type="button"
+                    onClick={handlePrevSearchMatch}
+                    title="Перейти к предыдущей найденной задаче"
+                    className="flex items-center justify-center p-1 sm:px-1.5 hover:bg-indigo-150 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 cursor-pointer transition-all"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextSearchMatch}
+                    title="Перейти к следующей найденной задаче"
+                    className="flex items-center justify-center p-1 sm:px-1.5 hover:bg-indigo-150 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 cursor-pointer transition-all"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               )}
             </div>
 
@@ -5587,23 +5636,44 @@ export default function App() {
                 placeholder="Поиск..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full transition-all duration-200 leading-none py-1.5 pl-8 pr-12 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
+                className="w-full transition-all duration-200 leading-none py-1.5 pl-8 pr-20 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
               />
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
               {searchQuery.trim().length > 0 && (
-                <span className="absolute right-2 top-2 text-[10px] text-slate-400/80 font-mono font-medium">
-                  {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
-                </span>
+                <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-400/80 font-mono font-medium">
+                    {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                    title="Очистить поиск"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
               )}
             </div>
             {searchedIds.length > 1 && (
-              <button
-                type="button"
-                onClick={handleNextSearchMatch}
-                className="p-1.5 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg flex items-center justify-center cursor-pointer"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handlePrevSearchMatch}
+                  className="p-1.5 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg flex items-center justify-center cursor-pointer"
+                  title="Предыдущее совпадение"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextSearchMatch}
+                  className="p-1.5 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg flex items-center justify-center cursor-pointer"
+                  title="Следующее совпадение"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             )}
           </div>
         )}
