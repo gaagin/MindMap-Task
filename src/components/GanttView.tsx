@@ -241,8 +241,41 @@ export default function GanttView({
     });
   }
 
+  // Dynamically compute/override parent task start dates based on user request:
+  // "Если в подзадачах не установлена дата начала то для родительской задачи датой начала выбирается срок выполнения самой ранней подзадачи"
+  const processedNodes = React.useMemo(() => {
+    return nodes.map(node => {
+      // Only apply to tasks (exclude containers, workflow nodes)
+      if (node.isContainer || node.isWorkflowRectangle) {
+        return node;
+      }
+      
+      const subtasks = nodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
+      if (subtasks.length > 0) {
+        const hasSubtaskStartDate = subtasks.some(s => s.startDate);
+        if (!hasSubtaskStartDate) {
+          const subtaskDueDates = subtasks
+            .map(s => s.dueDate)
+            .filter((d): d is string => !!d);
+            
+          if (subtaskDueDates.length > 0) {
+            const earliestDueDate = subtaskDueDates.reduce((earliest, current) => 
+              current < earliest ? current : earliest
+            );
+            
+            return {
+              ...node,
+              startDate: earliestDueDate
+            };
+          }
+        }
+      }
+      return node;
+    });
+  }, [nodes]);
+
   // Filter tasks belonging to project
-  const tasks = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
+  const tasks = processedNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
 
   // Build tree structures and hierarchical order for list rendering
   const orderedTreeItems = React.useMemo(() => {
@@ -334,11 +367,11 @@ export default function GanttView({
       }
       endIdx = Math.min(27, startIdx + 2);
     } else if (task.dueDate) {
-      // Only dueDate exists -> assume 3 days duration leading up to dueDate
+      // Only dueDate exists -> assume 1 day duration
       if (endIdx === -1) {
         return null;
       }
-      startIdx = Math.max(0, endIdx - 2);
+      startIdx = endIdx;
     }
 
     if (startIdx !== -1 && endIdx !== -1 && startIdx <= endIdx) {
@@ -701,21 +734,73 @@ export default function GanttView({
               {orderedTreeItems.length === 0 ? (
                 <div className="py-12 text-center text-xs text-slate-400 col-span-28"></div>
               ) : (
-                orderedTreeItems.map(({ task, depth, parent }) => {
+                orderedTreeItems.map(({ task, depth, parent }, rowIndex) => {
                   const range = getTaskRangeColIndices(task);
                   const isSelected = selectedNodeId === task.id;
+
+                  // Calculate parent info if parent exists
+                  const rangeParent = parent ? getTaskRangeColIndices(parent) : null;
+                  const parentIndex = parent ? orderedTreeItems.findIndex(item => item.task.id === parent.id) : -1;
 
                   return (
                     <div
                       key={`row-${task.id}`}
-                      className={`h-11 flex relative items-center transition-colors group ${
+                      onClick={(e) => onSelectNode(task.id, e)}
+                      className={`h-11 flex relative items-center transition-colors group cursor-pointer ${
                         isSelected ? 'bg-indigo-50/10 dark:bg-indigo-950/10' : ''
                       }`}
                     >
+                      {/* Subtask tree connector line */}
+                      {range && rangeParent && parentIndex !== -1 && (
+                        <svg 
+                          className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-0"
+                          style={{ height: '44px' }}
+                        >
+                          {/* Dot at parent start */}
+                          <circle 
+                            cx={rangeParent.start * 90 + 12} 
+                            cy={-((rowIndex - parentIndex) * 44) + 22} 
+                            r="3" 
+                            fill="#818cf8" 
+                            className="opacity-70 dark:fill-indigo-400" 
+                          />
+                          {/* Elbow line */}
+                          <path
+                            d={`M ${rangeParent.start * 90 + 12} ${-((rowIndex - parentIndex) * 44) + 22} L ${rangeParent.start * 90 + 12} 22 L ${range.start * 90} 22`}
+                            fill="none"
+                            stroke="#818cf8"
+                            strokeWidth="1.5"
+                            strokeDasharray="3 3"
+                            className="opacity-50 dark:stroke-indigo-400/50"
+                          />
+                          {/* Arrow tip at child start */}
+                          {range.start * 90 > rangeParent.start * 90 + 12 ? (
+                            <path 
+                              d={`M ${range.start * 90 - 4} 19 L ${range.start * 90} 22 L ${range.start * 90 - 4} 25`} 
+                              fill="none" 
+                              stroke="#818cf8" 
+                              strokeWidth="1.5" 
+                              className="opacity-70 dark:stroke-indigo-400"
+                            />
+                          ) : (
+                            <path 
+                              d={`M ${range.start * 90 + 4} 19 L ${range.start * 90} 22 L ${range.start * 90 + 4} 25`} 
+                              fill="none" 
+                              stroke="#818cf8" 
+                              strokeWidth="1.5" 
+                              className="opacity-70 dark:stroke-indigo-400"
+                            />
+                          )}
+                        </svg>
+                      )}
+
                       {/* Gantt Bar spanning multiple days based on dueDate */}
                       {range ? (
                         <div
-                          onClick={(e) => onSelectNode(task.id, e)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectNode(task.id, e);
+                          }}
                           style={{
                             left: `${(range.start / 28) * 100}%`,
                             width: `${(range.span / 28) * 100}%`
@@ -723,11 +808,12 @@ export default function GanttView({
                           className={`absolute h-7 border rounded-xl shadow-xs transition-all duration-150 p-1 flex flex-col justify-center cursor-pointer select-none overflow-hidden z-10 ${getPriorityColorBorder(task.priority)} ${
                             isSelected ? 'ring-2 ring-indigo-500/30' : ''
                           }`}
-                          title={`Задача: ${task.text}\nСрок: ${task.dueDate}`}
+                          title={`Задача: ${task.text}${parent ? ` (Подзадача для: ${parent.text})` : ''}\nСрок: ${task.dueDate}`}
                         >
                           {/* Inner task text bar indicator details */}
                           <div className="flex items-center justify-between gap-1 overflow-hidden w-full px-1">
                             <span className="text-[10px] font-extrabold truncate text-slate-700 dark:text-slate-200">
+                              {parent && <span className="text-slate-400 dark:text-slate-500 mr-1 font-sans">↳</span>}
                               {task.text}
                             </span>
                             {task.progress !== undefined && task.progress > 0 && (
@@ -750,12 +836,21 @@ export default function GanttView({
                       ) : (
                         /* Unscheduled card block visually spanning off-grid side, or showing placeholder */
                         task.dueDate ? (
-                          <div className="absolute right-0 text-[10px] bg-slate-50 dark:bg-slate-900 border text-slate-400 dark:text-slate-500 py-1 px-2.5 rounded-full z-10 shadow-xs mr-4 hover:text-indigo-500 transition-colors">
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectNode(task.id, e);
+                            }}
+                            className="absolute right-0 text-[10px] bg-slate-50 dark:bg-slate-900 border text-slate-400 dark:text-slate-500 py-1 px-2.5 rounded-full z-10 shadow-xs mr-4 hover:text-indigo-500 transition-colors cursor-pointer"
+                          >
                             Срок: {task.dueDate} (Вне диапазона)
                           </div>
                         ) : (
                           <div 
-                            onClick={(e) => onSelectNode(task.id, e)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectNode(task.id, e);
+                            }}
                             className="absolute left-4 h-7 border-2 border-dashed border-slate-200 dark:border-slate-800 bg-transparent text-slate-400 dark:text-slate-500 hover:border-slate-300 dark:hover:border-slate-700 hover:text-slate-600 transition-all py-1 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer z-10 font-bold text-[9.5px]"
                           >
                             <Calendar className="w-3 h-3 text-indigo-500" /> Срок не назначен
