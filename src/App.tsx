@@ -1100,7 +1100,9 @@ export default function App() {
     } else {
       setSelectedNodeId(id);
       setDetailsPanelTab(initialTab);
-      setIsDrawerOpen(true);
+      if (window.innerWidth >= 1024) {
+        setIsDrawerOpen(true);
+      }
     }
   };
 
@@ -6205,6 +6207,8 @@ export default function App() {
                 isCategoriesExpanded={state.globalSettings?.categoriesExpanded}
                 onCategoriesExpandedChange={handleCategoriesExpandedChange}
                 focusedContainerId={focusedContainerId}
+                focusedTaskId={focusedTaskId}
+                onFocusedTaskIdChange={setFocusedTaskId}
               />
             ) : viewMode === 'calendar' ? (
               <CalendarView

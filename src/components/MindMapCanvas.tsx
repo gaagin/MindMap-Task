@@ -1694,7 +1694,9 @@ export default function MindMapCanvas({
                         onClick={(e) => {
                           e.stopPropagation();
                           onSelectNode(child.id);
-                          onOpenDrawer();
+                          if (window.innerWidth >= 1024) {
+                            onOpenDrawer();
+                          }
                         }}
                         className="p-2 rounded-xl border border-slate-105 dark:border-slate-800/80 bg-white dark:bg-slate-900 shadow-xs flex flex-col gap-1.5 group/item cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-900 select-none transition-all hover:bg-slate-50/40 dark:hover:bg-slate-850/40"
                       >
@@ -1702,7 +1704,9 @@ export default function MindMapCanvas({
                           onClick={(e) => {
                             e.stopPropagation();
                             onSelectNode(child.id);
-                            onOpenDrawer();
+                            if (window.innerWidth >= 1024) {
+                              onOpenDrawer();
+                            }
                           }}
                           className={`font-semibold leading-relaxed cursor-pointer select-text truncate ${isFullScreen ? 'text-xs' : 'text-[9.5px]'} ${child.completed ? 'line-through text-slate-420 dark:text-slate-500 font-normal' : 'text-slate-755 dark:text-slate-200 font-extrabold'}`}
                         >
@@ -8620,7 +8624,12 @@ export default function MindMapCanvas({
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       onSelectNode(subtask.id, e);
-                                      onOpenDrawer();
+                                      if (onFocusedTaskIdChange) {
+                                        onFocusedTaskIdChange(subtask.id);
+                                      }
+                                      if (window.innerWidth >= 1024) {
+                                        onOpenDrawer();
+                                      }
                                     }}
                                     className={`group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850/40 flex items-center justify-between gap-2 transition-colors text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer ${
                                       draggedIndex === index || activeTouchIndex === index 

@@ -59,6 +59,8 @@ interface KanbanViewProps {
   isCategoriesExpanded?: boolean;
   onCategoriesExpandedChange?: (val: boolean) => void;
   focusedContainerId?: string | null;
+  focusedTaskId?: string | null;
+  onFocusedTaskIdChange?: (id: string | null) => void;
 }
 
 export default function KanbanView({
@@ -93,6 +95,8 @@ export default function KanbanView({
   isCategoriesExpanded: propsIsCategoriesExpanded,
   onCategoriesExpandedChange,
   focusedContainerId,
+  focusedTaskId = null,
+  onFocusedTaskIdChange,
 }: KanbanViewProps) {
   const [internalGroupBy, setInternalGroupBy] = useState<'status' | 'category' | 'priority' | 'container'>(() => 'status');
   const groupBy = propsKanbanGroupBy !== undefined && propsKanbanGroupBy !== null ? propsKanbanGroupBy : internalGroupBy;
@@ -1897,6 +1901,9 @@ export default function KanbanView({
                         onClick={(e) => {
                           e.stopPropagation();
                           onSelectNode(subtask.id, e);
+                          if (onFocusedTaskIdChange) {
+                            onFocusedTaskIdChange(subtask.id);
+                          }
                         }}
                         className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[12.5px] text-slate-700 dark:text-slate-300 cursor-pointer"
                       >

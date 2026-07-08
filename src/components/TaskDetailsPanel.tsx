@@ -3655,6 +3655,7 @@ export default function TaskDetailsPanel({
         onPaste={handleAsidePaste}
         className="fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out"
       >
+
       {/* Header */}
       <div className="h-16 px-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-1 min-w-0">
