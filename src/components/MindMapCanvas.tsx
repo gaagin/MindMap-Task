@@ -507,6 +507,16 @@ export default function MindMapCanvas({
       }
     }
   }, [lastCreatedNodeId, incomingNodes]);
+
+  // Automatically expand card subtasks checklist when task is focused
+  useEffect(() => {
+    if (focusedTaskId) {
+      setExpandedCardSubtasks(prev => ({
+        ...prev,
+        [focusedTaskId]: true
+      }));
+    }
+  }, [focusedTaskId]);
   
   // States for Notes and file upload handling
   const [notesModalNodeId, setNotesModalNodeId] = useState<string | null>(null);
@@ -5288,13 +5298,16 @@ export default function MindMapCanvas({
       
       if (!isDescendantOfFocused) return false;
       
-      // Since it is a descendant, it must not have collapsed ancestors between itself and the focusedTaskId
+      // Since it is a descendant, it must not have collapsed ancestors up to and including the focusedTaskId itself
       currentParentId = node.parentId;
-      while (currentParentId !== null && currentParentId !== focusedTaskId) {
+      while (currentParentId !== null) {
         const parent = nodes.find(n => n.id === currentParentId);
         if (!parent) break;
         if (parent.collapsed) {
           return false;
+        }
+        if (currentParentId === focusedTaskId) {
+          break;
         }
         currentParentId = parent.parentId;
       }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Menu, 
@@ -1459,6 +1459,7 @@ export default function App() {
   // Track focus transitions to restore/apply filters
   const lastAppliedFocusIdRef = React.useRef<string | null>(null);
   const prevFocusedContainerIdRef = React.useRef<string | null>(null);
+  const lastProcessedFocusedTaskIdRef = React.useRef<string | null>(null);
 
   // Auto-switch viewMode and load/restore filters on focused node change
   useEffect(() => {
@@ -1551,6 +1552,36 @@ export default function App() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
+
+  // Auto-collapse branches and expand card details when a task is focused
+  useEffect(() => {
+    if (focusedTaskId) {
+      if (focusedTaskId !== lastProcessedFocusedTaskIdRef.current) {
+        lastProcessedFocusedTaskIdRef.current = focusedTaskId;
+        if (state.activeProjectId) {
+          const pid = state.activeProjectId;
+          const currentNodes = state.nodes[pid] || [];
+          const node = currentNodes.find(n => n.id === focusedTaskId);
+          if (node && (!node.collapsed || node.isCardCollapsed)) {
+            setState(prev => ({
+              ...prev,
+              nodes: {
+                ...prev.nodes,
+                [pid]: prev.nodes[pid].map(n => n.id === focusedTaskId ? { 
+                  ...n, 
+                  collapsed: true, 
+                  isCardCollapsed: false, 
+                  updatedAt: new Date().toISOString() 
+                } : n)
+              }
+            }));
+          }
+        }
+      }
+    } else {
+      lastProcessedFocusedTaskIdRef.current = null;
+    }
+  }, [focusedTaskId, state.activeProjectId, state.nodes]);
 
   // Auto-center on focused task change
   useEffect(() => {
@@ -6193,6 +6224,10 @@ export default function App() {
                 focusedContainerId={focusedContainerId}
                 focusedTaskId={focusedTaskId}
                 onFocusedTaskIdChange={setFocusedTaskId}
+                filterStatus={filterStatus}
+                filterPriority={filterPriority}
+                filterTag={filterTag}
+                filterDueDate={filterDueDate}
               />
             ) : viewMode === 'calendar' ? (
               <CalendarView

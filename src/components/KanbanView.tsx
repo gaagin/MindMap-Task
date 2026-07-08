@@ -61,6 +61,10 @@ interface KanbanViewProps {
   focusedContainerId?: string | null;
   focusedTaskId?: string | null;
   onFocusedTaskIdChange?: (id: string | null) => void;
+  filterStatus?: string;
+  filterPriority?: string;
+  filterTag?: string;
+  filterDueDate?: string;
 }
 
 export default function KanbanView({
@@ -97,6 +101,10 @@ export default function KanbanView({
   focusedContainerId,
   focusedTaskId = null,
   onFocusedTaskIdChange,
+  filterStatus = 'all',
+  filterPriority = 'all',
+  filterTag = 'all',
+  filterDueDate = 'all',
 }: KanbanViewProps) {
   const [internalGroupBy, setInternalGroupBy] = useState<'status' | 'category' | 'priority' | 'container'>(() => 'status');
   const groupBy = propsKanbanGroupBy !== undefined && propsKanbanGroupBy !== null ? propsKanbanGroupBy : internalGroupBy;
@@ -255,6 +263,7 @@ export default function KanbanView({
 
   // Track which cards have expanded subtasks nested inline
   const [expandedCardSubtasks, setExpandedCardSubtasks] = useState<Record<string, boolean>>({});
+  const [showCompletedInCard, setShowCompletedInCard] = useState<Record<string, boolean>>({});
 
   // Dropdown card move menu state for mobile and responsive accessibility
   const [activeMoveMenuCardId, setActiveMoveMenuCardId] = useState<string | null>(null);
@@ -516,6 +525,67 @@ export default function KanbanView({
     return false;
   };
 
+  const matchesFilters = (n: TaskNode): boolean => {
+    // 1. Search Query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const textMatches = n.text?.toLowerCase().includes(q);
+      const tagMatches = n.tags?.some(t => t.toLowerCase().includes(q)) || false;
+      const notesMatches = n.notes?.toLowerCase().includes(q) || false;
+      if (!textMatches && !tagMatches && !notesMatches) return false;
+    }
+
+    // 2. Status filter
+    if (filterStatus && filterStatus !== 'all') {
+      if (filterStatus === "completed" && !n.completed) return false;
+      if (filterStatus === "active" && n.completed) return false;
+    }
+
+    // 3. Priority filter
+    if (filterPriority && filterPriority !== "all" && n.priority !== filterPriority) return false;
+
+    // 4. Tag filter
+    if (filterTag && filterTag !== "all" && !(n.tags || []).includes(filterTag)) return false;
+
+    // 5. Due date filter
+    if (filterDueDate && filterDueDate !== "all") {
+      const hasDue = !!n.dueDate;
+      if (filterDueDate === "has_due_date" && !hasDue) return false;
+      if (filterDueDate === "no_due_date" && hasDue) return false;
+
+      if (filterDueDate === "overdue" || filterDueDate === "today" || filterDueDate === "this_week") {
+        if (!hasDue) return false;
+        
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const nodeDate = new Date(n.dueDate!);
+        nodeDate.setHours(0, 0, 0, 0);
+
+        if (filterDueDate === "overdue" && (nodeDate.getTime() >= now.getTime() || n.completed)) return false;
+        if (filterDueDate === "today" && nodeDate.getTime() !== now.getTime()) return false;
+        
+        if (filterDueDate === "this_week") {
+          const startOfWeek = new Date(now);
+          startOfWeek.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)); // Monday
+          const endOfWeek = new Date(startOfWeek);
+          endOfWeek.setDate(startOfWeek.getDate() + 6); // Sunday
+          if (nodeDate.getTime() < startOfWeek.getTime() || nodeDate.getTime() > endOfWeek.getTime()) return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  const isNodeMatchingAllFilters = (node: TaskNode): boolean => {
+    if (node.isContainer) return false;
+    if (node.isWorkflowRectangle) return false;
+    if (node.archived && !isArchivedNodeMatchingSearch(node)) return false;
+    if (!matchesSubtaskFilter(node)) return false;
+    if (!matchesFilters(node)) return false;
+    return true;
+  };
+
   // Container filter states and helper methods
   const [internalSelectedContainerFilterId, setInternalSelectedContainerFilterId] = useState<string>('all');
   const selectedContainerFilterId = propsKanbanContainerFilterId !== undefined && propsKanbanContainerFilterId !== null ? propsKanbanContainerFilterId : internalSelectedContainerFilterId;
@@ -631,10 +701,7 @@ export default function KanbanView({
 
   // Filter tasks shown on the board (only keep non-container tasks belonging to the filtered container)
   const filteredNodes = nodes.filter(n => {
-    if (n.isContainer) return false;
-    if (n.isWorkflowRectangle) return false;
-    if (n.archived && !isArchivedNodeMatchingSearch(n)) return false;
-    if (!matchesSubtaskFilter(n)) return false;
+    if (!isNodeMatchingAllFilters(n)) return false;
     if (selectedContainerFilterId === 'all') return true;
     if (selectedContainerFilterId === 'no-container') {
       return !getTaskContainerId(n);
@@ -704,7 +771,7 @@ export default function KanbanView({
     
     // 2. Column for "Without Container" (Без контейнера)
     // A task is NOT in any container if none of its ancestors is a container
-    const tasksWithoutContainer = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && (!n.archived || isArchivedNodeMatchingSearch(n)) && !isInsideAnyContainer(n) && matchesSubtaskFilter(n));
+    const tasksWithoutContainer = nodes.filter(n => isNodeMatchingAllFilters(n) && !isInsideAnyContainer(n));
     columns.push({
       id: 'no-container',
       title: 'Без контейнера',
@@ -715,7 +782,7 @@ export default function KanbanView({
 
     // 3. Columns for each container
     containerNodes.forEach(c => {
-      const items = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && (!n.archived || isArchivedNodeMatchingSearch(n)) && getTaskContainerId(n) === c.id && matchesSubtaskFilter(n));
+      const items = nodes.filter(n => isNodeMatchingAllFilters(n) && getTaskContainerId(n) === c.id);
       columns.push({
         id: c.id,
         title: c.text,
@@ -1822,35 +1889,13 @@ export default function KanbanView({
                 }
               }}
               className="inline-flex items-center gap-1 text-[10.5px] px-1.5 py-0.5 rounded-lg bg-slate-50/50 dark:bg-slate-800/40 border border-dashed border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-500 font-medium hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 cursor-pointer transition-all shrink-0" 
-              title="Нажмите, чтобы указать ориентировочное время работы"
+              title="Нажмите, чтобы указать ориентировочное время работы прямо на месте"
             >
               <Timer className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span>0 мин</span>
+              <span>Оценка</span>
             </span>
           )}
         </div>
-
-        {/* Secondary tag pills (other tags excluding current category tags) */}
-        {(() => {
-          const otherTags = (node.tags || []).filter(t => !activeTags.includes(t));
-          if (otherTags.length === 0) return null;
-          return (
-            <div 
-              className="flex flex-wrap gap-1.5 border-t border-slate-100 dark:border-slate-800/40 pt-2.5 cursor-pointer hover:bg-slate-50/30 dark:hover:bg-slate-850/20 p-1 rounded-lg transition-colors"
-              onClick={(e) => handleToggleInlineMenu(e, node.id, 'tag')}
-              title="Нажмите, чтобы изменить теги задачи"
-            >
-              {otherTags.map(t => (
-                <span 
-                  key={t} 
-                  className="text-[11px] font-extrabold px-1.5 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-505 border border-slate-200/50 dark:border-slate-700/50 shadow-2xs hover:scale-[1.03] transition-transform"
-                >
-                  #{t}
-                </span>
-              ))}
-            </div>
-          );
-        })()}
 
         {/* Subtasks inline list */}
         {(() => {
@@ -1883,7 +1928,7 @@ export default function KanbanView({
                 </span>
                 <div className="flex items-center gap-1">
                   <span className="text-[10.5px] font-medium text-slate-400">{isExpanded ? 'Свернуть' : 'Развернуть'}</span>
-                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-505 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
               </button>
 
@@ -1895,52 +1940,132 @@ export default function KanbanView({
                     exit={{ opacity: 0, height: 0 }}
                     className="mt-2 pl-1.5 border-l-2 border-indigo-100 dark:border-indigo-950/60 space-y-1.5 overflow-hidden"
                   >
-                    {subtasks.map(subtask => (
-                      <div
-                        key={subtask.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectNode(subtask.id, e);
-                          if (onFocusedTaskIdChange) {
-                            onFocusedTaskIdChange(subtask.id);
-                          }
-                        }}
-                        className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[12.5px] text-slate-700 dark:text-slate-300 cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUpdateNode({
-                                ...subtask,
-                                completed: !subtask.completed
-                              });
-                            }}
-                            className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
-                          >
-                            {subtask.completed ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
-                            ) : (
-                              <Circle className="w-3.5 h-3.5 text-slate-400" />
-                            )}
-                          </button>
-                          <span className={`truncate leading-normal font-semibold ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}>
-                            {subtask.text}
-                          </span>
-                        </div>
-                        {subtask.dueDate && (
-                          <span className={`shrink-0 flex items-center gap-1.5 text-[10.5px] px-1.5 py-0.5 rounded-lg border font-extrabold shadow-xs ${
-                            isNodeOverdue(subtask, nodes) && !subtask.completed
-                              ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-950/30'
-                              : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-205 dark:border-slate-700/60'
-                          }`}>
-                            <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500" />
-                            <span>{formatRussianDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                    {(() => {
+                      const activeSubtasks = subtasks.filter(s => !s.completed);
+                      const completedSubtasks = subtasks.filter(s => s.completed);
+                      const isCompletedExpanded = showCompletedInCard[node.id] || false;
+
+                      return (
+                        <>
+                          {activeSubtasks.map(subtask => (
+                            <div
+                              key={subtask.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectNode(subtask.id, e);
+                                if (onFocusedTaskIdChange) {
+                                  onFocusedTaskIdChange(subtask.id);
+                                }
+                              }}
+                              className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[12.5px] text-slate-700 dark:text-slate-300 cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onUpdateNode({
+                                      ...subtask,
+                                      completed: !subtask.completed
+                                    });
+                                  }}
+                                  className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
+                                >
+                                  {subtask.completed ? (
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
+                                  ) : (
+                                    <Circle className="w-3.5 h-3.5 text-slate-400" />
+                                  )}
+                                </button>
+                                <span className={`truncate leading-normal font-semibold ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}>
+                                  {subtask.text}
+                                </span>
+                              </div>
+                              {subtask.dueDate && (
+                                <span className={`shrink-0 flex items-center gap-1.5 text-[10.5px] px-1.5 py-0.5 rounded-lg border font-extrabold shadow-xs ${
+                                  isNodeOverdue(subtask, nodes) && !subtask.completed
+                                    ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-950/30'
+                                    : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-205 dark:border-slate-700/60'
+                                }`}>
+                                  <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-slate-505" />
+                                  <span>{formatRussianDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
+                                </span>
+                              )}
+                            </div>
+                          ))}
+
+                          {completedSubtasks.length > 0 && (
+                            <div className="pt-1 mt-1 border-t border-slate-100/30 dark:border-slate-800/20">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowCompletedInCard(prev => ({
+                                    ...prev,
+                                    [node.id]: !isCompletedExpanded
+                                  }));
+                                }}
+                                className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-indigo-600 dark:text-slate-505 dark:hover:text-indigo-400 transition-colors py-1 px-1 cursor-pointer select-none"
+                              >
+                                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isCompletedExpanded ? 'rotate-180' : ''}`} />
+                                <span>Завершенные подзадачи ({completedSubtasks.length})</span>
+                              </button>
+
+                              {isCompletedExpanded && (
+                                <div className="space-y-1.5 mt-1 pl-1">
+                                  {completedSubtasks.map(subtask => (
+                                    <div
+                                      key={subtask.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSelectNode(subtask.id, e);
+                                        if (onFocusedTaskIdChange) {
+                                          onFocusedTaskIdChange(subtask.id);
+                                        }
+                                      }}
+                                      className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[12.5px] text-slate-700 dark:text-slate-300 cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onUpdateNode({
+                                              ...subtask,
+                                              completed: !subtask.completed
+                                            });
+                                          }}
+                                          className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
+                                        >
+                                          {subtask.completed ? (
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
+                                          ) : (
+                                            <Circle className="w-3.5 h-3.5 text-slate-400" />
+                                          )}
+                                        </button>
+                                        <span className={`truncate leading-normal font-semibold ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}>
+                                          {subtask.text}
+                                        </span>
+                                      </div>
+                                      {subtask.dueDate && (
+                                        <span className={`shrink-0 flex items-center gap-1.5 text-[10.5px] px-1.5 py-0.5 rounded-lg border font-extrabold shadow-xs ${
+                                          isNodeOverdue(subtask, nodes) && !subtask.completed
+                                            ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-450 border-rose-100 dark:border-rose-950/30'
+                                            : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-205 dark:border-slate-700/60'
+                                        }`}>
+                                          <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-slate-505" />
+                                          <span>{formatRussianDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -2191,7 +2316,7 @@ export default function KanbanView({
                       }`}
                     >
                       <CheckCircle2 className={`w-3 h-3 ${collapseCompleted ? 'text-[#4f46e5] dark:text-indigo-400' : 'text-slate-400'}`} />
-                      <span>{collapseCompleted ? 'Развёрнуты' : 'Свернуть все'}</span>
+                      <span>{collapseCompleted ? 'Развернуть все' : 'Свернуть все'}</span>
                     </button>
 
                     <button
