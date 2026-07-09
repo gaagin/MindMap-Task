@@ -119,6 +119,8 @@ function buildTaskTree(allTasks: TaskNode[], sortMode: string): TreeTaskItem[] {
 
 interface GanttViewProps {
   nodes: TaskNode[];
+  allNodes?: TaskNode[];
+  setViewMode?: (mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower') => void;
   tagCategories: TagCategory[];
   activeProjectId: string;
   selectedNodeId: string | null;
@@ -134,6 +136,8 @@ interface GanttViewProps {
 
 export default function GanttView({
   nodes,
+  allNodes,
+  setViewMode,
   tagCategories,
   activeProjectId,
   selectedNodeId,
@@ -160,6 +164,22 @@ export default function GanttView({
     }
   };
 
+  const triggerDoubleClickAction = (taskId: string) => {
+    const nodesList = allNodes || nodes;
+    const hasSubtasks = nodesList.some(
+      n => n.parentId === taskId && !n.isNotTask && !n.isContainer && !n.isWorkflowRectangle
+    );
+
+    if (hasSubtasks) {
+      handleZoomTaskIdChange(taskId);
+    } else {
+      if (setViewMode) {
+        setViewMode('canvas');
+      }
+      handleZoomTaskIdChange(taskId);
+    }
+  };
+
   const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleTaskClick = (taskId: string, e: React.MouseEvent) => {
@@ -170,7 +190,7 @@ export default function GanttView({
       if (clickTimeoutRef.current) {
         clearTimeout(clickTimeoutRef.current);
         clickTimeoutRef.current = null;
-        handleZoomTaskIdChange(taskId);
+        triggerDoubleClickAction(taskId);
       } else {
         clickTimeoutRef.current = setTimeout(() => {
           onSelectNode(taskId, e);
@@ -186,7 +206,7 @@ export default function GanttView({
     e.stopPropagation();
     const isMobile = window.innerWidth < 1024;
     if (!isMobile) {
-      handleZoomTaskIdChange(taskId);
+      triggerDoubleClickAction(taskId);
     }
   };
 

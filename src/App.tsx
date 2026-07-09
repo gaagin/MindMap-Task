@@ -1487,7 +1487,11 @@ export default function App() {
             } else if (node.defaultView) {
               setViewMode(node.defaultView);
             } else {
-              setViewMode('canvas');
+              if (viewMode !== 'canvas') {
+                // Keep the current view mode if we focused a node from outside the canvas (e.g. from GanttView zoom-focus)
+              } else {
+                setViewMode('canvas');
+              }
             }
             
             if (node.savedFilters) {
@@ -6253,6 +6257,8 @@ export default function App() {
             ) : viewMode === 'gantt' ? (
               <GanttView
                 nodes={displayedNodesForViews}
+                allNodes={activeNodes}
+                setViewMode={setViewMode}
                 tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
                 activeProjectId={state.activeProjectId}
                 selectedNodeId={selectedNodeId}
