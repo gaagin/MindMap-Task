@@ -1523,20 +1523,20 @@ export default function App() {
           setKanbanGroupBy(preFocusFilters.kanbanGroupBy);
           setKanbanContainerFilterId(preFocusFilters.kanbanContainerFilterId);
           if (exitedContainerFocus) {
-            setViewMode('canvas');
+            setViewMode(viewMode === 'gantt' ? 'gantt' : 'canvas');
           } else if (preFocusFilters.viewMode) {
-            setViewMode(preFocusFilters.viewMode);
+            setViewMode(viewMode === 'gantt' ? 'gantt' : preFocusFilters.viewMode);
           }
           setPreFocusFilters(null);
         } else if (exitedContainerFocus) {
-          setViewMode('canvas');
+          setViewMode(viewMode === 'gantt' ? 'gantt' : 'canvas');
         }
         lastAppliedFocusIdRef.current = null;
       }
     } else {
       // If overall focusId did not change, but we exited container focus mode (e.g. nested transitions)
       if (exitedContainerFocus) {
-        setViewMode('canvas');
+        setViewMode(viewMode === 'gantt' ? 'gantt' : 'canvas');
       }
     }
     
@@ -6153,10 +6153,21 @@ export default function App() {
                   <button
                     onClick={() => {
                       if (focusedContainerId) setFocusedContainerId(null);
-                      if (focusedTaskId) setFocusedTaskId(null);
+                      if (focusedTaskId) {
+                        const focusedTask = activeNodes.find(n => n.id === focusedTaskId);
+                        if (focusedTask && focusedTask.parentId) {
+                          setFocusedTaskId(focusedTask.parentId);
+                        } else {
+                          setFocusedTaskId(null);
+                        }
+                      }
                     }}
                     className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-450 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
-                    title="Выйти из режима фокуса (назад к общему списку)"
+                    title={
+                      focusedTaskId && activeNodes.find(n => n.id === focusedTaskId)?.parentId
+                        ? "Назад к родительской задаче"
+                        : "Выйти из режима фокуса (назад к общему списку)"
+                    }
                   >
                     <Undo2 className="w-4 h-4" />
                   </button>

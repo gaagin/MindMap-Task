@@ -552,6 +552,21 @@ export default function GanttView({
 
           {currentZoomTaskId && (
             <div className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-900/50 rounded-lg px-2 py-0.5 select-none">
+              {(() => {
+                const focusedTask = processedNodes.find(t => t.id === currentZoomTaskId);
+                if (focusedTask && focusedTask.parentId) {
+                  return (
+                    <button
+                      onClick={() => handleZoomTaskIdChange(focusedTask.parentId)}
+                      className="p-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-950/60 rounded text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-200 cursor-pointer flex items-center justify-center border border-indigo-200/30 dark:border-indigo-800/30 mr-0.5"
+                      title="Назад к родительской задаче"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                  );
+                }
+                return null;
+              })()}
               <span className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 truncate max-w-[150px]" title={processedNodes.find(t => t.id === currentZoomTaskId)?.text}>
                 Фокус: {processedNodes.find(t => t.id === currentZoomTaskId)?.text || 'Задача'}
               </span>
