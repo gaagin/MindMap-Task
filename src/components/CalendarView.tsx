@@ -82,7 +82,7 @@ export default function CalendarView({
   }, [isFullScreen]);
   
   const formatTaskTime = (task: TaskNode) => {
-    if (task.startTime && task.dueTime) {
+    if (task.startTime && task.dueTime && task.startTime !== task.dueTime) {
       return `${task.startTime} - ${task.dueTime}`;
     }
     return task.startTime || task.dueTime || '';
@@ -163,8 +163,8 @@ export default function CalendarView({
         endStr = minutesToTime(startMin + 60);
       }
       if (task.dueTime && !task.startTime) {
-        const endMin = timeToMinutes(task.dueTime);
-        const startMin = Math.max(0, endMin - 60);
+        const startMin = timeToMinutes(task.dueTime);
+        const endMin = startMin + 60;
         return {
           task,
           top: (startMin / 60) * HOUR_HEIGHT,
@@ -476,7 +476,8 @@ export default function CalendarView({
       onUpdateNode({
         ...task,
         dueDate: targetDate,
-        dueTime: targetHour || undefined
+        dueTime: targetHour || undefined,
+        startTime: targetHour || undefined
       });
     }
   };
@@ -1268,8 +1269,11 @@ export default function CalendarView({
                                 if (taskId) {
                                   const rect = e.currentTarget.getBoundingClientRect();
                                   const dropY = e.clientY - rect.top;
-                                  const hourVal = Math.max(0, Math.min(23, Math.floor(dropY / 60)));
-                                  const timeStr = `${String(hourVal).padStart(2, '0')}:00`;
+                                  const totalMinutes = Math.max(0, Math.min(1439, Math.floor(dropY)));
+                                  const snappedMinutes = Math.round(totalMinutes / 15) * 15;
+                                  const hourVal = Math.floor(snappedMinutes / 60);
+                                  const minVal = snappedMinutes % 60;
+                                  const timeStr = `${String(hourVal).padStart(2, '0')}:${String(minVal).padStart(2, '0')}`;
                                   
                                   const taskToDrop = scheduledTasks.find(t => t.id === taskId);
                                   if (taskToDrop) {
@@ -1277,7 +1281,7 @@ export default function CalendarView({
                                       ...taskToDrop,
                                       dueDate: slot.dateString,
                                       startTime: timeStr,
-                                      dueTime: undefined
+                                      dueTime: timeStr
                                     });
                                   }
                                 }
@@ -1290,8 +1294,11 @@ export default function CalendarView({
                                 }
                                 const rect = e.currentTarget.getBoundingClientRect();
                                 const clickY = e.clientY - rect.top;
-                                const hourVal = Math.max(0, Math.min(23, Math.floor(clickY / 60)));
-                                const timeStr = `${String(hourVal).padStart(2, '0')}:00`;
+                                const totalMinutes = Math.max(0, Math.min(1439, Math.floor(clickY)));
+                                const snappedMinutes = Math.round(totalMinutes / 15) * 15;
+                                const hourVal = Math.floor(snappedMinutes / 60);
+                                const minVal = snappedMinutes % 60;
+                                const timeStr = `${String(hourVal).padStart(2, '0')}:${String(minVal).padStart(2, '0')}`;
                                 setActiveHourAddInput(`${slot.dateString}-${timeStr}`);
                                 setNewHourTaskText('');
                               }}
@@ -1939,8 +1946,11 @@ export default function CalendarView({
                           if (taskId) {
                             const rect = e.currentTarget.getBoundingClientRect();
                             const dropY = e.clientY - rect.top;
-                            const hourVal = Math.max(0, Math.min(23, Math.floor(dropY / 60)));
-                            const timeStr = `${String(hourVal).padStart(2, '0')}:00`;
+                            const totalMinutes = Math.max(0, Math.min(1439, Math.floor(dropY)));
+                            const snappedMinutes = Math.round(totalMinutes / 15) * 15;
+                            const hourVal = Math.floor(snappedMinutes / 60);
+                            const minVal = snappedMinutes % 60;
+                            const timeStr = `${String(hourVal).padStart(2, '0')}:${String(minVal).padStart(2, '0')}`;
                             
                             const taskToDrop = scheduledTasks.find(t => t.id === taskId);
                             if (taskToDrop) {
@@ -1948,7 +1958,7 @@ export default function CalendarView({
                                 ...taskToDrop,
                                 dueDate: currentDateStr,
                                 startTime: timeStr,
-                                dueTime: undefined
+                                dueTime: timeStr
                               });
                             }
                           }
@@ -1961,8 +1971,11 @@ export default function CalendarView({
                           }
                           const rect = e.currentTarget.getBoundingClientRect();
                           const clickY = e.clientY - rect.top;
-                          const hourVal = Math.max(0, Math.min(23, Math.floor(clickY / 60)));
-                          const timeStr = `${String(hourVal).padStart(2, '0')}:00`;
+                          const totalMinutes = Math.max(0, Math.min(1439, Math.floor(clickY)));
+                          const snappedMinutes = Math.round(totalMinutes / 15) * 15;
+                          const hourVal = Math.floor(snappedMinutes / 60);
+                          const minVal = snappedMinutes % 60;
+                          const timeStr = `${String(hourVal).padStart(2, '0')}:${String(minVal).padStart(2, '0')}`;
                           setActiveHourAddInput(timeStr);
                           setNewHourTaskText('');
                         }}

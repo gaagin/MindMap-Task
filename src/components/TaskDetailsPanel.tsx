@@ -1316,6 +1316,33 @@ export default function TaskDetailsPanel({
       updatedNode.reminderTime = undefined;
       updatedNode.reminderDismissed = undefined;
     }
+
+    // Coherence checks to prevent start being after end
+    if (key === 'dueTime' && val && updatedNode.startTime) {
+      if (updatedNode.startTime > val) {
+        updatedNode.startTime = undefined;
+      }
+    }
+
+    if (key === 'startTime' && val && updatedNode.dueTime) {
+      if (updatedNode.dueTime < val) {
+        updatedNode.dueTime = undefined;
+      }
+    }
+
+    if (key === 'dueDate' && val && updatedNode.startDate) {
+      if (updatedNode.startDate > val) {
+        updatedNode.startDate = undefined;
+        updatedNode.startTime = undefined;
+      }
+    }
+
+    if (key === 'startDate' && val && updatedNode.dueDate) {
+      if (val > updatedNode.dueDate) {
+        updatedNode.dueDate = undefined;
+        updatedNode.dueTime = undefined;
+      }
+    }
     
     if ((key === 'dueDate' || key === 'dueTime') && updatedNode.reminderMinutesBefore !== undefined) {
       const mBefore = updatedNode.reminderMinutesBefore;
