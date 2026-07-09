@@ -1162,6 +1162,15 @@ export default function KanbanView({
         draggable="true"
         onDragStart={(e) => handleDragStart(e, node.id)}
         onClick={(e) => onSelectNode(node.id, e)}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          if (onFocusedTaskIdChange) {
+            onFocusedTaskIdChange(node.id);
+          }
+          if (window.innerWidth < 1024) {
+            onSelectNode(null);
+          }
+        }}
         onTouchStart={(e) => handleTouchStart(e, node.id, node.text)}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}

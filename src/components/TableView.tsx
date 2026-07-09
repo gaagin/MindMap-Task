@@ -38,6 +38,7 @@ interface TableViewProps {
   onToggleSelectNode: (id: string) => void;
   onToggleSelectAll: (ids: string[]) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
+  onFocusedTaskIdChange?: (id: string | null) => void;
 }
 
 type SortField = 'text' | 'completed' | 'priority' | 'progress' | 'dueDate' | 'pomodoroTotalTime';
@@ -57,6 +58,7 @@ export default function TableView({
   onToggleSelectNode,
   onToggleSelectAll,
   onFullScreenChange,
+  onFocusedTaskIdChange,
 }: TableViewProps) {
   const [sortField, setSortField] = useState<SortField>('text');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -598,6 +600,15 @@ export default function TableView({
                     key={task.id}
                     data-task-id={task.id}
                     onClick={(e) => onSelectNode(task.id, e)}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      if (onFocusedTaskIdChange) {
+                        onFocusedTaskIdChange(task.id);
+                      }
+                      if (window.innerWidth < 1024) {
+                        onSelectNode(null);
+                      }
+                    }}
                     className={`group/row transition-all h-12 text-xs hover:bg-slate-50/55 dark:hover:bg-slate-800/45 cursor-pointer ${
                       isSelected ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : ''
                     } ${task.archived ? 'opacity-55 saturate-50 bg-amber-500/[0.02] dark:bg-amber-500/[0.01]' : ''}`}

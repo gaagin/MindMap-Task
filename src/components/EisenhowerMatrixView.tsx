@@ -31,6 +31,7 @@ interface EisenhowerMatrixProps {
   selectedNodeIds?: string[];
   searchQuery?: string;
   onFullScreenChange?: (isFullScreen: boolean) => void;
+  onFocusedTaskIdChange?: (id: string | null) => void;
 }
 
 interface QuadrantConfig {
@@ -59,6 +60,7 @@ export default function EisenhowerMatrixView({
   selectedNodeIds = [],
   searchQuery = '',
   onFullScreenChange,
+  onFocusedTaskIdChange,
 }: EisenhowerMatrixProps) {
   const [filterCompleted, setFilterCompleted] = useState<'all' | 'active' | 'completed'>('active');
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -670,6 +672,15 @@ export default function EisenhowerMatrixView({
                           onTouchMove={handleTouchMove}
                           onTouchEnd={handleTouchEnd}
                           onClick={(e) => onSelectNode(task.id, e)}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            if (onFocusedTaskIdChange) {
+                              onFocusedTaskIdChange(task.id);
+                            }
+                            if (window.innerWidth < 1024) {
+                              onSelectNode(null);
+                            }
+                          }}
                           className={`group relative flex flex-col gap-1 py-1 px-0.5 md:px-1.5 rounded-lg md:rounded-xl transition-all cursor-grab active:cursor-grabbing select-none ${
                             isDraggingTouch
                               ? 'opacity-40 scale-[0.98]'

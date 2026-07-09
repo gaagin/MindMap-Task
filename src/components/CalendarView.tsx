@@ -38,6 +38,7 @@ interface CalendarViewProps {
   onCreateTask?: (text: string, initialTags: string[], dueDate?: string, dueTime?: string) => void;
   setViewMode?: (mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower') => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
+  onFocusedTaskIdChange?: (id: string | null) => void;
 }
 
 const MONTH_NAMES_RU = [
@@ -58,7 +59,8 @@ export default function CalendarView({
   onDeleteNode,
   onCreateTask,
   setViewMode,
-  onFullScreenChange
+  onFullScreenChange,
+  onFocusedTaskIdChange
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -969,6 +971,15 @@ export default function CalendarView({
                                         e.stopPropagation();
                                         onSelectNode(task.id, e);
                                       }}
+                                      onDoubleClick={(e) => {
+                                        e.stopPropagation();
+                                        if (onFocusedTaskIdChange) {
+                                          onFocusedTaskIdChange(task.id);
+                                        }
+                                        if (window.innerWidth < 1024) {
+                                          onSelectNode(null);
+                                        }
+                                      }}
                                       draggable={true}
                                       onDragStart={(e) => {
                                         e.stopPropagation();
@@ -1121,6 +1132,15 @@ export default function CalendarView({
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onSelectNode(task.id, e);
+                                }}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onFocusedTaskIdChange) {
+                                    onFocusedTaskIdChange(task.id);
+                                  }
+                                  if (window.innerWidth < 1024) {
+                                    onSelectNode(null);
+                                  }
                                 }}
                                 draggable={true}
                                 onDragStart={(e) => {
@@ -1320,6 +1340,15 @@ export default function CalendarView({
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     onSelectNode(task.id, e);
+                                  }}
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    if (onFocusedTaskIdChange) {
+                                      onFocusedTaskIdChange(task.id);
+                                    }
+                                    if (window.innerWidth < 1024) {
+                                      onSelectNode(null);
+                                    }
                                   }}
                                   draggable={true}
                                   onDragStart={(e) => {
@@ -2218,6 +2247,15 @@ export default function CalendarView({
                 <div
                   key={task.id}
                   onClick={(e) => onSelectNode(task.id, e)}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (onFocusedTaskIdChange) {
+                      onFocusedTaskIdChange(task.id);
+                    }
+                    if (window.innerWidth < 1024) {
+                      onSelectNode(null);
+                    }
+                  }}
                   draggable={true}
                   onDragStart={(e) => {
                     e.dataTransfer.setData('text/plain', task.id);

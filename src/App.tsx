@@ -1108,9 +1108,7 @@ export default function App() {
     } else {
       setSelectedNodeId(id);
       setDetailsPanelTab(initialTab);
-      if (window.innerWidth >= 1024) {
-        setIsDrawerOpen(true);
-      }
+      setIsDrawerOpen(true);
     }
   };
 
@@ -3321,20 +3319,25 @@ export default function App() {
 
       // If we have a focused task, we want to see only the task itself and its descendants (subtasks) in all views
       if (focusedTaskId) {
-        if (node.id !== focusedTaskId) {
-          let isDescendant = false;
-          let currentParentId = node.parentId;
-          while (currentParentId) {
-            if (currentParentId === focusedTaskId) {
-              isDescendant = true;
-              break;
+        if (viewMode === 'canvas') {
+          if (node.id !== focusedTaskId) {
+            let isDescendant = false;
+            let currentParentId = node.parentId;
+            while (currentParentId) {
+              if (currentParentId === focusedTaskId) {
+                isDescendant = true;
+                break;
+              }
+              const parent = activeNodes.find(n => n.id === currentParentId);
+              currentParentId = parent ? parent.parentId : null;
             }
-            const parent = activeNodes.find(n => n.id === currentParentId);
-            currentParentId = parent ? parent.parentId : null;
+            if (!isDescendant) {
+              return false;
+            }
           }
-          if (!isDescendant) {
-            return false;
-          }
+        } else {
+          // If we change the view (viewMode !== 'canvas'), show ONLY its direct child tasks (subtasks)
+          return node.parentId === focusedTaskId;
         }
       }
 
@@ -6178,6 +6181,7 @@ export default function App() {
                   setFocusedTaskId(taskId);
                   setViewMode('canvas');
                 }}
+                onFocusedTaskIdChange={setFocusedTaskId}
                 selectedNodeIds={selectedNodeIds}
                 isMultiSelectMode={isMultiSelectMode}
                 onToggleSelectNode={handleToggleSelectNode}
@@ -6244,6 +6248,7 @@ export default function App() {
                 }}
                 setViewMode={setViewMode}
                 onFullScreenChange={setIsViewFullScreen}
+                onFocusedTaskIdChange={setFocusedTaskId}
               />
             ) : viewMode === 'gantt' ? (
               <GanttView
@@ -6259,6 +6264,8 @@ export default function App() {
                   handleCreateMobileTask(text, initialTags || [], 'none', dueDate);
                 }}
                 onFullScreenChange={setIsViewFullScreen}
+                focusedTaskId={focusedTaskId}
+                onFocusedTaskIdChange={setFocusedTaskId}
               />
             ) : viewMode === 'table' ? (
               <TableView
@@ -6277,6 +6284,7 @@ export default function App() {
                 onToggleSelectNode={handleToggleSelectNode}
                 onToggleSelectAll={handleToggleSelectAll}
                 onFullScreenChange={setIsViewFullScreen}
+                onFocusedTaskIdChange={setFocusedTaskId}
               />
             ) : viewMode === 'eisenhower' ? (
               <EisenhowerMatrixView
@@ -6292,6 +6300,7 @@ export default function App() {
                 selectedNodeIds={selectedNodeIds}
                 searchQuery={searchQuery}
                 onFullScreenChange={setIsViewFullScreen}
+                onFocusedTaskIdChange={setFocusedTaskId}
               />
             ) : (
               <MindMapCanvas

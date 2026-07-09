@@ -51,6 +51,7 @@ interface MobileListViewProps {
   onDeleteTagCategory?: (id: string) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
   onFocusTaskOnCanvas?: (id: string) => void;
+  onFocusedTaskIdChange?: (id: string | null) => void;
   
   // Multi-select properties
   selectedNodeIds?: string[];
@@ -82,6 +83,7 @@ export default function MobileListView({
   onDeleteTagCategory,
   onFullScreenChange,
   onFocusTaskOnCanvas,
+  onFocusedTaskIdChange,
   
   // Multi-select properties
   selectedNodeIds = [],
@@ -767,6 +769,13 @@ export default function MobileListView({
           onPointerMove={handleCardPointerMove}
           onPointerUp={(e) => handleCardPointerUp(e, node.id)}
           onPointerCancel={handleCardPointerCancel}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            if (onFocusedTaskIdChange) {
+              onFocusedTaskIdChange(node.id);
+            }
+            onSelectNode(null);
+          }}
           className={`border rounded-xl p-1.5 px-2.5 transition-[background-color,border-color,opacity,box-shadow] duration-150 flex flex-col gap-1 relative select-none ${cardBgBorderClass} ${node.completed ? 'opacity-70' : ''}`}
         >
           {/* Connector guide line for nested subtasks */}

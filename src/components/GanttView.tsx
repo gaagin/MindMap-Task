@@ -128,6 +128,8 @@ interface GanttViewProps {
   onDeleteNode: (id: string) => void;
   onCreateTask?: (text: string, initialTags: string[], dueDate?: string) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
+  focusedTaskId?: string | null;
+  onFocusedTaskIdChange?: (id: string | null) => void;
 }
 
 export default function GanttView({
@@ -140,14 +142,61 @@ export default function GanttView({
   onUpdateNode,
   onDeleteNode,
   onCreateTask,
-  onFullScreenChange
+  onFullScreenChange,
+  focusedTaskId,
+  onFocusedTaskIdChange
 }: GanttViewProps) {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [sortMode, setSortMode] = useState<'hierarchy' | 'startDate' | 'dueDate' | 'flatStartDate' | 'flatDueDate'>('hierarchy');
   const [zoomTaskId, setZoomTaskId] = useState<string | null>(null);
 
+  const currentZoomTaskId = focusedTaskId !== undefined ? focusedTaskId : zoomTaskId;
+
+  const handleZoomTaskIdChange = (id: string | null) => {
+    if (onFocusedTaskIdChange) {
+      onFocusedTaskIdChange(id);
+    } else {
+      setZoomTaskId(id);
+    }
+  };
+
+  const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTaskClick = (taskId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const isMobile = window.innerWidth < 1024;
+
+    if (isMobile) {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+        clickTimeoutRef.current = null;
+        handleZoomTaskIdChange(taskId);
+      } else {
+        clickTimeoutRef.current = setTimeout(() => {
+          onSelectNode(taskId, e);
+          clickTimeoutRef.current = null;
+        }, 250);
+      }
+    } else {
+      onSelectNode(taskId, e);
+    }
+  };
+
+  const handleTaskDoubleClick = (taskId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const isMobile = window.innerWidth < 1024;
+    if (!isMobile) {
+      handleZoomTaskIdChange(taskId);
+    }
+  };
+
   useEffect(() => {
     setZoomTaskId(null);
+    return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+    };
   }, [activeProjectId]);
 
   useEffect(() => {
@@ -280,14 +329,14 @@ export default function GanttView({
     });
   }, [nodes]);
 
-  // Filter tasks belonging to project and apply zoom filter if zoomTaskId is active
+  // Filter tasks belonging to project and apply zoom filter if currentZoomTaskId is active
   const tasks = React.useMemo(() => {
     const allProjectTasks = processedNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
-    if (!zoomTaskId) {
+    if (!currentZoomTaskId) {
       return allProjectTasks;
     }
 
-    const zoomedTask = allProjectTasks.find(t => t.id === zoomTaskId);
+    const zoomedTask = allProjectTasks.find(t => t.id === currentZoomTaskId);
     if (!zoomedTask) {
       return allProjectTasks;
     }
@@ -301,10 +350,10 @@ export default function GanttView({
         }
       });
     };
-    collectDescendants(zoomTaskId);
+    collectDescendants(currentZoomTaskId);
 
-    return allProjectTasks.filter(t => t.id === zoomTaskId || descendants.has(t.id));
-  }, [processedNodes, zoomTaskId]);
+    return allProjectTasks.filter(t => t.id === currentZoomTaskId || descendants.has(t.id));
+  }, [processedNodes, currentZoomTaskId]);
 
   // Build tree structures and hierarchical order for list rendering
   const orderedTreeItems = React.useMemo(() => {
@@ -481,13 +530,13 @@ export default function GanttView({
             </select>
           </div>
 
-          {zoomTaskId && (
+          {currentZoomTaskId && (
             <div className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-900/50 rounded-lg px-2 py-0.5 select-none">
-              <span className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 truncate max-w-[150px]" title={processedNodes.find(t => t.id === zoomTaskId)?.text}>
-                Фокус: {processedNodes.find(t => t.id === zoomTaskId)?.text || 'Задача'}
+              <span className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 truncate max-w-[150px]" title={processedNodes.find(t => t.id === currentZoomTaskId)?.text}>
+                Фокус: {processedNodes.find(t => t.id === currentZoomTaskId)?.text || 'Задача'}
               </span>
               <button
-                onClick={() => setZoomTaskId(null)}
+                onClick={() => handleZoomTaskIdChange(null)}
                 className="p-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-900 rounded text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 cursor-pointer flex items-center justify-center"
                 title="Показать весь проект"
               >
@@ -627,15 +676,14 @@ export default function GanttView({
                     <div
                       key={task.id}
                       data-task-id={task.id}
-                      onClick={(e) => onSelectNode(task.id, e)}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        setZoomTaskId(task.id);
-                      }}
+                      onClick={(e) => handleTaskClick(task.id, e)}
+                      onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
                       className={`h-11 px-3.5 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors border-l-4 ${
                         selectedNodeId === task.id 
                           ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-500' 
-                          : 'border-transparent'
+                          : task.completed
+                            ? 'bg-emerald-50/5 dark:bg-emerald-950/5 border-transparent opacity-80'
+                            : 'border-transparent'
                       }`}
                       style={{ paddingLeft: `${14 + depth * 14}px` }}
                     >
@@ -651,10 +699,10 @@ export default function GanttView({
                               completed: !task.completed
                             });
                           }}
-                          className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-0.5 rounded transition-transform shrink-0"
+                          className="text-slate-400 hover:text-emerald-650 dark:hover:text-emerald-400 p-0.5 rounded transition-transform shrink-0"
                         >
                           {task.completed ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           ) : activePomodoroNodeId === task.id ? (
                             <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
                               <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
@@ -793,13 +841,14 @@ export default function GanttView({
                   return (
                     <div
                       key={`row-${task.id}`}
-                      onClick={(e) => onSelectNode(task.id, e)}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        setZoomTaskId(task.id);
-                      }}
+                      onClick={(e) => handleTaskClick(task.id, e)}
+                      onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
                       className={`h-11 flex relative items-center transition-colors group cursor-pointer ${
-                        isSelected ? 'bg-indigo-50/10 dark:bg-indigo-950/10' : ''
+                        isSelected 
+                          ? 'bg-indigo-50/10 dark:bg-indigo-950/10' 
+                          : task.completed
+                            ? 'bg-emerald-500/2 dark:bg-emerald-500/1 hover:bg-slate-100/50 dark:hover:bg-slate-900/50'
+                            : 'hover:bg-slate-50/30 dark:hover:bg-slate-900/30'
                       }`}
                     >
                       {/* Subtask tree connector line */}
@@ -849,38 +898,43 @@ export default function GanttView({
                       {/* Gantt Bar spanning multiple days based on dueDate */}
                       {range ? (
                         <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectNode(task.id, e);
-                          }}
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            setZoomTaskId(task.id);
-                          }}
+                          onClick={(e) => handleTaskClick(task.id, e)}
+                          onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
                           style={{
                             left: `${(range.start / 28) * 100}%`,
                             width: `${(range.span / 28) * 100}%`
                           }}
-                          className={`absolute h-7 border rounded-xl shadow-xs transition-all duration-150 p-1 flex flex-col justify-center cursor-pointer select-none overflow-hidden z-10 ${getPriorityColorBorder(task.priority)} ${
+                          className={`absolute h-7 border rounded-xl shadow-xs transition-all duration-150 p-1 flex flex-col justify-center cursor-pointer select-none overflow-hidden z-10 ${
+                            task.completed
+                              ? 'bg-emerald-500/10 border-emerald-500/45 dark:bg-emerald-500/5 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 opacity-70'
+                              : getPriorityColorBorder(task.priority)
+                          } ${
                             isSelected ? 'ring-2 ring-indigo-500/30' : ''
                           }`}
-                          title={`Задача: ${task.text}${parent ? ` (Подзадача для: ${parent.text})` : ''}\nСрок: ${task.dueDate}`}
+                          title={`Задача: ${task.text}${parent ? ` (Подзадача для: ${parent.text})` : ''}\nСрок: ${task.dueDate}${task.completed ? ' (Решено)' : ''}`}
                         >
                           {/* Inner task text bar indicator details */}
                           <div className="flex items-center justify-between gap-1 overflow-hidden w-full px-1">
-                            <span className="text-[10px] font-extrabold truncate text-slate-700 dark:text-slate-200">
+                            <span className={`text-[10px] font-extrabold truncate text-slate-700 dark:text-slate-200 flex items-center gap-1 min-w-0 ${task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''}`}>
+                              {task.completed && <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />}
                               {parent && <span className="text-slate-400 dark:text-slate-500 mr-1 font-sans">↳</span>}
                               {task.text}
                             </span>
-                            {task.progress !== undefined && task.progress > 0 && (
-                              <span className="text-[8.5px] font-mono font-bold text-indigo-500 shrink-0">
-                                {task.progress}%
+                            {task.completed ? (
+                              <span className="text-[8px] font-mono font-bold text-emerald-600 dark:text-emerald-400 shrink-0 bg-emerald-500/10 dark:bg-emerald-500/20 px-1 py-0.5 rounded-xs uppercase tracking-wider scale-90">
+                                Решено
                               </span>
+                            ) : (
+                              task.progress !== undefined && task.progress > 0 && (
+                                <span className="text-[8.5px] font-mono font-bold text-indigo-500 shrink-0">
+                                  {task.progress}%
+                                </span>
+                              )
                             )}
                           </div>
 
                           {/* Linear progress fill visualization inside the bar bottom */}
-                          {task.progress !== undefined && task.progress > 0 && (
+                          {!task.completed && task.progress !== undefined && task.progress > 0 && (
                             <div className="w-full bg-slate-200 dark:bg-slate-800 h-1 rounded-full overflow-hidden mt-0.5">
                               <div 
                                 className="bg-indigo-500 h-full rounded-full transition-all"
@@ -893,31 +947,33 @@ export default function GanttView({
                         /* Unscheduled card block visually spanning off-grid side, or showing placeholder */
                         task.dueDate ? (
                           <div 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectNode(task.id, e);
-                            }}
-                            onDoubleClick={(e) => {
-                              e.stopPropagation();
-                              setZoomTaskId(task.id);
-                            }}
-                            className="absolute right-0 text-[10px] bg-slate-50 dark:bg-slate-900 border text-slate-400 dark:text-slate-500 py-1 px-2.5 rounded-full z-10 shadow-xs mr-4 hover:text-indigo-500 transition-colors cursor-pointer"
+                            onClick={(e) => handleTaskClick(task.id, e)}
+                            onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
+                            className={`absolute right-0 text-[10px] border py-1 px-2.5 rounded-full z-10 shadow-xs mr-4 hover:text-indigo-500 transition-all cursor-pointer flex items-center gap-1 ${
+                              task.completed
+                                ? 'bg-emerald-500/5 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 opacity-85 line-through'
+                                : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500'
+                            }`}
                           >
-                            Срок: {task.dueDate} (Вне диапазона)
+                            {task.completed && <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />}
+                            Срок: {task.dueDate} (Вне диапазона) {task.completed && '• Решено'}
                           </div>
                         ) : (
                           <div 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectNode(task.id, e);
-                            }}
-                            onDoubleClick={(e) => {
-                              e.stopPropagation();
-                              setZoomTaskId(task.id);
-                            }}
-                            className="absolute left-4 h-7 border-2 border-dashed border-slate-200 dark:border-slate-800 bg-transparent text-slate-400 dark:text-slate-500 hover:border-slate-300 dark:hover:border-slate-700 hover:text-slate-600 transition-all py-1 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer z-10 font-bold text-[9.5px]"
+                            onClick={(e) => handleTaskClick(task.id, e)}
+                            onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
+                            className={`absolute left-4 h-7 border-2 border-dashed transition-all py-1 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer z-10 font-bold text-[9.5px] ${
+                              task.completed
+                                ? 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/2'
+                                : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-400 dark:text-slate-500 hover:border-slate-300 dark:hover:border-slate-700 hover:text-slate-600'
+                            }`}
                           >
-                            <Calendar className="w-3 h-3 text-indigo-500" /> Срок не назначен
+                            {task.completed ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            ) : (
+                              <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                            )}
+                            Срок не назначен {task.completed && '• Решено'}
                           </div>
                         )
                       )}

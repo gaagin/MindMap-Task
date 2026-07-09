@@ -7166,7 +7166,15 @@ export default function MindMapCanvas({
                   }}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
-                    setEditingNodeId(node.id);
+                    if (window.innerWidth < 1024) {
+                      onSelectNode(null);
+                    } else {
+                      onSelectNode(node.id, e);
+                    }
+                    setExpandedCardSubtasks(prev => ({
+                      ...prev,
+                      [node.id]: true
+                    }));
                   }}
                   className={`absolute group cursor-grab active:cursor-grabbing transition-[background-color,border-color,box-shadow,transform] duration-150 ${
                     isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
@@ -7627,7 +7635,15 @@ export default function MindMapCanvas({
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                setEditingNodeId(node.id);
+                if (window.innerWidth < 1024) {
+                  onSelectNode(null);
+                } else {
+                  onSelectNode(node.id, e);
+                }
+                setExpandedCardSubtasks(prev => ({
+                  ...prev,
+                  [node.id]: true
+                }));
               }}
               onClick={(e) => {
                 if (hasDraggedNode || didDragRef.current) return; // ignore click if dragged
