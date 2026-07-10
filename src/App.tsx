@@ -1972,9 +1972,9 @@ export default function App() {
         return; // Already synced! Prevents infinite trigger loops
       }
 
-      setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
       const countSaved = unsyncedEditsCount;
       const timer = setTimeout(async () => {
+        setSyncStatus(prev => ({ ...prev, firebase: 'syncing' }));
         const res = await saveToFirebaseDirectly(currentUser.uid, state, sessionStartTimeRef.current);
         setSyncStatus(prev => ({
           ...prev,
@@ -1984,7 +1984,7 @@ export default function App() {
           lastSyncedStateHashRef.current = getSyncHash(state); // Update hash on successful upload
           setUnsyncedEditsCount(prev => Math.max(0, prev - countSaved));
         }
-      }, 10000); // 10s snapshot rate-limiting debounce
+      }, 3000); // 3s snapshot rate-limiting debounce for faster, safe autosaving without infinite loading indicators
       return () => clearTimeout(timer);
     }
   }, [state, currentUser, isInitialSyncComplete]);

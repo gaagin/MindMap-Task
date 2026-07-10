@@ -30,6 +30,15 @@ interface TreeTaskItem {
   parent: TaskNode | null;
 }
 
+interface ActiveDrag {
+  taskId: string;
+  type: 'move' | 'resize-start' | 'resize-end';
+  initialStart: number;
+  initialEnd: number;
+  currentStart: number;
+  currentEnd: number;
+}
+
 function buildTaskTree(allTasks: TaskNode[], sortMode: string): TreeTaskItem[] {
   const taskMap = new Map<string, TaskNode>();
   allTasks.forEach(t => taskMap.set(t.id, t));
@@ -154,6 +163,12 @@ export default function GanttView({
   const [sortMode, setSortMode] = useState<'hierarchy' | 'startDate' | 'dueDate' | 'flatStartDate' | 'flatDueDate'>('hierarchy');
   const [zoomTaskId, setZoomTaskId] = useState<string | null>(null);
 
+  // States and refs for interactive drag-to-move and drag-to-resize
+  const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
+  const activeDragRef = useRef<(ActiveDrag & { colWidth: number; startX: number }) | null>(null);
+  const dragHasMovedRef = useRef(false);
+  const dragStartMousePosRef = useRef({ x: 0, y: 0 });
+
   const currentZoomTaskId = focusedTaskId !== undefined ? focusedTaskId : zoomTaskId;
 
   const handleZoomTaskIdChange = (id: string | null) => {
@@ -184,6 +199,9 @@ export default function GanttView({
 
   const handleTaskClick = (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (dragHasMovedRef.current) {
+      return;
+    }
     const isMobile = window.innerWidth < 1024;
 
     if (isMobile) {
@@ -379,6 +397,170 @@ export default function GanttView({
   const orderedTreeItems = React.useMemo(() => {
     return buildTaskTree(tasks, sortMode);
   }, [tasks, sortMode]);
+
+  const handleBarMouseDown = (
+    e: React.MouseEvent,
+    taskId: string,
+    type: 'move' | 'resize-start' | 'resize-end',
+    startIdx: number,
+    endIdx: number
+  ) => {
+    if (e.button !== 0) return;
+    
+    e.stopPropagation();
+    e.preventDefault();
+
+    dragHasMovedRef.current = false;
+    dragStartMousePosRef.current = { x: e.clientX, y: e.clientY };
+
+    const rowEl = (e.currentTarget as HTMLElement).closest('[data-row-container]');
+    const gridWidth = rowEl?.getBoundingClientRect().width || 2520;
+    const colWidth = gridWidth / 28;
+
+    const dragInfo = {
+      taskId,
+      type,
+      initialStart: startIdx,
+      initialEnd: endIdx,
+      currentStart: startIdx,
+      currentEnd: endIdx,
+      colWidth,
+      startX: e.clientX
+    };
+
+    activeDragRef.current = dragInfo;
+    setActiveDrag({
+      taskId,
+      type,
+      initialStart: startIdx,
+      initialEnd: endIdx,
+      currentStart: startIdx,
+      currentEnd: endIdx
+    });
+  };
+
+  useEffect(() => {
+    if (!activeDrag) return;
+
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      const drag = activeDragRef.current;
+      if (!drag) return;
+
+      const dx = e.clientX - drag.startX;
+      
+      if (!dragHasMovedRef.current) {
+        const dist = Math.abs(dx);
+        if (dist > 3) {
+          dragHasMovedRef.current = true;
+        }
+      }
+
+      if (dragHasMovedRef.current) {
+        const dayDiff = Math.round(dx / drag.colWidth);
+        let newStart = drag.initialStart;
+        let newEnd = drag.initialEnd;
+
+        if (drag.type === 'move') {
+          const span = drag.initialEnd - drag.initialStart;
+          newStart = drag.initialStart + dayDiff;
+          newEnd = drag.initialEnd + dayDiff;
+
+          if (newStart < 0) {
+            newStart = 0;
+            newEnd = span;
+          } else if (newEnd > 27) {
+            newEnd = 27;
+            newStart = 27 - span;
+          }
+        } else if (drag.type === 'resize-start') {
+          newStart = drag.initialStart + dayDiff;
+          newStart = Math.max(0, Math.min(drag.initialEnd, newStart));
+        } else if (drag.type === 'resize-end') {
+          newEnd = drag.initialEnd + dayDiff;
+          newEnd = Math.max(drag.initialStart, Math.min(27, newEnd));
+        }
+
+        setActiveDrag(prev => {
+          if (!prev) return null;
+          if (prev.currentStart === newStart && prev.currentEnd === newEnd) return prev;
+          return {
+            ...prev,
+            currentStart: newStart,
+            currentEnd: newEnd
+          };
+        });
+      }
+    };
+
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      const drag = activeDragRef.current;
+      activeDragRef.current = null;
+      setActiveDrag(null);
+
+      if (drag && dragHasMovedRef.current) {
+        const dx = e.clientX - drag.startX;
+        const dayDiff = Math.round(dx / drag.colWidth);
+        let finalStart = drag.initialStart;
+        let finalEnd = drag.initialEnd;
+
+        if (drag.type === 'move') {
+          const span = drag.initialEnd - drag.initialStart;
+          finalStart = drag.initialStart + dayDiff;
+          finalEnd = drag.initialEnd + dayDiff;
+
+          if (finalStart < 0) {
+            finalStart = 0;
+            finalEnd = span;
+          } else if (finalEnd > 27) {
+            finalEnd = 27;
+            finalStart = 27 - span;
+          }
+        } else if (drag.type === 'resize-start') {
+          finalStart = drag.initialStart + dayDiff;
+          finalStart = Math.max(0, Math.min(drag.initialEnd, finalStart));
+        } else if (drag.type === 'resize-end') {
+          finalEnd = drag.initialEnd + dayDiff;
+          finalEnd = Math.max(drag.initialStart, Math.min(27, finalEnd));
+        }
+
+        const taskToUpdate = tasks.find(t => t.id === drag.taskId);
+        if (taskToUpdate) {
+          const newStartDate = timelineDays[finalStart].dateString;
+          const newDueDate = timelineDays[finalEnd].dateString;
+
+          onUpdateNode({
+            ...taskToUpdate,
+            startDate: newStartDate,
+            dueDate: newDueDate
+          });
+        }
+
+        setTimeout(() => {
+          dragHasMovedRef.current = false;
+        }, 50);
+      } else {
+        dragHasMovedRef.current = false;
+      }
+
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+
+    if (activeDrag.type === 'move') {
+      document.body.style.cursor = 'grabbing';
+    } else {
+      document.body.style.cursor = 'ew-resize';
+    }
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+
+    return () => {
+      document.body.style.cursor = '';
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [activeDrag, timelineDays, tasks, onUpdateNode]);
 
   const shiftDays = (count: number) => {
     setBaseDate(prev => {
@@ -868,6 +1050,14 @@ export default function GanttView({
                 orderedTreeItems.map(({ task, depth, parent }, rowIndex) => {
                   const range = getTaskRangeColIndices(task);
                   const isSelected = selectedNodeId === task.id;
+                  const isBeingDragged = activeDrag && activeDrag.taskId === task.id;
+                  const displayRange = isBeingDragged && activeDrag
+                    ? {
+                        start: activeDrag.currentStart,
+                        end: activeDrag.currentEnd,
+                        span: activeDrag.currentEnd - activeDrag.currentStart + 1
+                      }
+                    : range;
 
                   // Calculate parent info if parent exists
                   const rangeParent = parent ? getTaskRangeColIndices(parent) : null;
@@ -876,6 +1066,7 @@ export default function GanttView({
                   return (
                     <div
                       key={`row-${task.id}`}
+                      data-row-container
                       onClick={(e) => handleTaskClick(task.id, e)}
                       onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
                       className={`h-11 flex relative items-center transition-colors group cursor-pointer ${
@@ -887,7 +1078,7 @@ export default function GanttView({
                       }`}
                     >
                       {/* Subtask tree connector line */}
-                      {range && rangeParent && parentIndex !== -1 && (
+                      {displayRange && rangeParent && parentIndex !== -1 && (
                         <svg 
                           className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-0"
                           style={{ height: '44px' }}
@@ -902,7 +1093,7 @@ export default function GanttView({
                           />
                           {/* Elbow line */}
                           <path
-                            d={`M ${rangeParent.start * 90 + 12} ${-((rowIndex - parentIndex) * 44) + 22} L ${rangeParent.start * 90 + 12} 22 L ${range.start * 90} 22`}
+                            d={`M ${rangeParent.start * 90 + 12} ${-((rowIndex - parentIndex) * 44) + 22} L ${rangeParent.start * 90 + 12} 22 L ${displayRange.start * 90} 22`}
                             fill="none"
                             stroke="#818cf8"
                             strokeWidth="1.5"
@@ -910,9 +1101,9 @@ export default function GanttView({
                             className="opacity-50 dark:stroke-indigo-400/50"
                           />
                           {/* Arrow tip at child start */}
-                          {range.start * 90 > rangeParent.start * 90 + 12 ? (
+                          {displayRange.start * 90 > rangeParent.start * 90 + 12 ? (
                             <path 
-                              d={`M ${range.start * 90 - 4} 19 L ${range.start * 90} 22 L ${range.start * 90 - 4} 25`} 
+                              d={`M ${displayRange.start * 90 - 4} 19 L ${displayRange.start * 90} 22 L ${displayRange.start * 90 - 4} 25`} 
                               fill="none" 
                               stroke="#818cf8" 
                               strokeWidth="1.5" 
@@ -920,7 +1111,7 @@ export default function GanttView({
                             />
                           ) : (
                             <path 
-                              d={`M ${range.start * 90 + 4} 19 L ${range.start * 90} 22 L ${range.start * 90 + 4} 25`} 
+                              d={`M ${displayRange.start * 90 + 4} 19 L ${displayRange.start * 90} 22 L ${displayRange.start * 90 + 4} 25`} 
                               fill="none" 
                               stroke="#818cf8" 
                               strokeWidth="1.5" 
@@ -931,25 +1122,58 @@ export default function GanttView({
                       )}
 
                       {/* Gantt Bar spanning multiple days based on dueDate */}
-                      {range ? (
+                      {displayRange ? (
                         <div
                           onClick={(e) => handleTaskClick(task.id, e)}
                           onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
-                          style={{
-                            left: `${(range.start / 28) * 100}%`,
-                            width: `${(range.span / 28) * 100}%`
+                          onMouseDown={(e) => {
+                            if (range) {
+                              handleBarMouseDown(e, task.id, 'move', range.start, range.end);
+                            }
                           }}
-                          className={`absolute h-7 border rounded-xl shadow-xs transition-all duration-150 p-1 flex flex-col justify-center cursor-pointer select-none overflow-hidden z-10 ${
+                          style={{
+                            left: `${(displayRange.start / 28) * 100}%`,
+                            width: `${(displayRange.span / 28) * 100}%`
+                          }}
+                          className={`absolute h-7 border rounded-xl shadow-xs p-1 flex flex-col justify-center cursor-pointer select-none overflow-hidden z-10 ${
+                            isBeingDragged ? 'ring-2 ring-indigo-500/50 scale-[1.01] shadow-lg opacity-95' : 'transition-all duration-150'
+                          } ${
                             task.completed
                               ? 'bg-emerald-500/10 border-emerald-500/45 dark:bg-emerald-500/5 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 opacity-70'
                               : getPriorityColorBorder(task.priority)
                           } ${
-                            isSelected ? 'ring-2 ring-indigo-500/30' : ''
+                            isSelected && !isBeingDragged ? 'ring-2 ring-indigo-500/30' : ''
                           }`}
                           title={`Задача: ${task.text}${parent ? ` (Подзадача для: ${parent.text})` : ''}\nСрок: ${task.dueDate}${task.completed ? ' (Решено)' : ''}`}
                         >
+                          {/* Left Resize Handle */}
+                          {!task.completed && range && (
+                            <div
+                              className="absolute left-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-black/15 dark:hover:bg-white/15 z-20 flex items-center justify-center group/handle"
+                              onMouseDown={(e) => {
+                                handleBarMouseDown(e, task.id, 'resize-start', range.start, range.end);
+                              }}
+                              title="Изменить дату начала"
+                            >
+                              <div className="w-1 h-3 bg-slate-400/50 dark:bg-slate-500/50 rounded-full group-hover/handle:bg-slate-600 dark:group-hover/handle:bg-slate-300 transition-colors" />
+                            </div>
+                          )}
+
+                          {/* Right Resize Handle */}
+                          {!task.completed && range && (
+                            <div
+                              className="absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-black/15 dark:hover:bg-white/15 z-20 flex items-center justify-center group/handle"
+                              onMouseDown={(e) => {
+                                handleBarMouseDown(e, task.id, 'resize-end', range.start, range.end);
+                              }}
+                              title="Изменить срок выполнения"
+                            >
+                              <div className="w-1 h-3 bg-slate-400/50 dark:bg-slate-500/50 rounded-full group-hover/handle:bg-slate-600 dark:group-hover/handle:bg-slate-300 transition-colors" />
+                            </div>
+                          )}
+
                           {/* Inner task text bar indicator details */}
-                          <div className="flex items-center justify-between gap-1 overflow-hidden w-full px-1">
+                          <div className="flex items-center justify-between gap-1 overflow-hidden w-full px-3">
                             <span className={`text-[10px] font-extrabold truncate text-slate-700 dark:text-slate-200 flex items-center gap-1 min-w-0 ${task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''}`}>
                               {task.completed && <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />}
                               {parent && <span className="text-slate-400 dark:text-slate-500 mr-1 font-sans">↳</span>}
@@ -970,7 +1194,7 @@ export default function GanttView({
 
                           {/* Linear progress fill visualization inside the bar bottom */}
                           {!task.completed && task.progress !== undefined && task.progress > 0 && (
-                            <div className="w-full bg-slate-200 dark:bg-slate-800 h-1 rounded-full overflow-hidden mt-0.5">
+                            <div className="mx-3 bg-slate-200 dark:bg-slate-800 h-1 rounded-full overflow-hidden mt-0.5">
                               <div 
                                 className="bg-indigo-500 h-full rounded-full transition-all"
                                 style={{ width: `${task.progress}%` }}
