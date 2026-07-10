@@ -3,6 +3,7 @@ import {
   Plus, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
   Folder, 
   Clock, 
   CheckCircle2, 
@@ -39,7 +40,7 @@ interface ActiveDrag {
   currentEnd: number;
 }
 
-function buildTaskTree(allTasks: TaskNode[], sortMode: string): TreeTaskItem[] {
+function buildTaskTree(allTasks: TaskNode[], sortMode: string, collapsedTaskIds?: Set<string>): TreeTaskItem[] {
   const taskMap = new Map<string, TaskNode>();
   allTasks.forEach(t => taskMap.set(t.id, t));
 
@@ -88,12 +89,25 @@ function buildTaskTree(allTasks: TaskNode[], sortMode: string): TreeTaskItem[] {
 
   const result: TreeTaskItem[] = [];
   const visited = new Set<string>();
+  const skippedIds = new Set<string>();
 
   const traverse = (node: TaskNode, depth: number, parent: TaskNode | null) => {
     if (visited.has(node.id)) return;
     visited.add(node.id);
     result.push({ task: node, depth, parent });
     
+    if (collapsedTaskIds && collapsedTaskIds.has(node.id)) {
+      const collectDescendants = (nId: string) => {
+        const children = allTasks.filter(t => t.parentId === nId);
+        children.forEach(c => {
+          skippedIds.add(c.id);
+          collectDescendants(c.id);
+        });
+      };
+      collectDescendants(node.id);
+      return;
+    }
+
     const children = allTasks.filter(t => t.parentId === node.id);
     if (sortMode === 'startDate' || sortMode === 'dueDate') {
       children.sort(sortCompare);
@@ -111,13 +125,13 @@ function buildTaskTree(allTasks: TaskNode[], sortMode: string): TreeTaskItem[] {
   });
 
   const processedIds = new Set(result.map(item => item.task.id));
-  const orphans = allTasks.filter(t => !processedIds.has(t.id));
+  const orphans = allTasks.filter(t => !processedIds.has(t.id) && !skippedIds.has(t.id));
   if (orphans.length > 0) {
     if (sortMode === 'startDate' || sortMode === 'dueDate') {
       orphans.sort(sortCompare);
     }
     orphans.forEach(o => {
-      if (!processedIds.has(o.id)) {
+      if (!processedIds.has(o.id) && !skippedIds.has(o.id)) {
         traverse(o, 0, null);
       }
     });
@@ -162,6 +176,28 @@ export default function GanttView({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [sortMode, setSortMode] = useState<'hierarchy' | 'startDate' | 'dueDate' | 'flatStartDate' | 'flatDueDate'>('hierarchy');
   const [zoomTaskId, setZoomTaskId] = useState<string | null>(null);
+
+  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => {
+    const parentIds = new Set<string>();
+    nodes.forEach(node => {
+      if (node.parentId && !node.isContainer && !node.isWorkflowRectangle) {
+        parentIds.add(node.parentId);
+      }
+    });
+    return parentIds;
+  });
+
+  const toggleCollapse = (taskId: string) => {
+    setCollapsedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  };
 
   // States and refs for interactive drag-to-move and drag-to-resize
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
@@ -395,8 +431,8 @@ export default function GanttView({
 
   // Build tree structures and hierarchical order for list rendering
   const orderedTreeItems = React.useMemo(() => {
-    return buildTaskTree(tasks, sortMode);
-  }, [tasks, sortMode]);
+    return buildTaskTree(tasks, sortMode, collapsedTaskIds);
+  }, [tasks, sortMode, collapsedTaskIds]);
 
   const handleBarMouseDown = (
     e: React.MouseEvent,
@@ -908,6 +944,29 @@ export default function GanttView({
                         {isSubtask && (
                           <CornerDownRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
                         )}
+                        {(() => {
+                          const hasSubtasks = tasks.some(t => t.parentId === task.id);
+                          if (hasSubtasks) {
+                            return (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleCollapse(task.id);
+                                }}
+                                className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded transition-colors shrink-0 flex items-center justify-center cursor-pointer"
+                                title={collapsedTaskIds.has(task.id) ? "Развернуть подзадачи" : "Свернуть подзадачи"}
+                              >
+                                {collapsedTaskIds.has(task.id) ? (
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                ) : (
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            );
+                          } else {
+                            return <div className="w-[18px] h-[18px] shrink-0" />;
+                          }
+                        })()}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
