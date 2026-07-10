@@ -469,6 +469,23 @@ export function formatTotalPomoTime(totalSeconds: number): string {
   return parts.join(' ');
 }
 
+// Fetch helper with AbortController timeout
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await window.fetch(input, {
+      ...init,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
 // Transparent Google API Proxy fetch helper to route request securely via dev/prod server
 export async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   let url = '';
@@ -522,19 +539,19 @@ export async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit)
     };
 
     try {
-      const response = await window.fetch(proxyUrl, proxyInit);
+      const response = await fetchWithTimeout(proxyUrl, proxyInit);
       if (response.status === 404 || response.status === 502 || response.status === 504) {
         console.warn(`Proxy request to ${proxyUrl} returned status ${response.status}. Falling back to direct client-side fetch to: ${url}`);
-        return await window.fetch(input, init);
+        return await fetchWithTimeout(input, init);
       }
       return response;
     } catch (err) {
       console.warn('Proxy fetch threw an error, falling back directly to Google API:', err);
-      return await window.fetch(input, init);
+      return await fetchWithTimeout(input, init);
     }
   }
 
-  return window.fetch(input, init);
+  return fetchWithTimeout(input, init);
 }
 
 // Helper to check if a task is overdue (not completed, has dueDate and date or time is in the past)

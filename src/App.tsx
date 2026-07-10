@@ -500,6 +500,7 @@ export default function App() {
   const [hasCheckedInitialAuth, setHasCheckedInitialAuth] = useState(false);
   const [isAutoLoginPopupBlocked, setIsAutoLoginPopupBlocked] = useState(false);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
+  const isSyncingSheetsRef = useRef(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
   const [syncModalTab, setSyncModalTab] = useState<'sheets' | 'backups'>('sheets');
   const [backupsList, setBackupsList] = useState<any[]>([]);
@@ -1990,7 +1991,8 @@ export default function App() {
 
   // Symmetrical Google Sheets merge trigger method
   const runSheetsSymmetricalSync = async (token: string, currentWorkspace: WorkspaceState) => {
-    if (isSyncingSheets) return;
+    if (isSyncingSheetsRef.current) return;
+    isSyncingSheetsRef.current = true;
     setIsSyncingSheets(true);
     setSyncStatus(prev => ({ ...prev, sheets: 'syncing' }));
     setSheetsError(null);
@@ -2063,6 +2065,7 @@ export default function App() {
         setSheetsError(errMsg);
       }
     } finally {
+      isSyncingSheetsRef.current = false;
       setIsSyncingSheets(false);
     }
   };
@@ -2139,7 +2142,7 @@ export default function App() {
 
   // Quick single-button Google Sheets sync handler
   const handleQuickSheetsSync = async () => {
-    if (isSyncingSheets) return;
+    if (isSyncingSheetsRef.current) return;
     let token = googleToken;
     try {
       if (!token) {

@@ -31,16 +31,25 @@ app.all('/api/google-proxy', express.raw({ type: '*/*', limit: '50mb' }), async 
   }
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
+
     const fetchOptions: RequestInit = {
       method: req.method,
       headers: headers,
+      signal: controller.signal as any,
     };
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Buffer.isBuffer(req.body) && req.body.length > 0) {
       fetchOptions.body = req.body;
     }
 
-    const googleRes = await fetch(targetUrl, fetchOptions);
+    let googleRes;
+    try {
+      googleRes = await fetch(targetUrl, fetchOptions);
+    } finally {
+      clearTimeout(timeoutId);
+    }
     
     // Copy headers from response
     googleRes.headers.forEach((value, name) => {
