@@ -74,6 +74,31 @@ const PASTEL_COLORS = [
   { value: '', name: 'По умолчанию' },
 ];
 
+interface AsideWrapperProps {
+  children: React.ReactNode;
+  isFullscreen: boolean;
+  setIsFullscreen: (val: boolean) => void;
+}
+
+const AsideWrapper = ({ children, isFullscreen, setIsFullscreen }: AsideWrapperProps) => {
+  if (isFullscreen) {
+    return (
+      <div 
+        className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-0 md:p-6 animate-fade-in"
+        onClick={() => setIsFullscreen(false)}
+      >
+        <div 
+          onClick={e => e.stopPropagation()} 
+          className="w-full max-w-3xl h-full md:h-[92vh] flex flex-col animate-zoom-in"
+        >
+          {children}
+        </div>
+      </div>
+    );
+  }
+  return <>{children}</>;
+};
+
 export default function TaskDetailsPanel({
   node,
   allNodes,
@@ -3684,28 +3709,9 @@ export default function TaskDetailsPanel({
     );
   }
 
-  const AsideWrapper = ({ children }: { children: React.ReactNode }) => {
-    if (isFullscreen) {
-      return (
-        <div 
-          className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-0 md:p-6 animate-fade-in"
-          onClick={() => setIsFullscreen(false)}
-        >
-          <div 
-            onClick={e => e.stopPropagation()} 
-            className="w-full max-w-3xl h-full md:h-[92vh] flex flex-col animate-zoom-in"
-          >
-            {children}
-          </div>
-        </div>
-      );
-    }
-    return <>{children}</>;
-  };
-
   return (
     <>
-      <AsideWrapper>
+      <AsideWrapper isFullscreen={isFullscreen} setIsFullscreen={setIsFullscreen}>
         <aside 
           onPaste={handleAsidePaste}
           className={
