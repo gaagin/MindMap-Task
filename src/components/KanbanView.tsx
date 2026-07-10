@@ -265,6 +265,201 @@ export default function KanbanView({
   const [expandedCardSubtasks, setExpandedCardSubtasks] = useState<Record<string, boolean>>({});
   const [showCompletedInCard, setShowCompletedInCard] = useState<Record<string, boolean>>({});
 
+  const renderSubtaskTree = (parentId: string, depth: number = 0): React.ReactNode => {
+    const directChildren = nodes.filter(n => n.parentId === parentId && !n.isContainer && !n.isWorkflowRectangle && !n.archived);
+    if (directChildren.length === 0) return null;
+
+    const activeSubtasks = directChildren.filter(s => !s.completed);
+    const completedSubtasks = directChildren.filter(s => s.completed);
+    const isCompletedExpanded = showCompletedInCard[parentId] || false;
+
+    return (
+      <div className={`space-y-1.5 ${depth > 0 ? 'pl-2 border-l border-slate-100 dark:border-slate-800' : ''}`}>
+        {activeSubtasks.map(subtask => {
+          const childrenOfSubtask = nodes.filter(n => n.parentId === subtask.id && !n.isContainer && !n.isWorkflowRectangle && !n.archived);
+          const hasChildren = childrenOfSubtask.length > 0;
+          const isCollapsed = subtask.collapsed;
+
+          return (
+            <div key={subtask.id} className="flex flex-col gap-1">
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectNode(subtask.id, e);
+                  if (onFocusedTaskIdChange) {
+                    onFocusedTaskIdChange(subtask.id);
+                  }
+                }}
+                className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[12.5px] text-slate-700 dark:text-slate-300 cursor-pointer"
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  {hasChildren && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdateNode({
+                          ...subtask,
+                          collapsed: !isCollapsed
+                        });
+                      }}
+                      className="p-0.5 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 rounded cursor-pointer shrink-0 transition-colors"
+                      title={isCollapsed ? "Развернуть подзадачи" : "Свернуть подзадачи"}
+                    >
+                      {isCollapsed ? (
+                        <ChevronRight className="w-3 h-3" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3" />
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateNode({
+                        ...subtask,
+                        completed: !subtask.completed
+                      });
+                    }}
+                    className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
+                  >
+                    {subtask.completed ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
+                    ) : (
+                      <Circle className="w-3.5 h-3.5 text-slate-400" />
+                    )}
+                  </button>
+                  <span className={`truncate leading-normal font-semibold ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}>
+                    {subtask.text}
+                  </span>
+                </div>
+                {subtask.dueDate && (
+                  <span className={`shrink-0 flex items-center gap-1.5 text-[10.5px] px-1.5 py-0.5 rounded-lg border font-extrabold shadow-xs ${
+                    isNodeOverdue(subtask, nodes) && !subtask.completed
+                      ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-955/30'
+                      : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-205 dark:border-slate-700/60'
+                  }`}>
+                    <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-slate-505" />
+                    <span>{formatRussianDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
+                  </span>
+                )}
+              </div>
+              
+              {hasChildren && !isCollapsed && (
+                <div className="pl-3">
+                  {renderSubtaskTree(subtask.id, depth + 1)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {completedSubtasks.length > 0 && (
+          <div className="pt-1 mt-1 border-t border-slate-100/30 dark:border-slate-800/20">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowCompletedInCard(prev => ({
+                  ...prev,
+                  [parentId]: !isCompletedExpanded
+                }));
+              }}
+              className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-indigo-600 dark:text-slate-505 dark:hover:text-indigo-400 transition-colors py-1 px-1 cursor-pointer select-none"
+            >
+              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isCompletedExpanded ? 'rotate-180' : ''}`} />
+              <span>Завершенные подзадачи ({completedSubtasks.length})</span>
+            </button>
+
+            {isCompletedExpanded && (
+              <div className="space-y-1.5 mt-1 pl-1">
+                {completedSubtasks.map(subtask => {
+                  const childrenOfSubtask = nodes.filter(n => n.parentId === subtask.id && !n.isContainer && !n.isWorkflowRectangle && !n.archived);
+                  const hasChildren = childrenOfSubtask.length > 0;
+                  const isCollapsed = subtask.collapsed;
+
+                  return (
+                    <div key={subtask.id} className="flex flex-col gap-1">
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNode(subtask.id, e);
+                          if (onFocusedTaskIdChange) {
+                            onFocusedTaskIdChange(subtask.id);
+                          }
+                        }}
+                        className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[12.5px] text-slate-700 dark:text-slate-300 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          {hasChildren && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateNode({
+                                  ...subtask,
+                                  collapsed: !isCollapsed
+                                });
+                              }}
+                              className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer shrink-0 transition-colors"
+                              title={isCollapsed ? "Развернуть подзадачи" : "Свернуть подзадачи"}
+                            >
+                              {isCollapsed ? (
+                                <ChevronRight className="w-3 h-3" />
+                              ) : (
+                                <ChevronDown className="w-3 h-3" />
+                              )}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({
+                                ...subtask,
+                                  completed: !subtask.completed
+                              });
+                            }}
+                            className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
+                          >
+                            {subtask.completed ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
+                            ) : (
+                              <Circle className="w-3.5 h-3.5 text-slate-400" />
+                            )}
+                          </button>
+                          <span className={`truncate leading-normal font-semibold ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}>
+                            {subtask.text}
+                          </span>
+                        </div>
+                        {subtask.dueDate && (
+                          <span className={`shrink-0 flex items-center gap-1.5 text-[10.5px] px-1.5 py-0.5 rounded-lg border font-extrabold shadow-xs ${
+                            isNodeOverdue(subtask, nodes) && !subtask.completed
+                              ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-955/30'
+                              : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-205 dark:border-slate-700/60'
+                          }`}>
+                            <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-slate-505" />
+                            <span>{formatRussianDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
+                          </span>
+                        )}
+                      </div>
+                      {hasChildren && !isCollapsed && (
+                        <div className="pl-3">
+                          {renderSubtaskTree(subtask.id, depth + 1)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Dropdown card move menu state for mobile and responsive accessibility
   const [activeMoveMenuCardId, setActiveMoveMenuCardId] = useState<string | null>(null);
 
@@ -1949,132 +2144,7 @@ export default function KanbanView({
                     exit={{ opacity: 0, height: 0 }}
                     className="mt-2 pl-1.5 border-l-2 border-indigo-100 dark:border-indigo-950/60 space-y-1.5 overflow-hidden"
                   >
-                    {(() => {
-                      const activeSubtasks = subtasks.filter(s => !s.completed);
-                      const completedSubtasks = subtasks.filter(s => s.completed);
-                      const isCompletedExpanded = showCompletedInCard[node.id] || false;
-
-                      return (
-                        <>
-                          {activeSubtasks.map(subtask => (
-                            <div
-                              key={subtask.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onSelectNode(subtask.id, e);
-                                if (onFocusedTaskIdChange) {
-                                  onFocusedTaskIdChange(subtask.id);
-                                }
-                              }}
-                              className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[12.5px] text-slate-700 dark:text-slate-300 cursor-pointer"
-                            >
-                              <div className="flex items-center gap-2 min-w-0 flex-1">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onUpdateNode({
-                                      ...subtask,
-                                      completed: !subtask.completed
-                                    });
-                                  }}
-                                  className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
-                                >
-                                  {subtask.completed ? (
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
-                                  ) : (
-                                    <Circle className="w-3.5 h-3.5 text-slate-400" />
-                                  )}
-                                </button>
-                                <span className={`truncate leading-normal font-semibold ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}>
-                                  {subtask.text}
-                                </span>
-                              </div>
-                              {subtask.dueDate && (
-                                <span className={`shrink-0 flex items-center gap-1.5 text-[10.5px] px-1.5 py-0.5 rounded-lg border font-extrabold shadow-xs ${
-                                  isNodeOverdue(subtask, nodes) && !subtask.completed
-                                    ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-950/30'
-                                    : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-205 dark:border-slate-700/60'
-                                }`}>
-                                  <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-slate-505" />
-                                  <span>{formatRussianDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
-                                </span>
-                              )}
-                            </div>
-                          ))}
-
-                          {completedSubtasks.length > 0 && (
-                            <div className="pt-1 mt-1 border-t border-slate-100/30 dark:border-slate-800/20">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setShowCompletedInCard(prev => ({
-                                    ...prev,
-                                    [node.id]: !isCompletedExpanded
-                                  }));
-                                }}
-                                className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-indigo-600 dark:text-slate-505 dark:hover:text-indigo-400 transition-colors py-1 px-1 cursor-pointer select-none"
-                              >
-                                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isCompletedExpanded ? 'rotate-180' : ''}`} />
-                                <span>Завершенные подзадачи ({completedSubtasks.length})</span>
-                              </button>
-
-                              {isCompletedExpanded && (
-                                <div className="space-y-1.5 mt-1 pl-1">
-                                  {completedSubtasks.map(subtask => (
-                                    <div
-                                      key={subtask.id}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onSelectNode(subtask.id, e);
-                                        if (onFocusedTaskIdChange) {
-                                          onFocusedTaskIdChange(subtask.id);
-                                        }
-                                      }}
-                                      className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[12.5px] text-slate-700 dark:text-slate-300 cursor-pointer"
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onUpdateNode({
-                                              ...subtask,
-                                              completed: !subtask.completed
-                                            });
-                                          }}
-                                          className="text-slate-400 hover:text-[#4f46e5] dark:hover:text-indigo-400 transition-colors shrink-0 cursor-pointer"
-                                        >
-                                          {subtask.completed ? (
-                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 fill-emerald-100/30 dark:fill-emerald-900/10" />
-                                          ) : (
-                                            <Circle className="w-3.5 h-3.5 text-slate-400" />
-                                          )}
-                                        </button>
-                                        <span className={`truncate leading-normal font-semibold ${subtask.completed ? 'line-through text-slate-400 dark:text-slate-500' : isNodeOverdue(subtask, nodes) ? 'text-rose-555 dark:text-rose-450' : ''}`}>
-                                          {subtask.text}
-                                        </span>
-                                      </div>
-                                      {subtask.dueDate && (
-                                        <span className={`shrink-0 flex items-center gap-1.5 text-[10.5px] px-1.5 py-0.5 rounded-lg border font-extrabold shadow-xs ${
-                                          isNodeOverdue(subtask, nodes) && !subtask.completed
-                                            ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-450 border-rose-100 dark:border-rose-950/30'
-                                            : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-205 dark:border-slate-700/60'
-                                        }`}>
-                                          <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-slate-505" />
-                                          <span>{formatRussianDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
-                                        </span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
+                    {renderSubtaskTree(node.id)}
                   </motion.div>
                 )}
               </AnimatePresence>

@@ -11,6 +11,7 @@ import {
   Calendar, 
   ChevronUp, 
   ChevronDown,
+  ChevronRight,
   Sparkles,
   SlidersHorizontal,
   ArrowUpDown,
@@ -228,14 +229,20 @@ export default function TableView({
     return nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
   }, [nodes]);
 
-  const filteredTasks = useMemo(() => {
-    return rawTasks.filter(task => {
+  // Hierarchical tasks list
+  const hierarchicalTasks = useMemo(() => {
+    // 1. Group tasks by ID for fast lookup
+    const tasksMap = new Map<string, TaskNode>();
+    rawTasks.forEach(t => tasksMap.set(t.id, t));
+
+    // 2. Helper to check if a task matches the active filter
+    const taskMatchesFilter = (task: TaskNode): boolean => {
       // 1. Text Filter
       const matchText = task.text.toLowerCase().includes(filterText.toLowerCase());
       const matchNote = task.notes && task.notes.toLowerCase().includes(filterText.toLowerCase());
       if (!matchText && !matchNote) return false;
 
-      // 2. Status Filter
+      // 3. Status Filter
       if (statusFilter === 'active') {
         return !task.completed;
       } else if (statusFilter === 'todo') {
@@ -248,41 +255,99 @@ export default function TableView({
         return task.completed;
       }
       return true; // 'all'
-    });
-  }, [rawTasks, filterText, statusFilter]);
+    };
 
-  // Sorted tasks
-  const sortedTasks = useMemo(() => {
-    const sorted = [...filteredTasks];
-    sorted.sort((a, b) => {
-      let comparison = 0;
+    // 3. Keep track of which tasks match or have a descendant that matches
+    const memoMatch = new Map<string, boolean>();
+    const checkMatchOrDescendantMatch = (taskId: string): boolean => {
+      if (memoMatch.has(taskId)) return memoMatch.get(taskId)!;
+      
+      const task = tasksMap.get(taskId);
+      if (!task) return false;
 
-      if (sortField === 'text') {
-        comparison = a.text.localeCompare(b.text);
-      } else if (sortField === 'completed') {
-        comparison = (a.completed ? 1 : 0) - (b.completed ? 1 : 0);
-      } else if (sortField === 'priority') {
-        const orderA = priorityLevels[a.priority];
-        const orderB = priorityLevels[b.priority];
-        comparison = orderA - orderB;
-      } else if (sortField === 'progress') {
-        const progressA = a.progress || 0;
-        const progressB = b.progress || 0;
-        comparison = progressA - progressB;
-      } else if (sortField === 'dueDate') {
-        const dateA = a.dueDate || '9999-12-31';
-        const dateB = b.dueDate || '9999-12-31';
-        comparison = dateA.localeCompare(dateB);
-      } else if (sortField === 'pomodoroTotalTime') {
-        const timeA = getPomoStatsForNode(a, nodes).pomodoroTotalTime;
-        const timeB = getPomoStatsForNode(b, nodes).pomodoroTotalTime;
-        comparison = timeA - timeB;
+      if (taskMatchesFilter(task)) {
+        memoMatch.set(taskId, true);
+        return true;
       }
 
-      return sortOrder === 'asc' ? comparison : -comparison;
-    });
-    return sorted;
-  }, [filteredTasks, sortField, sortOrder]);
+      // Check if any of its children match
+      const children = rawTasks.filter(t => t.parentId === taskId);
+      for (const child of children) {
+        if (checkMatchOrDescendantMatch(child.id)) {
+          memoMatch.set(taskId, true);
+          return true;
+        }
+      }
+
+      memoMatch.set(taskId, false);
+      return false;
+    };
+
+    // 4. Find all root-level tasks (no parent, or parent doesn't exist in rawTasks)
+    const roots = rawTasks.filter(t => !t.parentId || !tasksMap.has(t.parentId));
+
+    // 5. Sorting function for sorting a list of sibling tasks
+    const sortSiblings = (siblings: TaskNode[]) => {
+      const sorted = [...siblings];
+      sorted.sort((a, b) => {
+        let comparison = 0;
+
+        if (sortField === 'text') {
+          comparison = a.text.localeCompare(b.text);
+        } else if (sortField === 'completed') {
+          comparison = (a.completed ? 1 : 0) - (b.completed ? 1 : 0);
+        } else if (sortField === 'priority') {
+          const orderA = priorityLevels[a.priority];
+          const orderB = priorityLevels[b.priority];
+          comparison = orderA - orderB;
+        } else if (sortField === 'progress') {
+          const progressA = a.progress || 0;
+          const progressB = b.progress || 0;
+          comparison = progressA - progressB;
+        } else if (sortField === 'dueDate') {
+          const dateA = a.dueDate || '9999-12-31';
+          const dateB = b.dueDate || '9999-12-31';
+          comparison = dateA.localeCompare(dateB);
+        } else if (sortField === 'pomodoroTotalTime') {
+          const timeA = getPomoStatsForNode(a, nodes).pomodoroTotalTime;
+          const timeB = getPomoStatsForNode(b, nodes).pomodoroTotalTime;
+          comparison = timeA - timeB;
+        }
+
+        return sortOrder === 'asc' ? comparison : -comparison;
+      });
+      return sorted;
+    };
+
+    // 6. Recursively build the tree order
+    const result: { node: TaskNode; depth: number; hasChildren: boolean }[] = [];
+
+    const traverse = (siblings: TaskNode[], depth: number, parentCollapsed: boolean) => {
+      // Filter out siblings that don't match or have matching descendants
+      const visibleSiblings = siblings.filter(s => checkMatchOrDescendantMatch(s.id));
+      const sortedSiblings = sortSiblings(visibleSiblings);
+
+      sortedSiblings.forEach(task => {
+        const children = rawTasks.filter(c => c.parentId === task.id);
+        const hasChildren = children.some(c => checkMatchOrDescendantMatch(c.id));
+
+        if (!parentCollapsed) {
+          result.push({
+            node: task,
+            depth,
+            hasChildren
+          });
+        }
+
+        if (children.length > 0) {
+          traverse(children, depth + 1, parentCollapsed || !!task.collapsed);
+        }
+      });
+    };
+
+    traverse(roots, 0, false);
+    return result;
+  }, [rawTasks, filterText, statusFilter, sortField, sortOrder, nodes]);
 
   const togglePriority = (task: TaskNode) => {
     const cycle: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
@@ -583,14 +648,14 @@ export default function TableView({
           </thead>
  
           <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-            {sortedTasks.length === 0 ? (
+            {hierarchicalTasks.length === 0 ? (
               <tr>
                 <td colSpan={8} className="py-20 text-center text-slate-400 text-xs">
                   Задачи не найдены. Создайте новую задачу или измените поисковый запрос.
                 </td>
               </tr>
             ) : (
-              sortedTasks.map(task => {
+              hierarchicalTasks.map(({ node: task, depth, hasChildren }) => {
                 const isSelected = selectedNodeId === task.id;
                 const linkPattern = /(\[([^\]]+)\]\(task:([a-zA-Z0-9\-]+)\)|\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]|task:\/\/([a-zA-Z0-9\-]+))/;
                 const hasTaskLinks = task.notes && linkPattern.test(task.notes);
@@ -645,8 +710,30 @@ export default function TableView({
                     </td>
 
                     {/* Inline Rename Text */}
-                    <td className="px-4 py-2 border-r border-slate-200 dark:border-slate-800/80">
+                    <td className="px-4 py-2 border-r border-slate-200 dark:border-slate-800/80" style={{ paddingLeft: `${depth * 20 + 16}px` }}>
                       <div className="flex items-center gap-1.5 overflow-hidden w-full">
+                        {hasChildren ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({
+                                ...task,
+                                collapsed: !task.collapsed
+                              });
+                            }}
+                            className="p-1 hover:bg-slate-150 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded cursor-pointer shrink-0 transition-colors"
+                            title={task.collapsed ? "Развернуть подзадачи" : "Свернуть подзадачи"}
+                          >
+                            {task.collapsed ? (
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        ) : (
+                          <div className="w-[22px] h-[22px] shrink-0" />
+                        )}
                         {task.status === 'waiting' && !task.completed && (
                           <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-black uppercase bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-150/20" title="В ожидании">
                             ⏳ Ожидание
