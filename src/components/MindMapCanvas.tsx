@@ -5181,35 +5181,35 @@ export default function MindMapCanvas({
           bg: 'bg-rose-50 dark:bg-rose-950/45 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-900/60',
           dot: 'bg-rose-600 animate-pulse',
           label: '⚡ URGENT',
-          color: '#f43f5e'
+          color: '#f05c60'
         };
       case 'high':
         return {
           bg: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/60',
           dot: 'bg-amber-500',
           label: 'HIGH',
-          color: '#f59e0b'
+          color: '#f39b3d'
         };
       case 'medium':
         return {
           bg: 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-900/60',
           dot: 'bg-blue-500',
           label: 'MEDIUM',
-          color: '#3b82f6'
+          color: '#7e85eb'
         };
       case 'low':
         return {
           bg: 'bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 border-teal-200 dark:border-teal-900',
           dot: 'bg-teal-500',
           label: 'LOW',
-          color: '#14b8a6'
+          color: '#57be6a'
         };
       default:
         return {
           bg: 'bg-slate-50 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 border-slate-100 dark:border-slate-800',
           dot: 'bg-slate-300',
           label: 'NONE',
-          color: '#94a3b8'
+          color: '#aeaaca'
         };
     }
   };
@@ -5395,7 +5395,7 @@ export default function MindMapCanvas({
           : 'flex-1 h-full'
       } ${focusedContainerId ? 'ring-4 ring-amber-500/15 ring-inset shadow-[inset_0_0_80px_rgba(245,158,11,0.05)]' : ''}`}
       style={{
-        backgroundImage: `radial-gradient(${darkMode ? '#334155' : '#cbd5e1'} 1.2px, transparent 1.2px)`,
+        backgroundImage: `radial-gradient(${darkMode ? '#3b375b' : '#cccae0'} 1.2px, transparent 1.2px)`,
         backgroundSize: '24px 24px',
         backgroundPosition: `${panX}px ${panY}px`,
       }}
@@ -5998,7 +5998,7 @@ export default function MindMapCanvas({
               markerHeight="6"
               orient="auto"
             >
-              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#ef4444" />
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#f05c60" />
             </marker>
             <marker
               id="blocked-arrow-resolved"
@@ -6009,7 +6009,7 @@ export default function MindMapCanvas({
               markerHeight="6"
               orient="auto"
             >
-              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#94a3b8" />
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#aeaaca" />
             </marker>
           </defs>
         </svg>
@@ -6041,7 +6041,7 @@ export default function MindMapCanvas({
               else if (conn.toSide === 'bottom') y2_exact += h2 / 2;
               else if (conn.toSide === 'left') x2_exact -= w2 / 2;
 
-              const pathColor = node.color || '#6366f1'; // Indigo flowchart color
+              const pathColor = node.color || '#7e85eb'; // Indigo flowchart color
               const isLineClicked = selectedConnectionId === `${node.id}-${conn.id}`;
               const isSelected = selectedNodeId === node.id || selectedNodeId === target.id || isLineClicked;
               
@@ -6254,7 +6254,7 @@ export default function MindMapCanvas({
                         )
                   }
                   fill="none"
-                  stroke="#6366f1"
+                  stroke="#7e85eb"
                   strokeWidth={3}
                   strokeDasharray="5,5"
                   markerEnd="url(#flow-arrow)"
@@ -6265,7 +6265,7 @@ export default function MindMapCanvas({
           })()}
 
           {connections.map(({ child, parent }) => {
-            const pathColor = child.color || parent.color || '#818cf8';
+            const pathColor = child.color || parent.color || '#9ba1f2';
             const isSelected = selectedNodeId === child.id || selectedNodeId === parent.id;
             const isConnectionDimmed = isAnyFilterActive && (!isNodeMatched(child) || !isNodeMatched(parent));
             
@@ -6347,7 +6347,7 @@ export default function MindMapCanvas({
 
               const isResolved = blocker.completed;
               const isSelected = selectedNodeId === node.id || selectedNodeId === blocker.id;
-              const pathColor = isResolved ? '#94a3b8' : '#ef4444'; // slate-400 for resolved, red-500 for active blockers
+              const pathColor = isResolved ? '#aeaaca' : '#f05c60'; // slate-400 for resolved, red-500 for active blockers
               const strokeDash = isResolved ? '4,4' : '6,4';
               const strokeWidth = isSelected ? 3 : (isResolved ? 1.5 : 2);
               const pathD = getDependencyBezierPath(p1.x, p1.y, p1.side, x2, y2, p2.side);

@@ -2464,6 +2464,7 @@ export default function App() {
 
           setSelectedNodeId(newTaskId);
           setIsDrawerOpen(true);
+          setLastCreatedNodeId(newTaskId);
 
           // Clear action parameter from browser URL
           try {
@@ -3816,6 +3817,7 @@ export default function App() {
 
     setSelectedNodeId(newInboxNode.id);
     setIsDrawerOpen(true);
+    setLastCreatedNodeId(newInboxNode.id);
   };
 
   // Add a fully independent floating node anywhere on the canvas
@@ -4507,6 +4509,7 @@ export default function App() {
     
     setSelectedNodeId(finalNewNode.id);
     setIsDrawerOpen(true);
+    setLastCreatedNodeId(finalNewNode.id);
   };
 
   // Create a new task originating from the Mobile list view (TickTick style)
@@ -4543,6 +4546,7 @@ export default function App() {
 
     setSelectedNodeId(finalNewNode.id);
     setIsDrawerOpen(true);
+    setLastCreatedNodeId(finalNewNode.id);
   };
 
   // Single node attribute editor update
@@ -5228,7 +5232,7 @@ export default function App() {
   const hasSyncOrAuthError = !!authError || (!!sheetsError && !isNetworkFailure) || (syncStatus.sheets === 'error' && !isNetworkFailure) || syncStatus.local === 'error';
 
   return (
-    <div className="flex h-screen h-[100dvh] overflow-hidden text-slate-900 bg-white dark:bg-slate-950 dark:text-slate-100 font-sans transition-colors duration-150">
+    <div className="flex h-screen h-[100dvh] overflow-hidden text-slate-900 bg-[#FAFBFD] dark:bg-[#090714] dark:text-slate-100 font-sans transition-colors duration-150">
       
       {/* Sidebar drawer handles folders/projects */}
       <Sidebar
@@ -5280,10 +5284,10 @@ export default function App() {
         )}
         
         {/* Workspace Top Action Bar Header */}
-        <header className={`${isViewFullScreen ? 'hidden' : 'hidden md:flex'} h-16 border-b items-center justify-between px-4 sm:px-6 backdrop-blur-md z-35 transition-colors duration-300 ${
+        <header className={`${isViewFullScreen ? 'hidden' : 'hidden md:flex'} h-16 border-b items-center justify-between px-4 sm:px-6 glass-panel z-35 transition-all duration-300 ${
           (!currentUser || !googleToken)
-            ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-900/40'
-            : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800'
+            ? 'border-rose-150/55 dark:border-rose-900/30'
+            : 'border-slate-150/40 dark:border-slate-800/30'
         }`}>
           <div className="flex items-center gap-3.5 min-w-0">
             <button
@@ -6512,6 +6516,7 @@ export default function App() {
             onUpdateNodeParent={handleUpdateNodeParent}
             initialTab={detailsPanelTab}
             initialFullscreen={detailsPanelFullscreen}
+            lastCreatedNodeId={lastCreatedNodeId}
           />
         )}
 

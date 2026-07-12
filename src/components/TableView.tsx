@@ -20,7 +20,8 @@ import {
   Maximize2,
   Minimize2,
   Timer,
-  MessageSquare
+  MessageSquare,
+  Layers
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 import { getPomoStatsForNode, formatTotalPomoTime } from '../utils';
@@ -65,6 +66,7 @@ export default function TableView({
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filterText, setFilterText] = useState('');
   const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'todo' | 'progress' | 'waiting' | 'done'>('active');
+  const [containerFilter, setContainerFilter] = useState<string>('all');
   const [newInlineText, setNewInlineText] = useState('');
   const [isControlsExpanded, setIsControlsExpanded] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -224,6 +226,23 @@ export default function TableView({
     }
   };
 
+  const getTaskContainerId = (node: TaskNode): string | null => {
+    let curr: TaskNode | undefined = node;
+    const visited = new Set<string>();
+    while (curr && curr.parentId) {
+      if (visited.has(curr.parentId)) break; // cycle protection
+      visited.add(curr.parentId);
+      const parentNode = nodes.find(n => n.id === curr!.parentId);
+      if (parentNode && parentNode.isContainer) return parentNode.id;
+      curr = parentNode;
+    }
+    return null;
+  };
+
+  const allContainers = useMemo(() => {
+    return nodes.filter(n => n.isContainer && !n.archived);
+  }, [nodes]);
+
   // Filter tasks
   const rawTasks = useMemo(() => {
     return nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
@@ -241,6 +260,16 @@ export default function TableView({
       const matchText = task.text.toLowerCase().includes(filterText.toLowerCase());
       const matchNote = task.notes && task.notes.toLowerCase().includes(filterText.toLowerCase());
       if (!matchText && !matchNote) return false;
+
+      // 2. Container Filter
+      if (containerFilter !== 'all') {
+        const tContainerId = getTaskContainerId(task);
+        if (containerFilter === 'no-container') {
+          if (tContainerId !== null) return false;
+        } else {
+          if (tContainerId !== containerFilter) return false;
+        }
+      }
 
       // 3. Status Filter
       if (statusFilter === 'active') {
@@ -347,7 +376,7 @@ export default function TableView({
 
     traverse(roots, 0, false);
     return result;
-  }, [rawTasks, filterText, statusFilter, sortField, sortOrder, nodes]);
+  }, [rawTasks, filterText, statusFilter, containerFilter, sortField, sortOrder, nodes]);
 
   const togglePriority = (task: TaskNode) => {
     const cycle: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
@@ -560,6 +589,27 @@ export default function TableView({
                     <option value="waiting" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-medium">В ожидании</option>
                     <option value="done" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-medium">Готово</option>
                     <option value="all" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-medium">Все задачи</option>
+                  </select>
+                </div>
+
+                {/* Container Filter Selector */}
+                <div className="flex items-center gap-1 p-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs w-full sm:w-auto shadow-sm animate-fadeIn">
+                  <span className="text-[10px] uppercase font-medium text-slate-400 dark:text-slate-500 pl-2 pr-1 select-none whitespace-nowrap flex items-center gap-1">
+                    <Layers className="w-3 h-3 text-slate-400" />
+                    Область:
+                  </span>
+                  <select
+                    value={containerFilter}
+                    onChange={(e) => setContainerFilter(e.target.value)}
+                    className="bg-transparent border-0 text-slate-700 dark:text-slate-200 text-xs py-1.5 px-2 focus:outline-none font-medium cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-850 max-w-[150px] text-ellipsis overflow-hidden whitespace-nowrap"
+                  >
+                    <option value="all" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-medium">Все области</option>
+                    <option value="no-container" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-medium">Вне областей</option>
+                    {allContainers.map(container => (
+                      <option key={container.id} value={container.id} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-medium">
+                        {container.text}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

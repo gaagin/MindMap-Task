@@ -105,6 +105,40 @@ export default function EisenhowerMatrixView({
   const [newTaskQuadrant, setNewTaskQuadrant] = useState<'q1' | 'q2' | 'q3' | 'q4'>('q1');
   const [newTaskDays, setNewTaskDays] = useState('');
 
+  // Quadrant detailed tasks list modal states
+  const [activeListQuadrantId, setActiveListQuadrantId] = useState<string | null>(null);
+  const [modalNewTaskText, setModalNewTaskText] = useState('');
+
+  const handleModalQuickCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = modalNewTaskText.trim();
+    if (!text || !activeListQuadrant) return;
+
+    const targetPriority = activeListQuadrant.targetPriority;
+
+    if (onCreateTask) {
+      onCreateTask(text, [], targetPriority, null, undefined);
+    } else {
+      const newNodeId = 'node-' + Math.random().toString(36).substring(2, 9);
+      const newTask: TaskNode = {
+        id: newNodeId,
+        projectId: activeProjectId,
+        text,
+        x: 150,
+        y: 150,
+        parentId: null,
+        priority: targetPriority,
+        tags: [],
+        notes: '',
+        completed: false,
+        files: [],
+        updatedAt: new Date().toISOString()
+      };
+      onUpdateNode(newTask);
+    }
+    setModalNewTaskText('');
+  };
+
   // Filter tasks mapping containers and workflow rectangles out
   const filteredTasks = useMemo(() => {
     return nodes.filter(n => {
@@ -186,6 +220,10 @@ export default function EisenhowerMatrixView({
       targetPriority: "low"
     }
   ];
+
+  const activeListQuadrant = activeListQuadrantId 
+    ? quadrants.find(q => q.id === activeListQuadrantId) || null 
+    : null;
 
   // Group tasks by quadrant priority list
   const getTasksForQuadrant = (quad: QuadrantConfig) => {
@@ -615,7 +653,8 @@ export default function EisenhowerMatrixView({
                 onDragOver={(e) => handleDragOver(e, quad.id)}
                 onDragLeave={() => setDraggedOverQuadrant(null)}
                 onDrop={(e) => handleDrop(e, quad.id)}
-                className={`flex flex-col rounded-[20px] md:rounded-[24px] p-2.5 md:p-4 transition-all h-full bg-white dark:bg-slate-900 ${
+                onClick={() => setActiveListQuadrantId(quad.id)}
+                className={`flex flex-col rounded-[20px] md:rounded-[24px] p-2.5 md:p-4 transition-all h-full bg-white dark:bg-slate-900 cursor-pointer hover:shadow-[0_4px_24px_rgba(0,0,0,0.02)] ${
                   isOver 
                     ? `ring-4 ring-offset-0 ring-indigo-500/15 scale-[0.995] shadow-inner`
                     : `shadow-[0_4px_20px_rgba(0,0,0,0.015)] dark:shadow-none`
@@ -671,7 +710,10 @@ export default function EisenhowerMatrixView({
                           onTouchStart={(e) => handleTouchStart(e, task.id, task.text)}
                           onTouchMove={handleTouchMove}
                           onTouchEnd={handleTouchEnd}
-                          onClick={(e) => onSelectNode(task.id, e)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectNode(task.id, e);
+                          }}
                           onDoubleClick={(e) => {
                             e.stopPropagation();
                             if (onFocusedTaskIdChange) {
@@ -730,6 +772,7 @@ export default function EisenhowerMatrixView({
                                 return stats.pomodoroTotalTime > 0 ? (
                                   <div 
                                     onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => e.stopPropagation()}
                                     className="text-[10px] md:text-[11px] font-bold text-rose-600 dark:text-rose-400 mt-1 tracking-tight font-sans inline-flex items-center gap-1 select-none"
                                     title={`Проведено на помидоре: ${formatTotalPomoTime(stats.pomodoroTotalTime)}`}
                                   >
@@ -966,6 +1009,234 @@ export default function EisenhowerMatrixView({
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Quadrant Tasks List Modal - FULL SCREEN */}
+      <AnimatePresence>
+        {activeListQuadrant && (
+          <div className="fixed inset-0 bg-white dark:bg-slate-950 z-[9998] flex flex-col overflow-hidden" onClick={() => setActiveListQuadrantId(null)}>
+            <motion.div 
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full h-full max-w-5xl mx-auto flex flex-col p-6 md:p-12"
+            >
+              <div className="flex items-center justify-between pb-6 border-b border-slate-100 dark:border-slate-900 mb-8 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white ${activeListQuadrant.circleColor} shadow-md`}>
+                    {activeListQuadrant.roman}
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-500 block">
+                      Квадрант Матрицы Эйзенхауэра
+                    </span>
+                    <h3 className="text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white mt-0.5">
+                      Задачи: <span className={activeListQuadrant.textColor}>{activeListQuadrant.title}</span>
+                    </h3>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveListQuadrantId(null)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-500 dark:text-slate-400 font-bold text-xs transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <X className="w-4 h-4 stroke-[2.5]" />
+                  <span>Закрыть</span>
+                </button>
+              </div>
+
+              {/* Quick task creation within the quadrant */}
+              <form onSubmit={handleModalQuickCreate} className="mb-8 shrink-0 flex gap-3 p-1.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-100 dark:border-slate-900">
+                <input
+                  type="text"
+                  required
+                  placeholder="Быстрое добавление новой задачи в этот квадрант..."
+                  value={modalNewTaskText}
+                  onChange={(e) => setModalNewTaskText(e.target.value)}
+                  className="w-full text-sm font-semibold py-3.5 px-4 bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-600"
+                />
+                <button
+                  type="submit"
+                  className="px-6 py-3.5 text-sm font-bold text-white bg-[#3C76F1] hover:bg-[#2563EB] rounded-xl transition-colors shadow-md hover:shadow-lg cursor-pointer flex items-center gap-2 shrink-0"
+                >
+                  <Plus className="w-4.5 h-4.5 stroke-[2.5]" />
+                  <span>Добавить задачу</span>
+                </button>
+              </form>
+
+              {/* Tasks List */}
+              <div className="flex-grow overflow-y-auto pr-2 space-y-3 custom-scrollbar min-h-0">
+                {getTasksForQuadrant(activeListQuadrant).length === 0 ? (
+                  <div className="py-24 text-center select-none flex flex-col items-center justify-center">
+                    <div className="w-16 h-16 rounded-full bg-slate-50 dark:bg-slate-900/50 flex items-center justify-center text-slate-400 mb-4 border border-slate-100 dark:border-slate-900">
+                      <FileText className="w-8 h-8" />
+                    </div>
+                    <p className="text-slate-500 dark:text-slate-400 text-base font-semibold">
+                      В этом квадранте пока нет задач
+                    </p>
+                    <p className="text-slate-400 dark:text-slate-600 text-sm mt-1 max-w-sm">
+                      Используйте поле выше, чтобы быстро добавить новую задачу в список.
+                    </p>
+                  </div>
+                ) : (
+                  getTasksForQuadrant(activeListQuadrant).map(task => {
+                    const isSelected = selectedNodeId === task.id;
+                    const taskDays = task.dueDate ? getDaysDisplay(task.dueDate) : null;
+
+                    return (
+                      <div
+                        key={task.id}
+                        onClick={() => {
+                          onSelectNode(task.id);
+                          setActiveListQuadrantId(null); // Close modal on select to show details side drawer
+                        }}
+                        className={`group relative flex flex-col gap-1 p-4 rounded-2xl border transition-all cursor-pointer ${
+                          isSelected 
+                            ? 'bg-indigo-50/20 dark:bg-indigo-950/25 border-indigo-500/30 ring-1 ring-indigo-500/15 shadow-sm'
+                            : 'bg-white dark:bg-slate-900/40 border-slate-100 dark:border-slate-900 hover:bg-slate-50/50 dark:hover:bg-slate-900/70 hover:shadow-xs'
+                        }`}
+                      >
+                        <div className="flex items-start gap-4">
+                          {/* Complete checkbox */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({
+                                ...task,
+                                completed: !task.completed,
+                                updatedAt: new Date().toISOString()
+                              });
+                            }}
+                            className={`w-6 h-6 rounded-lg border-[2.2px] flex items-center justify-center shrink-0 mt-0.5 transition-all cursor-pointer ${
+                              task.completed 
+                                ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm' 
+                                : `bg-white dark:bg-slate-800 ${activeListQuadrant.checkboxColorClass}`
+                            }`}
+                            style={{ borderColor: !task.completed ? activeListQuadrant.checkboxColor : undefined }}
+                          >
+                            {task.completed && <Check className="w-4 h-4 stroke-[3px]" />}
+                          </button>
+
+                          <div className="flex-1 min-w-0">
+                            <span className={`text-[15px] font-bold text-slate-800 dark:text-slate-100 leading-tight break-words block ${
+                              task.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
+                            }`}>
+                              {task.text}
+                            </span>
+                            
+                            {taskDays && (
+                              <div className="text-xs font-bold text-[#FF4A55] mt-1.5 tracking-tight font-sans">
+                                {taskDays}
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-3 items-center mt-2">
+                              {/* Pomodoro display */}
+                              {(() => {
+                                const stats = getPomoStatsForNode(task, nodes);
+                                return stats.pomodoroTotalTime > 0 ? (
+                                  <div className="text-xs font-bold text-rose-600 dark:text-rose-400 tracking-tight font-sans inline-flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/20 px-2 py-0.5 rounded-md select-none">
+                                    <span>🍅</span>
+                                    <span>{formatTotalPomoTime(stats.pomodoroTotalTime)}</span>
+                                  </div>
+                                ) : null;
+                              })()}
+
+                              {/* Estimated Time display */}
+                              {task.estimatedTime !== undefined && task.estimatedTime !== null && !isNaN(task.estimatedTime) ? (
+                                <div 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const val = prompt("Изменить ориентировочное время работы (в минутах):", task.estimatedTime?.toString() || "30");
+                                    if (val !== null) {
+                                      if (val === "") {
+                                        onUpdateNode({ ...task, estimatedTime: undefined });
+                                      } else {
+                                        const num = parseFloat(val);
+                                        if (!isNaN(num)) {
+                                          onUpdateNode({ ...task, estimatedTime: num });
+                                        }
+                                      }
+                                    }
+                                  }}
+                                  className="text-xs font-bold text-indigo-650 dark:text-indigo-400 tracking-tight font-sans inline-flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/20 px-2 py-0.5 rounded-md cursor-pointer hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+                                >
+                                  <Timer className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                  <span>{task.estimatedTime} мин</span>
+                                </div>
+                              ) : (
+                                <div 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const val = prompt("Укажите ориентировочное время работы (в минутах):", "30");
+                                    if (val !== null) {
+                                      if (val === "") {
+                                        onUpdateNode({ ...task, estimatedTime: undefined });
+                                      } else {
+                                        const num = parseFloat(val);
+                                        if (!isNaN(num)) {
+                                          onUpdateNode({ ...task, estimatedTime: num });
+                                        }
+                                      }
+                                    }
+                                  }}
+                                  className="text-xs font-bold text-slate-400 dark:text-slate-500 tracking-tight font-sans inline-flex items-center gap-1.5 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                                >
+                                  <Timer className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <span>0 мин</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Quick action buttons */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectNode(task.id);
+                                setActiveListQuadrantId(null);
+                              }}
+                              className="p-2 rounded-xl text-slate-400 hover:text-indigo-650 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                              title="Подробное редактирование"
+                            >
+                              <FileText className="w-4.5 h-4.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteNode(task.id);
+                              }}
+                              className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                              title="Удалить задачу"
+                            >
+                              <Trash2 className="w-4.5 h-4.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-900 shrink-0 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setActiveListQuadrantId(null)}
+                  className="px-6 py-3 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                >
+                  Закрыть
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

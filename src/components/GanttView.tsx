@@ -475,14 +475,54 @@ export default function GanttView({
     });
   };
 
+  const handleBarTouchStart = (
+    e: React.TouchEvent,
+    taskId: string,
+    type: 'move' | 'resize-start' | 'resize-end',
+    startIdx: number,
+    endIdx: number
+  ) => {
+    e.stopPropagation();
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+
+    dragHasMovedRef.current = false;
+    dragStartMousePosRef.current = { x: touch.clientX, y: touch.clientY };
+
+    const rowEl = (e.currentTarget as HTMLElement).closest('[data-row-container]');
+    const gridWidth = rowEl?.getBoundingClientRect().width || 2520;
+    const colWidth = gridWidth / 28;
+
+    const dragInfo = {
+      taskId,
+      type,
+      initialStart: startIdx,
+      initialEnd: endIdx,
+      currentStart: startIdx,
+      currentEnd: endIdx,
+      colWidth,
+      startX: touch.clientX
+    };
+
+    activeDragRef.current = dragInfo;
+    setActiveDrag({
+      taskId,
+      type,
+      initialStart: startIdx,
+      initialEnd: endIdx,
+      currentStart: startIdx,
+      currentEnd: endIdx
+    });
+  };
+
   useEffect(() => {
     if (!activeDrag) return;
 
-    const handleGlobalMouseMove = (e: MouseEvent) => {
+    const handleGlobalMove = (clientX: number) => {
       const drag = activeDragRef.current;
       if (!drag) return;
 
-      const dx = e.clientX - drag.startX;
+      const dx = clientX - drag.startX;
       
       if (!dragHasMovedRef.current) {
         const dist = Math.abs(dx);
@@ -528,13 +568,13 @@ export default function GanttView({
       }
     };
 
-    const handleGlobalMouseUp = (e: MouseEvent) => {
+    const handleGlobalEnd = (clientX: number) => {
       const drag = activeDragRef.current;
       activeDragRef.current = null;
       setActiveDrag(null);
 
       if (drag && dragHasMovedRef.current) {
-        const dx = e.clientX - drag.startX;
+        const dx = clientX - drag.startX;
         const dayDiff = Math.round(dx / drag.colWidth);
         let finalStart = drag.initialStart;
         let finalEnd = drag.initialEnd;
@@ -577,9 +617,26 @@ export default function GanttView({
       } else {
         dragHasMovedRef.current = false;
       }
+    };
 
-      window.removeEventListener('mousemove', handleGlobalMouseMove);
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      handleGlobalMove(e.clientX);
+    };
+
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      handleGlobalEnd(e.clientX);
+    };
+
+    const handleGlobalTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        if (e.cancelable) e.preventDefault();
+        handleGlobalMove(e.touches[0].clientX);
+      }
+    };
+
+    const handleGlobalTouchEnd = (e: TouchEvent) => {
+      const clientX = e.changedTouches.length > 0 ? e.changedTouches[0].clientX : (activeDragRef.current?.startX || 0);
+      handleGlobalEnd(clientX);
     };
 
     if (activeDrag.type === 'move') {
@@ -590,11 +647,15 @@ export default function GanttView({
 
     window.addEventListener('mousemove', handleGlobalMouseMove);
     window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
+    window.addEventListener('touchend', handleGlobalTouchEnd);
 
     return () => {
       document.body.style.cursor = '';
       window.removeEventListener('mousemove', handleGlobalMouseMove);
       window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('touchmove', handleGlobalTouchMove);
+      window.removeEventListener('touchend', handleGlobalTouchEnd);
     };
   }, [activeDrag, timelineDays, tasks, onUpdateNode]);
 
@@ -1190,6 +1251,11 @@ export default function GanttView({
                               handleBarMouseDown(e, task.id, 'move', range.start, range.end);
                             }
                           }}
+                          onTouchStart={(e) => {
+                            if (range) {
+                              handleBarTouchStart(e, task.id, 'move', range.start, range.end);
+                            }
+                          }}
                           style={{
                             left: `${(displayRange.start / 28) * 100}%`,
                             width: `${(displayRange.span / 28) * 100}%`
@@ -1212,6 +1278,9 @@ export default function GanttView({
                               onMouseDown={(e) => {
                                 handleBarMouseDown(e, task.id, 'resize-start', range.start, range.end);
                               }}
+                              onTouchStart={(e) => {
+                                handleBarTouchStart(e, task.id, 'resize-start', range.start, range.end);
+                              }}
                               title="Изменить дату начала"
                             >
                               <div className="w-1 h-3 bg-slate-400/50 dark:bg-slate-500/50 rounded-full group-hover/handle:bg-slate-600 dark:group-hover/handle:bg-slate-300 transition-colors" />
@@ -1224,6 +1293,9 @@ export default function GanttView({
                               className="absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-black/15 dark:hover:bg-white/15 z-20 flex items-center justify-center group/handle"
                               onMouseDown={(e) => {
                                 handleBarMouseDown(e, task.id, 'resize-end', range.start, range.end);
+                              }}
+                              onTouchStart={(e) => {
+                                handleBarTouchStart(e, task.id, 'resize-end', range.start, range.end);
                               }}
                               title="Изменить срок выполнения"
                             >

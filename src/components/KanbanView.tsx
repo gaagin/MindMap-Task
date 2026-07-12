@@ -289,8 +289,15 @@ export default function KanbanView({
                   if (onFocusedTaskIdChange) {
                     onFocusedTaskIdChange(subtask.id);
                   }
+                  if (hasChildren) {
+                    onUpdateNode({
+                      ...subtask,
+                      collapsed: !isCollapsed
+                    });
+                  }
                 }}
                 className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[12.5px] text-slate-700 dark:text-slate-300 cursor-pointer"
+                data-drag-ignore="true"
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   {hasChildren && (
@@ -334,16 +341,6 @@ export default function KanbanView({
                     {subtask.text}
                   </span>
                 </div>
-                {subtask.dueDate && (
-                  <span className={`shrink-0 flex items-center gap-1.5 text-[10.5px] px-1.5 py-0.5 rounded-lg border font-medium shadow-xs ${
-                    isNodeOverdue(subtask, nodes) && !subtask.completed
-                      ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-955/30'
-                      : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-205 dark:border-slate-700/60'
-                  }`}>
-                    <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-slate-505" />
-                    <span>{formatRussianDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
-                  </span>
-                )}
               </div>
               
               {hasChildren && !isCollapsed && (
@@ -388,8 +385,15 @@ export default function KanbanView({
                           if (onFocusedTaskIdChange) {
                             onFocusedTaskIdChange(subtask.id);
                           }
+                          if (hasChildren) {
+                            onUpdateNode({
+                              ...subtask,
+                              collapsed: !isCollapsed
+                            });
+                          }
                         }}
                         className="group/sub relative py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 flex items-center justify-between gap-2 transition-all text-[12.5px] text-slate-700 dark:text-slate-300 cursor-pointer"
+                        data-drag-ignore="true"
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           {hasChildren && (
@@ -433,16 +437,6 @@ export default function KanbanView({
                             {subtask.text}
                           </span>
                         </div>
-                        {subtask.dueDate && (
-                          <span className={`shrink-0 flex items-center gap-1.5 text-[10.5px] px-1.5 py-0.5 rounded-lg border font-medium shadow-xs ${
-                            isNodeOverdue(subtask, nodes) && !subtask.completed
-                              ? 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-650 dark:text-rose-400 border-rose-100 dark:border-rose-955/30'
-                              : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-205 dark:border-slate-700/60'
-                          }`}>
-                            <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-slate-505" />
-                            <span>{formatRussianDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
-                          </span>
-                        )}
                       </div>
                       {hasChildren && !isCollapsed && (
                         <div className="pl-3">
@@ -996,8 +990,32 @@ export default function KanbanView({
     e.dataTransfer.effectAllowed = 'move';
   };
 
+  const isInteractiveElement = (target: HTMLElement): boolean => {
+    let el: HTMLElement | null = target;
+    while (el && el !== document.body) {
+      const tagName = el.tagName.toLowerCase();
+      if (
+        tagName === 'button' || 
+        tagName === 'input' || 
+        tagName === 'textarea' || 
+        tagName === 'select' || 
+        tagName === 'a' ||
+        el.getAttribute('contenteditable') === 'true' ||
+        el.getAttribute('data-drag-ignore') === 'true' ||
+        el.classList.contains('cursor-grab')
+      ) {
+        return true;
+      }
+      el = el.parentElement;
+    }
+    return false;
+  };
+
   // Touch drag-and-drop for mobile devices (long-press drag & swipe-scroll separation)
   const handleTouchStart = (e: React.TouchEvent, taskId: string, text: string) => {
+    if (isInteractiveElement(e.target as HTMLElement)) {
+      return;
+    }
     const touch = e.touches[0];
     const rect = e.currentTarget.getBoundingClientRect();
     

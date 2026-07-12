@@ -1,43 +1,161 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-slate-150: #eaedf2;
-  --color-slate-205: #d6dde8;
-  --color-slate-450: #7c8ba1;
-  --color-slate-505: #54637a;
-  --color-slate-555: #556479;
-  --color-slate-605: #475569;
-  --color-slate-650: #3d4b5f;
-  --color-slate-705: #293548;
-  --color-slate-750: #1e2a3c;
-  --color-slate-755: #1a2333;
-  --color-slate-805: #151d2a;
-  --color-slate-850: #121926;
-  --color-slate-855: #0d131f;
+  --font-sans: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Custom slate variables, redefined to beautiful dark pastel lavender/aubergine */
+  --color-slate-150: #eceaf3;
+  --color-slate-205: #dbd8e7;
+  --color-slate-450: #aeaaca;
+  --color-slate-505: #928dae;
+  --color-slate-555: #7b759a;
+  --color-slate-605: #655e84;
+  --color-slate-650: #514b70;
+  --color-slate-705: #3e385a;
+  --color-slate-750: #302a49;
+  --color-slate-755: #27213d;
+  --color-slate-805: #201b33;
+  --color-slate-850: #1a152a;
+  --color-slate-855: #141121;
+
+  /* Standard Tailwind slate overrides, mapped to delicate light lavender/almond pastels */
+  --color-slate-50: #f6f5fa;
+  --color-slate-100: #ededf5;
+  --color-slate-200: #dedceb;
+  --color-slate-300: #cccae0;
+  --color-slate-400: #a9a6cb;
+  --color-slate-500: #8c88b0;
+  --color-slate-600: #6d6994;
+  --color-slate-700: #524d77;
+  --color-slate-800: #3b375b;
+  --color-slate-900: #2a2645;
+  --color-slate-950: #1b1731;
+
+  /* Standard Tailwind indigo overrides, mapped to soft pastel periwinkle */
+  --color-indigo-50: #f3f4fe;
+  --color-indigo-100: #e7e9fc;
+  --color-indigo-200: #d4d7fa;
+  --color-indigo-300: #b9bef6;
+  --color-indigo-400: #9ba1f2;
+  --color-indigo-500: #7e85eb;
+  --color-indigo-600: #6269cb;
+  --color-indigo-700: #4c51a7;
+  --color-indigo-800: #393d81;
+  --color-indigo-900: #2b2e5f;
+  --color-indigo-950: #1b1d3c;
+
+  /* Standard Tailwind purple overrides, mapped to dreamy soft lavender/violet pastel */
+  --color-purple-50: #fbf5fc;
+  --color-purple-100: #f6eaf9;
+  --color-purple-200: #edd3f4;
+  --color-purple-300: #e0b4ec;
+  --color-purple-400: #cf8fe1;
+  --color-purple-500: #b96dd2;
+  --color-purple-600: #9c4fba;
+  --color-purple-700: #803c9b;
+  --color-purple-800: #662f7d;
+  --color-purple-900: #4f2561;
+  --color-purple-950: #33153f;
+
+  /* Standard Tailwind emerald overrides, mapped to soft pastel sage/mint green */
+  --color-emerald-50: #f2faf4;
+  --color-emerald-100: #e3f5e8;
+  --color-emerald-200: #caedd2;
+  --color-emerald-300: #a7dfb3;
+  --color-emerald-400: #7fcf8e;
+  --color-emerald-500: #57be6a;
+  --color-emerald-600: #3fa152;
+  --color-emerald-700: #318042;
+  --color-emerald-800: #276535;
+  --color-emerald-900: #1f502b;
+  --color-emerald-950: #13331b;
+
+  /* Standard Tailwind amber overrides, mapped to soft pastel warm peach/apricot */
+  --color-amber-50: #fff9f2;
+  --color-amber-100: #fff1e0;
+  --color-amber-200: #ffe1be;
+  --color-amber-300: #ffd095;
+  --color-amber-400: #ffb869;
+  --color-amber-500: #f39b3d;
+  --color-amber-600: #d17a21;
+  --color-amber-700: #a55a15;
+  --color-amber-800: #81430f;
+  --color-amber-900: #65320c;
+  --color-amber-950: #401f05;
+
+  /* Standard Tailwind red overrides, mapped to soft pastel coral pink */
+  --color-red-50: #fff5f5;
+  --color-red-100: #ffebeb;
+  --color-red-200: #ffd1d2;
+  --color-red-300: #ffafb1;
+  --color-red-400: #ff8689;
+  --color-red-500: #f05c60;
+  --color-red-600: #cd4246;
+  --color-red-700: #a33134;
+  --color-red-800: #812528;
+  --color-red-900: #661c1e;
+  --color-red-950: #420f10;
 }
 
 @variant dark (&:where(.dark, .dark *));
 
-/* Custom scrollbars */
+/* Soft glassmorphism backdrop and borders */
+.glass-panel {
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(222, 220, 235, 0.4);
+}
+
+.dark .glass-panel {
+  background-color: rgba(27, 23, 49, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(222, 220, 235, 0.06);
+}
+
+/* Elegant dot-matrix canvas pattern for mind maps and workspace grids */
+.dot-grid-bg {
+  background-image: radial-gradient(#cccae0 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.dark .dot-grid-bg {
+  background-image: radial-gradient(rgba(204, 202, 224, 0.12) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Modern soft elevated shadows */
+.soft-elevated {
+  box-shadow: 0 10px 30px -5px rgba(140, 136, 176, 0.08), 0 4px 12px -2px rgba(140, 136, 176, 0.04);
+}
+
+.dark .soft-elevated {
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.3), 0 4px 12px -2px rgba(0, 0, 0, 0.15);
+}
+
+/* Smooth custom scrollbars */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: rgba(140, 136, 176, 0.25);
   border-radius: 9999px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: rgba(140, 136, 176, 0.45);
 }
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: rgba(222, 220, 235, 0.12);
 }
 .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: rgba(222, 220, 235, 0.25);
 }
 
 /* Invisible scrollbar */

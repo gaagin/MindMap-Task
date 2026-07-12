@@ -22,6 +22,7 @@ import {
   CheckSquare,
   ListFilter,
   CheckCircle2, 
+  Layers,
   Loader2,
   CalendarCheck,
   GripVertical,
@@ -98,6 +99,7 @@ export default function MobileListView({
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed' | 'today' | 'overdue'>('active');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
+  const [containerFilter, setContainerFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileSearchIndex, setMobileSearchIndex] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
@@ -237,7 +239,6 @@ export default function MobileListView({
         tagName === 'a' ||
         el.getAttribute('contenteditable') === 'true' ||
         el.getAttribute('data-drag-ignore') === 'true' ||
-        el.classList.contains('cursor-pointer') ||
         el.classList.contains('cursor-grab')
       ) {
         return true;
@@ -621,6 +622,23 @@ export default function MobileListView({
     setEditingNodeId(null);
   };
 
+  const getTaskContainerId = (node: TaskNode): string | null => {
+    let curr: TaskNode | undefined = node;
+    const visited = new Set<string>();
+    while (curr && curr.parentId) {
+      if (visited.has(curr.parentId)) break; // cycle protection
+      visited.add(curr.parentId);
+      const parentNode = nodes.find(n => n.id === curr!.parentId);
+      if (parentNode && parentNode.isContainer) return parentNode.id;
+      curr = parentNode;
+    }
+    return null;
+  };
+
+  const allContainers = useMemo(() => {
+    return nodes.filter(n => n.isContainer && !n.archived);
+  }, [nodes]);
+
   const todayStr = useMemo(() => {
     const d = new Date();
     return d.toISOString().split('T')[0];
@@ -651,6 +669,16 @@ export default function MobileListView({
       // Tags criteria
       if (tagFilter !== 'all' && !n.tags?.includes(tagFilter)) return false;
 
+      // Container criteria
+      if (containerFilter !== 'all') {
+        const tContainerId = getTaskContainerId(n);
+        if (containerFilter === 'no-container') {
+          if (tContainerId !== null) return false;
+        } else {
+          if (tContainerId !== containerFilter) return false;
+        }
+      }
+
       // Text search criteria
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
@@ -662,7 +690,7 @@ export default function MobileListView({
 
       return true;
     });
-  }, [nodes, activeTab, priorityFilter, tagFilter, searchQuery, todayStr]);
+  }, [nodes, activeTab, priorityFilter, tagFilter, containerFilter, searchQuery, todayStr]);
 
   // Grouping options as a clean, nested structure!
   const taskTreeRoots = useMemo(() => {
@@ -776,7 +804,7 @@ export default function MobileListView({
             }
             onSelectNode(null);
           }}
-          className={`border rounded-xl p-1.5 px-2.5 transition-[background-color,border-color,opacity,box-shadow] duration-150 flex flex-col gap-1 relative select-none ${cardBgBorderClass} ${node.completed ? 'opacity-70' : ''}`}
+          className={`border rounded-xl p-1.5 px-2.5 transition-[background-color,border-color,opacity,box-shadow] duration-150 flex flex-col gap-1 relative select-none cursor-pointer ${cardBgBorderClass} ${node.completed ? 'opacity-70' : ''}`}
         >
           {/* Connector guide line for nested subtasks */}
           {depth > 0 && (
@@ -805,6 +833,7 @@ export default function MobileListView({
                     }
                   }}
                   className="p-1 shrink-0 mt-0.5 cursor-pointer select-none"
+                  data-drag-ignore="true"
                 >
                   <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                     isSelectedInMulti
@@ -948,6 +977,7 @@ export default function MobileListView({
                             <span 
                               className="inline-flex items-center gap-1 px-1 bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 text-[8.5px] font-bold rounded-sm uppercase cursor-pointer"
                               title={`Связано с родительской задачей: ${node.mirrorParentText}. Нажмите, чтобы перейти.`}
+                              data-drag-ignore="true"
                               onClick={(e) => {
                                 if (node.mirrorParentId && onSelectNode) {
                                   const exists = nodes.some(n => n.id === node.mirrorParentId);
@@ -970,6 +1000,7 @@ export default function MobileListView({
                               <span 
                                 className="inline-flex items-center gap-1 px-1 bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 text-[8.5px] font-bold rounded-sm uppercase cursor-pointer"
                                 title="Эта задача имеет зеркальные копии. Нажмите, чтобы открыть свойства."
+                                data-drag-ignore="true"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onSelectNode && onSelectNode(node.id);
@@ -1040,6 +1071,7 @@ export default function MobileListView({
                               }}
                               className="flex items-center gap-1 px-1.5 py-0.5 rounded border bg-indigo-50/70 border-indigo-150/40 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 text-[9px] font-bold cursor-pointer transition-colors"
                               title={`Ориентировочное время: ${node.estimatedTime} мин (нажмите для изменения)`}
+                              data-drag-ignore="true"
                             >
                               <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
                               <span>{node.estimatedTime} мин</span>
@@ -1063,6 +1095,7 @@ export default function MobileListView({
                               }}
                               className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed bg-slate-50/50 border-slate-300 text-slate-400 dark:bg-slate-800/40 dark:border-slate-700 dark:text-slate-500 text-[9px] font-bold cursor-pointer transition-colors"
                               title="Нажмите, чтобы указать ориентировочное время работы"
+                              data-drag-ignore="true"
                             >
                               <Timer className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                               <span>0 мин</span>
@@ -1252,6 +1285,7 @@ export default function MobileListView({
                               }}
                               className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/30 rounded duration-150 py-0.5 px-1"
                               title="Открыть свойства подзадачи"
+                              data-drag-ignore="true"
                             >
                               <button
                                 type="button"
@@ -1490,11 +1524,11 @@ export default function MobileListView({
             type="button"
             onClick={() => setShowFilters(f => !f)}
             className={`p-1 px-1.5 rounded-lg border flex items-center gap-1 cursor-pointer transition-all text-xs font-semibold ${
-              showFilters || priorityFilter !== 'all' || tagFilter !== 'all'
+              showFilters || priorityFilter !== 'all' || tagFilter !== 'all' || containerFilter !== 'all'
                 ? 'bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-950/40 dark:border-indigo-900/40 dark:text-indigo-400'
                 : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800 text-slate-500 hover:text-slate-700'
             }`}
-            title="Фильтры по приоритетам и тегам"
+            title="Фильтры по приоритетам, тегам и контейнерам"
           >
             <ListFilter className="w-3.5 h-3.5" />
             <span>Фильтры</span>
@@ -1512,8 +1546,8 @@ export default function MobileListView({
         </div>
 
         {/* Dropdowns visible only when toggled */}
-        {(showFilters || priorityFilter !== 'all' || tagFilter !== 'all') && (
-          <div className="grid grid-cols-2 gap-2 pb-0.5 pt-0.5 animate-fadeIn">
+        {(showFilters || priorityFilter !== 'all' || tagFilter !== 'all' || containerFilter !== 'all') && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pb-0.5 pt-0.5 animate-fadeIn">
             {/* Priority options selector */}
             <div className="relative">
               <span className="absolute left-2 top-2 text-slate-400 pointer-events-none">
@@ -1547,6 +1581,27 @@ export default function MobileListView({
                 <option value="all">Все теги</option>
                 {tagCategories.flatMap(c => c.tags || []).map(tag => (
                   <option key={tag} value={tag}>#{tag}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Container choice selector */}
+            <div className="relative">
+              <span className="absolute left-2 top-2 text-slate-400 pointer-events-none">
+                <Layers className="w-3 h-3" />
+              </span>
+              <select
+                id="mobile-container-select"
+                value={containerFilter}
+                onChange={(e) => setContainerFilter(e.target.value)}
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-6 pr-1.5 py-1 text-[11px] text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-ellipsis overflow-hidden whitespace-nowrap"
+              >
+                <option value="all">Все области/контейнеры</option>
+                <option value="no-container">📦 Вне областей</option>
+                {allContainers.map(container => (
+                  <option key={container.id} value={container.id}>
+                    📦 {container.text}
+                  </option>
                 ))}
               </select>
             </div>

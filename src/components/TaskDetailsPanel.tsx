@@ -62,6 +62,7 @@ interface TaskDetailsPanelProps {
   onUpdateNodeParent?: (id: string, newParentId: string | null, newX?: number, newY?: number) => void;
   initialTab?: 'details' | 'chat';
   initialFullscreen?: boolean;
+  lastCreatedNodeId?: string | null;
 }
 
 const PASTEL_COLORS = [
@@ -114,13 +115,15 @@ export default function TaskDetailsPanel({
   googleToken = null,
   onUpdateNodeParent,
   initialTab = 'details',
-  initialFullscreen = false
+  initialFullscreen = false,
+  lastCreatedNodeId = null
 }: TaskDetailsPanelProps) {
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(initialFullscreen);
+  const [activeModalParam, setActiveModalParam] = useState<'dates' | 'tags' | 'pomodoro' | 'subtasks' | 'blockers' | 'files' | 'history' | 'container' | 'priority_status' | null>(null);
 
   // Synchronize fullscreen state with initialFullscreen prop
   React.useEffect(() => {
@@ -219,6 +222,22 @@ export default function TaskDetailsPanel({
   const [isInsertingLink, setIsInsertingLink] = useState(false);
   const [linkSearchQuery, setLinkSearchQuery] = useState('');
   const notesTextareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const titleInputRef = React.useRef<HTMLInputElement>(null);
+  const fullscreenTitleInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (node && lastCreatedNodeId && node.id === lastCreatedNodeId) {
+      setTimeout(() => {
+        if (isFullscreen && fullscreenTitleInputRef.current) {
+          fullscreenTitleInputRef.current.focus();
+          fullscreenTitleInputRef.current.select();
+        } else if (titleInputRef.current) {
+          titleInputRef.current.focus();
+          titleInputRef.current.select();
+        }
+      }, 100);
+    }
+  }, [node?.id, lastCreatedNodeId, isFullscreen]);
 
   // Chat/Comments state variables
   const [activeTab, setActiveTab] = useState<'details' | 'chat'>(initialTab);
@@ -1800,6 +1819,7 @@ export default function TaskDetailsPanel({
           {/* Core Title input centered */}
           <div className="flex-1 max-w-xl mx-4">
             <input
+              ref={fullscreenTitleInputRef}
               type="text"
               value={node.text}
               onChange={(e) => handlePropChange('text', e.target.value)}
@@ -3641,19 +3661,19 @@ export default function TaskDetailsPanel({
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 min-h-0">
+              <div className="flex-1 overflow-y-auto pr-1 space-y-1.5 min-h-0 font-sans">
                 {(node.history || []).length === 0 ? (
                   <p className="text-[10px] text-slate-400 italic text-center py-4">Архив снимков пуст</p>
                 ) : (
                   (node.history || []).map(ver => (
-                    <div key={ver.id} className="p-2 border border-slate-100 dark:border-slate-800/60 rounded-lg bg-slate-50/50 text-[10px] flex justify-between items-center">
+                    <div key={ver.id} className="p-2 border border-slate-155/40 dark:border-slate-800/30 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 text-[10px] flex justify-between items-center">
                       <div className="truncate pr-1">
                         <span className="font-bold text-slate-700 dark:text-slate-300 block truncate">{ver.description || 'Правка'}</span>
                         <span className="text-[8px] text-slate-400 font-mono">{new Date(ver.timestamp).toLocaleTimeString()}</span>
                       </div>
                       <button
                         onClick={() => handleRestoreVersion(ver)}
-                        className="px-2 py-0.5 bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400 rounded-md font-bold text-[9px] cursor-pointer hover:bg-indigo-100"
+                        className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-md font-bold text-[9px] cursor-pointer hover:bg-indigo-100"
                       >
                         Откат
                       </button>
@@ -3667,14 +3687,14 @@ export default function TaskDetailsPanel({
         </div>
 
         {/* CONTROLS FOOTER */}
-        <div className="h-14 px-6 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
+        <div className="h-14 px-6 bg-transparent border-t border-slate-150/40 dark:border-slate-800/30 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Глобальные действия:</span>
             <button
               type="button"
               onClick={() => handlePropChange('archived', !node.archived)}
-              className={`px-3 py-1 rounded-lg text-[11px] font-extrabold border cursor-pointer transition ${
-                node.archived ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/20' : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800'
+              className={`px-3 py-1 rounded-xl text-[11px] font-extrabold border cursor-pointer transition ${
+                node.archived ? 'bg-amber-50/80 text-amber-600 border-amber-200 dark:bg-amber-950/20' : 'bg-slate-50/50 text-slate-600 border-slate-200 dark:bg-slate-800/40'
               }`}
             >
               {node.archived ? 'Разархивировать' : 'В архив'}
@@ -3694,8 +3714,8 @@ export default function TaskDetailsPanel({
                     setTimeout(() => setConfirmDelete(false), 4000);
                   }
                 }}
-                className={`px-4 py-1.5 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
-                  confirmDelete ? 'bg-rose-605 text-white animate-pulse' : 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/20'
+                className={`px-4 py-1.5 text-xs font-extrabold rounded-xl transition-all cursor-pointer ${
+                  confirmDelete ? 'bg-rose-600 text-white animate-pulse' : 'bg-rose-50/80 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/20'
                 }`}
               >
                 {confirmDelete ? "ПОДТВЕРДИТЕ УДАЛЕНИЕ ЗАДАЧИ!" : "Удалить эту ветвь"}
@@ -3716,16 +3736,17 @@ export default function TaskDetailsPanel({
           onPaste={handleAsidePaste}
           className={
             isFullscreen
-              ? "w-full h-full bg-white dark:bg-slate-900 md:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden relative"
-              : "fixed inset-y-0 right-0 w-full md:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out"
+              ? "w-full h-full glass-panel md:rounded-2xl border border-slate-205/30 dark:border-slate-850/30 shadow-2xl flex flex-col overflow-hidden relative font-sans"
+              : "fixed inset-y-3 right-3 w-full max-w-[calc(100%-1.5rem)] md:w-[420px] glass-panel border border-slate-205/30 dark:border-slate-850/30 shadow-2xl rounded-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out font-sans"
           }
         >
 
       {/* Header */}
-      <div className="h-16 px-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between gap-3">
+      <div className="h-16 px-6 border-b border-slate-150/40 dark:border-slate-800/30 flex items-center justify-between gap-3 bg-transparent shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Layers className="w-4 h-4 text-indigo-500 shrink-0" />
           <input
+            ref={titleInputRef}
             type="text"
             value={node.text}
             onChange={(e) => handlePropChange('text', e.target.value)}
@@ -3738,16 +3759,16 @@ export default function TaskDetailsPanel({
                 recordHistoryVersion(originalText, originalNotes, 'Правка названия (боковая панель)');
               }
             }}
-            className="w-full text-sm font-semibold bg-transparent border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 focus:bg-slate-50 focus:dark:bg-slate-800 px-2 py-1 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 font-sans transition-colors"
+            className="w-full text-sm font-semibold bg-transparent border-0 hover:bg-slate-100/40 dark:hover:bg-slate-800/30 focus:bg-slate-100/40 focus:dark:bg-slate-800/30 px-2 py-1 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 font-sans transition-colors"
             placeholder="Введите название задачи..."
           />
         </div>
-        <div className="flex items-center gap-1.55">
+        <div className="flex items-center gap-1.5">
           {/* Quick header copy link button */}
           <button 
             type="button"
             onClick={handleCopyLink}
-            className={`p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 cursor-pointer ${copied ? 'text-emerald-600 dark:text-emerald-400 font-bold text-[11px]' : 'text-slate-500 hover:text-indigo-500'}`}
+            className={`p-1.5 rounded-lg hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-colors flex items-center gap-1 cursor-pointer ${copied ? 'text-emerald-600 dark:text-emerald-400 font-bold text-[11px]' : 'text-slate-500 hover:text-indigo-500'}`}
             title="Копировать прямую ссылку на эту задачу"
           >
             {copied ? (
@@ -3771,7 +3792,7 @@ export default function TaskDetailsPanel({
                 setIsFullscreen(true);
               }
             }}
-            className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-505 transition-colors cursor-pointer"
+            className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-slate-100/60 dark:hover:bg-slate-800/60 text-slate-500 hover:text-indigo-505 transition-colors cursor-pointer"
             title={isFullscreen ? "Свернуть" : "Открыть во весь экран"}
           >
             {isFullscreen ? (
@@ -3783,7 +3804,7 @@ export default function TaskDetailsPanel({
 
           <button 
             onClick={onClose}
-            className="p-1 px-[5px] rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
+            className="p-1 px-[5px] rounded-lg hover:bg-slate-100/60 dark:hover:bg-slate-800/60 text-slate-500 cursor-pointer"
             title="Закрыть панель"
           >
             <X className="w-5 h-5" />
@@ -3792,14 +3813,14 @@ export default function TaskDetailsPanel({
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex border-b border-slate-150/80 dark:border-slate-805 bg-slate-50/50 dark:bg-slate-950/20 p-2 gap-2">
+      <div className="flex border-b border-slate-150/25 dark:border-slate-805/20 bg-transparent p-2 gap-2 shrink-0 font-sans">
         <button
           type="button"
           onClick={() => setActiveTab('details')}
-          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             activeTab === 'details'
-              ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs ring-1 ring-slate-205/50 dark:ring-slate-700/50'
-              : 'text-slate-505 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-702 dark:hover:text-slate-350'
+              ? 'bg-white/95 dark:bg-slate-800/80 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-205/40 dark:border-slate-700/30'
+              : 'text-slate-505 hover:bg-slate-100/40 dark:hover:bg-slate-800/30 hover:text-slate-702 dark:hover:text-slate-350'
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
@@ -3808,10 +3829,10 @@ export default function TaskDetailsPanel({
         <button
           type="button"
           onClick={() => setActiveTab('chat')}
-          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 relative cursor-pointer ${
+          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 relative cursor-pointer ${
             activeTab === 'chat'
-              ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs ring-1 ring-slate-205/50 dark:ring-slate-700/50'
-              : 'text-slate-505 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-720 dark:hover:text-slate-350'
+              ? 'bg-white/95 dark:bg-slate-800/80 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-205/40 dark:border-slate-700/30'
+              : 'text-slate-505 hover:bg-slate-100/40 dark:hover:bg-slate-800/30 hover:text-slate-720 dark:hover:text-slate-350'
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
@@ -3825,7 +3846,7 @@ export default function TaskDetailsPanel({
       </div>
 
       {activeTab === 'details' && (
-        <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900">
+        <div className="flex-1 flex flex-col min-h-0 bg-transparent">
 
 
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
@@ -3899,16 +3920,19 @@ export default function TaskDetailsPanel({
             {/* Main Subtab Button */}
             <button
               type="button"
-              onClick={() => setDetailsSubTab('main')}
+              onClick={() => {
+                setDetailsSubTab('main');
+                setActiveModalParam(null);
+              }}
               className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                detailsSubTab === 'main'
+                detailsSubTab === 'main' && !activeModalParam
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
                   : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
               }`}
             >
               <span className="text-base">📊</span>
               <span className="text-[10px] font-bold mt-1 leading-none">Главное</span>
-              <span className={`text-[9px] mt-1 font-medium ${detailsSubTab === 'main' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+              <span className={`text-[9px] mt-1 font-medium ${detailsSubTab === 'main' && !activeModalParam ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
                 {(() => {
                   const subCount = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length;
                   return subCount > 0 ? `${subCount} подзад.` : 'Нет подзад.';
@@ -3916,19 +3940,19 @@ export default function TaskDetailsPanel({
               </span>
             </button>
 
-            {/* Dates Subtab Button */}
+            {/* Dates Modal Button */}
             <button
               type="button"
-              onClick={() => setDetailsSubTab('dates')}
+              onClick={() => setActiveModalParam('dates')}
               className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                detailsSubTab === 'dates'
+                activeModalParam === 'dates'
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
                   : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
               }`}
             >
               <span className="text-base">📅</span>
               <span className="text-[10px] font-bold mt-1 leading-none">Сроки</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${detailsSubTab === 'dates' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'dates' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
                 {node.dueDate ? (
                   node.dueTime ? `${node.dueDate.slice(5)} ${node.dueTime}` : node.dueDate.slice(5)
                 ) : (
@@ -3937,24 +3961,168 @@ export default function TaskDetailsPanel({
               </span>
             </button>
 
-            {/* Tags Subtab Button */}
+            {/* Tags Modal Button */}
             <button
               type="button"
-              onClick={() => setDetailsSubTab('tags')}
+              onClick={() => setActiveModalParam('tags')}
               className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                detailsSubTab === 'tags'
+                activeModalParam === 'tags'
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
                   : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
               }`}
             >
               <span className="text-base">🏷️</span>
               <span className="text-[10px] font-bold mt-1 leading-none">Теги</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${detailsSubTab === 'tags' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'tags' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
                 {node.tags && node.tags.length > 0 ? (
                   `${node.tags.length} шт.`
                 ) : (
                   'Без тегов'
                 )}
+              </span>
+            </button>
+
+            {/* Subtasks Modal Button */}
+            <button
+              type="button"
+              onClick={() => setActiveModalParam('subtasks')}
+              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                activeModalParam === 'subtasks'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
+                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+            >
+              <span className="text-base">🪜</span>
+              <span className="text-[10px] font-bold mt-1 leading-none">Подзадачи</span>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'subtasks' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                {(() => {
+                  const subCount = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length;
+                  return subCount > 0 ? `${subCount} шт.` : 'Создать';
+                })()}
+              </span>
+            </button>
+
+            {/* Files Modal Button */}
+            <button
+              type="button"
+              onClick={() => setActiveModalParam('files')}
+              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                activeModalParam === 'files'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
+                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+            >
+              <span className="text-base">📎</span>
+              <span className="text-[10px] font-bold mt-1 leading-none">Вложения</span>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'files' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                {node.files && node.files.length > 0 ? (
+                  `${node.files.length} файл.`
+                ) : (
+                  'Загрузить'
+                )}
+              </span>
+            </button>
+
+            {/* Pomodoro Focus Modal Button */}
+            <button
+              type="button"
+              onClick={() => setActiveModalParam('pomodoro')}
+              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                activeModalParam === 'pomodoro'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
+                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+            >
+              <span className="text-base">⏱️</span>
+              <span className="text-[10px] font-bold mt-1 leading-none">Помодоро</span>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'pomodoro' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                {formatTotalPomoTime(getPomoStatsForNode(node, allNodes).pomodoroTotalTime)}
+              </span>
+            </button>
+
+            {/* Blockers Modal Button */}
+            <button
+              type="button"
+              onClick={() => setActiveModalParam('blockers')}
+              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                activeModalParam === 'blockers'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
+                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+            >
+              <span className="text-base">🔒</span>
+              <span className="text-[10px] font-bold mt-1 leading-none">Блокеры</span>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'blockers' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                {(node.blockedBy || []).length > 0 ? (
+                  `${(node.blockedBy || []).length} шт.`
+                ) : (
+                  'Нет'
+                )}
+              </span>
+            </button>
+
+            {/* Version History Modal Button */}
+            <button
+              type="button"
+              onClick={() => setActiveModalParam('history')}
+              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                activeModalParam === 'history'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
+                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+            >
+              <span className="text-base">📜</span>
+              <span className="text-[10px] font-bold mt-1 leading-none">История</span>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'history' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                {(node.history || []).length > 0 ? (
+                  `${(node.history || []).length} верс.`
+                ) : (
+                  'Чисто'
+                )}
+              </span>
+            </button>
+
+            {/* Container Area Modal Button */}
+            <button
+              type="button"
+              onClick={() => setActiveModalParam('container')}
+              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                activeModalParam === 'container'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
+                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+            >
+              <span className="text-base">📦</span>
+              <span className="text-[10px] font-bold mt-1 leading-none">Область</span>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'container' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                {(() => {
+                  const parentContainer = node.parentId ? allNodes.find(p => p.id === node.parentId) : null;
+                  return parentContainer ? parentContainer.text : 'Свободная';
+                })()}
+              </span>
+            </button>
+
+            {/* Priority and Status Modal Button */}
+            <button
+              type="button"
+              onClick={() => setActiveModalParam('priority_status')}
+              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                activeModalParam === 'priority_status'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
+                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+              }`}
+            >
+              <span className="text-base">⚡</span>
+              <span className="text-[10px] font-bold mt-1 leading-none">Важность</span>
+              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'priority_status' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                {(() => {
+                  const p = node.priority;
+                  if (p === 'low') return 'Низкий';
+                  if (p === 'medium') return 'Средний';
+                  if (p === 'high') return 'Высокий';
+                  if (p === 'urgent') return 'Критич.';
+                  return 'По умолч.';
+                })()}
               </span>
             </button>
           </div>
@@ -7220,6 +7388,549 @@ export default function TaskDetailsPanel({
       )}
         </aside>
       </AsideWrapper>
+
+    {/* Parameter Settings Modal Overlay */}
+    {activeModalParam && (
+      <div 
+        className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/75 backdrop-blur-xs flex items-center justify-center z-[110] p-4 animate-fade-in"
+        onClick={() => setActiveModalParam(null)}
+      >
+        <div 
+          className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[85vh] overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Modal Header */}
+          <div className="px-5 py-4 border-b border-slate-150/40 dark:border-slate-800/30 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">
+                {activeModalParam === 'dates' && '📅'}
+                {activeModalParam === 'tags' && '🏷️'}
+                {activeModalParam === 'subtasks' && '🪜'}
+                {activeModalParam === 'files' && '📎'}
+                {activeModalParam === 'pomodoro' && '🍅'}
+                {activeModalParam === 'blockers' && '🔒'}
+                {activeModalParam === 'history' && '📜'}
+                {activeModalParam === 'container' && '📦'}
+                {activeModalParam === 'priority_status' && '⚡'}
+              </span>
+              <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider font-sans">
+                {activeModalParam === 'dates' && 'Сроки и напоминания'}
+                {activeModalParam === 'tags' && 'Теги и категории'}
+                {activeModalParam === 'subtasks' && 'Подзадачи'}
+                {activeModalParam === 'files' && 'Вложения и файлы'}
+                {activeModalParam === 'pomodoro' && 'Фокусировка Pomodoro'}
+                {activeModalParam === 'blockers' && 'Блокировки'}
+                {activeModalParam === 'history' && 'История версий'}
+                {activeModalParam === 'container' && 'Область и перемещение'}
+                {activeModalParam === 'priority_status' && 'Приоритет и статус'}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveModalParam(null)}
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Modal Body */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-0 text-slate-700 dark:text-slate-200">
+            
+            {/* 1. DATES MODAL */}
+            {activeModalParam === 'dates' && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Ориентировочное время (мин):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    disabled={hasSubtaskWithTime}
+                    placeholder={hasSubtaskWithTime ? "Сумма подзадач" : "Например: 30"}
+                    value={node.estimatedTime !== undefined && node.estimatedTime !== null ? node.estimatedTime : ''}
+                    onChange={(e) => handlePropChange('estimatedTime', e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Дата и время начала:</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      value={node.startDate || ''}
+                      onChange={(e) => handleTimePropChange('startDate', e.target.value)}
+                      className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100"
+                    />
+                    <input
+                      type="time"
+                      value={node.startTime || ''}
+                      onChange={(e) => handleTimePropChange('startTime', e.target.value)}
+                      className="w-24 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Срок (Дедлайн):</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      value={node.dueDate || ''}
+                      onChange={(e) => handleTimePropChange('dueDate', e.target.value)}
+                      className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100"
+                    />
+                    <input
+                      type="time"
+                      value={node.dueTime || ''}
+                      onChange={(e) => handleTimePropChange('dueTime', e.target.value)}
+                      className="w-24 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+
+                {node.dueDate && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                    <label className="text-[10px] font-bold text-slate-450 uppercase block">Быстрые напоминания:</label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { label: 'Без напоминания', val: undefined },
+                        { label: 'В момент дедлайна', val: 0 },
+                        { label: 'За 15 минут', val: 15 },
+                        { label: 'За 1 час', val: 60 },
+                        { label: 'За 1 день', val: 1440 }
+                      ].map(rem => (
+                        <button
+                          key={rem.label}
+                          type="button"
+                          onClick={() => handleSetRelativeReminder(rem.val)}
+                          className={`py-1.5 px-2 text-[10px] rounded-lg border text-left cursor-pointer transition-colors ${
+                            node.reminderMinutesBefore === rem.val
+                              ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-400 font-bold'
+                              : 'border-slate-200 dark:border-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900'
+                          }`}
+                        >
+                          {rem.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 2. TAGS MODAL */}
+            {activeModalParam === 'tags' && (
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Цвет ветви:</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PASTEL_COLORS.map(col => (
+                      <button
+                        key={col.value || 'default'}
+                        type="button"
+                        onClick={() => handlePropChange('color', col.value)}
+                        className={`w-6 h-6 rounded-full border transition-transform cursor-pointer ${
+                          node.color === col.value ? 'ring-2 ring-indigo-500 scale-110 border-white' : 'border-slate-300'
+                        }`}
+                        style={{ backgroundColor: col.value || '#cbd5e1' }}
+                        title={col.name}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Добавить тег:</label>
+                  <form onSubmit={handleAddTag} className="flex gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="Имя тега..."
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-slate-850 dark:text-slate-100"
+                    />
+                    <button type="submit" className="px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer">
+                      +
+                    </button>
+                  </form>
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {node.tags && node.tags.map((t, idx) => (
+                      <span key={idx} className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700/50">
+                        #{t}
+                        <button type="button" onClick={() => handleRemoveTag(idx)} className="hover:text-rose-500 text-slate-400">×</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Быстрый выбор категорий:</label>
+                  <div className="space-y-1.5">
+                    {activeCategories.map(cat => (
+                      <div key={cat.id} className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-850 border border-slate-150 dark:border-slate-800">
+                        <div className="text-[9px] font-bold text-slate-455 mb-1 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                          {cat.name}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {cat.tags && cat.tags.map(t => {
+                            const isAdded = (node.tags || []).includes(t);
+                            return (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() => {
+                                  const cur = node.tags || [];
+                                  handlePropChange('tags', isAdded ? cur.filter(tg => tg !== t) : [...cur, t]);
+                                }}
+                                className={`px-1.5 py-0.5 text-[9px] font-bold rounded border transition-colors cursor-pointer ${
+                                  isAdded ? 'bg-slate-805 border-slate-805 text-white' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-650'
+                                }`}
+                              >
+                                #{t}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 3. SUBTASKS MODAL */}
+            {activeModalParam === 'subtasks' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800/80">
+                  <span className="text-xs font-bold text-slate-450 uppercase">Список подзадач:</span>
+                  {onAddChildNode && (
+                    <button
+                      type="button"
+                      onClick={() => onAddChildNode(node.id, true)}
+                      className="py-1 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10.5px] font-bold rounded-lg cursor-pointer"
+                    >
+                      + Добавить подзадачу
+                    </button>
+                  )}
+                </div>
+
+                {(() => {
+                  const subtasks = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
+                  if (subtasks.length === 0) {
+                    return <p className="text-xs text-slate-400 italic text-center py-4">Нет подзадач. Вы можете создать их кнопкой выше!</p>;
+                  }
+                  return (
+                    <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                      {subtasks.map((child) => (
+                        <div key={child.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-150 dark:border-slate-800 gap-2">
+                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => onUpdateNode({ ...child, completed: !child.completed })}
+                              className="cursor-pointer text-slate-400 hover:text-indigo-600 shrink-0"
+                            >
+                              {child.completed ? '✓' : '○'}
+                            </button>
+                            <input
+                              type="text"
+                              value={child.text}
+                              onChange={(e) => onUpdateNode({ ...child, text: e.target.value })}
+                              className={`text-xs font-medium bg-transparent border-0 focus:ring-0 p-0 w-full text-slate-700 dark:text-slate-200 ${child.completed ? 'line-through text-slate-400 italic' : ''}`}
+                            />
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const val = prompt("Укажите время подзадачи (мин):", child.estimatedTime?.toString() || "30");
+                                if (val !== null) onUpdateNode({ ...child, estimatedTime: val === "" ? undefined : parseFloat(val) || 0 });
+                              }}
+                              className="text-[9px] font-bold text-indigo-600 bg-white px-1.5 py-0.5 rounded border border-slate-200 cursor-pointer"
+                            >
+                              ⏱️ {child.estimatedTime || 0}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteNode(child.id)}
+                              className="p-1 hover:text-rose-600 rounded cursor-pointer"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* 4. FILES MODAL */}
+            {activeModalParam === 'files' && (
+              <div className="space-y-4">
+                <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center cursor-pointer hover:border-indigo-400 bg-slate-50/50">
+                  <input
+                    type="file"
+                    onChange={handleFileUpload}
+                    disabled={isUploadingFile}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  {isUploadingFile ? (
+                    <p className="text-xs text-indigo-500 font-bold animate-pulse">Загрузка...</p>
+                  ) : (
+                    <p className="text-xs text-slate-500 font-bold">Нажмите для выбора файла</p>
+                  )}
+                </div>
+
+                {fileError && <p className="text-xs text-rose-500 font-medium">{fileError}</p>}
+
+                {node.files && node.files.length > 0 ? (
+                  <div className="space-y-1.5 max-h-[35vh] overflow-y-auto">
+                    {node.files.map((file) => (
+                      <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-150 dark:border-slate-850 text-xs gap-2">
+                        <span className="truncate font-semibold flex-1" title={file.name}>{file.name}</span>
+                        <div className="flex gap-1">
+                          <a href={file.webContentLink || file.dataUrl} download={!file.googleDriveId ? file.name : undefined} target="_blank" rel="noreferrer" className="p-1 hover:text-indigo-600 bg-white rounded border border-slate-200">
+                            ↓
+                          </a>
+                          <button type="button" onClick={() => handleRemoveFile(file.id)} className="p-1 hover:text-rose-600 bg-white rounded border border-slate-200">
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic text-center">Нет вложений.</p>
+                )}
+              </div>
+            )}
+
+            {/* 5. POMODORO MODAL */}
+            {activeModalParam === 'pomodoro' && (
+              <div className="space-y-4 text-center">
+                <div className="text-3xl font-extrabold font-mono tracking-tight text-rose-600 dark:text-rose-400">
+                  {formatPomoTime(pomo.timeLeft)}
+                </div>
+                <div className="flex justify-center gap-2">
+                  {!pomo.isRunning ? (
+                    <button
+                      type="button"
+                      onClick={() => handleStartFocus(customPomoMinutes * 60)}
+                      className="py-1.5 px-4 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                    >
+                      Старт
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleTogglePomoPause}
+                        className="py-1.5 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                      >
+                        {pomo.isPaused ? 'Продолжить' : 'Пауза'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleResetPomo}
+                        className="py-1.5 px-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+                      >
+                        Сбросить
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex gap-1.5 justify-center pt-2 border-t border-slate-100 dark:border-slate-800">
+                  {[15, 25, 45, 60].map(mins => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => handleChangeCustomMinutes(mins)}
+                      className={`px-2 py-1 text-[10.5px] rounded border transition-all cursor-pointer ${customPomoMinutes === mins ? 'bg-rose-50 text-rose-600 border-rose-400 font-bold dark:bg-rose-950/20' : 'bg-white dark:bg-slate-800 text-slate-600 border-slate-200 dark:border-slate-700'}`}
+                    >
+                      {mins} мин
+                    </button>
+                  ))}
+                </div>
+
+                <div className="bg-rose-50/10 p-2.5 rounded-lg border border-rose-100/30 text-left text-xs space-y-1">
+                  <div className="flex justify-between font-semibold">
+                    <span>Накоплено времени:</span>
+                    <span className="font-bold text-rose-600">{formatTotalPomoTime(getPomoStatsForNode(node, allNodes).pomodoroTotalTime)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-[11px] text-slate-500">
+                    <span>Всего интервалов («помидоров»):</span>
+                    <span>{getPomoStatsForNode(node, allNodes).pomodoroSessionsCount}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 6. BLOCKERS MODAL */}
+            {activeModalParam === 'blockers' && (
+              <div className="space-y-3">
+                <span className="text-[10px] font-bold text-slate-450 uppercase block">Активные блокировки:</span>
+                {(() => {
+                  const curBlockers = allNodes.filter(n => node.blockedBy?.includes(n.id));
+                  if (curBlockers.length === 0) return <p className="text-xs text-slate-400 italic">Нет блокирующих задач. Свободно!</p>;
+                  return (
+                    <div className="space-y-1.5">
+                      {curBlockers.map(b => (
+                        <div key={b.id} className="flex justify-between items-center p-2 bg-rose-50/10 border border-rose-150/50 rounded-xl text-xs gap-2">
+                          <span className="font-semibold truncate flex-1">{b.text}</span>
+                          <button type="button" onClick={() => handlePropChange('blockedBy', (node.blockedBy || []).filter(id => id !== b.id))} className="hover:text-rose-600">×</button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
+                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Добавить зависимость:</label>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) handlePropChange('blockedBy', [...(node.blockedBy || []), e.target.value]);
+                    }}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 text-xs rounded-lg text-slate-850"
+                  >
+                    <option value="">-- Выбрать из списка --</option>
+                    {allNodes.filter(n => n.id !== node.id && !n.isContainer && !node.blockedBy?.includes(n.id)).map(n => (
+                      <option key={n.id} value={n.id}>{n.text || 'Без названия'}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* 7. HISTORY MODAL */}
+            {activeModalParam === 'history' && (
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-450 uppercase">Бэкапы версий:</span>
+                  {node.history && node.history.length > 0 && (
+                    <button type="button" onClick={handleClearHistory} className="text-[10px] text-rose-600 font-bold hover:underline">
+                      Очистить все
+                    </button>
+                  )}
+                </div>
+
+                {!(node.history && node.history.length > 0) ? (
+                  <p className="text-xs text-slate-400 italic text-center py-4">Нет сохраненной истории версий.</p>
+                ) : (
+                  <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+                    {node.history.map((ver, idx) => (
+                      <div key={idx} className="p-2.5 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-150 text-xs">
+                        <div className="flex justify-between font-bold text-[9px] text-slate-450 mb-1">
+                          <span>{ver.timestamp ? new Date(ver.timestamp).toLocaleString() : ''}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onUpdateNode({ ...node, text: ver.text, notes: ver.notes || '' });
+                              setActiveModalParam(null);
+                            }}
+                            className="text-indigo-600 hover:underline"
+                          >
+                            Применить
+                          </button>
+                        </div>
+                        <div className="font-bold truncate text-slate-700">{ver.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 8. CONTAINER MODAL */}
+            {activeModalParam === 'container' && (
+              <div className="space-y-4">
+                {onUpdateNodeParent && (
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-bold text-slate-450 uppercase block">Родительский контейнер:</span>
+                    <select
+                      value={node.parentId || 'no-container'}
+                      onChange={(e) => onUpdateNodeParent(node.id, e.target.value === 'no-container' ? null : e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 rounded-lg text-xs"
+                    >
+                      <option value="no-container">📦 Вне области (Свободная задача)</option>
+                      {allNodes.filter(n => n.isContainer && n.id !== node.id).map(container => (
+                        <option key={container.id} value={container.id}>📥 {container.text || 'Без имени'}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {node.containerPlace && (
+                  <p className="text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                     <strong>Место в структуре:</strong> {node.containerPlace}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* 9. PRIORITY_STATUS MODAL */}
+            {activeModalParam === 'priority_status' && (
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-450 uppercase block">Важность (Приоритет):</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { val: 'low', label: 'Низкий 🟢' },
+                      { val: 'medium', label: 'Средний 🟡' },
+                      { val: 'high', label: 'Высокий 🟠' },
+                      { val: 'urgent', label: 'Критический 🔴' }
+                    ].map(item => (
+                      <button
+                        key={item.val}
+                        type="button"
+                        onClick={() => handlePropChange('priority', item.val as any)}
+                        className={`p-2.5 rounded-xl border text-center font-bold text-xs cursor-pointer ${node.priority === item.val ? 'bg-slate-850 dark:bg-white text-white dark:text-slate-900 border-slate-850' : 'border-slate-200 bg-white dark:bg-slate-900 text-slate-600'}`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                  <span className="text-xs font-bold text-slate-450 uppercase block">Статус выполнения:</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { val: 'todo', label: '📋 В планах', complete: false },
+                      { val: 'progress', label: '▶ В процессе', complete: false },
+                      { val: 'waiting', label: '⏳ В ожидании', complete: false },
+                      { val: 'done', label: '✓ Готово', complete: true }
+                    ].map(st => {
+                      const isSelected = st.complete ? !!node.completed : (!node.completed && (node.status === st.val || (!node.status && st.val === 'todo')));
+                      return (
+                        <button
+                          key={st.val}
+                          type="button"
+                          onClick={() => {
+                            if (st.complete) {
+                              onUpdateNode({ ...node, completed: true, status: 'done' });
+                            } else {
+                              onUpdateNode({ ...node, completed: false, status: st.val as any });
+                            }
+                          }}
+                          className={`p-2 rounded-xl border text-center text-xs font-bold cursor-pointer ${isSelected ? 'bg-indigo-600 text-white border-indigo-650' : 'border-slate-200 bg-white text-slate-600'}`}
+                        >
+                          {st.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Elegant Attachment Image Lightbox Modal */}
     {lightboxImage && (
