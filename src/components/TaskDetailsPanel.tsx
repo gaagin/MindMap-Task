@@ -2006,7 +2006,7 @@ export default function TaskDetailsPanel({
                           })()}
                         </div>
 
-                        <div className="flex items-center gap-1 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 flex-shrink-0 transition-opacity">
                           <button
                             type="button"
                             disabled={index === 0}
@@ -2884,7 +2884,7 @@ export default function TaskDetailsPanel({
                   {/* Priority & Estimation row */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-505 uppercase">Приоритет:</span>
+                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">Приоритет:</span>
                       <select
                         value={node.priority || 'none'}
                         onChange={(e) => handlePropChange('priority', e.target.value as Priority)}
@@ -2900,7 +2900,7 @@ export default function TaskDetailsPanel({
 
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase">Оценка (мин):</span>
+                        <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">Оценка (мин):</span>
                         {node.estimatedTime !== undefined && node.estimatedTime !== null && !hasSubtaskWithTime && (
                           <button
                             type="button"
@@ -2940,7 +2940,7 @@ export default function TaskDetailsPanel({
                   {/* Start Date & Time Row */}
                   <div className="space-y-1">
                     <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550 uppercase">Дата и время начала:</span>
+                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">Дата и время начала:</span>
                       {(node.startDate || node.startTime) && (
                         <button
                           type="button"
@@ -2976,7 +2976,7 @@ export default function TaskDetailsPanel({
                   {/* Due Date & Time Row */}
                   <div className="space-y-1">
                     <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase">Срок сдачи (дедлайн):</span>
+                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">Срок сдачи (дедлайн):</span>
                       {(node.dueDate || node.dueTime) && (
                         <button
                           type="button"
@@ -3736,8 +3736,8 @@ export default function TaskDetailsPanel({
           onPaste={handleAsidePaste}
           className={
             isFullscreen
-              ? "w-full h-full glass-panel md:rounded-2xl border border-slate-205/30 dark:border-slate-850/30 shadow-2xl flex flex-col overflow-hidden relative font-sans"
-              : "fixed inset-y-3 right-3 w-full max-w-[calc(100%-1.5rem)] md:w-[420px] glass-panel border border-slate-205/30 dark:border-slate-850/30 shadow-2xl rounded-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out font-sans"
+              ? "w-full h-full bg-white dark:bg-slate-900 md:rounded-2xl border border-slate-205/30 dark:border-slate-850/30 shadow-2xl flex flex-col overflow-hidden relative font-sans"
+              : "fixed inset-y-3 right-3 w-full max-w-[calc(100%-1.5rem)] md:w-[420px] bg-white dark:bg-slate-900 border border-slate-205/30 dark:border-slate-850/30 shadow-2xl rounded-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out font-sans"
           }
         >
 
@@ -5204,7 +5204,7 @@ export default function TaskDetailsPanel({
                         })()}
                       </div>
 
-                      <div className="flex items-center gap-1 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 flex-shrink-0 transition-opacity">
                         {/* Open Subtask Details Button */}
                         {onSelectNode && (
                           <button
@@ -5283,7 +5283,7 @@ export default function TaskDetailsPanel({
                 </ul>
               </div>
             )}
-            <div className="flex items-center justify-between bg-[#FAFBFD]/60 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/50 dark:border-slate-850">
+            <div className="flex items-center justify-between bg-[#FAFBFD] dark:bg-slate-800 p-3 rounded-lg border border-slate-200/50 dark:border-slate-850">
               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Статус выполнения:</span>
               <select
                 value={node.completed ? 'done' : (node.status === 'waiting' ? 'waiting' : (node.progress && node.progress > 0 ? 'progress' : 'todo'))}
@@ -5551,7 +5551,7 @@ export default function TaskDetailsPanel({
             </div>
           </div>
         ) : (
-          <div className="space-y-3 bg-[#FAFBFD]/60 dark:bg-slate-800/30 p-4 rounded-xl border border-slate-150 dark:border-slate-800">
+          <div className="space-y-3 bg-[#FAFBFD] dark:bg-slate-800 p-4 rounded-xl border border-slate-150 dark:border-slate-800">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                 <Timer className="w-4 h-4 text-rose-500 animate-pulse" />
