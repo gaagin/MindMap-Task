@@ -946,6 +946,10 @@ export default function KanbanView({
         return nodeTag === tag;
       });
 
+      // Hide tag columns that have no active (not completed) tasks
+      const hasActiveTasks = items.some(n => !n.completed);
+      if (!hasActiveTasks) return;
+
       columns.push({
         id: tag,
         title: '#' + tag,

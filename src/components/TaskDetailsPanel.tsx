@@ -46,6 +46,45 @@ import { motion } from 'motion/react';
 
 const fetch = proxiedFetch;
 
+const getDepthDistance = (child: TaskNode, ancestorId: string | null, allNodes: TaskNode[]): number => {
+  if (child.parentId === ancestorId) return 1;
+  let dist = 1;
+  let curr = child.parentId;
+  const visited = new Set<string>();
+  while (curr) {
+    if (curr === ancestorId) return dist;
+    if (visited.has(curr)) break;
+    visited.add(curr);
+    dist++;
+    const parentNode = allNodes.find(n => n.id === curr);
+    curr = parentNode ? parentNode.parentId : null;
+  }
+  return -1;
+};
+
+const getBlockerPriorityRank = (candidate: TaskNode, node: TaskNode, allNodes: TaskNode[]): number => {
+  const currentParentId = node.parentId;
+  if (currentParentId) {
+    if (candidate.parentId === currentParentId) {
+      return 1;
+    }
+    const dist = getDepthDistance(candidate, currentParentId, allNodes);
+    if (dist > 0) {
+      return dist;
+    }
+    return 1000;
+  } else {
+    if (candidate.parentId === null) {
+      return 1;
+    }
+    const dist = getDepthDistance(candidate, node.id, allNodes);
+    if (dist > 0) {
+      return dist + 1;
+    }
+    return 1000;
+  }
+};
+
 interface TaskDetailsPanelProps {
   node: TaskNode | null;
   allNodes: TaskNode[];
@@ -161,6 +200,7 @@ export default function TaskDetailsPanel({
     if (node) {
       setOriginalText(node.text || '');
       setOriginalNotes(node.notes || '');
+      setActiveModalParam(null);
     }
   }, [node?.id]);
 
@@ -3297,6 +3337,12 @@ export default function TaskDetailsPanel({
                             }
                             return true;
                           })
+                          .sort((a, b) => {
+                            const rankA = getBlockerPriorityRank(a, node, allNodes);
+                            const rankB = getBlockerPriorityRank(b, node, allNodes);
+                            if (rankA !== rankB) return rankA - rankB;
+                            return (a.text || '').localeCompare(b.text || '');
+                          })
                           .map(n => (
                             <option key={n.id} value={n.id}>
                               {n.completed ? '✓ ' : '○ '} {n.text || 'Без названия'}
@@ -6329,6 +6375,12 @@ export default function TaskDetailsPanel({
                   }
                   return true;
                 })
+                .sort((a, b) => {
+                  const rankA = getBlockerPriorityRank(a, node, allNodes);
+                  const rankB = getBlockerPriorityRank(b, node, allNodes);
+                  if (rankA !== rankB) return rankA - rankB;
+                  return (a.text || '').localeCompare(b.text || '');
+                })
                 .map(n => (
                   <option key={n.id} value={n.id}>
                     {n.completed ? '✓ ' : '○ '} {n.text || 'Без названия'}
@@ -7489,33 +7541,123 @@ export default function TaskDetailsPanel({
                   </div>
                 </div>
 
-                {node.dueDate && (
-                  <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
-                    <label className="text-[10px] font-bold text-slate-450 uppercase block">Быстрые напоминания:</label>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {[
-                        { label: 'Без напоминания', val: undefined },
-                        { label: 'В момент дедлайна', val: 0 },
-                        { label: 'За 15 минут', val: 15 },
-                        { label: 'За 1 час', val: 60 },
-                        { label: 'За 1 день', val: 1440 }
-                      ].map(rem => (
-                        <button
-                          key={rem.label}
-                          type="button"
-                          onClick={() => handleSetRelativeReminder(rem.val)}
-                          className={`py-1.5 px-2 text-[10px] rounded-lg border text-left cursor-pointer transition-colors ${
-                            node.reminderMinutesBefore === rem.val
-                              ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-400 font-bold'
-                              : 'border-slate-200 dark:border-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900'
-                          }`}
-                        >
-                          {rem.label}
-                        </button>
-                      ))}
+                {/* Секция Напоминание в модальном окне */}
+                <div className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+                  <label className="text-[10px] font-bold text-slate-450 uppercase flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Bell className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      Напоминание
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => playNotificationChime()}
+                        className="text-[9px] text-indigo-650 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
+                        title="Воспроизвести тестовый сигнал и разблокировать звук в браузере"
+                      >
+                        Проверить звук 🔊
+                      </button>
+                      {(node.reminderDate || node.reminderTime) && (
+                        <>
+                          <span className="text-slate-300 dark:text-slate-700">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onUpdateNode({
+                                ...node,
+                                reminderDate: undefined,
+                                reminderTime: undefined,
+                                reminderMinutesBefore: undefined,
+                                reminderDismissed: undefined
+                              });
+                            }}
+                            className="text-[9px] text-rose-550 dark:text-rose-400 font-bold hover:underline cursor-pointer"
+                          >
+                            Сбросить
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </label>
+
+                  {/* Quick select buttons - only visible when a deadline is set */}
+                  {node.dueDate && (
+                    <div className="space-y-1">
+                      <span className="text-[9px] text-slate-400 dark:text-slate-505 font-medium block">
+                        Быстрый выбор:
+                      </span>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { label: 'Без напоминания', val: undefined },
+                          { label: 'В срок (0 мин)', val: 0 },
+                          { label: 'За 15 минут', val: 15 },
+                          { label: 'За 1 час', val: 60 },
+                          { label: 'За 1 день', val: 1440 },
+                        ].map((item) => {
+                          const isCurrent = node.reminderMinutesBefore === item.val;
+                          return (
+                            <button
+                              key={item.label}
+                              type="button"
+                              onClick={() => handleSetRelativeReminder(item.val)}
+                              className={`py-1.5 px-2 text-[10px] rounded-lg border text-left cursor-pointer transition-colors ${
+                                isCurrent
+                                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-400 font-bold'
+                                  : 'border-slate-200 dark:border-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900'
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Date and Time selectors for reminder */}
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-slate-400 dark:text-slate-505 font-medium block">
+                      Назначить точные дату и время напоминания:
+                    </span>
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        value={node.reminderDate || ''}
+                        onChange={(e) => {
+                          onUpdateNode({
+                            ...node,
+                            reminderDate: e.target.value || undefined,
+                            reminderMinutesBefore: undefined, // switched to custom
+                            reminderDismissed: false
+                          });
+                        }}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100"
+                      />
+                      <input
+                        type="time"
+                        value={node.reminderTime || ''}
+                        onChange={(e) => {
+                          onUpdateNode({
+                            ...node,
+                            reminderTime: e.target.value || undefined,
+                            reminderMinutesBefore: undefined, // switched to custom
+                            reminderDismissed: false
+                          });
+                        }}
+                        className="w-24 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100 font-mono"
+                      />
                     </div>
                   </div>
-                )}
+
+                  {node.reminderDate && node.reminderTime && (
+                    <div className="p-2 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-100/40 dark:border-indigo-900/10 rounded-lg">
+                      <p className="text-[10px] text-indigo-650 dark:text-indigo-400 font-medium flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shrink-0" />
+                        <span>Напоминание сработает в {node.reminderDate} в {node.reminderTime}</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -7641,13 +7783,26 @@ export default function TaskDetailsPanel({
                             />
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
+                            {onSelectNode && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveModalParam(null);
+                                  onSelectNode(child.id);
+                                }}
+                                title="Свойства подзадачи"
+                                className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-800 rounded transition-colors cursor-pointer flex items-center justify-center"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button 
                               type="button"
                               onClick={() => {
                                 const val = prompt("Укажите время подзадачи (мин):", child.estimatedTime?.toString() || "30");
                                 if (val !== null) onUpdateNode({ ...child, estimatedTime: val === "" ? undefined : parseFloat(val) || 0 });
                               }}
-                              className="text-[9px] font-bold text-indigo-600 bg-white px-1.5 py-0.5 rounded border border-slate-200 cursor-pointer"
+                              className="text-[9px] font-bold text-indigo-600 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-750 cursor-pointer"
                             >
                               ⏱️ {child.estimatedTime || 0}
                             </button>
@@ -7790,17 +7945,69 @@ export default function TaskDetailsPanel({
 
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
                   <label className="text-[10px] font-bold text-slate-450 uppercase block">Добавить зависимость:</label>
+
+                  {/* Search box for blockers modal */}
+                  <div className="relative mb-1.5">
+                    <input
+                      type="text"
+                      placeholder="Поиск задачи..."
+                      value={blockerSearch}
+                      onChange={(e) => setBlockerSearch(e.target.value)}
+                      className="w-full text-[11px] pl-7 pr-7 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-700 dark:text-slate-200"
+                    />
+                    <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    {blockerSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setBlockerSearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650 cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+
                   <select
                     value=""
                     onChange={(e) => {
-                      if (e.target.value) handlePropChange('blockedBy', [...(node.blockedBy || []), e.target.value]);
+                      if (e.target.value) {
+                        handlePropChange('blockedBy', [...(node.blockedBy || []), e.target.value]);
+                        setBlockerSearch('');
+                      }
                     }}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 text-xs rounded-lg text-slate-850"
+                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 text-xs rounded-lg text-slate-850 cursor-pointer"
                   >
-                    <option value="">-- Выбрать из списка --</option>
-                    {allNodes.filter(n => n.id !== node.id && !n.isContainer && !node.blockedBy?.includes(n.id)).map(n => (
-                      <option key={n.id} value={n.id}>{n.text || 'Без названия'}</option>
-                    ))}
+                    <option value="">
+                      {blockerSearch ? `Найдено задач: ${
+                        allNodes.filter(n => {
+                          if (n.id === node.id) return false;
+                          if (n.isContainer || n.isWorkflowRectangle) return false;
+                          if (node.blockedBy?.includes(n.id)) return false;
+                          return (n.text || '').toLowerCase().includes(blockerSearch.toLowerCase());
+                        }).length
+                      }` : '-- Выбрать из списка --'}
+                    </option>
+                    {allNodes
+                      .filter(n => {
+                        if (n.id === node.id) return false;
+                        if (n.isContainer || n.isWorkflowRectangle) return false;
+                        if (node.blockedBy?.includes(n.id)) return false;
+                        if (blockerSearch) {
+                          return (n.text || '').toLowerCase().includes(blockerSearch.toLowerCase());
+                        }
+                        return true;
+                      })
+                      .sort((a, b) => {
+                        const rankA = getBlockerPriorityRank(a, node, allNodes);
+                        const rankB = getBlockerPriorityRank(b, node, allNodes);
+                        if (rankA !== rankB) return rankA - rankB;
+                        return (a.text || '').localeCompare(b.text || '');
+                      })
+                      .map(n => (
+                        <option key={n.id} value={n.id}>
+                          {n.completed ? '✓ ' : '○ '} {n.text || 'Без названия'}
+                        </option>
+                      ))}
                   </select>
                 </div>
               </div>
