@@ -194,6 +194,7 @@ export default function TaskDetailsPanel({
   const [originalNotes, setOriginalNotes] = useState('');
   const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
   const [isHistorySectionOpen, setIsHistorySectionOpen] = useState(false);
+  const [isSubtasksSectionCollapsed, setIsSubtasksSectionCollapsed] = useState(false);
 
   // Sync original state whenever node switches
   React.useEffect(() => {
@@ -4967,9 +4968,14 @@ export default function TaskDetailsPanel({
           {/* Subtasks Section */}
         <div className="space-y-2 bg-[#FAFBFD]/40 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-400 dark:text-slate-505 uppercase tracking-wider">
+            <button
+              type="button"
+              onClick={() => setIsSubtasksSectionCollapsed(!isSubtasksSectionCollapsed)}
+              className="flex items-center gap-1.5 text-xs font-bold text-slate-400 dark:text-slate-505 uppercase tracking-wider hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+            >
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isSubtasksSectionCollapsed ? '-rotate-90' : ''}`} />
               Подзадачи ({allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length})
-            </label>
+            </button>
             {onAddChildNode && (
               <button
                 type="button"
@@ -4981,7 +4987,7 @@ export default function TaskDetailsPanel({
             )}
           </div>
 
-          {(() => {
+          {!isSubtasksSectionCollapsed && (() => {
             const subtasks = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
             const sortedSubtasks = [...subtasks].sort((a, b) => {
               const orderA = a.subtaskOrder !== undefined ? a.subtaskOrder : 1000000;

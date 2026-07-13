@@ -218,6 +218,7 @@ export default function MobileListView({
 
   // Local state for expanded / collapsed parent tree items (TickTick style folders)
   const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
+  const [collapsedSubtaskLists, setCollapsedSubtaskLists] = useState<Record<string, boolean>>({});
 
   // Local subtask creation input states mapping parentTaskId -> input text
   const [newSubtaskTexts, setNewSubtaskTexts] = useState<Record<string, string>>({});
@@ -1267,124 +1268,136 @@ export default function MobileListView({
 
                   {/* Subtask checklist with quick add input for absolute TickTick experience */}
                   <div className="pt-2.5 border-t border-slate-150 dark:border-slate-800/50">
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className="text-[10px] uppercase font-bold text-slate-400">Список подзадач:</span>
+                    <button
+                      type="button"
+                      onClick={() => setCollapsedSubtaskLists(prev => ({ ...prev, [node.id]: !prev[node.id] }))}
+                      className="flex justify-between items-center w-full mb-1.5 text-left hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                    >
+                      <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                        <ChevronDown className={`w-3 h-3 transition-transform ${collapsedSubtaskLists[node.id] ? '-rotate-90' : ''}`} />
+                        Список подзадач:
+                      </span>
                       <span className="text-[9.5px] font-mono text-slate-500">
                         Всего подзадач: {allDirectChildren.length}
                       </span>
-                    </div>
+                    </button>
 
-                    {allDirectChildren.length > 0 && (
-                      <div className="max-h-[160px] overflow-y-auto space-y-1 mb-2 bg-slate-55/40 dark:bg-slate-850 p-2 rounded-lg divide-y divide-slate-100 dark:divide-slate-800/40">
-                        {allDirectChildren.map((child) => (
-                          <div key={child.id} className="flex items-center justify-between py-1 first:pt-0 last:pb-0 gap-2 text-xs">
-                            <div 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onSelectNode(child.id, e);
-                              }}
-                              className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/30 rounded duration-150 py-0.5 px-1"
-                              title="Открыть свойства подзадачи"
-                              data-drag-ignore="true"
-                            >
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleCompleted(child);
-                                }}
-                                className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 transition-all ${
-                                  child.completed
-                                    ? 'bg-emerald-500 border-emerald-500 text-white'
-                                    : activePomodoroNodeId === child.id
-                                      ? 'border-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse'
-                                      : 'border-slate-300 dark:border-slate-700'
-                                }`}
-                              >
-                                {child.completed ? (
-                                  <Check className="w-2.5 h-2.5 stroke-[2.5]" />
-                                ) : activePomodoroNodeId === child.id ? (
-                                  <Loader2 className="w-2.5 h-2.5 text-rose-500 animate-spin" />
-                                ) : null}
-                              </button>
-                              <span className={`truncate min-w-0 ${child.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-700 dark:text-slate-300 font-medium'}`}>
-                                {highlightText(child.text, searchQuery)}
-                              </span>
-                              {child.dueDate && (
-                                <span className={`shrink-0 flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-sm border ${
-                                  !child.completed && child.dueDate < todayStr
-                                    ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30 animate-pulse'
-                                    : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700'
-                                }`}>
-                                  <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                  <span>{child.dueDate}{child.dueTime ? ` ${child.dueTime}` : ''}</span>
-                                </span>
-                              )}
-                              {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) && (
-                                <span className="shrink-0 flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-sm border bg-indigo-50 border-indigo-100 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 font-bold">
-                                  <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
-                                  <span>{child.estimatedTime} мин</span>
-                                </span>
-                              )}
-                              {child.externalLink && (
-                                <a
-                                  href={child.externalLink.startsWith('http') ? child.externalLink : `https://${child.externalLink}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="inline-flex items-center justify-center p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                                  title={`Открыть внешнюю ссылку: ${child.externalLink}`}
+                    {!collapsedSubtaskLists[node.id] && (
+                      <>
+                        {allDirectChildren.length > 0 && (
+                          <div className="max-h-[160px] overflow-y-auto space-y-1 mb-2 bg-slate-55/40 dark:bg-slate-850 p-2 rounded-lg divide-y divide-slate-100 dark:divide-slate-800/40">
+                            {allDirectChildren.map((child) => (
+                              <div key={child.id} className="flex items-center justify-between py-1 first:pt-0 last:pb-0 gap-2 text-xs">
+                                <div 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectNode(child.id, e);
+                                  }}
+                                  className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/30 rounded duration-150 py-0.5 px-1"
+                                  title="Открыть свойства подзадачи"
+                                  data-drag-ignore="true"
+                                
                                 >
-                                  <ExternalLink className="w-3.5 h-3.5 text-indigo-505" />
-                                </a>
-                              )}
-                            </div>
-                            <button
-                               type="button"
-                               onClick={(e) => {
-                                 e.stopPropagation();
-                                 if (confirmDeleteSubtaskId === child.id) {
-                                   onDeleteNode(child.id);
-                                   setConfirmDeleteSubtaskId(null);
-                                 } else {
-                                   setConfirmDeleteSubtaskId(child.id);
-                                   setTimeout(() => setConfirmDeleteSubtaskId(curr => curr === child.id ? null : curr), 4000);
-                                 }
-                               }}
-                               className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer shrink-0"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleCompleted(child);
+                                    }}
+                                    className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 transition-all ${
+                                      child.completed
+                                        ? 'bg-emerald-500 border-emerald-500 text-white'
+                                        : activePomodoroNodeId === child.id
+                                          ? 'border-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse'
+                                          : 'border-slate-300 dark:border-slate-700'
+                                    }`}
+                                  >
+                                    {child.completed ? (
+                                      <Check className="w-2.5 h-2.5 stroke-[2.5]" />
+                                    ) : activePomodoroNodeId === child.id ? (
+                                      <Loader2 className="w-2.5 h-2.5 text-rose-500 animate-spin" />
+                                    ) : null}
+                                  </button>
+                                  <span className={`truncate min-w-0 ${child.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-700 dark:text-slate-300 font-medium'}`}>
+                                    {highlightText(child.text, searchQuery)}
+                                  </span>
+                                  {child.dueDate && (
+                                    <span className={`shrink-0 flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-sm border ${
+                                      !child.completed && child.dueDate < todayStr
+                                        ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30 animate-pulse'
+                                        : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700'
+                                    }`}>
+                                      <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                      <span>{child.dueDate}{child.dueTime ? ` ${child.dueTime}` : ''}</span>
+                                    </span>
+                                  )}
+                                  {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) && (
+                                    <span className="shrink-0 flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-sm border bg-indigo-50 border-indigo-100 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 font-bold">
+                                      <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
+                                      <span>{child.estimatedTime} мин</span>
+                                    </span>
+                                  )}
+                                  {child.externalLink && (
+                                    <a
+                                      href={child.externalLink.startsWith('http') ? child.externalLink : `https://${child.externalLink}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="inline-flex items-center justify-center p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                                      title={`Открыть внешнюю ссылку: ${child.externalLink}`}
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5 text-indigo-505" />
+                                    </a>
+                                  )}
+                                </div>
+                                <button
+                                   type="button"
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     if (confirmDeleteSubtaskId === child.id) {
+                                       onDeleteNode(child.id);
+                                       setConfirmDeleteSubtaskId(null);
+                                     } else {
+                                       setConfirmDeleteSubtaskId(child.id);
+                                       setTimeout(() => setConfirmDeleteSubtaskId(curr => curr === child.id ? null : curr), 4000);
+                                     }
+                                   }}
+                                   className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer shrink-0"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                        )}
 
-                    {/* Subtask inline quick add text box */}
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const subVal = newSubtaskTexts[node.id] || '';
-                        if (!subVal.trim()) return;
-                        handleAddSubtaskSubmit(node.id, subVal);
-                      }}
-                      className="flex gap-2"
-                    >
-                      <input
-                        type="text"
-                        value={newSubtaskTexts[node.id] || ''}
-                        onChange={(e) => setNewSubtaskTexts(prev => ({ ...prev, [node.id]: e.target.value }))}
-                        placeholder="Добавить новую подзадачу..."
-                        className="flex-1 bg-slate-55 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!(newSubtaskTexts[node.id] || '').trim()}
-                        className="px-3 py-1 bg-indigo-600 disabled:opacity-40 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg cursor-pointer transition-all"
-                      >
-                        Добавить
-                      </button>
-                    </form>
+                        {/* Subtask inline quick add text box */}
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const subVal = newSubtaskTexts[node.id] || '';
+                            if (!subVal.trim()) return;
+                            handleAddSubtaskSubmit(node.id, subVal);
+                          }}
+                          className="flex gap-2"
+                        >
+                          <input
+                            type="text"
+                            value={newSubtaskTexts[node.id] || ''}
+                            onChange={(e) => setNewSubtaskTexts(prev => ({ ...prev, [node.id]: e.target.value }))}
+                            placeholder="Добавить новую подзадачу..."
+                            className="flex-1 bg-slate-55 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!(newSubtaskTexts[node.id] || '').trim()}
+                            className="px-3 py-1 bg-indigo-600 disabled:opacity-40 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg cursor-pointer transition-all"
+                          >
+                            Добавить
+                          </button>
+                        </form>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
