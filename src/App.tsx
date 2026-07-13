@@ -4396,25 +4396,102 @@ export default function App() {
     const pid = state.activeProjectId;
     const currentNodes = state.nodes[pid || ''] || [];
     
+    // Auto-populate parentId based on current focus or active container filters if not explicitly provided
+    let finalParentId = parentId;
+    if (!finalParentId) {
+      if (focusedTaskId) {
+        finalParentId = focusedTaskId;
+      } else if (focusedContainerId) {
+        finalParentId = focusedContainerId;
+      } else if (kanbanContainerFilterId && kanbanContainerFilterId !== 'all' && kanbanContainerFilterId !== 'no-container') {
+        finalParentId = kanbanContainerFilterId;
+      }
+    }
+
     // Create the base new target node exactly as before
-    const parentNode = parentId ? currentNodes.find(n => n.id === parentId) : null;
+    const parentNode = finalParentId ? currentNodes.find(n => n.id === finalParentId) : null;
     const parentX = parentNode ? parentNode.x : 350;
     const parentY = parentNode ? parentNode.y : 350;
     
+    // Auto-populate priority from filter if priority is 'none'
+    let finalPriority = priority;
+    if (finalPriority === 'none' && filterPriority !== 'all') {
+      finalPriority = filterPriority as Priority;
+    }
+
+    // Auto-populate tags from active tag filter and/or active tag category filter
+    const finalTags = [...tags];
+    if (filterTag !== 'all' && !finalTags.includes(filterTag)) {
+      finalTags.push(filterTag);
+    }
+    if (filterCategoryId && pid) {
+      const activeProj = state.projects.find(p => p.id === pid);
+      if (activeProj) {
+        const cat = activeProj.tagCategories?.find(c => c.id === filterCategoryId);
+        if (cat && cat.tags && cat.tags.length > 0) {
+          const hasCatTag = finalTags.some(t => cat.tags.includes(t));
+          if (!hasCatTag) {
+            finalTags.push(cat.tags[0]);
+          }
+        }
+      }
+    }
+
+    // Auto-populate due date based on active due date filters if not explicitly provided
+    const getLocalDateString = (offsetDays = 0) => {
+      const d = new Date();
+      if (offsetDays !== 0) {
+        d.setDate(d.getDate() + offsetDays);
+      }
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    let finalDueDate = dueDate;
+    if (!finalDueDate && filterDueDate !== 'all') {
+      if (filterDueDate === 'today') {
+        finalDueDate = getLocalDateString(0);
+      } else if (filterDueDate === 'tomorrow') {
+        finalDueDate = getLocalDateString(1);
+      } else if (filterDueDate === 'this_week') {
+        finalDueDate = getLocalDateString(0);
+      } else if (filterDueDate === 'has_due_date') {
+        finalDueDate = getLocalDateString(0);
+      } else if (filterDueDate === 'overdue') {
+        finalDueDate = getLocalDateString(-1);
+      }
+    }
+
+    // Auto-populate completed status based on active status filter if not explicitly provided
+    let finalCompleted = false;
+    if (extraFields && extraFields.completed !== undefined) {
+      finalCompleted = extraFields.completed;
+    } else if (filterStatus === 'completed') {
+      finalCompleted = true;
+    }
+
+    // Auto-populate notes based on notes filter
+    let finalNotes = '';
+    if (filterNotes === 'has_notes') {
+      finalNotes = 'Добавьте заметку здесь...';
+    }
+
     const newTargetNode: TaskNode = {
       id: 'node-' + generateId(),
       projectId: pid || '',
       text,
       x: parentNode ? parentX + Math.random() * 100 : 350 + Math.random() * 200,
       y: parentNode ? parentY + 120 + Math.random() * 80 : 350 + Math.random() * 200,
-      parentId,
-      isFloating: parentId ? undefined : true,
-      priority,
-      tags,
-      notes: '',
-      completed: false,
+      parentId: finalParentId,
+      isFloating: finalParentId ? undefined : true,
+      priority: finalPriority,
+      tags: finalTags,
+      notes: finalNotes,
+      completed: finalCompleted,
       files: [],
-      dueDate,
+      dueDate: finalDueDate,
       color: '#6366f1',
       estimatedTime: suggestEstimatedTime(text, Object.values(state.nodes).flat() as TaskNode[]) ?? 30,
       ...extraFields
