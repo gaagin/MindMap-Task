@@ -49,7 +49,8 @@ import {
   Bell,
   Target,
   GripVertical,
-  Layers
+  Layers,
+  CornerUpLeft
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, pruneTaskNodeHistory, suggestEstimatedTime } from '../utils';
@@ -7722,7 +7723,10 @@ export default function MindMapCanvas({
                     )}
                   </button>
 
-                  <div className="min-w-0 flex-1">
+                  <div className={`min-w-0 flex-1 ${(() => {
+                    const parentNode = node.parentId ? nodes.find(n => n.id === node.parentId) : null;
+                    return parentNode ? 'pr-5' : '';
+                  })()}`}>
                     {editingNodeId === node.id ? (
                       <input
                         type="text"
@@ -7879,6 +7883,35 @@ export default function MindMapCanvas({
                       <Plus className="w-3.5 h-3.5" />
                     </button>
                   )}
+
+                  {/* Optional transition to parent button */}
+                  {(() => {
+                    const parentNode = node.parentId ? nodes.find(n => n.id === node.parentId) : null;
+                    if (parentNode) {
+                      const parentTitle = parentNode.isContainer 
+                        ? `Перейти к родительской группе: ${parentNode.text}` 
+                        : `Перейти к родительской задаче: ${parentNode.text}`;
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectNode(parentNode.id);
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          title={parentTitle}
+                          className={`mt-0.5 p-1 rounded hover:bg-slate-150/50 dark:hover:bg-slate-800 cursor-pointer shrink-0 transition-colors ${
+                            isRoot 
+                              ? 'text-indigo-200 hover:text-white hover:bg-indigo-700/50' 
+                              : 'text-indigo-500 hover:text-indigo-650 dark:text-indigo-400 dark:hover:text-indigo-300'
+                          }`}
+                        >
+                          <CornerUpLeft className="w-3.5 h-3.5" />
+                        </button>
+                      );
+                    }
+                    return null;
+                  })()}
 
                   {/* Fullscreen card toggle button for mobile/always */}
                   {!node.isContainer && !node.isWorkflowRectangle && (

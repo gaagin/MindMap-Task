@@ -21,7 +21,8 @@ import {
   AlertTriangle,
   Maximize2,
   Minimize2,
-  MessageSquare
+  MessageSquare,
+  CornerUpLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
@@ -1516,6 +1517,26 @@ export default function KanbanView({
                 </span>
               )}
             </p>
+            {(() => {
+              const parentNode = node.parentId ? nodes.find(n => n.id === node.parentId) : null;
+              if (parentNode && !parentNode.isContainer) {
+                return (
+                  <div 
+                    className="text-[9px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100/30 dark:border-indigo-900/30 px-1.5 py-0.5 rounded select-none max-w-max mt-1 truncate flex items-center gap-1 cursor-pointer hover:bg-indigo-100/40 dark:hover:bg-indigo-900/25"
+                    title={`Родительская задача: ${parentNode.text}. Нажмите для перехода.`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectNode(parentNode.id);
+                    }}
+                  >
+                    <CornerUpLeft className="w-2.5 h-2.5 shrink-0 text-indigo-500 dark:text-indigo-400" />
+                    <span>Родитель: </span>
+                    <span className="truncate max-w-[125px] font-medium">{parentNode.text}</span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             {node.mirrorParentText && (
               <div 
                 className="text-[9px] font-medium text-purple-600 dark:text-purple-400 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100/30 dark:border-purple-900/30 px-1.5 py-0.5 rounded select-none max-w-max mt-1 truncate flex items-center gap-1 cursor-pointer hover:bg-purple-100/40 dark:hover:bg-purple-900/25"

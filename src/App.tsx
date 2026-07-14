@@ -47,7 +47,8 @@ import {
   Shield,
   Plus,
   Copy,
-  FolderPlus
+  FolderPlus,
+  Grid
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime } from './utils';
@@ -60,6 +61,7 @@ import CalendarView from './components/CalendarView';
 import GanttView from './components/GanttView';
 import TableView from './components/TableView';
 import EisenhowerMatrixView from './components/EisenhowerMatrixView';
+import AnyDoView from './components/AnyDoView';
 import GeminiAiConsole from './components/GeminiAiConsole';
 
 // Import Google Sheets & Firebase Auth systems
@@ -1367,7 +1369,7 @@ export default function App() {
     filterCategoryId: string | null;
     kanbanGroupBy: 'status' | 'category' | 'priority' | 'container' | null;
     kanbanContainerFilterId: string | null;
-    viewMode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
+    viewMode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo';
   } | null>(null);
 
   const filtersRef = React.useRef({
@@ -1398,8 +1400,8 @@ export default function App() {
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
 
-  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'
-  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'>('canvas');
+  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo'
+  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo'>('canvas');
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(() => {
     try {
       return localStorage.getItem('milli_focused_task_id') || null;
@@ -5301,6 +5303,7 @@ export default function App() {
     { id: 'gantt', name: 'Ганнт', icon: GanttChart },
     { id: 'table', name: 'Таблица', icon: Table },
     { id: 'eisenhower', name: 'Матрица', icon: LayoutGrid },
+    { id: 'anydo', name: 'Any.do', icon: Grid },
   ];
 
   const selectedNode = activeNodes.find(n => n.id === selectedNodeId) || null;
@@ -6402,6 +6405,20 @@ export default function App() {
                 searchQuery={searchQuery}
                 onFullScreenChange={setIsViewFullScreen}
                 onFocusedTaskIdChange={setFocusedTaskId}
+              />
+            ) : viewMode === 'anydo' ? (
+              <AnyDoView
+                nodes={activeNodes}
+                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
+                activeProjectId={state.activeProjectId}
+                selectedNodeId={selectedNodeId}
+                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+                onSelectNode={handleSelectNode}
+                onUpdateNode={handleUpdateNode}
+                onDeleteNode={handleDeleteNode}
+                onCreateTask={handleCreateKanbanTask}
+                selectedNodeIds={selectedNodeIds}
+                onToggleSelectNode={handleToggleSelectNode}
               />
             ) : (
               <MindMapCanvas

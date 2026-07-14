@@ -31,7 +31,8 @@ import {
   Target,
   Timer,
   X,
-  MessageSquare
+  MessageSquare,
+  CornerUpLeft
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { generateId, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
@@ -974,6 +975,27 @@ export default function MobileListView({
 
                         {/* Highly compressed inline metadata on main line to avoid extra height lines */}
                         <div className="inline-flex items-center gap-1.5 text-[9.5px] font-mono select-none">
+                          {(() => {
+                            const parentNode = node.parentId ? nodes.find(n => n.id === node.parentId) : null;
+                            if (parentNode && !parentNode.isContainer) {
+                              return (
+                                <span 
+                                  className="inline-flex items-center gap-1 px-1.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-[8.5px] font-bold rounded-sm uppercase cursor-pointer"
+                                  title={`Родительская задача: ${parentNode.text}. Нажмите, чтобы перейти.`}
+                                  data-drag-ignore="true"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectNode(parentNode.id);
+                                  }}
+                                >
+                                  <CornerUpLeft className="w-2.5 h-2.5" />
+                                  <span className="truncate max-w-[80px] font-medium">{parentNode.text}</span>
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
+
                           {node.mirrorParentText && (
                             <span 
                               className="inline-flex items-center gap-1 px-1 bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 text-[8.5px] font-bold rounded-sm uppercase cursor-pointer"
