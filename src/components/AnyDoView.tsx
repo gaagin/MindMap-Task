@@ -220,7 +220,7 @@ export default function AnyDoView({
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-900/10 h-full p-4 md:p-8 relative">
+    <div className="flex-1 overflow-y-auto bg-slate-50/60 dark:bg-slate-950/20 h-full p-4 md:p-8 relative">
       <AnimatePresence mode="wait">
         {!expandedContainerId ? (
           <motion.div
@@ -229,32 +229,22 @@ export default function AnyDoView({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
             transition={{ duration: 0.25 }}
-            className="max-w-7xl mx-auto space-y-8"
+            className="max-w-5xl mx-auto space-y-6"
           >
-            {/* Search Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-xs border border-slate-100 dark:border-slate-800">
-              <div className="space-y-1">
-                <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 font-sans">
-                  Any.do Списки
-                </h2>
-                <p className="text-xs text-slate-400 dark:text-slate-500">
-                  Обзор областей и контейнеров задач в виде сеточных списков дел
-                </p>
-              </div>
-              <div className="relative w-full md:w-80">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Поиск задач во всех списках..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 font-sans transition-all"
-                />
-              </div>
+            {/* Any.do Style Search Header */}
+            <div className="relative w-full">
+              <Search className="absolute left-4.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Поиск задач, событий и т.д. ..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-[0_4px_16px_rgba(0,0,0,0.02)] rounded-2xl py-3.5 pl-12 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30 text-slate-800 dark:text-slate-100 font-sans transition-all"
+              />
             </div>
 
-            {/* Grid of Lists/Containers */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {/* Grid of Lists/Containers (2 columns on mobile, auto on desktop) */}
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
               
               {/* --- 1. INBOX (Uncategorized Tasks Card) --- */}
               {(() => {
@@ -267,103 +257,29 @@ export default function AnyDoView({
                   return isMatch;
                 });
                 const inboxUncompleted = inboxTasks.filter(t => !t.completed);
-                const inboxCompleted = inboxTasks.filter(t => t.completed);
 
                 return (
                   <motion.div
                     layoutId="inbox-card"
-                    className="flex flex-col bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-xs hover:shadow-md transition-all duration-300 overflow-hidden min-h-[300px]"
-                    style={{ borderTop: '4px solid #6366f1' }}
+                    onClick={() => {
+                      setExpandedContainerId('inbox');
+                      setExpandedFilter('all');
+                    }}
+                    className="group relative flex flex-col items-center justify-center bg-white dark:bg-slate-900 border border-slate-100/80 dark:border-slate-800 rounded-[22px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer aspect-square p-5 text-center select-none"
                   >
-                    {/* Card Header */}
-                    <div 
-                      onClick={() => {
-                        setExpandedContainerId('inbox');
-                        setExpandedFilter('all');
-                      }}
-                      className="p-5 flex items-start justify-between cursor-pointer border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-500 shrink-0">
-                          <Inbox className="w-5 h-5" />
-                        </div>
-                        <div className="truncate">
-                          <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base truncate font-sans">
-                            INBOX
-                          </h3>
-                          <span className="text-[10px] font-medium text-slate-400 tracking-wider uppercase font-mono">
-                            Входящие
-                          </span>
-                        </div>
-                      </div>
-                      <div className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-full text-xs font-bold font-sans">
+                    {/* Badge Count */}
+                    {inboxUncompleted.length > 0 && (
+                      <div className="absolute top-3.5 right-3.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold text-[10px] w-5 h-5 rounded-full flex items-center justify-center shadow-2xs font-sans">
                         {inboxUncompleted.length}
                       </div>
-                    </div>
+                    )}
 
-                    {/* Quick Task List Inline */}
-                    <div className="flex-1 p-4 space-y-2 overflow-y-auto max-h-[160px]">
-                      {inboxUncompleted.slice(0, 4).map(task => (
-                        <div 
-                          key={task.id}
-                          className="flex items-center justify-between gap-2.5 group/item hover:bg-slate-50 dark:hover:bg-slate-800/50 p-1.5 rounded-lg transition-colors cursor-pointer"
-                          onClick={() => onSelectNode(task.id)}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleTask(task);
-                              }}
-                              className="text-slate-300 hover:text-indigo-500 transition-colors"
-                            >
-                              <Circle className="w-4 h-4" />
-                            </button>
-                            <span className="text-xs text-slate-700 dark:text-slate-300 truncate font-sans">
-                              {task.text}
-                            </span>
-                          </div>
-                          {task.dueDate && (
-                            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          )}
-                        </div>
-                      ))}
-
-                      {inboxUncompleted.length === 0 && (
-                        <div className="h-full flex flex-col items-center justify-center py-6 text-center">
-                          <CheckCircle2 className="w-6 h-6 text-emerald-400 mb-1" />
-                          <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 font-sans">
-                            Все задачи выполнены
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Card Footer Quick Input */}
-                    <div className="p-4 bg-slate-50/50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
-                        <input
-                          type="text"
-                          placeholder="Новая задача..."
-                          value={quickTaskTexts['inbox'] || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setQuickTaskTexts(prev => ({ ...prev, inbox: val }));
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleCreateQuickTask(null);
-                          }}
-                          className="flex-1 bg-transparent text-xs focus:outline-none text-slate-700 dark:text-slate-200 font-sans"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleCreateQuickTask(null)}
-                          className="p-1 rounded-md text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
+                    {/* Centered Large Name */}
+                    <div className="flex flex-col items-center gap-2">
+                      <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base tracking-wide uppercase font-sans">
+                        INBOX
+                      </h3>
+                      <Inbox className="w-4.5 h-4.5 text-slate-300 dark:text-slate-600 group-hover:text-sky-500 transition-colors" />
                     </div>
                   </motion.div>
                 );
@@ -386,199 +302,105 @@ export default function AnyDoView({
                   <motion.div
                     key={container.id}
                     layoutId={`container-card-${container.id}`}
-                    className="flex flex-col bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-xs hover:shadow-md transition-all duration-300 overflow-hidden min-h-[300px]"
-                    style={{ borderTop: `4px solid ${color}` }}
+                    onClick={() => {
+                      setExpandedContainerId(container.id);
+                      setExpandedFilter('all');
+                    }}
+                    className="group relative flex flex-col items-center justify-center bg-white dark:bg-slate-900 border border-slate-100/80 dark:border-slate-800 rounded-[22px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer aspect-square p-5 text-center select-none"
                   >
-                    {/* Card Header */}
-                    <div 
-                      onClick={() => {
-                        setExpandedContainerId(container.id);
-                        setExpandedFilter('all');
+                    {/* Badge Count */}
+                    {uncompleted.length > 0 && (
+                      <div 
+                        className="absolute top-3.5 right-3.5 text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center font-sans shadow-2xs"
+                        style={{ backgroundColor: `${color}15`, color: color }}
+                      >
+                        {uncompleted.length}
+                      </div>
+                    )}
+
+                    {/* Centered Large Name */}
+                    <div className="flex flex-col items-center gap-2 px-1 min-w-0 w-full">
+                      <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base tracking-wide uppercase truncate w-full font-sans">
+                        {container.text}
+                      </h3>
+                      <IconComponent className="w-4.5 h-4.5 text-slate-300 dark:text-slate-600 group-hover:text-sky-500 transition-colors shrink-0" style={{ color: `${color}cc` }} />
+                    </div>
+
+                    {/* Delete Icon on Hover */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteContainer(container.id, e);
                       }}
-                      className="p-5 flex items-start justify-between cursor-pointer border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group"
+                      className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                      title="Удалить список"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div 
-                          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                          style={{ backgroundColor: `${color}15`, color: color }}
-                        >
-                          <IconComponent className="w-5 h-5" />
-                        </div>
-                        <div className="truncate">
-                          <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base truncate font-sans">
-                            {container.text}
-                          </h3>
-                          <span className="text-[10px] font-medium text-slate-400 tracking-wider uppercase font-mono">
-                            Область
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                        <div 
-                          className="px-2.5 py-1 rounded-full text-xs font-bold font-sans"
-                          style={{ backgroundColor: `${color}15`, color: color }}
-                        >
-                          {uncompleted.length}
-                        </div>
-                        <button
-                          onClick={(e) => handleDeleteContainer(container.id, e)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
-                          title="Удалить область"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Quick Task List Inline */}
-                    <div className="flex-1 p-4 space-y-2 overflow-y-auto max-h-[160px]">
-                      {uncompleted.slice(0, 4).map(task => (
-                        <div 
-                          key={task.id}
-                          className="flex items-center justify-between gap-2.5 group/item hover:bg-slate-50 dark:hover:bg-slate-800/50 p-1.5 rounded-lg transition-colors cursor-pointer"
-                          onClick={() => onSelectNode(task.id)}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleTask(task);
-                              }}
-                              className="text-slate-300 hover:text-indigo-500 transition-colors"
-                            >
-                              <Circle className="w-4 h-4" />
-                            </button>
-                            <span className="text-xs text-slate-700 dark:text-slate-300 truncate font-sans">
-                              {task.text}
-                            </span>
-                          </div>
-                          {task.dueDate && (
-                            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          )}
-                        </div>
-                      ))}
-
-                      {uncompleted.length === 0 && (
-                        <div className="h-full flex flex-col items-center justify-center py-6 text-center">
-                          <CheckCircle2 className="w-6 h-6 text-emerald-400 mb-1" />
-                          <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 font-sans">
-                            Все задачи выполнены
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Card Footer Quick Input */}
-                    <div className="p-4 bg-slate-50/50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
-                        <input
-                          type="text"
-                          placeholder="Новая задача..."
-                          value={quickTaskTexts[container.id] || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setQuickTaskTexts(prev => ({ ...prev, [container.id]: val }));
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleCreateQuickTask(container.id);
-                          }}
-                          className="flex-1 bg-transparent text-xs focus:outline-none text-slate-700 dark:text-slate-200 font-sans"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleCreateQuickTask(container.id)}
-                          className="p-1 rounded-md text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </motion.div>
                 );
               })}
 
-              {/* --- 3. CREATE NEW LIST CARD --- */}
+              {/* --- 3. CREATE NEW LIST CARD (ANY.DO PLUS TILE) --- */}
               <motion.div
                 layoutId="create-list-card"
-                className="flex flex-col bg-slate-50/40 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-5 justify-center items-center min-h-[300px] hover:border-indigo-400 hover:bg-indigo-50/10 dark:hover:bg-indigo-950/5 transition-all duration-300"
+                className="relative flex flex-col items-center justify-center bg-white dark:bg-slate-900 border border-slate-100/80 dark:border-slate-800 rounded-[22px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer aspect-square p-5 text-center"
               >
                 {!isCreatingList ? (
                   <button
                     onClick={() => setIsCreatingList(true)}
-                    className="flex flex-col items-center gap-3 cursor-pointer group"
+                    className="w-full h-full flex flex-col items-center justify-center gap-2 cursor-pointer text-sky-500 hover:text-sky-600 transition-colors"
                   >
-                    <div className="w-12 h-12 rounded-full border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-400 group-hover:text-indigo-500 group-hover:border-indigo-500 transition-colors">
-                      <Plus className="w-6 h-6 animate-pulse-subtle" />
-                    </div>
-                    <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors font-sans">
-                      Новый список (область)
-                    </span>
+                    <Plus className="w-8 h-8 stroke-[1.5]" />
                   </button>
                 ) : (
-                  <form onSubmit={handleCreateNewList} className="w-full space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider font-sans">
-                        Создать список
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setIsCreatingList(false)}
-                        className="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <input
-                      type="text"
-                      placeholder="Название (например, Книги)..."
-                      value={newListTitle}
-                      onChange={(e) => setNewListTitle(e.target.value)}
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 font-sans"
-                      autoFocus
-                      required
-                    />
-
-                    {/* Preset Colors */}
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider font-sans">
-                        Цвет списка
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        {colors.map(col => (
-                          <button
-                            key={col}
-                            type="button"
-                            onClick={() => setNewListColor(col)}
-                            className={`w-6 h-6 rounded-full transition-transform cursor-pointer relative ${
-                              newListColor === col ? 'scale-110 ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-900' : 'hover:scale-105'
-                            }`}
-                            style={{ backgroundColor: col }}
-                          >
-                            {newListColor === col && (
-                              <Check className="w-3.5 h-3.5 text-white absolute inset-0 m-auto" />
-                            )}
-                          </button>
-                        ))}
+                  <form onSubmit={handleCreateNewList} className="w-full h-full flex flex-col justify-between text-left" onClick={e => e.stopPropagation()}>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-sans">
+                          Новый список
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsCreatingList(false)}
+                          className="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
+
+                      <input
+                        type="text"
+                        placeholder="Название..."
+                        value={newListTitle}
+                        onChange={(e) => setNewListTitle(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-800 dark:text-slate-100 font-sans"
+                        autoFocus
+                        required
+                      />
                     </div>
 
-                    <div className="flex gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsCreatingList(false)}
-                        className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs py-2 rounded-xl font-medium transition-colors cursor-pointer"
-                      >
-                        Отмена
-                      </button>
-                      <button
-                        type="submit"
-                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs py-2 rounded-xl font-medium transition-colors cursor-pointer shadow-sm"
-                      >
-                        Создать
-                      </button>
+                    {/* Color selection */}
+                    <div className="flex gap-1.5 justify-center py-1">
+                      {colors.slice(2, 6).map(col => (
+                        <button
+                          key={col}
+                          type="button"
+                          onClick={() => setNewListColor(col)}
+                          className={`w-4 h-4 rounded-full transition-transform cursor-pointer ${
+                            newListColor === col ? 'scale-125 ring-1 ring-sky-500 ring-offset-1 dark:ring-offset-slate-900' : 'hover:scale-110'
+                          }`}
+                          style={{ backgroundColor: col }}
+                        />
+                      ))}
                     </div>
+
+                    <button
+                      type="submit"
+                      className="w-full bg-sky-500 hover:bg-sky-600 text-white text-[11px] py-1.5 rounded-xl font-semibold transition-colors cursor-pointer shadow-xs"
+                    >
+                      Создать
+                    </button>
                   </form>
                 )}
               </motion.div>
