@@ -569,8 +569,8 @@ export default function Sidebar({
       <aside
         className={`fixed inset-y-0 left-0 glass-panel border-r border-slate-205/30 dark:border-slate-850/30 w-72 flex flex-col z-50 transform transition-all duration-300 ease-out shrink-0 ${
           isOpen 
-            ? 'translate-x-0 lg:translate-x-0 lg:static lg:h-full lg:w-72 opacity-100 shadow-xl' 
-            : '-translate-x-full lg:-translate-x-full lg:w-0 lg:border-r-0 lg:p-0 overflow-hidden lg:opacity-0'
+            ? 'translate-x-0 opacity-100 shadow-xl' 
+            : '-translate-x-full opacity-0 pointer-events-none'
         }`}
       >
         {/* Header */}

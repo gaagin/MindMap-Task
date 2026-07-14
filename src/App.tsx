@@ -5343,7 +5343,7 @@ export default function App() {
       />
 
       {/* Main Workspace Frame */}
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
+      <main className={`flex-1 flex flex-col min-w-0 h-full overflow-hidden relative transition-all duration-300 ease-out ${sidebarOpen ? 'lg:pl-72' : 'lg:pl-0'}`}>
         
         {isAutoLoginPopupBlocked && (
           <div className="absolute right-6 top-18 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-200 text-xs font-semibold py-2 px-3 rounded-xl shadow-xl flex items-center gap-2 z-40 animate-bounce">
@@ -5361,7 +5361,7 @@ export default function App() {
         )}
         
         {/* Workspace Top Action Bar Header */}
-        <header className={`${isViewFullScreen ? 'hidden' : 'hidden md:flex'} h-16 border-b items-center justify-between px-4 sm:px-6 glass-panel z-35 transition-all duration-300 ${
+        <header className={`${isViewFullScreen ? 'hidden' : 'hidden sm:flex'} h-16 border-b items-center justify-between px-4 sm:px-6 glass-panel z-35 transition-all duration-300 ${
           (!currentUser || !googleToken)
             ? 'border-rose-150/55 dark:border-rose-900/30'
             : 'border-slate-150/40 dark:border-slate-800/30'

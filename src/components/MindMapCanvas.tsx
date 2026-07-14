@@ -7922,7 +7922,7 @@ export default function MindMapCanvas({
                           
                           {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'priority' && (
                             <div 
-                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 rounded-xl shadow-xl p-1.5 w-44 z-100 animate-in fade-in zoom-in-95 duration-100 ${
+                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 rounded-xl shadow-xl p-1.5 w-44 z-[100] animate-in fade-in zoom-in-95 duration-100 ${
                                 openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
                               }`}
                               onClick={(e) => e.stopPropagation()}
@@ -8004,7 +8004,7 @@ export default function MindMapCanvas({
 
                         {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'date' && (
                           <div 
-                            className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-3 w-56 z-100 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-100 ${
+                            className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-3 w-56 z-[100] flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-100 ${
                               openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
                             }`}
                             onClick={(e) => e.stopPropagation()}
@@ -8167,7 +8167,7 @@ export default function MindMapCanvas({
 
                           {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'tag' && (
                             <div 
-                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-64 z-100 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 ${
+                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-64 z-[100] flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 ${
                                 openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
                               }`}
                               onClick={(e) => e.stopPropagation()}
@@ -8322,7 +8322,7 @@ export default function MindMapCanvas({
                           const suggested = suggestEstimatedTime(node.text, nodes);
                           return (
                             <div 
-                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-48 z-100 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 text-left whitespace-normal ${
+                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-48 z-[100] flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 text-left whitespace-normal ${
                                 openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
                               }`}
                               onClick={(e) => e.stopPropagation()}
@@ -8876,7 +8876,7 @@ export default function MindMapCanvas({
 
                     {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'pomodoro' && (
                       <div 
-                        className={`absolute left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-2xl shadow-xl p-3 w-48 z-100 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-2 ${
+                        className={`absolute left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-2xl shadow-xl p-3 w-48 z-[100] animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-2 ${
                           openInlineMenuUpwards ? 'bottom-full mb-2' : 'top-full mt-2'
                         }`}
                         onClick={(e) => e.stopPropagation()}

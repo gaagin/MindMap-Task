@@ -3206,6 +3206,34 @@ export default function TaskDetailsPanel({
                     />
                   </div>
 
+                  {/* Notion integration link */}
+                  <div className="space-y-1.5 pt-1" id="notion-task-link-properties">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase block">
+                      База знаний проекта:
+                    </span>
+                    <a
+                      href="https://app.notion.com/p/adibavtomatika/118e0789d560802cb229d1795cdb2623"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200/50 dark:border-slate-800 hover:bg-slate-100/50 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                    >
+                      <div className="w-7 h-7 rounded bg-slate-950 text-white dark:bg-white dark:text-slate-950 font-black text-sm flex items-center justify-center font-mono shadow-xs group-hover:scale-105 transition-transform shrink-0 leading-none">
+                        N
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-bold text-slate-800 dark:text-slate-250 leading-tight group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                          База знаний Notion
+                        </p>
+                        <p className="text-[9.5px] text-slate-400 truncate leading-none mt-0.5 font-mono">
+                          app.notion.com/p/adibavtomatika...
+                        </p>
+                      </div>
+                      <span className="text-slate-400 group-hover:translate-x-0.5 transition-transform text-xs font-bold mr-1 shrink-0">
+                        →
+                      </span>
+                    </a>
+                  </div>
+
                   {/* Colors */}
                   <div className="space-y-1.5 pb-2 border-b border-slate-100 dark:border-slate-850">
                     <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase block">Цвет ветви связи:</span>
@@ -3811,6 +3839,23 @@ export default function TaskDetailsPanel({
           />
         </div>
         <div className="flex items-center gap-1.5">
+          {/* Notion integration link */}
+          <a
+            href="https://app.notion.com/p/adibavtomatika/118e0789d560802cb229d1795cdb2623"
+            target="_blank"
+            rel="noopener noreferrer"
+            id="notion-task-link-header"
+            className="p-1.5 rounded-lg hover:bg-slate-100/60 dark:hover:bg-slate-800/60 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all flex items-center gap-1 cursor-pointer group"
+            title="Открыть в Notion"
+          >
+            <span className="w-4 h-4 rounded bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-extrabold text-[10px] flex items-center justify-center font-mono select-none group-hover:scale-110 transition-transform leading-none shadow-sm">
+              N
+            </span>
+            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 hidden sm:inline group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+              Notion
+            </span>
+          </a>
+
           {/* Quick header copy link button */}
           <button 
             type="button"

@@ -1444,7 +1444,7 @@ export default function KanbanView({
           isDraggingTouch ? 'opacity-40 scale-[0.98]' : ''
         } ${
           activeInlineMenu?.cardId === node.id || activeMoveMenuCardId === node.id
-            ? 'z-55 ring-2 ring-indigo-500 bg-white dark:bg-slate-900 shadow-xl scale-[1.01]' 
+            ? 'z-[55] ring-2 ring-indigo-500 bg-white dark:bg-slate-900 shadow-xl scale-[1.01]' 
             : 'z-10'
         } ${
           node.archived
@@ -1570,7 +1570,7 @@ export default function KanbanView({
 
             {activeMoveMenuCardId === node.id && (
               <div 
-                className="absolute right-0 top-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-xl shadow-lg p-1.5 w-44 z-55 animate-in fade-in zoom-in-95 duration-100"
+                className="absolute right-0 top-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-750 rounded-xl shadow-lg p-1.5 w-44 z-[55] animate-in fade-in zoom-in-95 duration-100"
                 onClick={(e) => e.stopPropagation()}
               >
                 <p className="text-[9px] font-medium text-slate-400 dark:text-slate-500 uppercase px-2 mb-1 tracking-wider text-left">Архив:</p>
