@@ -2139,7 +2139,7 @@ export default function KanbanView({
               title="Нажмите, чтобы указать ориентировочное время работы прямо на месте"
             >
               <Timer className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span>Оценка</span>
+              <span>Ориент. время</span>
             </span>
           )}
         </div>

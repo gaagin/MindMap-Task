@@ -6737,7 +6737,7 @@ export default function MindMapCanvas({
                             </span>
                           )}
                           {totalEstimated > 0 && (
-                            <span className="text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-850 px-1 py-0.5 rounded font-black" title="Общая оценка времени">
+                            <span className="text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-850 px-1 py-0.5 rounded font-black" title="Общее ориентировочное время работы">
                               ⏱️ {totalEstimated}ч
                             </span>
                           )}
@@ -8362,7 +8362,7 @@ export default function MindMapCanvas({
                               onMouseDown={(e) => e.stopPropagation()}
                             >
                               <div className="flex items-center justify-between">
-                                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">Оценка времени:</p>
+                                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">Ориентировочное время:</p>
                                 <button 
                                   type="button" 
                                   onClick={() => setActiveInlineMenu(null)}

@@ -2916,7 +2916,7 @@ export default function TaskDetailsPanel({
                   </div>
                 )}
 
-                {/* ГРУППА 3: СРОКИ, ПРИОРИТЕТ, ОЦЕНКА, НАПОМИНАНИЯ */}
+                {/* ГРУППА 3: СРОКИ, ПРИОРИТЕТ, ОРИЕНТИРОВОЧНОЕ ВРЕМЯ, НАПОМИНАНИЯ */}
                 <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800/60">
                   <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block">
                     Планирование, приоритет и сроки
@@ -2941,7 +2941,7 @@ export default function TaskDetailsPanel({
 
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">Оценка (мин):</span>
+                        <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">Ориентировочное время (мин):</span>
                         {node.estimatedTime !== undefined && node.estimatedTime !== null && !hasSubtaskWithTime && (
                           <button
                             type="button"
