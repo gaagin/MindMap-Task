@@ -3356,9 +3356,18 @@ export default function MindMapCanvas({
 
       const dx = Math.abs(newX - otherNode.x);
       const dy = Math.abs(newY - otherNode.y);
-      const isCollapsed = !!otherNode.collapsed;
-      const halfW = (isCollapsed ? 220 : (otherNode.width || 520)) / 2;
-      const halfH = (isCollapsed ? 100 : (otherNode.height || 400)) / 2;
+      
+      // All containers are always collapsed on the main canvas (width 220, height 100)
+      const targetW = 220;
+      const targetH = 100;
+      
+      // Width and height of the dragging node
+      const dragW = draggingNode.isContainer ? 220 : getNodeWidth(draggingNode);
+      const dragH = draggingNode.isContainer ? 100 : getNodeHeight(draggingNode);
+
+      // Check if they visually overlap/intersect
+      const halfW = (dragW + targetW) / 2;
+      const halfH = (dragH + targetH) / 2;
       return dx < halfW && dy < halfH;
     });
 
@@ -3879,9 +3888,11 @@ export default function MindMapCanvas({
               const maxH = (currentParent.height || 400) / 2 + 400;
               shouldDetach = dx > maxW || dy > maxH;
             } else {
-              const maxW = (currentParent.width || 520) / 2;
-              const maxH = (currentParent.height || 400) / 2;
-              shouldDetach = dx > maxW || dy > maxH;
+              const dragW = node.isContainer ? 220 : getNodeWidth(node);
+              const dragH = node.isContainer ? 100 : getNodeHeight(node);
+              const maxW = (dragW + 220) / 2;
+              const maxH = (dragH + 100) / 2;
+              shouldDetach = dx >= maxW || dy >= maxH;
             }
 
             if (shouldDetach) {
@@ -4665,9 +4676,11 @@ export default function MindMapCanvas({
                 const maxH = (currentParent.height || 400) / 2 + 400;
                 shouldDetach = dx > maxW || dy > maxH;
               } else {
-                const maxW = (currentParent.width || 520) / 2;
-                const maxH = (currentParent.height || 400) / 2;
-                shouldDetach = dx > maxW || dy > maxH;
+                const dragW = node.isContainer ? 220 : getNodeWidth(node);
+                const dragH = node.isContainer ? 100 : getNodeHeight(node);
+                const maxW = (dragW + 220) / 2;
+                const maxH = (dragH + 100) / 2;
+                shouldDetach = dx >= maxW || dy >= maxH;
               }
 
               if (shouldDetach) {
