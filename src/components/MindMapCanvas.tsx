@@ -8791,6 +8791,17 @@ export default function MindMapCanvas({
                                           <span>{formatDisplayDate(subtask.dueDate)}{subtask.dueTime ? ` ${subtask.dueTime}` : ''}</span>
                                         </span>
                                       )}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onDeleteNode(subtask.id);
+                                        }}
+                                        className="text-slate-300 hover:text-rose-600 dark:text-slate-600 dark:hover:text-rose-400 p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all opacity-100 sm:opacity-0 sm:group-hover/sub:opacity-100 shrink-0 cursor-pointer"
+                                        title="Удалить подзадачу"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
                                     </div>
                                   </motion.div>
                                 ))}
