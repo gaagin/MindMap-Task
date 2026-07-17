@@ -205,6 +205,19 @@ export default function GanttView({
   const dragHasMovedRef = useRef(false);
   const dragStartMousePosRef = useRef({ x: 0, y: 0 });
 
+  // State for dragging unscheduled tasks from task list to timeline
+  const [taskNameDrag, setTaskNameDrag] = useState<{
+    taskId: string;
+    taskText: string;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    isDragging: boolean;
+  } | null>(null);
+
+  const [hoveredDateIndex, setHoveredDateIndex] = useState<number | null>(null);
+
   const currentZoomTaskId = focusedTaskId !== undefined ? focusedTaskId : zoomTaskId;
 
   const handleZoomTaskIdChange = (id: string | null) => {
@@ -262,6 +275,37 @@ export default function GanttView({
     if (!isMobile) {
       triggerDoubleClickAction(taskId);
     }
+  };
+
+  const handleTaskNameMouseDown = (e: React.MouseEvent, taskId: string, taskText: string) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    setTaskNameDrag({
+      taskId,
+      taskText,
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY,
+      isDragging: false
+    });
+    setHoveredDateIndex(null);
+  };
+
+  const handleTaskNameTouchStart = (e: React.TouchEvent, taskId: string, taskText: string) => {
+    if (e.touches.length !== 1) return;
+    e.stopPropagation();
+    const touch = e.touches[0];
+    setTaskNameDrag({
+      taskId,
+      taskText,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      currentX: touch.clientX,
+      currentY: touch.clientY,
+      isDragging: false
+    });
+    setHoveredDateIndex(null);
   };
 
   useEffect(() => {
@@ -433,6 +477,106 @@ export default function GanttView({
   const orderedTreeItems = React.useMemo(() => {
     return buildTaskTree(tasks, sortMode, collapsedTaskIds);
   }, [tasks, sortMode, collapsedTaskIds]);
+
+  useEffect(() => {
+    if (!taskNameDrag) return;
+
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      setTaskNameDrag(prev => {
+        if (!prev) return null;
+        const dx = e.clientX - prev.startX;
+        const dy = e.clientY - prev.startY;
+        const isDraggingNow = prev.isDragging || Math.abs(dx) > 6 || Math.abs(dy) > 6;
+        return {
+          ...prev,
+          currentX: e.clientX,
+          currentY: e.clientY,
+          isDragging: isDraggingNow
+        };
+      });
+
+      if (rightScrollRef.current) {
+        const rect = rightScrollRef.current.getBoundingClientRect();
+        const scrollLeft = rightScrollRef.current.scrollLeft;
+        const relativeX = e.clientX - rect.left + scrollLeft;
+        const colWidth = 90;
+        const colIndex = Math.floor(relativeX / colWidth);
+        const clampedColIndex = Math.max(0, Math.min(27, colIndex));
+        setHoveredDateIndex(clampedColIndex);
+      }
+    };
+
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      if (taskNameDrag.isDragging && hoveredDateIndex !== null) {
+        const targetDate = timelineDays[hoveredDateIndex].dateString;
+        const taskToUpdate = tasks.find(t => t.id === taskNameDrag.taskId);
+        if (taskToUpdate) {
+          onUpdateNode({
+            ...taskToUpdate,
+            startDate: targetDate,
+            dueDate: targetDate
+          });
+        }
+      }
+      setTaskNameDrag(null);
+      setHoveredDateIndex(null);
+    };
+
+    const handleGlobalTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      setTaskNameDrag(prev => {
+        if (!prev) return null;
+        const dx = touch.clientX - prev.startX;
+        const dy = touch.clientY - prev.startY;
+        const isDraggingNow = prev.isDragging || Math.abs(dx) > 6 || Math.abs(dy) > 6;
+        return {
+          ...prev,
+          currentX: touch.clientX,
+          currentY: touch.clientY,
+          isDragging: isDraggingNow
+        };
+      });
+
+      if (rightScrollRef.current) {
+        const rect = rightScrollRef.current.getBoundingClientRect();
+        const scrollLeft = rightScrollRef.current.scrollLeft;
+        const relativeX = touch.clientX - rect.left + scrollLeft;
+        const colWidth = 90;
+        const colIndex = Math.floor(relativeX / colWidth);
+        const clampedColIndex = Math.max(0, Math.min(27, colIndex));
+        setHoveredDateIndex(clampedColIndex);
+      }
+    };
+
+    const handleGlobalTouchEnd = (e: TouchEvent) => {
+      if (taskNameDrag.isDragging && hoveredDateIndex !== null) {
+        const targetDate = timelineDays[hoveredDateIndex].dateString;
+        const taskToUpdate = tasks.find(t => t.id === taskNameDrag.taskId);
+        if (taskToUpdate) {
+          onUpdateNode({
+            ...taskToUpdate,
+            startDate: targetDate,
+            dueDate: targetDate
+          });
+        }
+      }
+      setTaskNameDrag(null);
+      setHoveredDateIndex(null);
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('touchmove', handleGlobalTouchMove, { passive: true });
+    window.addEventListener('touchend', handleGlobalTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('touchmove', handleGlobalTouchMove);
+      window.removeEventListener('touchend', handleGlobalTouchEnd);
+    };
+  }, [taskNameDrag, hoveredDateIndex, timelineDays, tasks, onUpdateNode]);
 
   const handleBarMouseDown = (
     e: React.MouseEvent,
@@ -1053,9 +1197,24 @@ export default function GanttView({
                           depth === 0 ? 'font-medium' : 'font-medium text-slate-600 dark:text-slate-300'
                         } ${
                           task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
-                        } flex items-center gap-1.5 min-w-0`}
-                        title={task.text}
+                        } flex items-center gap-1.5 min-w-0 ${
+                          (!task.startDate && !task.dueDate) ? 'cursor-grab active:cursor-grabbing hover:text-indigo-650 dark:hover:text-indigo-400 select-none' : ''
+                        }`}
+                        title={(!task.startDate && !task.dueDate) ? `${task.text} (Зажмите и перетащите вправо, чтобы задать дату)` : task.text}
+                        onMouseDown={(e) => {
+                          if (!task.startDate && !task.dueDate) {
+                            handleTaskNameMouseDown(e, task.id, task.text);
+                          }
+                        }}
+                        onTouchStart={(e) => {
+                          if (!task.startDate && !task.dueDate) {
+                            handleTaskNameTouchStart(e, task.id, task.text);
+                          }
+                        }}
                         >
+                          {(!task.startDate && !task.dueDate) && (
+                            <Calendar className="w-3 h-3 text-indigo-550 shrink-0 select-none group-hover:text-indigo-650 transition-colors animate-pulse-subtle" />
+                          )}
                           <span className="truncate">{task.text}</span>
                           {parent && (sortMode === 'flatStartDate' || sortMode === 'flatDueDate') && (
                             <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1 rounded-sm font-normal shrink-0 truncate max-w-[80px]" title={`Подзадача для: ${parent.text}`}>
@@ -1171,13 +1330,20 @@ export default function GanttView({
                   const range = getTaskRangeColIndices(task);
                   const isSelected = selectedNodeId === task.id;
                   const isBeingDragged = activeDrag && activeDrag.taskId === task.id;
+                  const isNameDragging = taskNameDrag && taskNameDrag.taskId === task.id && taskNameDrag.isDragging;
                   const displayRange = isBeingDragged && activeDrag
                     ? {
                         start: activeDrag.currentStart,
                         end: activeDrag.currentEnd,
                         span: activeDrag.currentEnd - activeDrag.currentStart + 1
                       }
-                    : range;
+                    : (isNameDragging && hoveredDateIndex !== null)
+                      ? {
+                          start: hoveredDateIndex,
+                          end: hoveredDateIndex,
+                          span: 1
+                        }
+                      : range;
 
                   // Calculate parent info if parent exists
                   const rangeParent = parent ? getTaskRangeColIndices(parent) : null;
@@ -1192,9 +1358,11 @@ export default function GanttView({
                       className={`h-11 flex relative items-center transition-colors group cursor-pointer ${
                         isSelected 
                           ? 'bg-indigo-50/10 dark:bg-indigo-950/10' 
-                          : task.completed
-                            ? 'bg-emerald-500/2 dark:bg-emerald-500/1 hover:bg-slate-100/50 dark:hover:bg-slate-900/50'
-                            : 'hover:bg-slate-50/30 dark:hover:bg-slate-900/30'
+                          : isNameDragging
+                            ? 'bg-indigo-500/10 dark:bg-indigo-500/5 ring-1 ring-inset ring-indigo-500/30'
+                            : task.completed
+                              ? 'bg-emerald-500/2 dark:bg-emerald-500/1 hover:bg-slate-100/50 dark:hover:bg-slate-900/50'
+                              : 'hover:bg-slate-50/30 dark:hover:bg-slate-900/30'
                       }`}
                     >
                       {/* Subtask tree connector line */}
@@ -1261,11 +1429,15 @@ export default function GanttView({
                             width: `${(displayRange.span / 28) * 100}%`
                           }}
                           className={`absolute h-7 border rounded-xl shadow-xs p-1 flex flex-col justify-center cursor-pointer select-none overflow-hidden z-10 ${
-                            isBeingDragged ? 'ring-2 ring-indigo-500/50 scale-[1.01] shadow-lg opacity-95' : 'transition-all duration-150'
+                            isBeingDragged || isNameDragging ? 'ring-2 ring-indigo-500/50 scale-[1.01] shadow-lg opacity-95' : 'transition-all duration-150'
+                          } ${
+                            isNameDragging ? 'bg-indigo-500/20 border-dashed border-indigo-500 animate-pulse' : ''
                           } ${
                             task.completed
                               ? 'bg-emerald-500/10 border-emerald-500/45 dark:bg-emerald-500/5 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 opacity-70'
-                              : getPriorityColorBorder(task.priority)
+                              : isNameDragging
+                                ? 'text-indigo-700 dark:text-indigo-400 font-medium'
+                                : getPriorityColorBorder(task.priority)
                           } ${
                             isSelected && !isBeingDragged ? 'ring-2 ring-indigo-500/30' : ''
                           }`}
@@ -1384,6 +1556,28 @@ export default function GanttView({
 
         </div>
       </div>
+
+      {/* Floating preview pill when dragging a task name to schedule it */}
+      {taskNameDrag && taskNameDrag.isDragging && (
+        <div
+          className="fixed pointer-events-none z-[999] bg-indigo-600/95 dark:bg-indigo-500/95 text-white text-xs py-1.5 px-3.5 rounded-full shadow-lg font-medium backdrop-blur-xs flex items-center gap-1.5 border border-white/15 cursor-grabbing scale-105 transition-transform"
+          style={{
+            left: `${taskNameDrag.currentX + 15}px`,
+            top: `${taskNameDrag.currentY + 15}px`,
+          }}
+        >
+          <Calendar className="w-3.5 h-3.5 shrink-0" />
+          <span className="max-w-[150px] truncate">{taskNameDrag.taskText}</span>
+          {hoveredDateIndex !== null && (
+            <span className="bg-white/20 dark:bg-black/20 px-1.5 py-0.5 rounded text-[9.5px] font-mono whitespace-nowrap animate-pulse">
+              {(() => {
+                const parts = timelineDays[hoveredDateIndex].dateString.split('-');
+                return `${parts[2]}.${parts[1]}`;
+              })()}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
