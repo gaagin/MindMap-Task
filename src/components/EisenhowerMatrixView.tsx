@@ -165,6 +165,34 @@ export default function EisenhowerMatrixView({
       if (filterCompleted === 'active' && n.completed) return false;
       if (filterCompleted === 'completed' && !n.completed) return false;
 
+      // Only show tasks with date on today or overdue
+      if (!n.dueDate) return false;
+
+      const isTodayOrOverdue = (() => {
+        try {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          const parts = n.dueDate.split('-');
+          if (parts.length === 3) {
+            const year = parseInt(parts[0], 10);
+            const month = parseInt(parts[1], 10) - 1;
+            const day = parseInt(parts[2], 10);
+            const due = new Date(year, month, day);
+            due.setHours(0, 0, 0, 0);
+            return due.getTime() <= today.getTime();
+          }
+
+          const due = new Date(n.dueDate);
+          due.setHours(0, 0, 0, 0);
+          return due.getTime() <= today.getTime();
+        } catch {
+          return false;
+        }
+      })();
+
+      if (!isTodayOrOverdue) return false;
+
       return true;
     });
   }, [nodes, searchQuery, filterCompleted]);
