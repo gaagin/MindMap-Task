@@ -516,7 +516,15 @@ export default function CalendarView({
   }, [nodes]);
 
   // Divide into scheduled and unscheduled
-  const scheduledTasks = projectTasks.filter(n => n.dueDate);
+  const scheduledTasks = useMemo(() => {
+    const rawScheduled = projectTasks.filter(n => n.dueDate);
+    return rawScheduled.filter(parent => {
+      const hasSubtaskOnSameDate = rawScheduled.some(sub => 
+        sub.parentId === parent.id && sub.dueDate === parent.dueDate
+      );
+      return !hasSubtaskOnSameDate;
+    });
+  }, [projectTasks]);
   const rawUnscheduledTasks = projectTasks.filter(n => !n.dueDate);
   const unscheduledTasks = sidebarSearchQuery
     ? rawUnscheduledTasks.filter(t => t.text.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))
