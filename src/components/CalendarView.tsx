@@ -498,8 +498,22 @@ export default function CalendarView({
   const daysInPrevMonth = getDaysInMonth(year, month - 1);
   const startingDayOfWeek = getFirstDayOfMonth(year, month);
 
-  // Filter nodes for the current active project
-  const projectTasks = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
+  // Filter nodes for the current active project, avoiding duplicated mirrored tasks
+  const projectTasks = useMemo(() => {
+    const seenMirrorGroupIds = new Set<string>();
+    return nodes.filter(n => {
+      if (n.isContainer || n.isWorkflowRectangle) {
+        return false;
+      }
+      if (n.mirrorGroupId) {
+        if (seenMirrorGroupIds.has(n.mirrorGroupId)) {
+          return false;
+        }
+        seenMirrorGroupIds.add(n.mirrorGroupId);
+      }
+      return true;
+    });
+  }, [nodes]);
 
   // Divide into scheduled and unscheduled
   const scheduledTasks = projectTasks.filter(n => n.dueDate);

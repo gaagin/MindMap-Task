@@ -448,32 +448,82 @@ export default function GanttView({
 
   // Dynamically compute/override parent task start dates based on user request:
   // "Если в подзадачах не установлена дата начала то для родительской задачи датой начала выбирается срок выполнения самой ранней подзадачи"
+  // For subtasks with subtasks, make them do the same recursively.
   const processedNodes = React.useMemo(() => {
+    const cache = new Map<string, string | undefined>();
+
+    const resolveStartDate = (nodeId: string): string | undefined => {
+      if (cache.has(nodeId)) return cache.get(nodeId);
+
+      const node = nodes.find(n => n.id === nodeId);
+      if (!node || node.isContainer || node.isWorkflowRectangle) return undefined;
+
+      if (node.startDate) {
+        cache.set(nodeId, node.startDate);
+        return node.startDate;
+      }
+
+      const subtasks = nodes.filter(n => n.parentId === nodeId && !n.isContainer && !n.isWorkflowRectangle);
+      if (subtasks.length === 0) {
+        cache.set(nodeId, undefined);
+        return undefined;
+      }
+
+      // Check if any subtasks have a resolved/computed start date
+      const subtaskStartDates = subtasks
+        .map(s => resolveStartDate(s.id))
+        .filter((d): d is string => !!d);
+
+      if (subtaskStartDates.length > 0) {
+        const earliestSubtaskStart = subtaskStartDates.reduce((earliest, current) =>
+          current < earliest ? current : earliest
+        );
+        cache.set(nodeId, earliestSubtaskStart);
+        return earliestSubtaskStart;
+      }
+
+      // If no subtasks have a start date, find the earliest due date among subtasks (resolved recursively)
+      const resolveDueDate = (nId: string): string | undefined => {
+        const n = nodes.find(x => x.id === nId);
+        if (!n) return undefined;
+        if (n.dueDate) return n.dueDate;
+        
+        const subs = nodes.filter(s => s.parentId === nId && !s.isContainer && !s.isWorkflowRectangle);
+        if (subs.length > 0) {
+          const subDues = subs.map(s => resolveDueDate(s.id)).filter((d): d is string => !!d);
+          if (subDues.length > 0) {
+            return subDues.reduce((earliest, current) => current < earliest ? current : earliest);
+          }
+        }
+        return undefined;
+      };
+
+      const subtaskDueDates = subtasks
+        .map(s => resolveDueDate(s.id))
+        .filter((d): d is string => !!d);
+
+      if (subtaskDueDates.length > 0) {
+        const earliestDueDate = subtaskDueDates.reduce((earliest, current) => 
+          current < earliest ? current : earliest
+        );
+        cache.set(nodeId, earliestDueDate);
+        return earliestDueDate;
+      }
+
+      cache.set(nodeId, undefined);
+      return undefined;
+    };
+
     return nodes.map(node => {
-      // Only apply to tasks (exclude containers, workflow nodes)
       if (node.isContainer || node.isWorkflowRectangle) {
         return node;
       }
-      
-      const subtasks = nodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
-      if (subtasks.length > 0) {
-        const hasSubtaskStartDate = subtasks.some(s => s.startDate);
-        if (!hasSubtaskStartDate) {
-          const subtaskDueDates = subtasks
-            .map(s => s.dueDate)
-            .filter((d): d is string => !!d);
-            
-          if (subtaskDueDates.length > 0) {
-            const earliestDueDate = subtaskDueDates.reduce((earliest, current) => 
-              current < earliest ? current : earliest
-            );
-            
-            return {
-              ...node,
-              startDate: earliestDueDate
-            };
-          }
-        }
+      const computedStart = resolveStartDate(node.id);
+      if (computedStart && computedStart !== node.startDate) {
+        return {
+          ...node,
+          startDate: computedStart
+        };
       }
       return node;
     });
