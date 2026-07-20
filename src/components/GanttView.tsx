@@ -4,6 +4,8 @@ import {
   ChevronLeft, 
   ChevronRight, 
   ChevronDown,
+  ChevronsDown,
+  ChevronsUp,
   Folder, 
   Clock, 
   CheckCircle2, 
@@ -198,15 +200,8 @@ export default function GanttView({
     });
   };
 
-  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => {
-    const parentIds = new Set<string>();
-    nodes.forEach(node => {
-      if (node.parentId && !node.isContainer && !node.isWorkflowRectangle) {
-        parentIds.add(node.parentId);
-      }
-    });
-    return parentIds;
-  });
+  // Start with empty Set so that all tasks are expanded by default on first load
+  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(new Set<string>());
 
   const toggleCollapse = (taskId: string) => {
     setCollapsedTaskIds(prev => {
@@ -218,6 +213,22 @@ export default function GanttView({
       }
       return next;
     });
+  };
+
+  const collapseAll = () => {
+    const parentIds = new Set<string>();
+    const nodesList = allNodes || nodes;
+    nodesList.forEach(node => {
+      const hasChildren = nodesList.some(t => t.parentId === node.id && !t.isContainer && !t.isWorkflowRectangle);
+      if (hasChildren) {
+        parentIds.add(node.id);
+      }
+    });
+    setCollapsedTaskIds(parentIds);
+  };
+
+  const expandAll = () => {
+    setCollapsedTaskIds(new Set<string>());
   };
 
   // States and refs for interactive drag-to-move and drag-to-resize
@@ -1115,12 +1126,36 @@ export default function GanttView({
           } bg-white dark:bg-slate-900/40`}
         >
           <div className="h-10 px-4 flex items-center justify-between bg-slate-50/70 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 shrink-0 select-none">
-            <span className="font-medium text-[10.5px] uppercase tracking-wider text-slate-400">
-              Название задачи ({tasks.length})
-            </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-medium text-[10.5px] uppercase tracking-wider text-slate-400 truncate">
+                Задачи ({tasks.length})
+              </span>
+              <div className="flex items-center gap-0.5 shrink-0 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-200/50 dark:border-slate-700/50">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    expandAll();
+                  }}
+                  className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer flex items-center justify-center"
+                  title="Развернуть все подзадачи"
+                >
+                  <ChevronsDown className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    collapseAll();
+                  }}
+                  className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer flex items-center justify-center"
+                  title="Свернуть все подзадачи"
+                >
+                  <ChevronsUp className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
             <button
               onClick={toggleLeftPanel}
-              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 rounded transition-colors cursor-pointer"
+              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 rounded transition-colors cursor-pointer shrink-0"
               title="Свернуть список задач"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
@@ -1200,7 +1235,7 @@ export default function GanttView({
                                   e.stopPropagation();
                                   toggleCollapse(task.id);
                                 }}
-                                className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded transition-colors shrink-0 flex items-center justify-center cursor-pointer"
+                                className="p-0.5 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-400 text-slate-500 rounded transition-colors shrink-0 flex items-center justify-center cursor-pointer"
                                 title={collapsedTaskIds.has(task.id) ? "Развернуть подзадачи" : "Свернуть подзадачи"}
                               >
                                 {collapsedTaskIds.has(task.id) ? (
