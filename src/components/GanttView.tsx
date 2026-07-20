@@ -19,7 +19,9 @@ import {
   Minimize2,
   ArrowUpDown,
   CornerDownRight,
-  X
+  X,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
 
@@ -176,6 +178,25 @@ export default function GanttView({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [sortMode, setSortMode] = useState<'hierarchy' | 'startDate' | 'dueDate' | 'flatStartDate' | 'flatDueDate'>('hierarchy');
   const [zoomTaskId, setZoomTaskId] = useState<string | null>(null);
+
+  const [hideCompleted, setHideCompleted] = useState(() => {
+    try {
+      const saved = localStorage.getItem('gantt_hide_completed');
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleHideCompleted = () => {
+    setHideCompleted(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('gantt_hide_completed', String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => {
     const parentIds = new Set<string>();
@@ -449,7 +470,11 @@ export default function GanttView({
 
   // Filter tasks belonging to project and apply zoom filter if currentZoomTaskId is active
   const tasks = React.useMemo(() => {
-    const allProjectTasks = processedNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
+    let allProjectTasks = processedNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
+    if (hideCompleted) {
+      allProjectTasks = allProjectTasks.filter(t => !t.completed);
+    }
+
     if (!currentZoomTaskId) {
       return allProjectTasks;
     }
@@ -471,7 +496,7 @@ export default function GanttView({
     collectDescendants(currentZoomTaskId);
 
     return allProjectTasks.filter(t => t.id === currentZoomTaskId || descendants.has(t.id));
-  }, [processedNodes, currentZoomTaskId]);
+  }, [processedNodes, currentZoomTaskId, hideCompleted]);
 
   // Build tree structures and hierarchical order for list rendering
   const orderedTreeItems = React.useMemo(() => {
@@ -972,6 +997,23 @@ export default function GanttView({
               <option value="flatDueDate" className="dark:bg-slate-900">По сроку (списком)</option>
             </select>
           </div>
+
+          <button
+            onClick={toggleHideCompleted}
+            className={`px-2.5 py-1 rounded-lg border text-[10.5px] font-medium transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              hideCompleted
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-950/30 dark:border-indigo-850 dark:text-indigo-400 font-semibold'
+                : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700 dark:text-slate-300'
+            }`}
+            title={hideCompleted ? "Показать выполненные задачи" : "Скрыть выполненные задачи"}
+          >
+            {hideCompleted ? (
+              <EyeOff className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+            ) : (
+              <Eye className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+            )}
+            <span>Скрыть выполненные</span>
+          </button>
 
           {currentZoomTaskId && (
             <div className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-900/50 rounded-lg px-2 py-0.5 select-none">
