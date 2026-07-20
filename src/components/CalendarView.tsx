@@ -127,6 +127,22 @@ export default function CalendarView({
   
   const [activeDayAddInput, setActiveDayAddInput] = useState<string | null>(null); // ISO string 'YYYY-MM-DD'
 
+  const [resizingTask, setResizingTask] = useState<{
+    taskId: string;
+    type: 'top' | 'bottom';
+    initialY: number;
+    initialStartMin: number;
+    initialEndMin: number;
+  } | null>(null);
+
+  const [resizeOverride, setResizeOverride] = useState<{
+    taskId: string;
+    startMin: number;
+    endMin: number;
+  } | null>(null);
+
+  const [hoveringResizeHandle, setHoveringResizeHandle] = useState(false);
+
   const HOUR_HEIGHT = 60;
 
   const timeToMinutes = (timeStr: string): number => {
@@ -157,6 +173,20 @@ export default function CalendarView({
 
   const computeBlocksForTasks = (timedTasks: TaskNode[]): TimedTaskBlock[] => {
     const blocks: TimedTaskBlock[] = timedTasks.map(task => {
+      if (resizeOverride && resizeOverride.taskId === task.id) {
+        const startMin = resizeOverride.startMin;
+        const endMin = resizeOverride.endMin;
+        const top = (startMin / 60) * HOUR_HEIGHT;
+        const height = ((endMin - startMin) / 60) * HOUR_HEIGHT;
+        return {
+          task,
+          top,
+          height,
+          startMin,
+          endMin
+        };
+      }
+
       const startStr = task.startTime || task.dueTime || "09:00";
       let endStr = task.dueTime || task.startTime || "10:00";
       
@@ -257,6 +287,110 @@ export default function CalendarView({
       }
     }
   }, [calendarSubMode, layoutType]);
+
+  const handleResizeStart = (
+    e: React.MouseEvent | React.TouchEvent,
+    taskId: string,
+    type: 'top' | 'bottom',
+    startMin: number,
+    endMin: number
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    setResizingTask({
+      taskId,
+      type,
+      initialY: clientY,
+      initialStartMin: startMin,
+      initialEndMin: endMin
+    });
+
+    setResizeOverride({
+      taskId,
+      startMin,
+      endMin
+    });
+  };
+
+  useEffect(() => {
+    if (!resizingTask) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const clientY = e.clientY;
+      updateResize(clientY);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      const clientY = e.touches[0].clientY;
+      updateResize(clientY);
+    };
+
+    const updateResize = (clientY: number) => {
+      const deltaY = clientY - resizingTask.initialY;
+      const deltaMinutes = Math.round(deltaY / 15) * 15;
+
+      if (resizingTask.type === 'top') {
+        let newStartMin = resizingTask.initialStartMin + deltaMinutes;
+        newStartMin = Math.max(0, Math.min(newStartMin, resizingTask.initialEndMin - 15));
+        setResizeOverride({
+          taskId: resizingTask.taskId,
+          startMin: newStartMin,
+          endMin: resizingTask.initialEndMin
+        });
+      } else {
+        let newEndMin = resizingTask.initialEndMin + deltaMinutes;
+        newEndMin = Math.max(resizingTask.initialStartMin + 15, Math.min(newEndMin, 1440));
+        setResizeOverride({
+          taskId: resizingTask.taskId,
+          startMin: resizingTask.initialStartMin,
+          endMin: newEndMin
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      finishResize();
+    };
+
+    const handleTouchEnd = () => {
+      finishResize();
+    };
+
+    const finishResize = () => {
+      if (resizeOverride) {
+        const task = nodes.find(n => n.id === resizeOverride.taskId);
+        if (task) {
+          const startTimeStr = minutesToTime(resizeOverride.startMin);
+          const dueTimeStr = minutesToTime(resizeOverride.endMin);
+          onUpdateNode({
+            ...task,
+            startTime: startTimeStr,
+            dueTime: dueTimeStr
+          });
+        }
+      }
+      setResizingTask(null);
+      setResizeOverride(null);
+      setHoveringResizeHandle(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [resizingTask, resizeOverride, nodes, onUpdateNode]);
+
   const [newDayTaskText, setNewDayTaskText] = useState('');
   const [activeHourAddInput, setActiveHourAddInput] = useState<string | null>(null); // e.g. '09:00'
   const [newHourTaskText, setNewHourTaskText] = useState('');
@@ -468,6 +602,25 @@ export default function CalendarView({
     }
   };
 
+  const getTaskDurationMinutes = (task: TaskNode): number => {
+    const startStr = task.startTime || task.dueTime;
+    const endStr = task.dueTime || task.startTime;
+    if (!startStr || !endStr) return 60;
+    const startMin = timeToMinutes(startStr);
+    const endMin = timeToMinutes(endStr);
+    const diff = endMin - startMin;
+    return diff > 0 ? diff : 60;
+  };
+
+  const getUpdatedTimesForDrop = (task: TaskNode, startMin: number): { startTime: string; dueTime: string } => {
+    const duration = getTaskDurationMinutes(task);
+    const newEndMin = Math.min(1440, startMin + duration);
+    return {
+      startTime: minutesToTime(startMin),
+      dueTime: minutesToTime(newEndMin)
+    };
+  };
+
   const handleTaskDropToHour = (taskId: string, targetDate: string, targetHour: string | null) => {
     setDraggedOverDate(null);
     setDraggedOverUnscheduled(false);
@@ -475,12 +628,23 @@ export default function CalendarView({
     if (!taskId) return;
     const task = nodes.find(n => n.id === taskId);
     if (task) {
-      onUpdateNode({
-        ...task,
-        dueDate: targetDate,
-        dueTime: targetHour || undefined,
-        startTime: targetHour || undefined
-      });
+      if (targetHour) {
+        const startMin = timeToMinutes(targetHour);
+        const { startTime, dueTime } = getUpdatedTimesForDrop(task, startMin);
+        onUpdateNode({
+          ...task,
+          dueDate: targetDate,
+          startTime,
+          dueTime
+        });
+      } else {
+        onUpdateNode({
+          ...task,
+          dueDate: targetDate,
+          dueTime: undefined,
+          startTime: undefined
+        });
+      }
     }
   };
 
@@ -1280,9 +1444,9 @@ export default function CalendarView({
                     {/* Scrollable area */}
                     <div className="flex-1 overflow-y-auto relative custom-scrollbar flex min-h-0" style={{ height: '480px' }}>
                       {/* Hour markers background and labels */}
-                      <div className="w-12 shrink-0 flex flex-col relative select-none">
+                      <div className="w-12 h-[1440px] shrink-0 flex flex-col relative select-none">
                         {Array.from({ length: 24 }).map((_, h) => (
-                          <div key={h} className="h-[60px] border-b border-slate-100/35 dark:border-slate-800/25 flex justify-end pr-2 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-semibold pt-1">
+                          <div key={h} className="h-[60px] shrink-0 border-b border-slate-100/35 dark:border-slate-800/25 flex justify-end pr-2 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-semibold pt-1">
                             {String(h).padStart(2, '0')}:00
                           </div>
                         ))}
@@ -1313,17 +1477,15 @@ export default function CalendarView({
                                   const dropY = e.clientY - rect.top;
                                   const totalMinutes = Math.max(0, Math.min(1439, Math.floor(dropY)));
                                   const snappedMinutes = Math.round(totalMinutes / 15) * 15;
-                                  const hourVal = Math.floor(snappedMinutes / 60);
-                                  const minVal = snappedMinutes % 60;
-                                  const timeStr = `${String(hourVal).padStart(2, '0')}:${String(minVal).padStart(2, '0')}`;
                                   
                                   const taskToDrop = scheduledTasks.find(t => t.id === taskId);
                                   if (taskToDrop) {
+                                    const { startTime, dueTime } = getUpdatedTimesForDrop(taskToDrop, snappedMinutes);
                                     onUpdateNode({
                                       ...taskToDrop,
                                       dueDate: slot.dateString,
-                                      startTime: timeStr,
-                                      dueTime: timeStr
+                                      startTime,
+                                      dueTime
                                     });
                                   }
                                 }
@@ -1356,7 +1518,7 @@ export default function CalendarView({
                               ))}
 
                               {/* Timed task blocks */}
-                              {timedBlocks.map(({ task, top, height, left, width }) => (
+                              {timedBlocks.map(({ task, top, height, left, width, startMin, endMin }) => (
                                 <div
                                   key={task.id}
                                   onClick={(e) => {
@@ -1372,7 +1534,7 @@ export default function CalendarView({
                                       onSelectNode(null);
                                     }
                                   }}
-                                  draggable={true}
+                                  draggable={!hoveringResizeHandle && resizingTask?.taskId !== task.id}
                                   onDragStart={(e) => {
                                     e.stopPropagation();
                                     e.dataTransfer.setData('text/plain', task.id);
@@ -1394,7 +1556,29 @@ export default function CalendarView({
                                   }}
                                   title={`${task.text} (${formatTaskTime(task)})`}
                                 >
-                                  <div className="flex flex-col min-w-0 flex-1">
+                                  {/* Top Resize Handle */}
+                                  <div
+                                    onMouseDown={(e) => handleResizeStart(e, task.id, 'top', startMin, endMin)}
+                                    onTouchStart={(e) => handleResizeStart(e, task.id, 'top', startMin, endMin)}
+                                    onMouseEnter={() => setHoveringResizeHandle(true)}
+                                    onMouseLeave={() => setHoveringResizeHandle(false)}
+                                    className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-30 flex items-center justify-center group/resize-top"
+                                  >
+                                    <div className="w-8 h-[2px] bg-slate-400/20 group-hover/task:bg-slate-400/60 dark:group-hover/task:bg-slate-600/60 rounded-full transition-all"></div>
+                                  </div>
+
+                                  {/* Bottom Resize Handle */}
+                                  <div
+                                    onMouseDown={(e) => handleResizeStart(e, task.id, 'bottom', startMin, endMin)}
+                                    onTouchStart={(e) => handleResizeStart(e, task.id, 'bottom', startMin, endMin)}
+                                    onMouseEnter={() => setHoveringResizeHandle(true)}
+                                    onMouseLeave={() => setHoveringResizeHandle(false)}
+                                    className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-30 flex items-center justify-center group/resize-bottom"
+                                  >
+                                    <div className="w-8 h-[2px] bg-slate-400/20 group-hover/task:bg-slate-400/60 dark:group-hover/task:bg-slate-600/60 rounded-full transition-all"></div>
+                                  </div>
+
+                                  <div className="flex flex-col min-w-0 flex-1 pt-1">
                                     <div className="flex items-start gap-1 font-semibold truncate leading-tight">
                                       <span>{getTaskIcon(task)}</span>
                                       <span className={task.completed ? 'line-through opacity-55' : ''}>{task.text}</span>
@@ -1975,9 +2159,9 @@ export default function CalendarView({
                     {/* Scrollable Time blocking timeline */}
                     <div id="daily-time-blocking-scroll" className="flex-1 overflow-y-auto relative custom-scrollbar flex min-h-0" style={{ minHeight: '300px' }}>
                       {/* Hour indicators labels */}
-                      <div className="w-16 shrink-0 flex flex-col relative select-none pr-3">
+                      <div className="w-16 h-[1440px] shrink-0 flex flex-col relative select-none pr-3">
                         {Array.from({ length: 24 }).map((_, h) => (
-                          <div key={h} className="h-[60px] border-b border-slate-100/35 dark:border-slate-800/25 flex justify-end text-[10px] text-slate-400 dark:text-slate-500 font-mono font-semibold pt-1">
+                          <div key={h} className="h-[60px] shrink-0 border-b border-slate-100/35 dark:border-slate-800/25 flex justify-end text-[10px] text-slate-400 dark:text-slate-500 font-mono font-semibold pt-1">
                             {String(h).padStart(2, '0')}:00
                           </div>
                         ))}
@@ -1999,17 +2183,15 @@ export default function CalendarView({
                             const dropY = e.clientY - rect.top;
                             const totalMinutes = Math.max(0, Math.min(1439, Math.floor(dropY)));
                             const snappedMinutes = Math.round(totalMinutes / 15) * 15;
-                            const hourVal = Math.floor(snappedMinutes / 60);
-                            const minVal = snappedMinutes % 60;
-                            const timeStr = `${String(hourVal).padStart(2, '0')}:${String(minVal).padStart(2, '0')}`;
                             
                             const taskToDrop = scheduledTasks.find(t => t.id === taskId);
                             if (taskToDrop) {
+                              const { startTime, dueTime } = getUpdatedTimesForDrop(taskToDrop, snappedMinutes);
                               onUpdateNode({
                                 ...taskToDrop,
                                 dueDate: currentDateStr,
-                                startTime: timeStr,
-                                dueTime: timeStr
+                                startTime,
+                                dueTime
                               });
                             }
                           }
@@ -2044,14 +2226,14 @@ export default function CalendarView({
                           const dayTimedTasks = scheduledTasks.filter(task => task.dueDate === currentDateStr && (task.startTime || task.dueTime));
                           const timedBlocks = computeBlocksForTasks(dayTimedTasks);
 
-                          return timedBlocks.map(({ task, top, height, left, width }) => (
+                          return timedBlocks.map(({ task, top, height, left, width, startMin, endMin }) => (
                             <div
                               key={task.id}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onSelectNode(task.id, e);
                               }}
-                              draggable={true}
+                              draggable={!hoveringResizeHandle && resizingTask?.taskId !== task.id}
                               onDragStart={(e) => {
                                 e.stopPropagation();
                                 e.dataTransfer.setData('text/plain', task.id);
@@ -2073,7 +2255,29 @@ export default function CalendarView({
                               }}
                               title={`${task.text} (${formatTaskTime(task)})`}
                             >
-                              <div className="flex flex-col min-w-0 flex-1">
+                              {/* Top Resize Handle */}
+                              <div
+                                onMouseDown={(e) => handleResizeStart(e, task.id, 'top', startMin, endMin)}
+                                onTouchStart={(e) => handleResizeStart(e, task.id, 'top', startMin, endMin)}
+                                onMouseEnter={() => setHoveringResizeHandle(true)}
+                                onMouseLeave={() => setHoveringResizeHandle(false)}
+                                className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-30 flex items-center justify-center group/resize-top"
+                              >
+                                <div className="w-10 h-[2.5px] bg-slate-400/20 group-hover/task:bg-slate-400/60 dark:group-hover/task:bg-slate-600/60 rounded-full transition-all"></div>
+                              </div>
+
+                              {/* Bottom Resize Handle */}
+                              <div
+                                onMouseDown={(e) => handleResizeStart(e, task.id, 'bottom', startMin, endMin)}
+                                onTouchStart={(e) => handleResizeStart(e, task.id, 'bottom', startMin, endMin)}
+                                onMouseEnter={() => setHoveringResizeHandle(true)}
+                                onMouseLeave={() => setHoveringResizeHandle(false)}
+                                className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-30 flex items-center justify-center group/resize-bottom"
+                              >
+                                <div className="w-10 h-[2.5px] bg-slate-400/20 group-hover/task:bg-slate-400/60 dark:group-hover/task:bg-slate-600/60 rounded-full transition-all"></div>
+                              </div>
+
+                              <div className="flex flex-col min-w-0 flex-1 pt-1">
                                 <div className="flex items-center gap-1.5 font-bold truncate text-slate-850 dark:text-slate-100">
                                   <span className="text-sm shrink-0">{getTaskIcon(task)}</span>
                                   <span className={task.completed ? 'line-through opacity-55' : ''}>{task.text}</span>
