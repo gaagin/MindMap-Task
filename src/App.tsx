@@ -4387,6 +4387,47 @@ export default function App() {
     };
   };
 
+  const getHemkarlarTags = (stateVal: WorkspaceState, projectId: string): string[] => {
+    const rootCats = stateVal.tagCategories || [];
+    const project = stateVal.projects.find(p => p.id === projectId);
+    const projCats = project?.tagCategories || [];
+    const allCats = [...rootCats, ...projCats];
+    const hemkarlarCats = allCats.filter(cat => cat && cat.name && cat.name.toLowerCase() === 'hemkarlar');
+    return Array.from(new Set(hemkarlarCats.flatMap(cat => cat.tags || [])));
+  };
+
+  const findWaitingContainer = (nodesList: TaskNode[]): TaskNode | null => {
+    return nodesList.find(n => 
+      !!n.isContainer && 
+      (n.text.toLowerCase().includes('waiting') || n.text.toLowerCase().includes('ожида'))
+    ) || null;
+  };
+
+  const createWaitingContainer = (projectId: string, currentNodes: TaskNode[]): TaskNode => {
+    const minX = currentNodes.length > 0 ? Math.min(...currentNodes.map(n => n.x)) : 0;
+    const maxY = currentNodes.length > 0 ? Math.max(...currentNodes.map(n => n.y)) : 0;
+    
+    return {
+      id: 'gtd-waiting-' + generateId(),
+      projectId: projectId,
+      text: "⏳ WAITING",
+      x: minX + 500,
+      y: maxY + 200,
+      parentId: null,
+      isFloating: true,
+      isContainer: true,
+      priority: 'low',
+      tags: [],
+      notes: "Задачи, переданные партнерам/коллегам и ожидающие ответа.",
+      completed: false,
+      files: [],
+      color: '#6366f1',
+      width: 320,
+      height: 300,
+      updatedAt: new Date().toISOString()
+    };
+  };
+
   const processNewTaskForPersonalTags = (
     text: string,
     tags: string[],
@@ -4502,8 +4543,42 @@ export default function App() {
     const personalTags = getPersonalTags(state, pid || '');
     const hasPersonalTag = (newTargetNode.tags || []).some(tag => personalTags.includes(tag));
 
-    if (!hasPersonalTag) {
+    const hemkarlarTags = getHemkarlarTags(state, pid || '');
+    const hasHemkarlarTag = (newTargetNode.tags || []).some(tag => hemkarlarTags.includes(tag));
+
+    if (!hasPersonalTag && !hasHemkarlarTag) {
       return { finalNewNode: newTargetNode, mirrorCloneNode: null, extraNodesToAdd: [] };
+    }
+
+    if (hasHemkarlarTag) {
+      let waitingContainer = findWaitingContainer(currentNodes);
+      const extraNodesToAdd: TaskNode[] = [];
+      if (!waitingContainer) {
+        waitingContainer = createWaitingContainer(pid || '', currentNodes);
+        extraNodesToAdd.push(waitingContainer);
+      }
+
+      const assignedMirrorGroupId = `mirror-${newTargetNode.id}-${Date.now()}`;
+      newTargetNode.mirrorGroupId = assignedMirrorGroupId;
+      newTargetNode.updatedAt = new Date().toISOString();
+
+      const parentColor = waitingContainer ? waitingContainer.color : '';
+      const updatedContainerPlace = waitingContainer ? `${waitingContainer.text} (X: ${Math.round(waitingContainer.x)}, Y: ${Math.round(waitingContainer.y)})` : '';
+
+      const mirrorCloneNode: TaskNode = {
+        ...newTargetNode,
+        id: 'node-' + generateId(),
+        parentId: waitingContainer.id,
+        color: parentColor || newTargetNode.color,
+        isFloating: false,
+        containerPlace: updatedContainerPlace,
+        mirrorGroupId: assignedMirrorGroupId,
+        mirrorParentId: parentNode ? parentNode.id : undefined,
+        mirrorParentText: parentNode ? parentNode.text : undefined,
+        updatedAt: new Date().toISOString()
+      };
+
+      return { finalNewNode: newTargetNode, mirrorCloneNode, extraNodesToAdd };
     }
 
     // Has a personal tag!
@@ -4643,10 +4718,75 @@ export default function App() {
 
       let adjustedUpdatedNode = { ...updatedNode };
 
-      // --- INTEGRATE PERSONAL TAG LOGIC ---
-      const personalTags = getPersonalTags(prev, pid);
       const newTags = updatedNode.tags || [];
       const oldTags = targetNode ? (targetNode.tags || []) : [];
+
+      // --- INTEGRATE HEMKARLAR TAG LOGIC ---
+      const hemkarlarTags = getHemkarlarTags(prev, pid);
+      const hasHemkarlarTagNow = newTags.some(tag => hemkarlarTags.includes(tag));
+      const hadHemkarlarTagBefore = oldTags.some(tag => hemkarlarTags.includes(tag));
+      const newlyAddedHemkarlarTag = hasHemkarlarTagNow && (!targetNode || !hadHemkarlarTagBefore);
+
+      if (newlyAddedHemkarlarTag) {
+        let waitingContainer = findWaitingContainer(currentNodes);
+        let updatedNodesWithContainer = [...currentNodes];
+        if (!waitingContainer) {
+          waitingContainer = createWaitingContainer(pid, currentNodes);
+          updatedNodesWithContainer.push(waitingContainer);
+        }
+
+        const parentNode = updatedNode.parentId ? updatedNodesWithContainer.find(n => n.id === updatedNode.parentId) : null;
+
+        assignedMirrorGroupId = updatedNode.mirrorGroupId || `mirror-${updatedNode.id}-${Date.now()}`;
+        adjustedUpdatedNode = {
+          ...updatedNode,
+          mirrorGroupId: assignedMirrorGroupId,
+          updatedAt: new Date().toISOString()
+        };
+
+        const parentColor = waitingContainer ? waitingContainer.color : '';
+        const updatedContainerPlace = waitingContainer ? `${waitingContainer.text} (X: ${Math.round(waitingContainer.x)}, Y: ${Math.round(waitingContainer.y)})` : '';
+
+        mirrorCloneNode = {
+          ...adjustedUpdatedNode,
+          id: 'node-' + generateId(),
+          parentId: waitingContainer.id,
+          color: parentColor || adjustedUpdatedNode.color,
+          isFloating: false,
+          containerPlace: updatedContainerPlace,
+          mirrorGroupId: assignedMirrorGroupId,
+          mirrorParentId: parentNode ? parentNode.id : undefined,
+          mirrorParentText: parentNode ? parentNode.text : undefined,
+          updatedAt: new Date().toISOString()
+        };
+
+        let updatedList = updatedNodesWithContainer.map(n => n.id === adjustedUpdatedNode.id ? adjustedUpdatedNode : n);
+        if (mirrorCloneNode) {
+          updatedList = [...updatedList, mirrorCloneNode];
+        }
+
+        if (targetNode && targetNode.completed !== adjustedUpdatedNode.completed) {
+          updatedList = toggleNodeAndDescendants(adjustedUpdatedNode.id, adjustedUpdatedNode.completed, updatedList);
+        }
+
+        if (targetNode && targetNode.archived !== adjustedUpdatedNode.archived) {
+          updatedList = toggleNodeArchive(adjustedUpdatedNode.id, !!adjustedUpdatedNode.archived, updatedList);
+        }
+
+        const syncedNodes = syncCompletion(updatedList);
+
+        return {
+          ...prev,
+          nodes: {
+            ...prev.nodes,
+            [pid]: syncedNodes
+          }
+        };
+      }
+      // --- END INTEGRATE HEMKARLAR TAG LOGIC ---
+
+      // --- INTEGRATE PERSONAL TAG LOGIC ---
+      const personalTags = getPersonalTags(prev, pid);
       const hasPersonalTagNow = newTags.some(tag => personalTags.includes(tag));
       const hadPersonalTagBefore = oldTags.some(tag => personalTags.includes(tag));
       const newlyAddedPersonalTag = hasPersonalTagNow && (!targetNode || !hadPersonalTagBefore);
@@ -4826,10 +4966,79 @@ export default function App() {
       const currentNodes = prev.nodes[projId] || [];
       const targetNode = currentNodes.find(n => n.id === updatedNode.id);
 
-      // --- INTEGRATE PERSONAL TAG LOGIC ---
-      const personalTags = getPersonalTags(prev, projId);
       const newTags = updatedNode.tags || [];
       const oldTags = targetNode ? (targetNode.tags || []) : [];
+
+      // --- INTEGRATE HEMKARLAR TAG LOGIC ---
+      const hemkarlarTags = getHemkarlarTags(prev, projId);
+      const hasHemkarlarTagNow = newTags.some(tag => hemkarlarTags.includes(tag));
+      const hadHemkarlarTagBefore = oldTags.some(tag => hemkarlarTags.includes(tag));
+      const newlyAddedHemkarlarTag = hasHemkarlarTagNow && (!targetNode || !hadHemkarlarTagBefore);
+
+      if (newlyAddedHemkarlarTag) {
+        let waitingContainer = findWaitingContainer(currentNodes);
+        let updatedNodesWithContainer = [...currentNodes];
+        if (!waitingContainer) {
+          waitingContainer = createWaitingContainer(projId, currentNodes);
+          updatedNodesWithContainer.push(waitingContainer);
+        }
+
+        const parentNode = updatedNode.parentId ? updatedNodesWithContainer.find(n => n.id === updatedNode.parentId) : null;
+
+        let adjustedUpdatedNode = { ...updatedNode };
+        let mirrorCloneNode: TaskNode | null = null;
+        let assignedMirrorGroupId = '';
+
+        assignedMirrorGroupId = updatedNode.mirrorGroupId || `mirror-${updatedNode.id}-${Date.now()}`;
+        adjustedUpdatedNode = {
+          ...updatedNode,
+          mirrorGroupId: assignedMirrorGroupId,
+          updatedAt: new Date().toISOString()
+        };
+
+        const parentColor = waitingContainer ? waitingContainer.color : '';
+        const updatedContainerPlace = waitingContainer ? `${waitingContainer.text} (X: ${Math.round(waitingContainer.x)}, Y: ${Math.round(waitingContainer.y)})` : '';
+
+        mirrorCloneNode = {
+          ...adjustedUpdatedNode,
+          id: 'node-' + generateId(),
+          parentId: waitingContainer.id,
+          color: parentColor || adjustedUpdatedNode.color,
+          isFloating: false,
+          containerPlace: updatedContainerPlace,
+          mirrorGroupId: assignedMirrorGroupId,
+          mirrorParentId: parentNode ? parentNode.id : undefined,
+          mirrorParentText: parentNode ? parentNode.text : undefined,
+          updatedAt: new Date().toISOString()
+        };
+
+        let updatedList = updatedNodesWithContainer.map(n => n.id === adjustedUpdatedNode.id ? adjustedUpdatedNode : n);
+        if (mirrorCloneNode) {
+          updatedList = [...updatedList, mirrorCloneNode];
+        }
+
+        if (targetNode && targetNode.completed !== adjustedUpdatedNode.completed) {
+          updatedList = toggleNodeAndDescendants(adjustedUpdatedNode.id, adjustedUpdatedNode.completed, updatedList);
+        }
+
+        if (targetNode && targetNode.archived !== adjustedUpdatedNode.archived) {
+          updatedList = toggleNodeArchive(adjustedUpdatedNode.id, !!adjustedUpdatedNode.archived, updatedList);
+        }
+
+        const syncedNodes = syncCompletion(updatedList);
+
+        return {
+          ...prev,
+          nodes: {
+            ...prev.nodes,
+            [projId]: syncedNodes
+          }
+        };
+      }
+      // --- END INTEGRATE HEMKARLAR TAG LOGIC ---
+
+      // --- INTEGRATE PERSONAL TAG LOGIC ---
+      const personalTags = getPersonalTags(prev, projId);
       const hasPersonalTagNow = newTags.some(tag => personalTags.includes(tag));
       const hadPersonalTagBefore = oldTags.some(tag => personalTags.includes(tag));
       const newlyAddedPersonalTag = hasPersonalTagNow && (!targetNode || !hadPersonalTagBefore);
