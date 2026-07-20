@@ -874,6 +874,12 @@ export default function MindMapCanvas({
 
   // Drag states for dragging a specific card
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [alignmentLines, setAlignmentLines] = useState<{
+    type: 'v' | 'h';
+    coord: number;
+    minVal: number;
+    maxVal: number;
+  }[]>([]);
   const [draggingConn, setDraggingConn] = useState<{
     nodeId: string;
     connId: string;
@@ -943,6 +949,209 @@ export default function MindMapCanvas({
         return n;
       });
     });
+  };
+
+  const getSnapAndLines = (
+    draggedId: string,
+    proposedX: number,
+    proposedY: number,
+    allNodes: TaskNode[]
+  ) => {
+    const draggedNode = allNodes.find(n => n.id === draggedId);
+    if (!draggedNode) return { snappedX: proposedX, snappedY: proposedY, lines: [] };
+
+    const draggedW = getNodeWidth(draggedNode);
+    const draggedH = getNodeHeight(draggedNode);
+
+    // Identify which nodes are moving (so we don't snap to them)
+    const isMultiDrag = selectedNodeIds && selectedNodeIds.includes(draggedId);
+    const isMoving = (candidateId: string): boolean => {
+      if (isMultiDrag) {
+        if (selectedNodeIds.includes(candidateId)) return true;
+        let currentId: string | null = candidateId;
+        let iterations = 0;
+        while (currentId !== null && iterations < 100) {
+          iterations++;
+          const current = allNodes.find(n => n.id === currentId);
+          if (!current) break;
+          if (selectedNodeIds.includes(current.parentId || '')) return true;
+          currentId = current.parentId;
+        }
+        return false;
+      } else {
+        if (candidateId === draggedId) return true;
+        let currentId: string | null = candidateId;
+        let iterations = 0;
+        while (currentId !== null && iterations < 100) {
+          iterations++;
+          const current = allNodes.find(n => n.id === currentId);
+          if (!current) break;
+          if (current.parentId === draggedId) return true;
+          currentId = current.parentId;
+        }
+        return false;
+      }
+    };
+
+    const staticNodes = allNodes.filter(n => !isMoving(n.id));
+
+    let snappedX = proposedX;
+    let bestDiffX = Infinity;
+
+    const myLeft = proposedX - draggedW / 2;
+    const myCenter = proposedX;
+    const myRight = proposedX + draggedW / 2;
+
+    const myEdgesX = [
+      { val: myLeft, name: 'left', offset: -draggedW / 2 },
+      { val: myCenter, name: 'center', offset: 0 },
+      { val: myRight, name: 'right', offset: draggedW / 2 }
+    ];
+
+    staticNodes.forEach(other => {
+      const otherW = getNodeWidth(other);
+      const otherEdgesX = [
+        { val: other.x - otherW / 2, name: 'left' },
+        { val: other.x, name: 'center' },
+        { val: other.x + otherW / 2, name: 'right' }
+      ];
+
+      myEdgesX.forEach(myEdge => {
+        otherEdgesX.forEach(otherEdge => {
+          const diff = Math.abs(myEdge.val - otherEdge.val);
+          if (diff < 8 && diff < bestDiffX) {
+            bestDiffX = diff;
+            snappedX = otherEdge.val - myEdge.offset;
+          }
+        });
+      });
+    });
+
+    let snappedY = proposedY;
+    let bestDiffY = Infinity;
+
+    const myTop = proposedY - draggedH / 2;
+    const myCenterY = proposedY;
+    const myBottom = proposedY + draggedH / 2;
+
+    const myEdgesY = [
+      { val: myTop, name: 'top', offset: -draggedH / 2 },
+      { val: myCenterY, name: 'center', offset: 0 },
+      { val: myBottom, name: 'bottom', offset: draggedH / 2 }
+    ];
+
+    staticNodes.forEach(other => {
+      const otherH = getNodeHeight(other);
+      const otherEdgesY = [
+        { val: other.y - otherH / 2, name: 'top' },
+        { val: other.y, name: 'center' },
+        { val: other.y + otherH / 2, name: 'bottom' }
+      ];
+
+      myEdgesY.forEach(myEdge => {
+        otherEdgesY.forEach(otherEdge => {
+          const diff = Math.abs(myEdge.val - otherEdge.val);
+          if (diff < 8 && diff < bestDiffY) {
+            bestDiffY = diff;
+            snappedY = otherEdge.val - myEdge.offset;
+          }
+        });
+      });
+    });
+
+    const lines: { type: 'v' | 'h'; coord: number; minVal: number; maxVal: number }[] = [];
+
+    if (bestDiffX < 8) {
+      const snappedLeft = snappedX - draggedW / 2;
+      const snappedCenter = snappedX;
+      const snappedRight = snappedX + draggedW / 2;
+
+      const finalEdgesX = [
+        { val: snappedLeft, name: 'left' },
+        { val: snappedCenter, name: 'center' },
+        { val: snappedRight, name: 'right' }
+      ];
+
+      let minY = snappedY - draggedH / 2;
+      let maxY = snappedY + draggedH / 2;
+      const alignedCoordsX = new Set<number>();
+
+      staticNodes.forEach(other => {
+        const otherW = getNodeWidth(other);
+        const otherH = getNodeHeight(other);
+        const otherEdges = [
+          { val: other.x - otherW / 2, name: 'left' },
+          { val: other.x, name: 'center' },
+          { val: other.x + otherW / 2, name: 'right' }
+        ];
+
+        finalEdgesX.forEach(myEdge => {
+          otherEdges.forEach(otherEdge => {
+            if (Math.abs(myEdge.val - otherEdge.val) < 0.2) {
+              alignedCoordsX.add(otherEdge.val);
+              minY = Math.min(minY, other.y - otherH / 2);
+              maxY = Math.max(maxY, other.y + otherH / 2);
+            }
+          });
+        });
+      });
+
+      alignedCoordsX.forEach(coord => {
+        lines.push({
+          type: 'v',
+          coord: parseFloat(coord.toFixed(1)),
+          minVal: minY - 15,
+          maxVal: maxY + 15
+        });
+      });
+    }
+
+    if (bestDiffY < 8) {
+      const snappedTop = snappedY - draggedH / 2;
+      const snappedCenterY = snappedY;
+      const snappedBottom = snappedY + draggedH / 2;
+
+      const finalEdgesY = [
+        { val: snappedTop, name: 'top' },
+        { val: snappedCenterY, name: 'center' },
+        { val: snappedBottom, name: 'bottom' }
+      ];
+
+      let minX = snappedX - draggedW / 2;
+      let maxX = snappedX + draggedW / 2;
+      const alignedCoordsY = new Set<number>();
+
+      staticNodes.forEach(other => {
+        const otherW = getNodeWidth(other);
+        const otherH = getNodeHeight(other);
+        const otherEdgesY = [
+          { val: other.y - otherH / 2, name: 'top' },
+          { val: other.y, name: 'center' },
+          { val: other.y + otherH / 2, name: 'bottom' }
+        ];
+
+        finalEdgesY.forEach(myEdge => {
+          otherEdgesY.forEach(otherEdge => {
+            if (Math.abs(myEdge.val - otherEdge.val) < 0.2) {
+              alignedCoordsY.add(otherEdge.val);
+              minX = Math.min(minX, other.x - otherW / 2);
+              maxX = Math.max(maxX, other.x + otherW / 2);
+            }
+          });
+        });
+      });
+
+      alignedCoordsY.forEach(coord => {
+        lines.push({
+          type: 'h',
+          coord: parseFloat(coord.toFixed(1)),
+          minVal: minX - 15,
+          maxVal: maxX + 15
+        });
+      });
+    }
+
+    return { snappedX, snappedY, lines };
   };
 
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -3697,7 +3906,10 @@ export default function MindMapCanvas({
         didDragRef.current = true;
       }
 
-      handleLocalUpdateCoordinates(draggingNodeId, newX, newY);
+      const { snappedX, snappedY, lines } = getSnapAndLines(draggingNodeId, newX, newY, nodes);
+
+      handleLocalUpdateCoordinates(draggingNodeId, snappedX, snappedY);
+      setAlignmentLines(lines);
 
       // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
       const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
@@ -3708,10 +3920,10 @@ export default function MindMapCanvas({
         const cardW = 210;
         const cardH = 110;
 
-        const nodeLeft = newX - cardW / 2;
-        const nodeRight = newX + cardW / 2;
-        const nodeTop = newY - cardH / 2;
-        const nodeBottom = newY + cardH / 2;
+        const nodeLeft = snappedX - cardW / 2;
+        const nodeRight = snappedX + cardW / 2;
+        const nodeTop = snappedY - cardH / 2;
+        const nodeBottom = snappedY + cardH / 2;
 
         const currentLeft = parentContainer.x - W / 2;
         const currentRight = parentContainer.x + W / 2;
@@ -3761,7 +3973,7 @@ export default function MindMapCanvas({
       }
 
       // Check support for re-parenting by hovering over another task card or container
-      const overlapNode = getOverlapParent(draggingNodeId, newX, newY);
+      const overlapNode = getOverlapParent(draggingNodeId, snappedX, snappedY);
 
       if (overlapNode) {
         const node = nodes.find(n => n.id === draggingNodeId);
@@ -3784,6 +3996,7 @@ export default function MindMapCanvas({
 
   const handleMouseUp = (e?: React.MouseEvent) => {
     setIsPanning(false);
+    setAlignmentLines([]);
 
     if (e && mouseDownPosRef.current && mouseDownTargetRef.current) {
       const dx = Math.abs(e.clientX - mouseDownPosRef.current.x);
@@ -4414,7 +4627,10 @@ export default function MindMapCanvas({
         didDragRef.current = true;
       }
 
-      handleLocalUpdateCoordinates(draggingNodeId, newX, newY);
+      const { snappedX, snappedY, lines } = getSnapAndLines(draggingNodeId, newX, newY, nodes);
+
+      handleLocalUpdateCoordinates(draggingNodeId, snappedX, snappedY);
+      setAlignmentLines(lines);
 
       // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
       const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
@@ -4425,10 +4641,10 @@ export default function MindMapCanvas({
         const cardW = 210;
         const cardH = 110;
 
-        const nodeLeft = newX - cardW / 2;
-        const nodeRight = newX + cardW / 2;
-        const nodeTop = newY - cardH / 2;
-        const nodeBottom = newY + cardH / 2;
+        const nodeLeft = snappedX - cardW / 2;
+        const nodeRight = snappedX + cardW / 2;
+        const nodeTop = snappedY - cardH / 2;
+        const nodeBottom = snappedY + cardH / 2;
 
         const currentLeft = parentContainer.x - W / 2;
         const currentRight = parentContainer.x + W / 2;
@@ -4478,7 +4694,7 @@ export default function MindMapCanvas({
       }
 
       // Check support for re-parenting by hovering over another task card or container
-      const overlapNode = getOverlapParent(draggingNodeId, newX, newY);
+      const overlapNode = getOverlapParent(draggingNodeId, snappedX, snappedY);
 
       if (overlapNode) {
         const node = nodes.find(n => n.id === draggingNodeId);
@@ -4502,6 +4718,7 @@ export default function MindMapCanvas({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    setAlignmentLines([]);
     // If in focus mode, single tap task creation is disabled.
     if (touchStartPosRef.current && touchStartTargetRef.current) {
       touchStartPosRef.current = null;
@@ -6411,6 +6628,46 @@ export default function MindMapCanvas({
               );
             }).filter(Boolean);
           })}
+ 
+        {/* Render Alignment Snapping lines (draw.io style) */}
+        {alignmentLines.length > 0 && (
+          <svg
+            className="absolute inset-0 pointer-events-none overflow-visible w-1 h-1"
+            style={{ zIndex: 1000 }}
+          >
+            {alignmentLines.map((line, idx) => {
+              if (line.type === 'v') {
+                return (
+                  <line
+                    key={`align-line-v-${idx}`}
+                    x1={line.coord}
+                    y1={line.minVal}
+                    x2={line.coord}
+                    y2={line.maxVal}
+                    stroke="#ec4899"
+                    strokeWidth={1.5}
+                    strokeDasharray="4,4"
+                    className="opacity-80"
+                  />
+                );
+              } else {
+                return (
+                  <line
+                    key={`align-line-h-${idx}`}
+                    x1={line.minVal}
+                    y1={line.coord}
+                    x2={line.maxVal}
+                    y2={line.coord}
+                    stroke="#ec4899"
+                    strokeWidth={1.5}
+                    strokeDasharray="4,4"
+                    className="opacity-80"
+                  />
+                );
+              }
+            })}
+          </svg>
+        )}
 
         {/* Task Nodes Render */}
         {visibleNodes.map((node) => {
