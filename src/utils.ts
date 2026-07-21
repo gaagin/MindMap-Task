@@ -268,8 +268,17 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
   current.forEach(node => {
     if (node.mirrorGroupId) {
       const existing = mirrorGroups.get(node.mirrorGroupId);
-      if (!existing || !existing.updatedAt || (node.updatedAt && node.updatedAt > existing.updatedAt)) {
+      if (!existing) {
         mirrorGroups.set(node.mirrorGroupId, node);
+      } else {
+        const existingTime = existing.updatedAt ? Date.parse(existing.updatedAt) : 0;
+        const nodeTime = node.updatedAt ? Date.parse(node.updatedAt) : 0;
+        const existingTimeValid = !isNaN(existingTime) ? existingTime : 0;
+        const nodeTimeValid = !isNaN(nodeTime) ? nodeTime : 0;
+
+        if (nodeTimeValid > existingTimeValid) {
+          mirrorGroups.set(node.mirrorGroupId, node);
+        }
       }
     }
   });
