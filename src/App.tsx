@@ -1228,6 +1228,7 @@ export default function App() {
     projectId: string;
     text: string;
     targetTime: string;
+    mirrorGroupId?: string;
   }[]>([]);
   const [activeReminderIndex, setActiveReminderIndex] = useState(0);
   const [showCustomSnooze, setShowCustomSnooze] = useState(false);
@@ -1255,11 +1256,22 @@ export default function App() {
         projectId: string;
         text: string;
         targetTime: string;
+        mirrorGroupId?: string;
       }[] = [];
+
+      const seenMirrorGroupIds = new Set<string>();
 
       Object.entries(state.nodes).forEach(([projectId, nodeList]) => {
         (nodeList as TaskNode[]).forEach((node) => {
           if (node.reminderDate && node.reminderTime && !node.reminderDismissed && !node.completed) {
+            // Deduplicate triggered mirrors within the same check cycle
+            if (node.mirrorGroupId) {
+              if (seenMirrorGroupIds.has(node.mirrorGroupId)) {
+                return;
+              }
+              seenMirrorGroupIds.add(node.mirrorGroupId);
+            }
+
             const reminderDateTime = new Date(`${node.reminderDate}T${node.reminderTime}`);
             const currentDateTime = new Date(`${todayDateStr}T${timeStr}`);
 
@@ -1269,6 +1281,7 @@ export default function App() {
                 projectId,
                 text: node.text,
                 targetTime: `${node.reminderDate} ${node.reminderTime}`,
+                mirrorGroupId: node.mirrorGroupId,
               });
             }
           }
@@ -1278,7 +1291,12 @@ export default function App() {
       if (triggered.length > 0) {
         setTriggeredReminders(prev => {
           const prevIds = new Set(prev.map(r => r.nodeId));
-          const newReminders = triggered.filter(r => !prevIds.has(r.nodeId));
+          const prevMirrorGroupIds = new Set(prev.map(r => r.mirrorGroupId).filter(Boolean) as string[]);
+          const newReminders = triggered.filter(r => {
+            if (prevIds.has(r.nodeId)) return false;
+            if (r.mirrorGroupId && prevMirrorGroupIds.has(r.mirrorGroupId)) return false;
+            return true;
+          });
           if (newReminders.length > 0) {
             playNotificationChime();
 

@@ -9,6 +9,7 @@ import {
   FileText, 
   Clock, 
   ChevronRight, 
+  Eye,
   CheckCircle, 
   Circle, 
   ChevronDown, 
@@ -646,6 +647,61 @@ export default function MobileListView({
     return d.toISOString().split('T')[0];
   }, []);
 
+  const tomorrowStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  }, []);
+
+  const getFriendlyDate = (dateStr: string, completed?: boolean) => {
+    if (!dateStr) return null;
+    if (dateStr === todayStr) {
+      return {
+        text: 'Сегодня',
+        style: completed 
+          ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent' 
+          : 'bg-orange-500/10 text-orange-600 border-orange-500/20 dark:bg-orange-500/15 dark:text-orange-400 dark:border-orange-500/30'
+      };
+    } else if (dateStr === tomorrowStr) {
+      return {
+        text: 'Завтра',
+        style: completed
+          ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent'
+          : 'bg-sky-500/10 text-sky-600 border-sky-500/20 dark:bg-sky-500/15 dark:text-sky-400 dark:border-sky-500/30'
+      };
+    } else if (dateStr < todayStr) {
+      return {
+        text: 'Просрочено',
+        style: completed
+          ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent'
+          : 'bg-rose-500/10 text-rose-600 border-rose-500/20 dark:bg-rose-500/15 dark:text-rose-400 dark:border-rose-500/30 font-bold animate-pulse'
+      };
+    } else {
+      try {
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+          const day = parseInt(parts[2], 10);
+          const monthIdx = parseInt(parts[1], 10) - 1;
+          if (monthIdx >= 0 && monthIdx < 12) {
+            return {
+              text: `${day} ${months[monthIdx]}`,
+              style: completed
+                ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent'
+                : 'bg-slate-100 text-slate-500 border-slate-200/60 dark:bg-slate-800/50 dark:text-slate-400 dark:border-slate-700/80'
+            };
+          }
+        }
+      } catch (e) {}
+      return {
+        text: dateStr,
+        style: completed
+          ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent'
+          : 'bg-slate-100 text-slate-500 border-slate-200/60 dark:bg-slate-800/50 dark:text-slate-400 dark:border-slate-700/80'
+      };
+    }
+  };
+
   // Filter existing active user nodes
   const filteredNodes = useMemo(() => {
     return nodes.filter(n => {
@@ -770,19 +826,26 @@ export default function MobileListView({
     // Subtask styling offset and container card margin
     const mlClass = depth > 0 ? 'ml-3 mt-1' : 'mt-1.5';
 
+    const priorityBorderClass = 
+      node.priority === 'urgent' ? 'border-l-[3.5px] border-l-rose-500' :
+      node.priority === 'high' ? 'border-l-[3.5px] border-l-orange-500' :
+      node.priority === 'medium' ? 'border-l-[3.5px] border-l-amber-500' :
+      node.priority === 'low' ? 'border-l-[3.5px] border-l-sky-400 font-medium' :
+      'border-l-[3.5px] border-l-transparent';
+
     const cardBgBorderClass = draggedNodeId === node.id
-      ? 'pointer-events-none opacity-30 border-dashed border-indigo-400 bg-slate-50 dark:bg-slate-950'
+      ? 'pointer-events-none opacity-20 bg-slate-100/50 dark:bg-slate-800/50 border-dashed border-slate-300'
       : dragOverNodeId === node.id
-        ? 'border-dashed border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/30 ring-2 ring-indigo-500/30 shadow-md'
+        ? 'border-dashed border-indigo-500 bg-indigo-500/5 dark:bg-indigo-950/20 shadow-xs'
         : isMultiSelectMode
           ? isSelectedInMulti
-            ? 'border-indigo-500 dark:border-indigo-500 bg-indigo-50/15 dark:bg-indigo-950/25 shadow-[0_0_8px_rgba(99,102,241,0.15)]'
-            : 'bg-white border-slate-200 dark:bg-slate-900/30 dark:border-slate-800 opacity-85'
+            ? 'border-indigo-400 dark:border-indigo-500/65 bg-indigo-500/5 dark:bg-indigo-950/15 shadow-[0_1px_6px_rgba(99,102,241,0.08)]'
+            : 'bg-white dark:bg-slate-900/40 border-slate-200/60 dark:border-slate-800/60 opacity-90'
           : isSelected 
-            ? 'bg-indigo-55/10 border-indigo-200 dark:bg-indigo-950/20 dark:border-indigo-900/40' 
+            ? 'bg-indigo-50/10 dark:bg-indigo-950/10 border-indigo-200 dark:border-indigo-900/50 shadow-xs' 
             : node.archived
-              ? 'bg-amber-50/5 border-dashed border-amber-300 dark:bg-amber-955/2 dark:border-amber-900/40 opacity-60 saturate-60'
-              : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800';
+              ? 'bg-amber-500/5 border-dashed border-amber-400/40 dark:bg-amber-500/2 opacity-60'
+              : 'bg-white dark:bg-slate-900 border-slate-150/80 dark:border-slate-850/80 hover:shadow-[0_2px_8px_rgba(0,0,0,0.02)]';
 
     return (
       <div key={node.id} className={`${mlClass} flex flex-col`}>
@@ -806,11 +869,11 @@ export default function MobileListView({
             }
             onSelectNode(null);
           }}
-          className={`border rounded-xl p-1.5 px-2.5 transition-[background-color,border-color,opacity,box-shadow] duration-150 flex flex-col gap-1 relative select-none cursor-pointer ${cardBgBorderClass} ${node.completed ? 'opacity-70' : ''}`}
+          className={`border rounded-xl p-2.5 px-3.5 transition-[background-color,border-color,opacity,box-shadow] duration-150 flex flex-col gap-1.5 relative select-none cursor-pointer ${cardBgBorderClass} ${priorityBorderClass} ${node.completed ? 'opacity-70' : ''}`}
         >
           {/* Connector guide line for nested subtasks */}
           {depth > 0 && (
-            <div className="absolute left-[-16px] top-4 w-[16px].0 h-3 border-l-2 border-b-2 border-slate-250 dark:border-slate-800 rounded-bl-lg pointer-events-none" />
+            <div className="absolute left-[-16px] top-0 bottom-4 w-4 border-l-2 border-b-2 border-slate-200/60 dark:border-slate-800/60 rounded-bl-lg pointer-events-none" />
           )}
 
           {/* Visual Overlay Drop-zone Cue */}
@@ -837,7 +900,7 @@ export default function MobileListView({
                   className="p-1 shrink-0 mt-0.5 cursor-pointer select-none"
                   data-drag-ignore="true"
                 >
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                  <div className={`w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                     isSelectedInMulti
                       ? 'bg-indigo-600 border-indigo-600 dark:bg-indigo-500 dark:border-indigo-500 text-white'
                       : 'border-slate-300 dark:border-slate-700 hover:border-indigo-500 bg-white dark:bg-slate-900'
@@ -851,7 +914,7 @@ export default function MobileListView({
                   onPointerMove={(e) => handlePointerMove(e, node.id)}
                   onPointerUp={(e) => handlePointerUp(e, node.id)}
                   onPointerCancel={(e) => handleCardPointerCancel()}
-                  className="p-1 text-slate-350 dark:text-slate-650 hover:text-indigo-500 dark:hover:text-indigo-400 cursor-grab active:cursor-grabbing transition-colors shrink-0 mt-0.5 select-none touch-none"
+                  className="p-1 text-slate-350 dark:text-slate-600 hover:text-indigo-500 dark:hover:text-indigo-450 cursor-grab active:cursor-grabbing transition-colors shrink-0 mt-0.5 select-none touch-none"
                   style={{ touchAction: 'none' }}
                   title="Удерживайте для перемещения"
                 >
@@ -861,7 +924,7 @@ export default function MobileListView({
             )}
 
             {/* Pointer Events Wrapper to prevent drag-flicker on inner children */}
-            <div className={`flex-1 flex flex-col gap-1 min-w-0 ${draggedNodeId !== null ? 'pointer-events-none' : ''}`}>
+            <div className={`flex-1 flex flex-col gap-1.5 min-w-0 ${draggedNodeId !== null ? 'pointer-events-none' : ''}`}>
 
               <div className="flex items-center gap-2 justify-between">
                 {/* Tick Checkbox & title container */}
@@ -885,15 +948,22 @@ export default function MobileListView({
                       e.stopPropagation();
                       handleToggleCompleted(node);
                     }}
-                    className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 cursor-pointer transition-all ${
+                    className={`w-4.5 h-4.5 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-all ${
                       node.completed
-                        ? 'bg-emerald-500 border-emerald-500 text-white'
+                        ? 'bg-indigo-600 border-indigo-600 dark:bg-indigo-500 dark:border-indigo-500 text-white shadow-xs'
                         : activePomodoroNodeId === node.id
-                          ? 'border-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse'
-                          : `border-slate-300 hover:border-indigo-500 dark:border-slate-700`
+                          ? 'border-rose-500 border-2 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse bg-rose-500/5'
+                          : node.priority === 'urgent'
+                            ? 'border-rose-500 border-2 bg-rose-500/5 hover:bg-rose-500/10'
+                            : node.priority === 'high'
+                              ? 'border-orange-500 border-2 bg-orange-500/5 hover:bg-orange-500/10'
+                              : node.priority === 'medium'
+                                ? 'border-amber-500 border-2 bg-amber-500/5 hover:bg-amber-500/10'
+                                : node.priority === 'low'
+                                  ? 'border-sky-400 border-2 bg-sky-400/5 hover:bg-sky-400/10'
+                                  : 'border-slate-300 dark:border-slate-600 border-[1.5px] hover:border-indigo-500 dark:hover:border-indigo-400 bg-transparent'
                     }`}
                     title={node.completed ? 'Восстановить' : 'Завершить'}
-                    style={!node.completed ? { borderColor: pMeta.value !== 'none' ? pMeta.text.replace('text-', '') : undefined } : undefined}
                   >
                     {node.completed ? (
                       <Check className="w-2.5 h-2.5 stroke-[3]" />
@@ -1045,15 +1115,16 @@ export default function MobileListView({
                             <span className="px-1 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[8.5px] font-bold rounded-sm uppercase">важно</span>
                           )}
 
-                          {node.dueDate && (
-                            <span className={`flex items-center gap-1 px-1 rounded-sm border ${
-                              !node.completed && node.dueDate < todayStr
-                                ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30 animate-pulse'
-                                : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700'
-                            }`}>
-                              <span>{node.dueDate}</span>
-                            </span>
-                          )}
+                          {node.dueDate && (() => {
+                            const fDate = getFriendlyDate(node.dueDate, node.completed);
+                            if (!fDate) return null;
+                            return (
+                              <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[9.5px] font-sans font-medium transition-all duration-150 ${fDate.style}`}>
+                                <Calendar className="w-2.5 h-2.5 shrink-0 opacity-80" />
+                                <span>{fDate.text}</span>
+                              </span>
+                            );
+                          })()}
 
                           {nodeChildrenCountMap[node.id] > 0 && (
                             <span className="text-indigo-600 dark:text-indigo-400 font-sans font-bold bg-slate-100 dark:bg-slate-800 px-1 rounded text-[9px]">
@@ -1182,12 +1253,12 @@ export default function MobileListView({
                     }}
                     className={`p-1 rounded-md border cursor-pointer transition-all ${
                       isSelected
-                        ? 'bg-indigo-650 text-white border-transparent'
-                        : 'bg-slate-5 border-slate-200 text-slate-500 hover:text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-850 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
-                    title={isSelected ? "Свернуть свойства" : "Свойства и список подзадач"}
+                    title={isSelected ? "Закрыть свойства" : "Открыть свойства"}
                   >
-                    <ChevronRight className="w-3 h-3" />
+                    <Eye className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -1213,214 +1284,12 @@ export default function MobileListView({
                         e.stopPropagation();
                         onSelectNode(node.id, undefined, 'chat');
                       }}
-                      className="inline-flex items-center gap-1 font-sans text-rose-600 dark:text-rose-450 font-bold text-[9.5px] bg-rose-50 dark:bg-rose-950/20 px-1.5 py-0.5 rounded-md cursor-pointer hover:scale-105 transition-transform border border-rose-100 dark:border-rose-950/30"
+                      className="inline-flex items-center gap-1 font-sans text-rose-600 dark:text-rose-450 font-bold text-[9.5px] bg-rose-50 dark:bg-rose-955/20 px-1.5 py-0.5 rounded-md cursor-pointer hover:scale-105 transition-transform border border-rose-100 dark:border-rose-950/30"
                     >
                       <MessageSquare className="w-2.5 h-2.5 shrink-0 text-rose-500" />
                       <span>{node.comments.length}</span>
                     </button>
                   )}
-                </div>
-              )}
-
-              {/* Inline Expanded Manager for attributes, dates, and direct child tasks checklist */}
-              {isSelected && (
-                <div className="mt-2.5 pt-2.5 border-t border-slate-150 dark:border-slate-800/80 space-y-3.5 text-xs">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400">Приоритет:</span>
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        {(['low', 'medium', 'high', 'urgent'] as Priority[]).map((pr) => {
-                          const active = node.priority === pr;
-                          const label = pr === 'low' ? 'Низкий' : pr === 'medium' ? 'Средний' : pr === 'high' ? 'Высокий' : 'Срочный';
-                          return (
-                            <button
-                              key={pr}
-                              type="button"
-                              onClick={() => handleUpdatePriority(node, pr)}
-                              className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded cursor-pointer border ${
-                                active 
-                                  ? 'bg-slate-900 border-transparent text-white dark:bg-white dark:text-black' 
-                                  : 'bg-slate-55 mb-1 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-705 dark:text-slate-400'
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400">Срок выполнения:</span>
-                      <input
-                        type="date"
-                        value={node.dueDate || ''}
-                        onChange={(e) => handleUpdateDueDate(node, e.target.value)}
-                        className="mt-1 w-full bg-slate-55/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-1 text-xs text-slate-800 dark:text-slate-100 outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Tactile Parent Dropdown Selector for frictionless Nesting and Organization */}
-                  <div className="bg-slate-100/40 dark:bg-slate-900/40 rounded-lg p-2 border border-slate-200/50 dark:border-slate-800/60">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Родительская задача (Иерархия):</span>
-                    <select
-                      id={`mobile-task-parent-select-${node.id}`}
-                      value={node.parentId || ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        onUpdateNode({
-                          ...node,
-                          parentId: val ? val : null,
-                          isFloating: false
-                        });
-                      }}
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1 px-1.5 text-xs text-slate-700 dark:text-slate-300 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                    >
-                      <option value="">(Сделать главной задачей — нет родителя)</option>
-                      {nodes
-                        .filter((n) => n.id !== node.id && !n.isContainer && !n.isWorkflowRectangle && !isDescendant(n.id, node.id))
-                        .map((n) => (
-                          <option key={n.id} value={n.id}>
-                            {n.text}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-
-                  {/* Subtask checklist with quick add input for absolute TickTick experience */}
-                  <div className="pt-2.5 border-t border-slate-150 dark:border-slate-800/50">
-                    <button
-                      type="button"
-                      onClick={() => setCollapsedSubtaskLists(prev => ({ ...prev, [node.id]: !prev[node.id] }))}
-                      className="flex justify-between items-center w-full mb-1.5 text-left hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
-                    >
-                      <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                        <ChevronDown className={`w-3 h-3 transition-transform ${collapsedSubtaskLists[node.id] ? '-rotate-90' : ''}`} />
-                        Список подзадач:
-                      </span>
-                      <span className="text-[9.5px] font-mono text-slate-500">
-                        Всего подзадач: {allDirectChildren.length}
-                      </span>
-                    </button>
-
-                    {!collapsedSubtaskLists[node.id] && (
-                      <>
-                        {allDirectChildren.length > 0 && (
-                          <div className="max-h-[160px] overflow-y-auto space-y-1 mb-2 bg-slate-55/40 dark:bg-slate-850 p-2 rounded-lg divide-y divide-slate-100 dark:divide-slate-800/40">
-                            {allDirectChildren.map((child) => (
-                              <div key={child.id} className="flex items-center justify-between py-1 first:pt-0 last:pb-0 gap-2 text-xs">
-                                <div 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onSelectNode(child.id, e);
-                                  }}
-                                  className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/30 rounded duration-150 py-0.5 px-1"
-                                  title="Открыть свойства подзадачи"
-                                  data-drag-ignore="true"
-                                
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleToggleCompleted(child);
-                                    }}
-                                    className={`w-4.5 h-4.5 rounded-full border flex items-center justify-center shrink-0 transition-all ${
-                                      child.completed
-                                        ? 'bg-emerald-500 border-emerald-500 text-white'
-                                        : activePomodoroNodeId === child.id
-                                          ? 'border-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse'
-                                          : 'border-slate-300 dark:border-slate-700'
-                                    }`}
-                                  >
-                                    {child.completed ? (
-                                      <Check className="w-2.5 h-2.5 stroke-[2.5]" />
-                                    ) : activePomodoroNodeId === child.id ? (
-                                      <Loader2 className="w-2.5 h-2.5 text-rose-500 animate-spin" />
-                                    ) : null}
-                                  </button>
-                                  <span className={`truncate min-w-0 ${child.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-700 dark:text-slate-300 font-medium'}`}>
-                                    {highlightText(child.text, searchQuery)}
-                                  </span>
-                                  {child.dueDate && (
-                                    <span className={`shrink-0 flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-sm border ${
-                                      !child.completed && child.dueDate < todayStr
-                                        ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-955/20 dark:border-rose-900/30 animate-pulse'
-                                        : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700'
-                                    }`}>
-                                      <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                      <span>{child.dueDate}{child.dueTime ? ` ${child.dueTime}` : ''}</span>
-                                    </span>
-                                  )}
-                                  {child.estimatedTime !== undefined && child.estimatedTime !== null && !isNaN(child.estimatedTime) && (
-                                    <span className="shrink-0 flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-sm border bg-indigo-50 border-indigo-100 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 font-bold">
-                                      <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
-                                      <span>{child.estimatedTime} мин</span>
-                                    </span>
-                                  )}
-                                  {child.externalLink && (
-                                    <a
-                                      href={child.externalLink.startsWith('http') ? child.externalLink : `https://${child.externalLink}`}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="inline-flex items-center justify-center p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                                      title={`Открыть внешнюю ссылку: ${child.externalLink}`}
-                                    >
-                                      <ExternalLink className="w-3.5 h-3.5 text-indigo-505" />
-                                    </a>
-                                  )}
-                                </div>
-                                <button
-                                   type="button"
-                                   onClick={(e) => {
-                                     e.stopPropagation();
-                                     if (confirmDeleteSubtaskId === child.id) {
-                                       onDeleteNode(child.id);
-                                       setConfirmDeleteSubtaskId(null);
-                                     } else {
-                                       setConfirmDeleteSubtaskId(child.id);
-                                       setTimeout(() => setConfirmDeleteSubtaskId(curr => curr === child.id ? null : curr), 4000);
-                                     }
-                                   }}
-                                   className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer shrink-0"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Subtask inline quick add text box */}
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            const subVal = newSubtaskTexts[node.id] || '';
-                            if (!subVal.trim()) return;
-                            handleAddSubtaskSubmit(node.id, subVal);
-                          }}
-                          className="flex gap-2"
-                        >
-                          <input
-                            type="text"
-                            value={newSubtaskTexts[node.id] || ''}
-                            onChange={(e) => setNewSubtaskTexts(prev => ({ ...prev, [node.id]: e.target.value }))}
-                            placeholder="Добавить новую подзадачу..."
-                            className="flex-1 bg-slate-55 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
-                          <button
-                            type="submit"
-                            disabled={!(newSubtaskTexts[node.id] || '').trim()}
-                            className="px-3 py-1 bg-indigo-600 disabled:opacity-40 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg cursor-pointer transition-all"
-                          >
-                            Добавить
-                          </button>
-                        </form>
-                      </>
-                    )}
-                  </div>
                 </div>
               )}
 
@@ -1473,7 +1342,7 @@ export default function MobileListView({
         </div>
 
         {/* Tab Selection Row like TickTick */}
-        <div className="flex gap-1.5 mt-1.5 overflow-x-auto pb-0.5 scrollbar-none select-none">
+        <div className="flex gap-1 mt-2.5 p-1 bg-slate-100/70 dark:bg-slate-900/65 rounded-xl overflow-x-auto scrollbar-none select-none">
           {[
             { id: 'active', label: 'В работе', count: activeCount },
             { id: 'today', label: 'Сегодня', count: todayCount, icon: Clock },
@@ -1490,15 +1359,15 @@ export default function MobileListView({
                   setActiveTab(tab.id as any);
                   onSelectNode(null);
                 }}
-                className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all duration-200 ${
                   isTabActive 
-                    ? 'bg-indigo-600 text-white shadow-xs' 
-                    : 'bg-slate-100 text-slate-600 hover:text-slate-950 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-100'
+                    ? 'bg-white dark:bg-slate-800 text-indigo-650 dark:text-indigo-400 shadow-sm border border-slate-150/40 dark:border-slate-700/50' 
+                    : 'text-slate-500 hover:text-slate-850 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-slate-800/40'
                 }`}
               >
-                {tab.icon && <tab.icon className="w-3 h-3" />}
+                {tab.icon && <tab.icon className="w-3 h-3 text-indigo-500 shrink-0" />}
                 <span>{tab.label}</span>
-                <span className={`px-1 rounded-sm text-[9px] ${isTabActive ? 'bg-indigo-700 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
+                <span className={`px-1.5 py-0.5 rounded-md text-[9px] ${isTabActive ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-350 font-extrabold' : 'bg-slate-200/60 text-slate-500 dark:bg-slate-700 dark:text-slate-400 font-medium'}`}>
                   {tab.count}
                 </span>
               </button>
@@ -1687,7 +1556,7 @@ export default function MobileListView({
       </div>
 
       {/* Modern Quick Task Creator - Fixed Mobile Pane at the bottom (TickTick essence!) */}
-      <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0 shadow-lg select-none">
+      <div className="p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-150 dark:border-slate-800/85 shrink-0 shadow-[0_-4px_16px_rgba(0,0,0,0.03)] select-none">
         <form onSubmit={handleAddTaskSubmit} className="space-y-0.5">
           <div className="flex items-center gap-2">
             <input
@@ -1701,31 +1570,31 @@ export default function MobileListView({
                 }
               }}
               onFocus={() => setShowQuickOptions(true)}
-              placeholder="Новая главная задача..."
-              className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              placeholder="Добавить задачу..."
+              className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-1.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white dark:focus:bg-slate-850 transition-colors"
             />
             
             <button
               type="button"
               onClick={() => setShowQuickOptions(!showQuickOptions)}
-              className={`p-2.5 rounded-xl transition-all cursor-pointer border shrink-0 flex items-center justify-center ${
+              className={`p-2 rounded-lg transition-all cursor-pointer border shrink-0 flex items-center justify-center ${
                 showQuickOptions 
-                  ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-450' 
+                  ? 'bg-indigo-55/10 border-indigo-200/50 dark:bg-indigo-950/40 border-indigo-900 text-indigo-600 dark:text-indigo-400' 
                   : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
               }`}
               title={showQuickOptions ? "Скрыть настройки" : "Дополнительные параметры"}
             >
-              <SlidersHorizontal className="w-5 h-5" />
+              <SlidersHorizontal className="w-4 h-4" />
             </button>
 
             <button
               id="mobile-quick-task-submit"
               type="submit"
               disabled={!newTaskText.trim()}
-              className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl transition-all shadow-xs cursor-pointer shrink-0 flex items-center justify-center"
+              className="p-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg transition-all shadow-xs cursor-pointer shrink-0 flex items-center justify-center w-8 h-8"
               title="Добавить"
             >
-              <Plus className="w-5 h-5 stroke-[2.5]" />
+              <Plus className="w-4 h-4 stroke-[2.5]" />
             </button>
           </div>
 
@@ -1734,22 +1603,22 @@ export default function MobileListView({
             {showQuickOptions && (
               <motion.div
                 initial={{ height: 0, opacity: 0, marginTop: 0 }}
-                animate={{ height: "auto", opacity: 1, marginTop: 12 }}
+                animate={{ height: "auto", opacity: 1, marginTop: 10 }}
                 exit={{ height: 0, opacity: 0, marginTop: 0 }}
                 transition={{ duration: 0.2, ease: "easeInOut" }}
                 className="overflow-hidden"
               >
-                <div className="flex flex-col gap-2 pt-1 xs:flex-row xs:items-center xs:justify-between border-t border-slate-100 dark:border-slate-800/60 pt-2.5">
+                <div className="flex flex-col gap-2 pt-2 xs:flex-row xs:items-center xs:justify-between border-t border-slate-100 dark:border-slate-800/60">
                   <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
                     
                     {/* Priority Select inside input frame */}
-                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700 max-w-[130px] shrink-0 min-w-0">
-                      <Flag className="w-3.5 h-3.5 text-indigo-505 shrink-0" />
+                    <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 px-2 py-1 rounded-lg border border-slate-150/50 dark:border-slate-750 shrink-0 max-w-[120px] min-w-0 shadow-2xs">
+                      <Flag className="w-3 h-3 text-indigo-500 shrink-0" />
                       <select
                         id="mobile-quick-priority"
                         value={newTaskPriority}
                         onChange={(e) => setNewTaskPriority(e.target.value as Priority)}
-                        className="bg-transparent border-none text-[11px] font-bold text-slate-600 dark:text-slate-350 focus:outline-none cursor-pointer w-full"
+                        className="bg-transparent border-none text-[10px] font-bold text-slate-600 dark:text-slate-400 focus:outline-none cursor-pointer w-full py-0 leading-tight"
                       >
                         <option value="low">Низкий 🔵</option>
                         <option value="medium">Средний 🟡</option>
@@ -1759,14 +1628,14 @@ export default function MobileListView({
                     </div>
 
                     {/* Date Select inside input frame */}
-                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-150 dark:border-slate-700 shrink-0">
-                      <Calendar className="w-3.5 h-3.5 text-emerald-555 shrink-0" />
+                    <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 px-2 py-1 rounded-lg border border-slate-150/50 dark:border-slate-750 shrink-0 shadow-2xs">
+                      <Calendar className="w-3 h-3 text-indigo-500 shrink-0" />
                       <input
                         id="mobile-quick-date"
                         type="date"
                         value={newTaskDueDate}
                         onChange={(e) => setNewTaskDueDate(e.target.value)}
-                        className="bg-transparent border-none text-[11px] text-slate-600 dark:text-slate-350 focus:outline-none focus:ring-0 w-[110px]"
+                        className="bg-transparent border-none text-[10px] font-semibold text-slate-600 dark:text-slate-400 focus:outline-none focus:ring-0 w-[100px] p-0 leading-tight"
                       />
                     </div>
 
