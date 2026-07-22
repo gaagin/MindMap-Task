@@ -3326,6 +3326,115 @@ export default function App() {
   // ----- TASK NODE CANVAS OPERATIONS -----
   const activeNodes = state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : [];
 
+  // ----- SEARCH & HIGHLIGHT -----
+  const isDirectNodeMatched = (node: TaskNode): boolean => {
+    if (filterStatus === "not_tasks") {
+      if (!node.isNotTask) return false;
+    } else if (node.isNotTask && viewMode !== 'canvas') {
+      return false;
+    }
+
+    if (viewMode !== 'canvas' && node.isWorkflowRectangle) {
+      return false;
+    }
+
+    // 1. Text search (text, tags, notes)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const textMatches = node.text.toLowerCase().includes(q);
+      const tagMatches = (node.tags || []).some(t => t.toLowerCase().includes(q));
+      const notesMatches = (node.notes || "").toLowerCase().includes(q);
+      if (!textMatches && !tagMatches && !notesMatches) {
+        return false;
+      }
+    }
+
+    // 2. Status filter
+    if (filterStatus === "archived") {
+      if (!node.archived) return false;
+    } else {
+      const isSearching = searchQuery.trim() !== "";
+      if (node.archived) {
+        if (isSearching && viewMode !== 'canvas' && !node.isContainer) {
+          // Allow identifying/finding it in searches for non-canvas, non-container views
+        } else {
+          return false;
+        }
+      }
+      if (filterStatus === "completed" && !node.completed) return false;
+      if (filterStatus === "active" && node.completed) return false;
+    }
+
+    // 3. Priority filter
+    if (filterPriority !== "all" && node.priority !== filterPriority) return false;
+
+    // 4. Tag filter
+    if (filterTag !== "all" && !(node.tags || []).includes(filterTag)) return false;
+
+    // 5. Due date filter
+    if (filterDueDate !== "all") {
+      const hasDue = !!node.dueDate;
+      if (filterDueDate === "has_due_date" && !hasDue) return false;
+      if (filterDueDate === "no_due_date" && hasDue) return false;
+
+      if (filterDueDate === "overdue" || filterDueDate === "today" || filterDueDate === "this_week") {
+        if (!hasDue) return false;
+        
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const nodeDate = new Date(node.dueDate!);
+        nodeDate.setHours(0, 0, 0, 0);
+        
+        const diffTime = nodeDate.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (filterDueDate === "overdue") {
+          const isOverdue = diffDays < 0 && !node.completed;
+          if (!isOverdue) return false;
+        } else if (filterDueDate === "today") {
+          if (diffDays !== 0) return false;
+        } else if (filterDueDate === "this_week") {
+          if (diffDays < 0 || diffDays > 7) return false;
+        }
+      }
+    }
+
+    // 6. Attachments filter
+    if (filterAttachments === "has_files" && (!node.files || node.files.length === 0)) return false;
+    if (filterAttachments === "no_files" && (node.files && node.files.length > 0)) return false;
+
+    // 7. Notes filter
+    if (filterNotes === "has_notes" && (!node.notes || node.notes.trim() === "")) return false;
+    if (filterNotes === "no_notes" && (node.notes && node.notes.trim() !== "")) return false;
+
+    return true;
+  };
+
+  const isNodeMatched = (node: TaskNode): boolean => {
+    if (isDirectNodeMatched(node)) return true;
+    
+    // Check if any descendant matches
+    const hasMatchingDescendant = (parentId: string): boolean => {
+      const children = activeNodes.filter(n => n.parentId === parentId);
+      for (const child of children) {
+        if (isDirectNodeMatched(child)) return true;
+        if (hasMatchingDescendant(child.id)) return true;
+      }
+      return false;
+    };
+
+    return hasMatchingDescendant(node.id);
+  };
+
+  const isAnyFilterActive = 
+    filterStatus !== "all" || 
+    filterPriority !== "all" || 
+    filterTag !== "all" || 
+    filterDueDate !== "all" || 
+    filterAttachments !== "all" || 
+    filterNotes !== "all" || 
+    searchQuery.trim() !== "";
+
   const displayedNodesForViews = useMemo(() => {
     return activeNodes.filter(node => {
       // If we have a focused container, we want to see only tasks belonging to this container (or the container itself)
@@ -3371,8 +3480,12 @@ export default function App() {
         }
       }
 
-      // We no longer hide container descendants here so they are visible on the main screen in all views.
-      // MindMapCanvas handles its own canvas-specific container visibility filtering internally.
+      // In non-canvas views, filter out nodes that don't match active filters
+      if (viewMode !== 'canvas' && isAnyFilterActive) {
+        if (!isDirectNodeMatched(node)) {
+          return false;
+        }
+      }
 
       if (filterStatus === "not_tasks") {
         return !!node.isNotTask;
@@ -3400,7 +3513,20 @@ export default function App() {
       
       return !node.archived;
     });
-  }, [activeNodes, filterStatus, searchQuery, viewMode, focusedContainerId, focusedTaskId]);
+  }, [
+    activeNodes, 
+    filterStatus, 
+    filterPriority, 
+    filterTag, 
+    filterDueDate, 
+    filterAttachments, 
+    filterNotes, 
+    searchQuery, 
+    viewMode, 
+    focusedContainerId, 
+    focusedTaskId,
+    isAnyFilterActive
+  ]);
 
   // Single node or multi-node drag updating coordinates with simultaneous movement of all descendant nodes
   const handleUpdateNodeCoordinates = (id: string, x: number, y: number) => {
@@ -5187,94 +5313,6 @@ export default function App() {
   };
 
   // ----- SEARCH & HIGHLIGHT -----
-  const isNodeMatched = (node: TaskNode): boolean => {
-    if (filterStatus === "not_tasks") {
-      if (!node.isNotTask) return false;
-    } else if (node.isNotTask && viewMode !== 'canvas') {
-      return false;
-    }
-
-    // 1. Text search (text, tags, notes)
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const textMatches = node.text.toLowerCase().includes(q);
-      const tagMatches = (node.tags || []).some(t => t.toLowerCase().includes(q));
-      const notesMatches = (node.notes || "").toLowerCase().includes(q);
-      if (!textMatches && !tagMatches && !notesMatches) {
-        return false;
-      }
-    }
-
-    // 2. Status filter
-    if (filterStatus === "archived") {
-      if (!node.archived) return false;
-    } else {
-      const isSearching = searchQuery.trim() !== "";
-      if (node.archived) {
-        if (isSearching && viewMode !== 'canvas' && !node.isContainer) {
-          // Allow identifying/finding it in searches for non-canvas, non-container views
-        } else {
-          return false;
-        }
-      }
-      if (filterStatus === "completed" && !node.completed) return false;
-      if (filterStatus === "active" && node.completed) return false;
-    }
-
-    // 3. Priority filter
-    if (filterPriority !== "all" && node.priority !== filterPriority) return false;
-
-    // 4. Tag filter
-    if (filterTag !== "all" && !(node.tags || []).includes(filterTag)) return false;
-
-    // 5. Due date filter
-    if (filterDueDate !== "all") {
-      const hasDue = !!node.dueDate;
-      if (filterDueDate === "has_due_date" && !hasDue) return false;
-      if (filterDueDate === "no_due_date" && hasDue) return false;
-
-      if (filterDueDate === "overdue" || filterDueDate === "today" || filterDueDate === "this_week") {
-        if (!hasDue) return false;
-        
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
-        const nodeDate = new Date(node.dueDate!);
-        nodeDate.setHours(0, 0, 0, 0);
-        
-        const diffTime = nodeDate.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (filterDueDate === "overdue") {
-          const isOverdue = diffDays < 0 && !node.completed;
-          if (!isOverdue) return false;
-        } else if (filterDueDate === "today") {
-          if (diffDays !== 0) return false;
-        } else if (filterDueDate === "this_week") {
-          if (diffDays < 0 || diffDays > 7) return false;
-        }
-      }
-    }
-
-    // 6. Attachments filter
-    if (filterAttachments === "has_files" && (!node.files || node.files.length === 0)) return false;
-    if (filterAttachments === "no_files" && (node.files && node.files.length > 0)) return false;
-
-    // 7. Notes filter
-    if (filterNotes === "has_notes" && (!node.notes || node.notes.trim() === "")) return false;
-    if (filterNotes === "no_notes" && (node.notes && node.notes.trim() !== "")) return false;
-
-    return true;
-  };
-
-  const isAnyFilterActive = 
-    filterStatus !== "all" || 
-    filterPriority !== "all" || 
-    filterTag !== "all" || 
-    filterDueDate !== "all" || 
-    filterAttachments !== "all" || 
-    filterNotes !== "all" || 
-    searchQuery.trim() !== "";
-
   const activeFilterCount = [
     filterStatus !== "all",
     filterPriority !== "all",

@@ -3373,8 +3373,8 @@ export default function MindMapCanvas({
   const MIN_ZOOM = 0.25;
   const MAX_ZOOM = 2.5;
 
-  // Check if a node matches the active filter settings
-  const isNodeMatched = (node: TaskNode): boolean => {
+  // Check if a node matches the active filter settings directly
+  const isDirectNodeMatched = (node: TaskNode): boolean => {
     // 1. Text search (text, tags, notes)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -3437,6 +3437,22 @@ export default function MindMapCanvas({
     if (filterNotes === "no_notes" && (node.notes && node.notes.trim() !== "")) return false;
 
     return true;
+  };
+
+  const isNodeMatched = (node: TaskNode): boolean => {
+    if (isDirectNodeMatched(node)) return true;
+
+    // Check if any descendant node matches
+    const hasMatchingDescendant = (parentId: string): boolean => {
+      const children = nodes.filter(n => n.parentId === parentId);
+      for (const child of children) {
+        if (isDirectNodeMatched(child)) return true;
+        if (hasMatchingDescendant(child.id)) return true;
+      }
+      return false;
+    };
+
+    return hasMatchingDescendant(node.id);
   };
 
   const isAnyFilterActive = 
@@ -5503,13 +5519,13 @@ export default function MindMapCanvas({
   const visibleNodes = nodes.filter(node => {
     if (node.parentId === 'inbox') return false;
 
-    // If search is active and this node matches the search, force it to be visible on the canvas!
-    if (searchQuery.trim() !== "" && isNodeMatched(node)) {
+    // If any filter or search is active and this node matches, force it to be visible on the canvas!
+    if (isAnyFilterActive && isNodeMatched(node)) {
       return true;
     }
 
     // Collapse/hide completed child nodes from mindmap canvas view so they collapse and don't obstruct the view (unless under a container list/kanban, or when searching/filtering)
-    if (node.completed && node.parentId !== null && filterStatus !== 'completed' && !searchQuery.trim()) {
+    if (node.completed && node.parentId !== null && filterStatus !== 'completed' && !isAnyFilterActive) {
       const parentNode = nodes.find(n => n.id === node.parentId);
       if (parentNode && !parentNode.isContainer) {
         return false;
