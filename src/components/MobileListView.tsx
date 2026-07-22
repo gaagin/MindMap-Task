@@ -36,7 +36,7 @@ import {
   CornerUpLeft
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
-import { generateId, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
+import { generateId, getPomoStatsForNode, formatTotalPomoTime, getTaskExternalLinks } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface MobileListViewProps {
@@ -1020,18 +1020,23 @@ export default function MobileListView({
                           </button>
                         )}
 
-                        {node.externalLink && (
-                          <a
-                            href={node.externalLink.startsWith('http') ? node.externalLink : `https://${node.externalLink}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center justify-center p-1 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                            title={`Открыть внешнюю ссылку: ${node.externalLink}`}
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
-                        )}
+                        {(() => {
+                          const nodeLinks = getTaskExternalLinks(node);
+                          if (nodeLinks.length === 0) return null;
+                          return nodeLinks.map((linkUrl, lIdx) => (
+                            <a
+                              key={lIdx}
+                              href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center justify-center p-1 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                              title={`Открыть внешнюю ссылку (${lIdx + 1}/${nodeLinks.length}): ${linkUrl}`}
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          ));
+                        })()}
 
                         {activePomodoroNodeId === node.id && (
                           <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-0.5 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">

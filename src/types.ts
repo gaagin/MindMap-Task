@@ -88,6 +88,7 @@ export interface TaskNode {
   history?: TaskVersion[]; // Version history stack/list for tracking edits
   tagCategories?: TagCategory[]; // Optional private card-specific tag categories and tags
   externalLink?: string; // Optional external URL link
+  externalLinks?: string[]; // Optional array of external URL links
   containerPlace?: string; // Optional field for container addition place
   subtaskOrder?: number; // Optional field for manual sorting of subtasks
   googleCalendarEventId?: string; // Optional reference to synced Google Calendar event ID

@@ -51,7 +51,7 @@ import {
   Grid
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
-import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime } from './utils';
+import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime, getTaskExternalLinks } from './utils';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
@@ -146,6 +146,7 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         pn.isNotTask !== nn.isNotTask ||
         pn.defaultView !== nn.defaultView ||
         pn.externalLink !== nn.externalLink ||
+        JSON.stringify(pn.externalLinks) !== JSON.stringify(nn.externalLinks) ||
         pn.progress !== nn.progress ||
         pn.isFloating !== nn.isFloating ||
         pn.isContainer !== nn.isContainer ||
@@ -375,7 +376,8 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         archived: !!n.archived,
         isNotTask: !!n.isNotTask,
         defaultView: n.defaultView || null,
-        externalLink: n.externalLink || '',
+        externalLink: n.externalLink || (n.externalLinks && n.externalLinks[0]) || '',
+        externalLinks: getTaskExternalLinks(n),
         isCardCollapsed: !!n.isCardCollapsed,
         progress: n.progress !== undefined ? Math.round(Number(n.progress) || 0) : null,
         isFloating: !!n.isFloating,

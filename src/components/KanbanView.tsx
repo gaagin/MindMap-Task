@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
-import { isNodeOverdue, isContainerOverdue, getPomoStatsForNode, formatTotalPomoTime } from '../utils';
+import { isNodeOverdue, isContainerOverdue, getPomoStatsForNode, formatTotalPomoTime, getTaskExternalLinks } from '../utils';
 
 interface KanbanViewProps {
   nodes: TaskNode[];
@@ -1495,18 +1495,23 @@ export default function KanbanView({
               node.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
             } flex items-center flex-wrap gap-1.5`}>
               <span>{node.text}</span>
-              {node.externalLink && (
-                <a
-                  href={node.externalLink.startsWith('http') ? node.externalLink : `https://${node.externalLink}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center justify-center p-0.5 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                  title={`Открыть внешнюю ссылку: ${node.externalLink}`}
-                >
-                  <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
-                </a>
-              )}
+              {(() => {
+                const nodeLinks = getTaskExternalLinks(node);
+                if (nodeLinks.length === 0) return null;
+                return nodeLinks.map((linkUrl, lIdx) => (
+                  <a
+                    key={lIdx}
+                    href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center justify-center p-0.5 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                    title={`Открыть внешнюю ссылку (${lIdx + 1}/${nodeLinks.length}): ${linkUrl}`}
+                  >
+                    <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
+                  </a>
+                ));
+              })()}
               {activePomodoroNodeId === node.id && (
                 <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[11.5px] font-sans font-medium animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
                   <span className="relative flex h-1.5 w-1.5">

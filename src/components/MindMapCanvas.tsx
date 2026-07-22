@@ -53,7 +53,7 @@ import {
   CornerUpLeft
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
-import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, pruneTaskNodeHistory, suggestEstimatedTime } from '../utils';
+import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface MindMapCanvasProps {
@@ -1465,19 +1465,24 @@ export default function MindMapCanvas({
                         onKeyDown={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
                       />
-                      {child.externalLink && (
-                        <a
-                          href={child.externalLink.startsWith('http') ? child.externalLink : `https://${child.externalLink}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          className="inline-flex items-center justify-center p-1 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                          title={`Открыть внешнюю ссылку: ${child.externalLink}`}
-                        >
-                          <LinkIcon className="w-3.5 h-3.5 text-indigo-505" />
-                        </a>
-                      )}
+                      {(() => {
+                        const childLinks = getTaskExternalLinks(child);
+                        if (childLinks.length === 0) return null;
+                        return childLinks.map((linkUrl, lIdx) => (
+                          <a
+                            key={lIdx}
+                            href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="inline-flex items-center justify-center p-1 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                            title={`Открыть внешнюю ссылку (${lIdx + 1}/${childLinks.length}): ${linkUrl}`}
+                          >
+                            <LinkIcon className="w-3.5 h-3.5 text-indigo-505" />
+                          </a>
+                        ));
+                      })()}
                     </div>
                     
                     <div className="flex items-center gap-1.5 shrink-0 opacity-75 group-hover/item:opacity-100 transition-opacity">
@@ -8063,23 +8068,28 @@ export default function MindMapCanvas({
                           );
                         })()}
                         <span>{node.text || 'Без названия'}</span>
-                        {node.externalLink && (
-                          <a
-                            href={node.externalLink.startsWith('http') ? node.externalLink : `https://${node.externalLink}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            className={`inline-flex items-center justify-center p-0.5 rounded transition-colors shrink-0 ${
-                              isRoot 
-                                ? 'hover:bg-indigo-600 text-indigo-200' 
-                                : 'hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-550 dark:text-indigo-400'
-                            }`}
-                            title={`Открыть внешнюю ссылку: ${node.externalLink}`}
-                          >
-                            <LinkIcon className="w-3.5 h-3.5" />
-                          </a>
-                        )}
+                        {(() => {
+                          const nodeLinks = getTaskExternalLinks(node);
+                          if (nodeLinks.length === 0) return null;
+                          return nodeLinks.map((linkUrl, lIdx) => (
+                            <a
+                              key={lIdx}
+                              href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              className={`inline-flex items-center justify-center p-0.5 rounded transition-colors shrink-0 ${
+                                isRoot 
+                                  ? 'hover:bg-indigo-600 text-indigo-200' 
+                                  : 'hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-550 dark:text-indigo-400'
+                              }`}
+                              title={`Открыть внешнюю ссылку (${lIdx + 1}/${nodeLinks.length}): ${linkUrl}`}
+                            >
+                              <LinkIcon className="w-3.5 h-3.5" />
+                            </a>
+                          ));
+                        })()}
                         {activePomodoroNodeId === node.id && (
                           <span className="inline-flex items-center gap-1 bg-red-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-1 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
                             <span className="relative flex h-2 w-2">

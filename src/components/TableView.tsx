@@ -24,7 +24,7 @@ import {
   Layers
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
-import { getPomoStatsForNode, formatTotalPomoTime } from '../utils';
+import { getPomoStatsForNode, formatTotalPomoTime, getTaskExternalLinks } from '../utils';
 
 interface TableViewProps {
   nodes: TaskNode[];
@@ -822,18 +822,23 @@ export default function TableView({
                             📦 Архив (Вернуть)
                           </button>
                         )}
-                        {task.externalLink && (
-                          <a
-                            href={task.externalLink.startsWith('http') ? task.externalLink : `https://${task.externalLink}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center justify-center p-1 hover:bg-slate-200 dark:hover:bg-slate-700 text-indigo-550 dark:text-indigo-400 rounded-md shrink-0 transition-colors"
-                            title={`Открыть внешнюю ссылку: ${task.externalLink}`}
-                          >
-                            <LinkIcon className="w-3.5 h-3.5" />
-                          </a>
-                        )}
+                        {(() => {
+                          const taskLinks = getTaskExternalLinks(task);
+                          if (taskLinks.length === 0) return null;
+                          return taskLinks.map((linkUrl, lIdx) => (
+                            <a
+                              key={lIdx}
+                              href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center justify-center p-1 hover:bg-slate-200 dark:hover:bg-slate-700 text-indigo-550 dark:text-indigo-400 rounded-md shrink-0 transition-colors"
+                              title={`Открыть внешнюю ссылку (${lIdx + 1}/${taskLinks.length}): ${linkUrl}`}
+                            >
+                              <LinkIcon className="w-3.5 h-3.5" />
+                            </a>
+                          ));
+                        })()}
                         {hasTaskLinks && (
                           <span 
                             className="inline-flex items-center justify-center p-1 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 rounded-md shrink-0 border border-indigo-150/20"

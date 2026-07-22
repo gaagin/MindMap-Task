@@ -315,6 +315,7 @@ export function syncCompletion(nodesList: TaskNode[]): TaskNode[] {
             archived: sourceNode.archived,
             tagCategories: sourceNode.tagCategories,
             externalLink: sourceNode.externalLink,
+            externalLinks: sourceNode.externalLinks ? [...sourceNode.externalLinks] : undefined,
             estimatedTime: sourceNode.estimatedTime,
             isNotTask: sourceNode.isNotTask,
             blockedBy: sourceNode.blockedBy,
@@ -809,6 +810,28 @@ export function suggestEstimatedTime(text: string, allNodes: TaskNode[]): number
 
   const average = Math.round(finalCandidates.reduce((sum, m) => sum + m.time, 0) / finalCandidates.length);
   return average > 0 ? average : 30;
+}
+
+export function getTaskExternalLinks(node: { externalLink?: string; externalLinks?: string[] } | null | undefined): string[] {
+  if (!node) return [];
+  const links: string[] = [];
+  if (Array.isArray(node.externalLinks)) {
+    for (const l of node.externalLinks) {
+      if (l && typeof l === 'string' && l.trim()) {
+        const trimmed = l.trim();
+        if (!links.includes(trimmed)) {
+          links.push(trimmed);
+        }
+      }
+    }
+  }
+  if (node.externalLink && typeof node.externalLink === 'string' && node.externalLink.trim()) {
+    const trimmed = node.externalLink.trim();
+    if (!links.includes(trimmed)) {
+      links.unshift(trimmed);
+    }
+  }
+  return links;
 }
 
 

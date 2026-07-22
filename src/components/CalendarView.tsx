@@ -25,6 +25,7 @@ import {
   Minimize2
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
+import { getTaskExternalLinks } from '../utils';
 
 interface CalendarViewProps {
   nodes: TaskNode[];
@@ -2505,18 +2506,23 @@ export default function CalendarView({
                       task.completed ? 'line-through opacity-55' : ''
                     }`}>
                       <span>{task.text}</span>
-                      {task.externalLink && (
-                        <a
-                          href={task.externalLink.startsWith('http') ? task.externalLink : `https://${task.externalLink}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                          title={`Открыть внешнюю ссылку: ${task.externalLink}`}
-                        >
-                          <LinkIcon className="w-3 h-3 text-indigo-500" />
-                        </a>
-                      )}
+                      {(() => {
+                        const taskLinks = getTaskExternalLinks(task);
+                        if (taskLinks.length === 0) return null;
+                        return taskLinks.map((linkUrl, lIdx) => (
+                          <a
+                            key={lIdx}
+                            href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                            title={`Открыть внешнюю ссылку (${lIdx + 1}/${taskLinks.length}): ${linkUrl}`}
+                          >
+                            <LinkIcon className="w-3 h-3 text-indigo-500" />
+                          </a>
+                        ));
+                      })()}
                       {activePomodoroNodeId === task.id && (
                         <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[9px] font-sans font-extrabold animate-pulse ml-0.5 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
                           <span className="relative flex h-1.5 w-1.5">

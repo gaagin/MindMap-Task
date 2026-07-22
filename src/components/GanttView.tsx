@@ -26,6 +26,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
+import { getTaskExternalLinks } from '../utils';
 
 const WEEKDAYS_RU = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -1348,18 +1349,23 @@ export default function GanttView({
                               ← {parent.text}
                             </span>
                           )}
-                          {task.externalLink && (
-                            <a
-                              href={task.externalLink.startsWith('http') ? task.externalLink : `https://${task.externalLink}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                              title={`Открыть внешнюю ссылку: ${task.externalLink}`}
-                            >
-                              <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
-                            </a>
-                          )}
+                          {(() => {
+                            const taskLinks = getTaskExternalLinks(task);
+                            if (taskLinks.length === 0) return null;
+                            return taskLinks.map((linkUrl, lIdx) => (
+                              <a
+                                key={lIdx}
+                                href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
+                                title={`Открыть внешнюю ссылку (${lIdx + 1}/${taskLinks.length}): ${linkUrl}`}
+                              >
+                                <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
+                              </a>
+                            ));
+                          })()}
                           {activePomodoroNodeId === task.id && (
                             <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
                           )}

@@ -35,10 +35,13 @@ import {
   Search,
   Send,
   Image,
-  GripVertical
+  GripVertical,
+  ExternalLink,
+  Globe,
+  Copy
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
-import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch, pruneTaskNodeHistory, suggestEstimatedTime } from '../utils';
+import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
 import { auth, db } from '../lib/firebase';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import GoogleDriveImage from './GoogleDriveImage';
@@ -138,6 +141,156 @@ const AsideWrapper = ({ children, isFullscreen, setIsFullscreen }: AsideWrapperP
   }
   return <>{children}</>;
 };
+
+interface TaskExternalLinksManagerProps {
+  node: TaskNode;
+  onUpdateNode: (updatedNode: TaskNode) => void;
+  compact?: boolean;
+}
+
+function TaskExternalLinksManager({ node, onUpdateNode, compact }: TaskExternalLinksManagerProps) {
+  const [inputUrl, setInputUrl] = useState('');
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  const links = getTaskExternalLinks(node);
+
+  const handleAddLink = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = inputUrl.trim();
+    if (!trimmed) return;
+
+    let formatted = trimmed;
+    if (!/^https?:\/\//i.test(formatted)) {
+      formatted = `https://${formatted}`;
+    }
+
+    if (!links.includes(formatted)) {
+      const updatedLinks = [...links, formatted];
+      onUpdateNode({
+        ...node,
+        externalLinks: updatedLinks,
+        externalLink: updatedLinks[0] || '',
+        updatedAt: new Date().toISOString()
+      });
+    }
+    setInputUrl('');
+  };
+
+  const handleRemoveLink = (idxToRemove: number) => {
+    const updatedLinks = links.filter((_, idx) => idx !== idxToRemove);
+    onUpdateNode({
+      ...node,
+      externalLinks: updatedLinks,
+      externalLink: updatedLinks[0] || '',
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  const handleCopyLink = (url: string, idx: number) => {
+    try {
+      navigator.clipboard.writeText(url);
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(null), 2000);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const getDomainName = (url: string) => {
+    try {
+      const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
+      return parsed.hostname.replace(/^www\./, '');
+    } catch {
+      return url;
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className={`${compact ? 'text-[10px]' : 'text-xs'} font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5`}>
+          <Globe className="w-3.5 h-3.5 text-indigo-500" />
+          Внешние ссылки {links.length > 0 && <span className="text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.2 rounded-full font-extrabold text-[10px]">({links.length})</span>}
+        </label>
+      </div>
+
+      {links.length > 0 && (
+        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+          {links.map((linkUrl, idx) => {
+            const domain = getDomainName(linkUrl);
+            return (
+              <div 
+                key={`${linkUrl}-${idx}`}
+                className="flex items-center justify-between gap-2 p-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 rounded-lg group hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors"
+              >
+                <div className="min-w-0 flex-1 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold flex items-center justify-center shrink-0">
+                    {idx + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate leading-tight">
+                      {domain}
+                    </p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate leading-none mt-0.5 font-mono">
+                      {linkUrl}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <a
+                    href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded transition-colors"
+                    title={`Открыть ${linkUrl}`}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopyLink(linkUrl, idx)}
+                    className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors cursor-pointer"
+                    title="Скопировать ссылку"
+                  >
+                    {copiedIdx === idx ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveLink(idx)}
+                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                    title="Удалить ссылку"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <form onSubmit={handleAddLink} className="flex items-center gap-1.5">
+        <input
+          type="text"
+          placeholder="https://example.com"
+          value={inputUrl}
+          onChange={(e) => setInputUrl(e.target.value)}
+          className="flex-1 text-xs px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
+        />
+        <button
+          type="submit"
+          disabled={!inputUrl.trim()}
+          className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5" /> Добавить
+        </button>
+      </form>
+    </div>
+  );
+}
 
 export default function TaskDetailsPanel({
   node,
@@ -3182,29 +3335,8 @@ export default function TaskDetailsPanel({
                     Ссылки и внешний вид
                   </span>
 
-                  {/* External link */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-555 uppercase">Внешняя ссылка:</span>
-                      {node.externalLink && (
-                        <a
-                          href={node.externalLink.startsWith('http') ? node.externalLink : `https://${node.externalLink}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[10px] text-indigo-650 dark:text-indigo-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
-                        >
-                          Перейти <LinkIcon className="w-3 h-3 text-indigo-500" />
-                        </a>
-                      )}
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="https://example.com"
-                      value={node.externalLink || ''}
-                      onChange={(e) => handlePropChange('externalLink', e.target.value)}
-                      className="w-full text-xs px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none dark:text-slate-100"
-                    />
-                  </div>
+                  {/* External links manager */}
+                  <TaskExternalLinksManager node={node} onUpdateNode={onUpdateNode} compact />
 
                   {/* Notion integration link */}
                   <div className="space-y-1.5 pt-1" id="notion-task-link-properties">
@@ -6787,32 +6919,8 @@ export default function TaskDetailsPanel({
 
         </div>
 
-        {/* External Link */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Внешняя ссылка
-            </label>
-            {node.externalLink && (
-              <a
-                href={node.externalLink.startsWith('http') ? node.externalLink : `https://${node.externalLink}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1 cursor-pointer"
-                title="Открыть в новой вкладке"
-              >
-                Открыть ссылку <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
-              </a>
-            )}
-          </div>
-          <input
-            type="text"
-            placeholder="https://example.com"
-            value={node.externalLink || ''}
-            onChange={(e) => handlePropChange('externalLink', e.target.value)}
-            className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
-          />
-        </div>
+        {/* External Links */}
+        <TaskExternalLinksManager node={node} onUpdateNode={onUpdateNode} />
 
         {/* Notes with links insertion & preview tabs */}
         <div className="space-y-2">
