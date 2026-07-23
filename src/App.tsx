@@ -1171,7 +1171,7 @@ export default function App() {
       if (viewMode === 'canvas' && searchQuery.trim() !== "") {
         const node = activeNodes.find(n => n.id === id);
         if (node && isNodeMatched(node)) {
-          if (node.isContainer) {
+          if (node.isContainer || node.isEquipment) {
             setFocusedContainerId(id);
             setFocusedTaskId(null);
           } else {
@@ -5597,9 +5597,22 @@ export default function App() {
     new Set(activeNodes.flatMap(n => n.tags || []))
   ).filter(Boolean);
 
-  const searchedIds = isAnyFilterActive
-    ? activeNodes.filter(n => isNodeMatched(n)).map(n => n.id)
-    : [];
+  const searchedIds = useMemo(() => {
+    if (!isAnyFilterActive) return [];
+    const direct = activeNodes.filter(n => isDirectNodeMatched(n)).map(n => n.id);
+    if (direct.length > 0) return direct;
+    return activeNodes.filter(n => isNodeMatched(n)).map(n => n.id);
+  }, [
+    activeNodes,
+    isAnyFilterActive,
+    searchQuery,
+    filterStatus,
+    filterPriority,
+    filterTag,
+    filterDueDate,
+    filterAttachments,
+    filterNotes
+  ]);
 
   const handleSelectSearchedNode = (nodeId: string) => {
     // Auto-expand parents if selected node is collapsed/hidden
@@ -5647,7 +5660,7 @@ export default function App() {
     const node = activeNodes.find(n => n.id === nodeId);
     if (node) {
       if (viewMode === 'canvas') {
-        if (node.isContainer) {
+        if (node.isContainer || node.isEquipment) {
           setFocusedContainerId(nodeId);
           setFocusedTaskId(null);
         } else {
@@ -5695,6 +5708,10 @@ export default function App() {
       }
     } else {
       setCurrentSearchIndex(0);
+      if (viewMode === 'canvas') {
+        setFocusedTaskId(null);
+        setFocusedContainerId(null);
+      }
     }
   }, [searchQuery, state.activeProjectId]);
 

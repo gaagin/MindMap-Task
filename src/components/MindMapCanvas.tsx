@@ -5668,9 +5668,22 @@ export default function MindMapCanvas({
   const visibleNodes = nodes.filter(node => {
     if (node.parentId === 'inbox') return false;
 
-    // If any filter or search is active and this node matches, force it to be visible on the canvas!
-    if (isAnyFilterActive && isNodeMatched(node)) {
-      return true;
+    // If search or filter is active, hide non-matching nodes unless they belong to the currently focused task/container
+    if (isAnyFilterActive) {
+      if (!isNodeMatched(node) && node.id !== focusedTaskId && node.id !== focusedContainerId) {
+        let isDescendantOfFocused = false;
+        let pId = node.parentId;
+        while (pId !== null) {
+          if (pId === focusedTaskId || pId === focusedContainerId) {
+            isDescendantOfFocused = true;
+            break;
+          }
+          const parent = nodes.find(n => n.id === pId);
+          if (!parent) break;
+          pId = parent.parentId;
+        }
+        if (!isDescendantOfFocused) return false;
+      }
     }
 
     // Collapse/hide completed child nodes from mindmap canvas view so they collapse and don't obstruct the view (unless under a container list/kanban, or when searching/filtering)
