@@ -882,10 +882,14 @@ export default function MindMapCanvas({
   // Drag states for dragging a specific card
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [alignmentLines, setAlignmentLines] = useState<{
-    type: 'v' | 'h';
+    type: 'v' | 'h' | 'h_gap' | 'v_gap';
     coord: number;
     minVal: number;
     maxVal: number;
+    distance?: number;
+    start?: number;
+    end?: number;
+    crossCoord?: number;
   }[]>([]);
   const [draggingConn, setDraggingConn] = useState<{
     nodeId: string;
@@ -1000,7 +1004,7 @@ export default function MindMapCanvas({
       }
     };
 
-    const staticNodes = allNodes.filter(n => !isMoving(n.id));
+    const staticNodes = allNodes.filter(n => !isMoving(n.id) && !n.archived && n.parentId !== 'inbox');
 
     let snappedX = proposedX;
     let bestDiffX = Infinity;
@@ -1015,6 +1019,7 @@ export default function MindMapCanvas({
       { val: myRight, name: 'right', offset: draggedW / 2 }
     ];
 
+    // 1. Edge-to-Edge and Center Snapping X
     staticNodes.forEach(other => {
       const otherW = getNodeWidth(other);
       const otherEdgesX = [
@@ -1047,6 +1052,7 @@ export default function MindMapCanvas({
       { val: myBottom, name: 'bottom', offset: draggedH / 2 }
     ];
 
+    // 2. Edge-to-Edge and Center Snapping Y
     staticNodes.forEach(other => {
       const otherH = getNodeHeight(other);
       const otherEdgesY = [
@@ -1066,7 +1072,281 @@ export default function MindMapCanvas({
       });
     });
 
-    const lines: { type: 'v' | 'h'; coord: number; minVal: number; maxVal: number }[] = [];
+    // 3. Equal Distance / Gap Snapping X & Y
+    type GapLineType = {
+      type: 'h_gap' | 'v_gap';
+      coord: number;
+      minVal: number;
+      maxVal: number;
+      distance: number;
+      start: number;
+      end: number;
+      crossCoord: number;
+    };
+
+    let activeHGapLines: GapLineType[] = [];
+    let activeVGapLines: GapLineType[] = [];
+    const distanceSnapThreshold = 10;
+
+    // Check Equal Horizontal Distances (X)
+    const sortedStaticX = [...staticNodes].sort((a, b) => a.x - b.x);
+    for (let i = 0; i < sortedStaticX.length; i++) {
+      for (let j = i + 1; j < sortedStaticX.length; j++) {
+        const n1 = sortedStaticX[i];
+        const n2 = sortedStaticX[j];
+
+        const w1 = getNodeWidth(n1);
+        const w2 = getNodeWidth(n2);
+
+        const n1Right = n1.x + w1 / 2;
+        const n1Left = n1.x - w1 / 2;
+        const n2Left = n2.x - w2 / 2;
+        const n2Right = n2.x + w2 / 2;
+
+        const gapBetweenN1N2 = n2Left - n1Right;
+        if (gapBetweenN1N2 < 5 || gapBetweenN1N2 > 1200) continue;
+
+        if (Math.abs(n1.y - n2.y) > 250 || Math.abs(n1.y - proposedY) > 300) continue;
+
+        const avgY = (n1.y + n2.y) / 2;
+
+        // Case H1: A placed to the RIGHT of N2 (N1 --- N2 --- A)
+        const targetLeftRight = n2Right + gapBetweenN1N2;
+        const targetXRight = targetLeftRight + draggedW / 2;
+        const diffRight = Math.abs(proposedX - targetXRight);
+
+        if (diffRight < distanceSnapThreshold && diffRight < bestDiffX) {
+          bestDiffX = diffRight;
+          snappedX = targetXRight;
+          activeHGapLines = [
+            {
+              type: 'h_gap',
+              coord: avgY,
+              minVal: n1Right,
+              maxVal: n2Left,
+              distance: gapBetweenN1N2,
+              start: n1Right,
+              end: n2Left,
+              crossCoord: avgY
+            },
+            {
+              type: 'h_gap',
+              coord: (n2.y + proposedY) / 2,
+              minVal: n2Right,
+              maxVal: targetLeftRight,
+              distance: gapBetweenN1N2,
+              start: n2Right,
+              end: targetLeftRight,
+              crossCoord: (n2.y + proposedY) / 2
+            }
+          ];
+        }
+
+        // Case H2: A placed to the LEFT of N1 (A --- N1 --- N2)
+        const targetRightLeft = n1Left - gapBetweenN1N2;
+        const targetXLeft = targetRightLeft - draggedW / 2;
+        const diffLeft = Math.abs(proposedX - targetXLeft);
+
+        if (diffLeft < distanceSnapThreshold && diffLeft < bestDiffX) {
+          bestDiffX = diffLeft;
+          snappedX = targetXLeft;
+          activeHGapLines = [
+            {
+              type: 'h_gap',
+              coord: (proposedY + n1.y) / 2,
+              minVal: targetRightLeft,
+              maxVal: n1Left,
+              distance: gapBetweenN1N2,
+              start: targetRightLeft,
+              end: n1Left,
+              crossCoord: (proposedY + n1.y) / 2
+            },
+            {
+              type: 'h_gap',
+              coord: avgY,
+              minVal: n1Right,
+              maxVal: n2Left,
+              distance: gapBetweenN1N2,
+              start: n1Right,
+              end: n2Left,
+              crossCoord: avgY
+            }
+          ];
+        }
+
+        // Case H3: A placed BETWEEN N1 and N2 (N1 --- A --- N2)
+        const totalAvailSpace = n2Left - n1Right;
+        const equalGapMiddle = (totalAvailSpace - draggedW) / 2;
+
+        if (equalGapMiddle > 5) {
+          const targetXMiddle = n1Right + equalGapMiddle + draggedW / 2;
+          const diffMiddle = Math.abs(proposedX - targetXMiddle);
+
+          if (diffMiddle < distanceSnapThreshold && diffMiddle < bestDiffX) {
+            bestDiffX = diffMiddle;
+            snappedX = targetXMiddle;
+            activeHGapLines = [
+              {
+                type: 'h_gap',
+                coord: (n1.y + proposedY) / 2,
+                minVal: n1Right,
+                maxVal: targetXMiddle - draggedW / 2,
+                distance: equalGapMiddle,
+                start: n1Right,
+                end: targetXMiddle - draggedW / 2,
+                crossCoord: (n1.y + proposedY) / 2
+              },
+              {
+                type: 'h_gap',
+                coord: (proposedY + n2.y) / 2,
+                minVal: targetXMiddle + draggedW / 2,
+                maxVal: n2Left,
+                distance: equalGapMiddle,
+                start: targetXMiddle + draggedW / 2,
+                end: n2Left,
+                crossCoord: (proposedY + n2.y) / 2
+              }
+            ];
+          }
+        }
+      }
+    }
+
+    // Check Equal Vertical Distances (Y)
+    const sortedStaticY = [...staticNodes].sort((a, b) => a.y - b.y);
+    for (let i = 0; i < sortedStaticY.length; i++) {
+      for (let j = i + 1; j < sortedStaticY.length; j++) {
+        const n1 = sortedStaticY[i];
+        const n2 = sortedStaticY[j];
+
+        const h1 = getNodeHeight(n1);
+        const h2 = getNodeHeight(n2);
+
+        const n1Bottom = n1.y + h1 / 2;
+        const n1Top = n1.y - h1 / 2;
+        const n2Top = n2.y - h2 / 2;
+        const n2Bottom = n2.y + h2 / 2;
+
+        const gapBetweenN1N2 = n2Top - n1Bottom;
+        if (gapBetweenN1N2 < 5 || gapBetweenN1N2 > 1200) continue;
+
+        if (Math.abs(n1.x - n2.x) > 300 || Math.abs(n1.x - proposedX) > 350) continue;
+
+        const avgX = (n1.x + n2.x) / 2;
+
+        // Case V1: A placed BELOW N2 (N1 / N2 / A)
+        const targetTopBelow = n2Bottom + gapBetweenN1N2;
+        const targetYBelow = targetTopBelow + draggedH / 2;
+        const diffBelow = Math.abs(proposedY - targetYBelow);
+
+        if (diffBelow < distanceSnapThreshold && diffBelow < bestDiffY) {
+          bestDiffY = diffBelow;
+          snappedY = targetYBelow;
+          activeVGapLines = [
+            {
+              type: 'v_gap',
+              coord: avgX,
+              minVal: n1Bottom,
+              maxVal: n2Top,
+              distance: gapBetweenN1N2,
+              start: n1Bottom,
+              end: n2Top,
+              crossCoord: avgX
+            },
+            {
+              type: 'v_gap',
+              coord: (n2.x + proposedX) / 2,
+              minVal: n2Bottom,
+              maxVal: targetTopBelow,
+              distance: gapBetweenN1N2,
+              start: n2Bottom,
+              end: targetTopBelow,
+              crossCoord: (n2.x + proposedX) / 2
+            }
+          ];
+        }
+
+        // Case V2: A placed ABOVE N1 (A / N1 / N2)
+        const targetBottomAbove = n1Top - gapBetweenN1N2;
+        const targetYAbove = targetBottomAbove - draggedH / 2;
+        const diffAbove = Math.abs(proposedY - targetYAbove);
+
+        if (diffAbove < distanceSnapThreshold && diffAbove < bestDiffY) {
+          bestDiffY = diffAbove;
+          snappedY = targetYAbove;
+          activeVGapLines = [
+            {
+              type: 'v_gap',
+              coord: (proposedX + n1.x) / 2,
+              minVal: targetBottomAbove,
+              maxVal: n1Top,
+              distance: gapBetweenN1N2,
+              start: targetBottomAbove,
+              end: n1Top,
+              crossCoord: (proposedX + n1.x) / 2
+            },
+            {
+              type: 'v_gap',
+              coord: avgX,
+              minVal: n1Bottom,
+              maxVal: n2Top,
+              distance: gapBetweenN1N2,
+              start: n1Bottom,
+              end: n2Top,
+              crossCoord: avgX
+            }
+          ];
+        }
+
+        // Case V3: A placed BETWEEN N1 and N2 (N1 / A / N2)
+        const totalAvailSpaceY = n2Top - n1Bottom;
+        const equalGapMiddleY = (totalAvailSpaceY - draggedH) / 2;
+
+        if (equalGapMiddleY > 5) {
+          const targetYMiddle = n1Bottom + equalGapMiddleY + draggedH / 2;
+          const diffMiddleY = Math.abs(proposedY - targetYMiddle);
+
+          if (diffMiddleY < distanceSnapThreshold && diffMiddleY < bestDiffY) {
+            bestDiffY = diffMiddleY;
+            snappedY = targetYMiddle;
+            activeVGapLines = [
+              {
+                type: 'v_gap',
+                coord: (n1.x + proposedX) / 2,
+                minVal: n1Bottom,
+                maxVal: targetYMiddle - draggedH / 2,
+                distance: equalGapMiddleY,
+                start: n1Bottom,
+                end: targetYMiddle - draggedH / 2,
+                crossCoord: (n1.x + proposedX) / 2
+              },
+              {
+                type: 'v_gap',
+                coord: (proposedX + n2.x) / 2,
+                minVal: targetYMiddle + draggedH / 2,
+                maxVal: n2Top,
+                distance: equalGapMiddleY,
+                start: targetYMiddle + draggedH / 2,
+                end: n2Top,
+                crossCoord: (proposedX + n2.x) / 2
+              }
+            ];
+          }
+        }
+      }
+    }
+
+    // 4. Generate Alignment Lines for rendering
+    const lines: {
+      type: 'v' | 'h' | 'h_gap' | 'v_gap';
+      coord: number;
+      minVal: number;
+      maxVal: number;
+      distance?: number;
+      start?: number;
+      end?: number;
+      crossCoord?: number;
+    }[] = [];
 
     if (bestDiffX < 8) {
       const snappedLeft = snappedX - draggedW / 2;
@@ -1157,6 +1437,8 @@ export default function MindMapCanvas({
         });
       });
     }
+
+    lines.push(...activeHGapLines, ...activeVGapLines);
 
     return { snappedX, snappedY, lines };
   };
@@ -6953,7 +7235,7 @@ export default function MindMapCanvas({
                     className="opacity-80"
                   />
                 );
-              } else {
+              } else if (line.type === 'h') {
                 return (
                   <line
                     key={`align-line-h-${idx}`}
@@ -6967,7 +7249,98 @@ export default function MindMapCanvas({
                     className="opacity-80"
                   />
                 );
+              } else if (line.type === 'h_gap') {
+                const y = line.crossCoord ?? line.coord;
+                const x1 = line.start ?? line.minVal;
+                const x2 = line.end ?? line.maxVal;
+                const midX = (x1 + x2) / 2;
+                const distVal = Math.round(line.distance ?? (x2 - x1));
+                const badgeWidth = String(distVal).length * 7 + 18;
+
+                return (
+                  <g key={`align-gap-h-${idx}`}>
+                    {/* Main gap line */}
+                    <line
+                      x1={x1}
+                      y1={y}
+                      x2={x2}
+                      y2={y}
+                      stroke="#ec4899"
+                      strokeWidth={1.5}
+                    />
+                    {/* End ticks */}
+                    <line x1={x1} y1={y - 5} x2={x1} y2={y + 5} stroke="#ec4899" strokeWidth={1.5} />
+                    <line x1={x2} y1={y - 5} x2={x2} y2={y + 5} stroke="#ec4899" strokeWidth={1.5} />
+                    {/* Distance pill badge */}
+                    <rect
+                      x={midX - badgeWidth / 2}
+                      y={y - 9}
+                      width={badgeWidth}
+                      height={18}
+                      rx={4}
+                      fill="#ec4899"
+                      className="shadow-sm"
+                    />
+                    <text
+                      x={midX}
+                      y={y + 3.5}
+                      fill="#ffffff"
+                      fontSize={10}
+                      fontWeight="bold"
+                      textAnchor="middle"
+                      fontFamily="sans-serif"
+                    >
+                      {distVal}px
+                    </text>
+                  </g>
+                );
+              } else if (line.type === 'v_gap') {
+                const x = line.crossCoord ?? line.coord;
+                const y1 = line.start ?? line.minVal;
+                const y2 = line.end ?? line.maxVal;
+                const midY = (y1 + y2) / 2;
+                const distVal = Math.round(line.distance ?? (y2 - y1));
+                const badgeWidth = String(distVal).length * 7 + 18;
+
+                return (
+                  <g key={`align-gap-v-${idx}`}>
+                    {/* Main gap line */}
+                    <line
+                      x1={x}
+                      y1={y1}
+                      x2={x}
+                      y2={y2}
+                      stroke="#ec4899"
+                      strokeWidth={1.5}
+                    />
+                    {/* End ticks */}
+                    <line x1={x - 5} y1={y1} x2={x + 5} y2={y1} stroke="#ec4899" strokeWidth={1.5} />
+                    <line x1={x - 5} y1={y2} x2={x + 5} y2={y2} stroke="#ec4899" strokeWidth={1.5} />
+                    {/* Distance pill badge */}
+                    <rect
+                      x={x - badgeWidth / 2}
+                      y={midY - 9}
+                      width={badgeWidth}
+                      height={18}
+                      rx={4}
+                      fill="#ec4899"
+                      className="shadow-sm"
+                    />
+                    <text
+                      x={x}
+                      y={midY + 3.5}
+                      fill="#ffffff"
+                      fontSize={10}
+                      fontWeight="bold"
+                      textAnchor="middle"
+                      fontFamily="sans-serif"
+                    >
+                      {distVal}px
+                    </text>
+                  </g>
+                );
               }
+              return null;
             })}
           </svg>
         )}
