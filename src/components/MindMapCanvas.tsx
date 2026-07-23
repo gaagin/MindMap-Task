@@ -3891,8 +3891,8 @@ export default function MindMapCanvas({
       }
 
       // Constraints
-      const minW = node.isContainer ? 300 : 150;
-      const minH = node.isContainer ? 200 : 40;
+      const minW = node.isContainer ? 300 : node.isEquipment ? 160 : 150;
+      const minH = node.isContainer ? 200 : node.isEquipment ? 100 : 40;
       const newWidth = Math.max(minW, newRight - newLeft);
       const newHeight = Math.max(minH, newBottom - newTop);
 
@@ -4593,8 +4593,8 @@ export default function MindMapCanvas({
       }
 
       // Constraints
-      const minW = node.isContainer ? 300 : 150;
-      const minH = node.isContainer ? 200 : 40;
+      const minW = node.isContainer ? 300 : node.isEquipment ? 160 : 150;
+      const minH = node.isContainer ? 200 : node.isEquipment ? 100 : 40;
       const newWidth = Math.max(minW, newRight - newLeft);
       const newHeight = Math.max(minH, newBottom - newTop);
 
@@ -5334,8 +5334,8 @@ export default function MindMapCanvas({
     setResizeDirection(direction);
     setResizeStartPos({ x: e.clientX, y: e.clientY });
     setResizeStartSize({
-      width: node.width || (node.isContainer ? 520 : 210),
-      height: node.height || (node.isContainer ? 400 : 125)
+      width: node.width || (node.isEquipment ? 220 : node.isContainer ? 520 : 210),
+      height: node.height || (node.isEquipment ? 140 : node.isContainer ? 400 : 125)
     });
     setResizeStartCenter({ x: node.x, y: node.y });
   };
@@ -5351,8 +5351,8 @@ export default function MindMapCanvas({
     const touch = e.touches[0];
     setResizeStartPos({ x: touch.clientX, y: touch.clientY });
     setResizeStartSize({
-      width: node.width || (node.isContainer ? 520 : 210),
-      height: node.height || (node.isContainer ? 400 : 125)
+      width: node.width || (node.isEquipment ? 220 : node.isContainer ? 520 : 210),
+      height: node.height || (node.isEquipment ? 140 : node.isContainer ? 400 : 125)
     });
     setResizeStartCenter({ x: node.x, y: node.y });
   };
@@ -6190,7 +6190,7 @@ export default function MindMapCanvas({
                 const y = Math.round(-panY / zoom);
                 onAddFloatingNode(x, y, focusedTaskId || focusedContainerId || null, 'Оборудование / Мотор', {
                   isEquipment: true,
-                  isContainer: true,
+                  isContainer: false,
                   isNotTask: true,
                   width: 220,
                   height: 140,
@@ -6758,7 +6758,7 @@ export default function MindMapCanvas({
         {visibleNodes.map((node) => {
           const isSelected = selectedNodeId === node.id || (selectedNodeIds && selectedNodeIds.includes(node.id));
 
-          if (node.isContainer) {
+          if (node.isContainer && !node.isEquipment) {
             const isSelfFocused = focusedContainerId === node.id;
             if (isSelfFocused) return null; // Hide the container visual boundaries entirely to let it replace the canvas!
 
@@ -7795,18 +7795,18 @@ export default function MindMapCanvas({
                   onSelectNode(node.id, e);
                   onOpenDrawer();
                 }}
-                className={`absolute group cursor-grab active:cursor-grabbing rounded-xl border-2 p-2.5 bg-gradient-to-br from-amber-500/10 via-white to-slate-50 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900/90 shadow-md transition-all ${
+                className={`absolute group cursor-grab active:cursor-grabbing rounded-2xl border-2 p-3 bg-white dark:bg-slate-900 shadow-sm transition-all ${
                   isSelected
-                    ? 'border-amber-500 ring-4 ring-amber-500/25 shadow-xl scale-[1.01]'
+                    ? 'border-amber-400 ring-4 ring-amber-400/20 shadow-lg scale-[1.01]'
                     : hoverTargetId === node.id
-                      ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
-                      : 'border-amber-500/40 hover:border-amber-500/80 dark:border-amber-500/30 dark:hover:border-amber-500/60'
+                      ? 'bg-amber-50/50 dark:bg-amber-950/40 border-amber-400 ring-4 ring-amber-400/30 scale-[1.015]'
+                      : 'border-amber-400/80 hover:border-amber-500 dark:border-amber-500/60'
                 }`}
               >
                 {/* Header bar */}
-                <div className="flex items-center justify-between border-b border-amber-500/20 pb-1.5 mb-1.5 select-none">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className="text-sm shrink-0">⚙️</span>
+                <div className="flex items-center justify-between border-b border-amber-200/80 dark:border-amber-800/40 pb-2 mb-2 select-none">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="text-base shrink-0">⚙️</span>
                     {editingNodeId === node.id ? (
                       <input
                         type="text"
@@ -7829,7 +7829,7 @@ export default function MindMapCanvas({
                           e.stopPropagation();
                           setEditingNodeId(node.id);
                         }}
-                        className="text-xs font-black text-slate-800 dark:text-slate-100 truncate cursor-text"
+                        className="text-sm font-extrabold text-slate-800 dark:text-slate-100 truncate cursor-text"
                         title="Двойной клик для быстрого переименования"
                       >
                         {node.text || 'Оборудование'}
@@ -7842,52 +7842,52 @@ export default function MindMapCanvas({
                       onDeleteNode(node.id);
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
-                    className="p-0.5 text-slate-400 hover:text-rose-500 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                    className="p-1 text-slate-400 hover:text-rose-500 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
                     title="Удалить оборудование"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
 
                 {/* Content Body: Key Properties */}
-                <div className="space-y-1 text-[10.5px] overflow-hidden flex-1 select-none text-left">
+                <div className="space-y-1 text-xs overflow-hidden flex-1 select-none text-left">
                   {node.equipmentModel && (
-                    <div className="flex items-center gap-1 truncate text-slate-700 dark:text-slate-300">
+                    <div className="flex items-center gap-1.5 truncate text-slate-700 dark:text-slate-300">
                       <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">Model:</span>
-                      <span className="truncate font-semibold">{node.equipmentModel}</span>
+                      <span className="truncate font-semibold text-slate-800 dark:text-slate-200">{node.equipmentModel}</span>
                     </div>
                   )}
                   {node.equipmentBarcode && (
-                    <div className="flex items-center gap-1 truncate text-slate-700 dark:text-slate-300">
+                    <div className="flex items-center gap-1.5 truncate text-slate-700 dark:text-slate-300">
                       <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">Barkod:</span>
-                      <span className="font-mono text-[9.5px] truncate">{node.equipmentBarcode}</span>
+                      <span className="font-mono text-xs text-slate-600 dark:text-slate-400 truncate">{node.equipmentBarcode}</span>
                     </div>
                   )}
                   {node.equipmentStockCode && (
-                    <div className="flex items-center gap-1 truncate text-slate-700 dark:text-slate-300">
+                    <div className="flex items-center gap-1.5 truncate text-slate-700 dark:text-slate-300">
                       <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">Stok kod:</span>
-                      <span className="font-mono text-[9.5px] truncate">{node.equipmentStockCode}</span>
+                      <span className="font-mono text-xs text-slate-600 dark:text-slate-400 truncate">{node.equipmentStockCode}</span>
                     </div>
                   )}
                   {node.equipmentNote && (
-                    <p className="text-[9.5px] text-slate-500 dark:text-slate-400 italic line-clamp-2 leading-tight mt-0.5">
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 italic line-clamp-2 leading-tight mt-1">
                       {node.equipmentNote}
                     </p>
                   )}
 
                   {/* Dynamic custom properties tags preview */}
                   {node.customProperties && node.customProperties.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1 max-h-12 overflow-hidden">
+                    <div className="flex flex-wrap gap-1 mt-1.5 max-h-12 overflow-hidden">
                       {node.customProperties.slice(0, 3).map((cp, idx) => (
                         <span
                           key={cp.id || idx}
-                          className="bg-amber-500/15 text-amber-800 dark:text-amber-300 text-[8.5px] font-bold px-1.5 py-0.5 rounded border border-amber-500/20 truncate max-w-[120px]"
+                          className="bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-amber-300/50 truncate max-w-[120px]"
                         >
                           {cp.name ? `${cp.name}: ` : ''}{cp.value}
                         </span>
                       ))}
                       {node.customProperties.length > 3 && (
-                        <span className="text-[8.5px] font-bold text-amber-600 dark:text-amber-400">
+                        <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400">
                           +{node.customProperties.length - 3}
                         </span>
                       )}
@@ -7902,12 +7902,14 @@ export default function MindMapCanvas({
                         setFocusedContainerId(node.id);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="mt-1 flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-[9.5px] font-bold cursor-pointer transition-colors w-full"
+                      className="mt-2 flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-amber-100/80 hover:bg-amber-200/80 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 border border-amber-300/70 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs font-bold cursor-pointer transition-colors w-full"
                       title="Войти внутрь оборудования для просмотра вложенных элементов"
                     >
-                      <Package className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
-                      <span className="truncate">Вложено элементов: {equipmentChildren.length}</span>
-                      <Maximize2 className="w-2.5 h-2.5 ml-auto opacity-70 shrink-0" />
+                      <div className="flex items-center gap-2 truncate">
+                        <Package className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0" />
+                        <span className="truncate">Вложено элементов: {equipmentChildren.length}</span>
+                      </div>
+                      <Maximize2 className="w-3 h-3 opacity-70 shrink-0" />
                     </button>
                   )}
                 </div>
@@ -7957,68 +7959,76 @@ export default function MindMapCanvas({
                   </>
                 )}
 
-                {/* Resizer Handle at bottom right */}
+                {/* Resize Edge/Border Handles for equipment */}
                 <div
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    const startW = node.width || 220;
-                    const startH = node.height || 140;
-                    const startX = e.clientX;
-                    const startY = e.clientY;
+                  onMouseDown={(e) => startResize(e, node, 'n')}
+                  onTouchStart={(e) => startResizeTouch(e, node, 'n')}
+                  data-drag-ignore
+                  className="absolute -top-1.5 left-4 right-4 h-3 cursor-ns-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
+                  title="Изменить высоту (вверх)"
+                />
+                <div
+                  onMouseDown={(e) => startResize(e, node, 's')}
+                  onTouchStart={(e) => startResizeTouch(e, node, 's')}
+                  data-drag-ignore
+                  className="absolute -bottom-1.5 left-4 right-4 h-3 cursor-ns-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
+                  title="Изменить высоту (вниз)"
+                />
+                <div
+                  onMouseDown={(e) => startResize(e, node, 'w')}
+                  onTouchStart={(e) => startResizeTouch(e, node, 'w')}
+                  data-drag-ignore
+                  className="absolute top-4 bottom-4 -left-1.5 w-3 cursor-ew-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
+                  title="Изменить ширину (влево)"
+                />
+                <div
+                  onMouseDown={(e) => startResize(e, node, 'e')}
+                  onTouchStart={(e) => startResizeTouch(e, node, 'e')}
+                  data-drag-ignore
+                  className="absolute top-4 bottom-4 -right-1.5 w-3 cursor-ew-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
+                  title="Изменить ширину (вправо)"
+                />
 
-                    const handleMouseMove = (moveEvent: MouseEvent) => {
-                      const dx = moveEvent.clientX - startX;
-                      const dy = moveEvent.clientY - startY;
-                      onUpdateNode({
-                        ...node,
-                        width: Math.max(120, Math.min(1000, startW + dx)),
-                        height: Math.max(80, Math.min(800, startH + dy))
-                      });
-                    };
-
-                    const handleMouseUp = () => {
-                      document.removeEventListener('mousemove', handleMouseMove);
-                      document.removeEventListener('mouseup', handleMouseUp);
-                    };
-
-                    document.addEventListener('mousemove', handleMouseMove);
-                    document.addEventListener('mouseup', handleMouseUp);
-                  }}
-                  onTouchStart={(e) => {
-                    e.stopPropagation();
-                    if (e.touches.length === 0) return;
-                    const startW = node.width || 220;
-                    const startH = node.height || 140;
-                    const startX = e.touches[0].clientX;
-                    const startY = e.touches[0].clientY;
-
-                    const handleTouchMove = (moveEvent: TouchEvent) => {
-                      if (moveEvent.touches.length === 0) return;
-                      const dx = moveEvent.touches[0].clientX - startX;
-                      const dy = moveEvent.touches[0].clientY - startY;
-                      onUpdateNode({
-                        ...node,
-                        width: Math.max(120, Math.min(1000, startW + dx)),
-                        height: Math.max(80, Math.min(800, startH + dy))
-                      });
-                    };
-
-                    const handleTouchEnd = () => {
-                      document.removeEventListener('touchmove', handleTouchMove);
-                      document.removeEventListener('touchend', handleTouchEnd);
-                    };
-
-                    document.addEventListener('touchmove', handleTouchMove);
-                    document.addEventListener('touchend', handleTouchEnd);
-                  }}
-                  title="Зажмите и тяните для изменения размеров"
-                  className="resize-handle absolute bottom-1 right-1 w-4 h-4 cursor-se-resize flex items-center justify-center opacity-40 hover:opacity-100 group-hover:opacity-70 transition-opacity z-20"
+                {/* Circular Corner Resizer Handles matching user screenshot */}
+                <div
+                  onMouseDown={(e) => startResize(e, node, 'nw')}
+                  onTouchStart={(e) => startResizeTouch(e, node, 'nw')}
+                  data-drag-ignore
+                  className={`absolute -top-2 -left-2 w-4 h-4 cursor-nwse-resize z-40 select-none rounded-full border-2 border-amber-400 bg-white dark:bg-slate-900 shadow-sm transition-opacity duration-150 ${
+                    isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                  title="Сверху-слева"
+                />
+                <div
+                  onMouseDown={(e) => startResize(e, node, 'ne')}
+                  onTouchStart={(e) => startResizeTouch(e, node, 'ne')}
+                  data-drag-ignore
+                  className={`absolute -top-2 -right-2 w-4 h-4 cursor-nesw-resize z-40 select-none rounded-full border-2 border-amber-400 bg-white dark:bg-slate-900 shadow-sm transition-opacity duration-150 ${
+                    isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                  title="Сверху-справа"
+                />
+                <div
+                  onMouseDown={(e) => startResize(e, node, 'sw')}
+                  onTouchStart={(e) => startResizeTouch(e, node, 'sw')}
+                  data-drag-ignore
+                  className={`absolute -bottom-2 -left-2 w-4 h-4 cursor-nesw-resize z-40 select-none rounded-full border-2 border-amber-400 bg-white dark:bg-slate-900 shadow-sm transition-opacity duration-150 ${
+                    isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                  title="Снизу-слева"
+                />
+                <div
+                  onMouseDown={(e) => startResize(e, node, 'se')}
+                  onTouchStart={(e) => startResizeTouch(e, node, 'se')}
+                  data-drag-ignore
+                  className={`absolute -bottom-2.5 -right-2.5 w-5 h-5 cursor-nwse-resize z-40 select-none rounded-full border-2 border-amber-400 bg-amber-100 dark:bg-amber-950 shadow-sm transition-opacity duration-150 flex items-center justify-center ${
+                    isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                  title="Снизу-справа"
                 >
-                  <svg width="10" height="10" viewBox="0 0 10 10" className="text-amber-500">
-                    <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.5" />
-                    <line x1="10" y1="4" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" />
-                    <line x1="10" y1="8" x2="8" y2="10" stroke="currentColor" strokeWidth="1.5" />
+                  <svg width="6" height="6" viewBox="0 0 6 6" className="text-amber-700 dark:text-amber-300">
+                    <line x1="6" y1="0" x2="0" y2="6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+                    <line x1="6" y1="3" x2="3" y2="6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
                   </svg>
                 </div>
               </div>
