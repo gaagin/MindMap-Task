@@ -1168,18 +1168,6 @@ export default function App() {
       setSelectedNodeId(null);
     } else {
       setSelectedNodeId(id);
-      if (viewMode === 'canvas' && searchQuery.trim() !== "") {
-        const node = activeNodes.find(n => n.id === id);
-        if (node && isNodeMatched(node)) {
-          if (node.isContainer || node.isEquipment) {
-            setFocusedContainerId(id);
-            setFocusedTaskId(null);
-          } else {
-            setFocusedTaskId(id);
-            setFocusedContainerId(null);
-          }
-        }
-      }
     }
   };
 
@@ -5659,15 +5647,6 @@ export default function App() {
     // Pan canvas to center this searched node!
     const node = activeNodes.find(n => n.id === nodeId);
     if (node) {
-      if (viewMode === 'canvas') {
-        if (node.isContainer || node.isEquipment) {
-          setFocusedContainerId(nodeId);
-          setFocusedTaskId(null);
-        } else {
-          setFocusedTaskId(nodeId);
-          setFocusedContainerId(null);
-        }
-      }
       setPanX(-node.x * zoom);
       setPanY(-node.y * zoom);
 
@@ -5699,7 +5678,7 @@ export default function App() {
     handleSelectSearchedNode(searchedIds[prevIdx]);
   };
 
-  // Auto focus first found node on search query change
+  // Auto select first found node on search query change
   useEffect(() => {
     if (searchQuery.trim().length > 0) {
       if (searchedIds.length > 0) {
@@ -5708,10 +5687,6 @@ export default function App() {
       }
     } else {
       setCurrentSearchIndex(0);
-      if (viewMode === 'canvas') {
-        setFocusedTaskId(null);
-        setFocusedContainerId(null);
-      }
     }
   }, [searchQuery, state.activeProjectId]);
 
