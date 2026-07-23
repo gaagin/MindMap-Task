@@ -51,7 +51,9 @@ import {
   GripVertical,
   Layers,
   CornerUpLeft,
-  Package
+  Package,
+  Undo2,
+  Home
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
@@ -5017,90 +5019,102 @@ export default function MindMapCanvas({
     }) || null;
   };
 
-  // Unified function to navigate one level up from focus mode
+  // Unified function to navigate one level up from focus mode or return to main canvas screen
   const handleGoBackFocus = () => {
-    if (!focusedContainerId) {
-      if (focusedTaskId && onFocusedTaskIdChange) {
-        const focusedTask = nodes.find(n => n.id === focusedTaskId);
-        if (focusedTask) {
-          const ancestorContainer = getAncestorContainer(focusedTask.parentId) || getContainingParentContainer(focusedTask);
-          if (ancestorContainer) {
-            setFocusedContainerId(ancestorContainer.id);
-            const directParent = nodes.find(n => n.id === focusedTask.parentId);
-            onFocusedTaskIdChange(directParent && !directParent.isContainer && !directParent.isEquipment ? directParent.id : null);
-            return;
-          }
-          if (focusedTask.parentId) {
-            onFocusedTaskIdChange(focusedTask.parentId);
-            return;
-          }
+    const centerOffset = {
+      x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
+      y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0
+    };
+
+    if (focusedContainerId) {
+      const focusedContainer = nodes.find(n => n.id === focusedContainerId);
+
+      // 1. First check focus history stack (e.g. entered A -> B -> C)
+      const stack = containerFocusStackRef.current;
+      if (stack.length > 1 && stack[stack.length - 1] === focusedContainerId) {
+        const previousContainerId = stack[stack.length - 2];
+        const previousContainer = nodes.find(n => n.id === previousContainerId);
+        if (previousContainer) {
+          containerFocusStackRef.current = stack.slice(0, stack.length - 1);
+          const targetZoom = 0.85;
+          setZoom(targetZoom);
+          setPanX(-previousContainer.x * targetZoom + centerOffset.x);
+          setPanY(-previousContainer.y * targetZoom + centerOffset.y);
+          onSelectNode(previousContainer.id);
+          setFocusedContainerId(previousContainer.id);
+          if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+          return;
         }
-        onFocusedTaskIdChange(null);
       }
-      return;
-    }
 
-    const focusedContainer = nodes.find(n => n.id === focusedContainerId);
-    if (!focusedContainer) {
-      setFocusedContainerId(null);
-      if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
-      return;
-    }
+      // 2. Check explicit parent node hierarchy
+      if (focusedContainer && focusedContainer.parentId) {
+        const parentNode = nodes.find(n => n.id === focusedContainer.parentId);
+        if (parentNode && parentNode.id !== focusedContainer.id) {
+          const targetZoom = 0.85;
+          setZoom(targetZoom);
+          setPanX(-parentNode.x * targetZoom + centerOffset.x);
+          setPanY(-parentNode.y * targetZoom + centerOffset.y);
+          onSelectNode(parentNode.id);
 
-    // 1. First check focus history stack (e.g. entered A -> B -> C)
-    const stack = containerFocusStackRef.current;
-    if (stack.length > 1 && stack[stack.length - 1] === focusedContainerId) {
-      const previousContainerId = stack[stack.length - 2];
-      const previousContainer = nodes.find(n => n.id === previousContainerId);
-      if (previousContainer) {
-        containerFocusStackRef.current = stack.slice(0, stack.length - 1);
+          if (parentNode.isContainer || parentNode.isEquipment) {
+            setFocusedContainerId(parentNode.id);
+            if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+          } else {
+            setFocusedContainerId(null);
+            if (onFocusedTaskIdChange) onFocusedTaskIdChange(parentNode.id);
+          }
+          return;
+        }
+      }
+
+      // 3. Return to main canvas screen if at top level or no parent
+      if (focusedContainer) {
         const targetZoom = 0.85;
         setZoom(targetZoom);
-        setPanX(-previousContainer.x * targetZoom);
-        setPanY(-previousContainer.y * targetZoom);
-        onSelectNode(previousContainer.id);
-        setFocusedContainerId(previousContainer.id);
-        if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
-        return;
+        setPanX(-focusedContainer.x * targetZoom + centerOffset.x);
+        setPanY(-focusedContainer.y * targetZoom + centerOffset.y);
+        onSelectNode(focusedContainer.id);
       }
-    }
-
-    // 2. Check parent node hierarchy or geometric containing container
-    const ancestorContainer = getAncestorContainer(focusedContainer.parentId) || getContainingParentContainer(focusedContainer);
-    const directParent = focusedContainer.parentId ? nodes.find(n => n.id === focusedContainer.parentId) : null;
-
-    if (ancestorContainer) {
-      const targetZoom = 0.85;
-      setZoom(targetZoom);
-      setPanX(-ancestorContainer.x * targetZoom);
-      setPanY(-ancestorContainer.y * targetZoom);
-      onSelectNode(ancestorContainer.id);
-      setFocusedContainerId(ancestorContainer.id);
-      if (onFocusedTaskIdChange) {
-        if (directParent && !directParent.isContainer && !directParent.isEquipment) {
-          onFocusedTaskIdChange(directParent.id);
-        } else {
-          onFocusedTaskIdChange(null);
-        }
-      }
-    } else if (directParent) {
-      const targetZoom = 0.85;
-      setZoom(targetZoom);
-      setPanX(-directParent.x * targetZoom);
-      setPanY(-directParent.y * targetZoom);
-      onSelectNode(directParent.id);
-      setFocusedContainerId(null);
-      if (onFocusedTaskIdChange) onFocusedTaskIdChange(directParent.id);
-    } else {
-      // Return to main screen if at top level
-      const targetZoom = 0.85;
-      setZoom(targetZoom);
-      setPanX(-focusedContainer.x * targetZoom);
-      setPanY(-focusedContainer.y * targetZoom);
-      onSelectNode(focusedContainer.id);
       setFocusedContainerId(null);
       if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+      containerFocusStackRef.current = [];
+      return;
     }
+
+    if (focusedTaskId) {
+      const focusedTask = nodes.find(n => n.id === focusedTaskId);
+      if (focusedTask && focusedTask.parentId) {
+        const parentNode = nodes.find(n => n.id === focusedTask.parentId);
+        if (parentNode && parentNode.id !== focusedTask.id) {
+          const targetZoom = 0.85;
+          setZoom(targetZoom);
+          setPanX(-parentNode.x * targetZoom + centerOffset.x);
+          setPanY(-parentNode.y * targetZoom + centerOffset.y);
+          onSelectNode(parentNode.id);
+
+          if (parentNode.isContainer || parentNode.isEquipment) {
+            setFocusedContainerId(parentNode.id);
+            if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+          } else {
+            setFocusedContainerId(null);
+            if (onFocusedTaskIdChange) onFocusedTaskIdChange(parentNode.id);
+          }
+          return;
+        }
+      }
+
+      // Exit focus mode completely to main canvas
+      setFocusedContainerId(null);
+      if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+      containerFocusStackRef.current = [];
+      return;
+    }
+
+    // Default exit to main canvas screen
+    setFocusedContainerId(null);
+    if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+    containerFocusStackRef.current = [];
   };
 
   // Check if a card is touching any workflow outer dashed trigger zone
@@ -5953,14 +5967,27 @@ export default function MindMapCanvas({
                   </button>
                 </div>
                 
-                <button
-                  onClick={handleGoBackFocus}
-                  className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg text-[11px] font-extrabold transition-all duration-200 cursor-pointer border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
-                  title="Вернуться на один уровень выше"
-                >
-                  <Minimize2 className="w-3.5 h-3.5 text-rose-500" />
-                  Вернуться
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleGoBackFocus}
+                    className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg text-[11px] font-extrabold transition-all duration-200 cursor-pointer border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
+                    title="Вернуться на один уровень выше"
+                  >
+                    <Undo2 className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Назад</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFocusedContainerId(null);
+                      if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-amber-50 dark:hover:bg-slate-850 text-amber-700 dark:text-amber-300 hover:text-amber-800 rounded-lg text-[11px] font-extrabold transition-all duration-200 cursor-pointer border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-slate-900 shadow-sm"
+                    title="Выйти из режима фокусировки на главный экран холста"
+                  >
+                    <Home className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>Главный экран</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -6035,13 +6062,23 @@ export default function MindMapCanvas({
                     <Menu className="w-3.5 h-3.5" />
                   </button>
 
-                  {/* Quick Exit back button */}
+                  {/* Quick Exit back buttons */}
                   <button
                     onClick={handleGoBackFocus}
-                    className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-rose-505 hover:bg-rose-50 dark:hover:bg-rose-950/20 hover:text-rose-600 transition-colors cursor-pointer"
+                    className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 hover:text-rose-600 transition-colors cursor-pointer"
                     title="Вернуться на один уровень выше"
                   >
-                    <Minimize2 className="w-3.5 h-3.5" />
+                    <Undo2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFocusedContainerId(null);
+                      if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+                    }}
+                    className="p-1.5 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-slate-850 text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-950/20 transition-colors cursor-pointer"
+                    title="Выйти на главный экран холста"
+                  >
+                    <Home className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>

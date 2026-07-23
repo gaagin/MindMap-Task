@@ -49,7 +49,8 @@ import {
   Copy,
   FolderPlus,
   Grid,
-  Tag
+  Tag,
+  Home
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime, getTaskExternalLinks } from './utils';
@@ -1596,25 +1597,6 @@ export default function App() {
   const handleGoBackOneFocusLevel = React.useCallback(() => {
     const projectNodes = state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : [];
 
-    const getAncestor = (nodeId: string | null): TaskNode | null => {
-      if (!nodeId) return null;
-      const p = projectNodes.find(n => n.id === nodeId);
-      if (!p) return null;
-      if (p.isContainer || p.isEquipment) return p;
-      return getAncestor(p.parentId);
-    };
-
-    const getContainingParentContainer = (node: TaskNode): TaskNode | null => {
-      return projectNodes.find(c => {
-        if (c.id === node.id || (!c.isContainer && !c.isEquipment)) return false;
-        const w = c.width || (c.isContainer ? 520 : 220);
-        const h = c.height || (c.isContainer ? 400 : 140);
-        const dx = Math.abs(node.x - c.x);
-        const dy = Math.abs(node.y - c.y);
-        return dx <= w / 2 && dy <= h / 2;
-      }) || null;
-    };
-
     if (focusedContainerId) {
       const stack = focusContainerStackRef.current;
       if (stack.length > 1 && stack[stack.length - 1] === focusedContainerId) {
@@ -1626,43 +1608,56 @@ export default function App() {
       }
 
       const containerNode = projectNodes.find(n => n.id === focusedContainerId);
-      if (containerNode) {
-        const ancestorContainer = getAncestor(containerNode.parentId) || getContainingParentContainer(containerNode);
-        const directParent = containerNode.parentId ? projectNodes.find(n => n.id === containerNode.parentId) : null;
-
-        if (ancestorContainer) {
-          setFocusedContainerId(ancestorContainer.id);
-          setFocusedTaskId(null);
-          return;
-        } else if (directParent) {
-          setFocusedTaskId(directParent.id);
-          setFocusedContainerId(null);
-          return;
+      if (containerNode && containerNode.parentId) {
+        const parentNode = projectNodes.find(n => n.id === containerNode.parentId);
+        if (parentNode && parentNode.id !== containerNode.id) {
+          if (parentNode.isContainer || parentNode.isEquipment) {
+            setFocusedContainerId(parentNode.id);
+            setFocusedTaskId(null);
+            return;
+          } else {
+            setFocusedTaskId(parentNode.id);
+            setFocusedContainerId(null);
+            return;
+          }
         }
       }
 
+      // Exit focus mode completely to main screen if at top level or no parent
       setFocusedContainerId(null);
       setFocusedTaskId(null);
-    } else if (focusedTaskId) {
-      const focusedTask = projectNodes.find(n => n.id === focusedTaskId);
-      if (focusedTask) {
-        const ancestorContainer = getAncestor(focusedTask.parentId) || getContainingParentContainer(focusedTask);
-        const directParent = focusedTask.parentId ? projectNodes.find(n => n.id === focusedTask.parentId) : null;
-
-        if (ancestorContainer) {
-          setFocusedContainerId(ancestorContainer.id);
-          setFocusedTaskId(directParent && directParent.id !== ancestorContainer.id && !directParent.isContainer && !directParent.isEquipment ? directParent.id : null);
-          return;
-        } else if (directParent) {
-          setFocusedTaskId(directParent.id);
-          setFocusedContainerId(null);
-          return;
-        }
-      }
-
-      setFocusedTaskId(null);
-      setFocusedContainerId(null);
+      focusContainerStackRef.current = [];
+      return;
     }
+
+    if (focusedTaskId) {
+      const focusedTask = projectNodes.find(n => n.id === focusedTaskId);
+      if (focusedTask && focusedTask.parentId) {
+        const parentNode = projectNodes.find(n => n.id === focusedTask.parentId);
+        if (parentNode && parentNode.id !== focusedTask.id) {
+          if (parentNode.isContainer || parentNode.isEquipment) {
+            setFocusedContainerId(parentNode.id);
+            setFocusedTaskId(null);
+            return;
+          } else {
+            setFocusedTaskId(parentNode.id);
+            setFocusedContainerId(null);
+            return;
+          }
+        }
+      }
+
+      // Exit focus mode completely to main screen if at top level
+      setFocusedTaskId(null);
+      setFocusedContainerId(null);
+      focusContainerStackRef.current = [];
+      return;
+    }
+
+    // Default exit
+    setFocusedContainerId(null);
+    setFocusedTaskId(null);
+    focusContainerStackRef.current = [];
   }, [focusedContainerId, focusedTaskId, state.activeProjectId, state.nodes]);
 
   // Auto-switch viewMode and load/restore filters on focused node change
@@ -6785,6 +6780,18 @@ export default function App() {
                     }
                   >
                     <Undo2 className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFocusedContainerId(null);
+                      setFocusedTaskId(null);
+                      focusContainerStackRef.current = [];
+                    }}
+                    className="p-1.5 px-2.5 hover:bg-amber-50 dark:hover:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors flex items-center gap-1.5"
+                    title="Выйти из режима фокуса на главный экран"
+                  >
+                    <Home className="w-4 h-4" />
+                    <span className="text-[10px] font-extrabold hidden sm:inline">Главный экран</span>
                   </button>
                 </div>
               </div>
