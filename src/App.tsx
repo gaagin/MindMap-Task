@@ -48,7 +48,8 @@ import {
   Plus,
   Copy,
   FolderPlus,
-  Grid
+  Grid,
+  Tag
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime, getTaskExternalLinks } from './utils';
@@ -1429,6 +1430,93 @@ export default function App() {
       return null;
     }
   });
+
+  // Tag focus navigation states
+  const [tagFilterIndex, setTagFilterIndex] = useState<number>(0);
+
+  // Compute tasks matching the active tag filter
+  const tagFilteredNodes = useMemo(() => {
+    if (filterTag === 'all' || !state.activeProjectId) return [];
+    const currentNodes = state.nodes[state.activeProjectId] || [];
+    return currentNodes.filter(n => !n.archived && (n.tags || []).includes(filterTag));
+  }, [filterTag, state.activeProjectId, state.nodes]);
+
+  // Track tag filter changes to auto-focus first matching task in Canvas mode
+  const prevFilterTagRef = React.useRef(filterTag);
+  const prevViewModeRef = React.useRef(viewMode);
+
+  useEffect(() => {
+    if (filterTag !== 'all') {
+      const filterTagChanged = prevFilterTagRef.current !== filterTag;
+      const viewModeChangedToCanvas = prevViewModeRef.current !== viewMode && viewMode === 'canvas';
+
+      if (viewMode === 'canvas' && (filterTagChanged || viewModeChangedToCanvas)) {
+        setTagFilterIndex(0);
+        if (tagFilteredNodes.length > 0) {
+          setFocusedTaskId(tagFilteredNodes[0].id);
+          setSelectedNodeId(tagFilteredNodes[0].id);
+        }
+      }
+    }
+    prevFilterTagRef.current = filterTag;
+    prevViewModeRef.current = viewMode;
+  }, [filterTag, viewMode, tagFilteredNodes]);
+
+  // Keep tagFilterIndex in bounds if nodes change
+  useEffect(() => {
+    if (filterTag !== 'all' && tagFilteredNodes.length > 0) {
+      if (tagFilterIndex >= tagFilteredNodes.length) {
+        setTagFilterIndex(0);
+        if (viewMode === 'canvas') {
+          setFocusedTaskId(tagFilteredNodes[0].id);
+          setSelectedNodeId(tagFilteredNodes[0].id);
+        }
+      }
+    }
+  }, [tagFilteredNodes, filterTag, tagFilterIndex, viewMode]);
+
+  const handleNextTagFilteredNode = React.useCallback(() => {
+    if (tagFilteredNodes.length === 0) return;
+    const nextIdx = (tagFilterIndex + 1) % tagFilteredNodes.length;
+    setTagFilterIndex(nextIdx);
+    setFocusedTaskId(tagFilteredNodes[nextIdx].id);
+    setSelectedNodeId(tagFilteredNodes[nextIdx].id);
+  }, [tagFilteredNodes, tagFilterIndex]);
+
+  const handlePrevTagFilteredNode = React.useCallback(() => {
+    if (tagFilteredNodes.length === 0) return;
+    const prevIdx = (tagFilterIndex - 1 + tagFilteredNodes.length) % tagFilteredNodes.length;
+    setTagFilterIndex(prevIdx);
+    setFocusedTaskId(tagFilteredNodes[prevIdx].id);
+    setSelectedNodeId(tagFilteredNodes[prevIdx].id);
+  }, [tagFilteredNodes, tagFilterIndex]);
+
+  // Keyboard navigation (ArrowLeft / ArrowRight) for tag-filtered tasks on canvas
+  useEffect(() => {
+    const handleTagNavKeyDown = (e: KeyboardEvent) => {
+      if (viewMode !== 'canvas' || filterTag === 'all' || tagFilteredNodes.length <= 1) return;
+      const activeEl = document.activeElement;
+      if (
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          activeEl.getAttribute('contenteditable') === 'true')
+      ) {
+        return;
+      }
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleNextTagFilteredNode();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePrevTagFilteredNode();
+      }
+    };
+
+    window.addEventListener('keydown', handleTagNavKeyDown);
+    return () => window.removeEventListener('keydown', handleTagNavKeyDown);
+  }, [viewMode, filterTag, tagFilteredNodes.length, handleNextTagFilteredNode, handlePrevTagFilteredNode]);
   const [isMobileViewSwitcherOpen, setIsMobileViewSwitcherOpen] = useState(false);
   const [isContainerFocused, setIsContainerFocused] = useState(false);
   const [focusedContainerId, setFocusedContainerId] = useState<string | null>(() => {
@@ -6413,6 +6501,74 @@ export default function App() {
             />
           )}
 
+          {/* Floating Tag Navigation Banner on Canvas Mode */}
+          {state.activeProjectId && viewMode === 'canvas' && filterTag !== 'all' && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 animate-in slide-in-from-top-3 duration-200">
+              <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-indigo-200 dark:border-indigo-900/60 rounded-2xl shadow-xl p-2 px-3.5 flex items-center gap-2.5 text-xs select-none max-w-[95vw]">
+                {/* Tag Badge */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-extrabold rounded-xl border border-indigo-100 dark:border-indigo-900/40 shrink-0">
+                  <Tag className="w-3.5 h-3.5" />
+                  <span>#{filterTag}</span>
+                </div>
+
+                {/* Task Count & Preview */}
+                <div className="flex items-center gap-2 min-w-0">
+                  {tagFilteredNodes.length > 0 ? (
+                    <>
+                      <span className="text-[11px] font-mono font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/40 px-2 py-0.5 rounded-lg border border-indigo-100 dark:border-indigo-900/30 shrink-0">
+                        {tagFilterIndex + 1} из {tagFilteredNodes.length}
+                      </span>
+                      <span className="hidden sm:inline font-bold text-slate-700 dark:text-slate-200 max-w-[180px] md:max-w-[260px] truncate text-xs" title={tagFilteredNodes[tagFilterIndex]?.text}>
+                        {tagFilteredNodes[tagFilterIndex]?.text || 'Без названия'}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-slate-400 dark:text-slate-500 italic text-xs">Задач с этим тегом не найдено</span>
+                  )}
+                </div>
+
+                {/* Cycle Navigation */}
+                {tagFilteredNodes.length > 1 && (
+                  <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 ml-1">
+                    <button
+                      type="button"
+                      onClick={handlePrevTagFilteredNode}
+                      className="p-1 px-2 rounded-lg text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer font-bold flex items-center gap-1 text-[11px]"
+                      title="Предыдущая задача с этим тегом (Стрелка влево)"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span className="hidden md:inline">Пред</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleNextTagFilteredNode}
+                      className="p-1 px-2 rounded-lg text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer font-bold flex items-center gap-1 text-[11px]"
+                      title="Следующая задача с этим тегом (Стрелка вправо)"
+                    >
+                      <span className="hidden md:inline">След</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Action Controls */}
+                <div className="flex items-center gap-1 shrink-0 ml-1">
+                  {/* Reset Tag Filter */}
+                  <button
+                    type="button"
+                    onClick={() => setFilterTag('all')}
+                    className="p-1.5 rounded-xl text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer text-xs font-bold flex items-center gap-1"
+                    title="Сбросить фильтр тегов"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Сбросить</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Universal Focus Mode Banner for all non-canvas views */}
           {state.activeProjectId && viewMode !== 'canvas' && (focusedTaskId || focusedContainerId) && (() => {
             const focusId = focusedTaskId || focusedContainerId;
@@ -6745,6 +6901,7 @@ export default function App() {
                 onFocusedTaskIdChange={setFocusedTaskId}
                 focusedContainerId={focusedContainerId}
                 onFocusedContainerIdChange={setFocusedContainerId}
+                onFilterTagChange={(tag) => setFilterTag(tag)}
               />
             )
           ) : (

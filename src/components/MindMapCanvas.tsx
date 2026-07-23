@@ -104,6 +104,7 @@ interface MindMapCanvasProps {
   focusedContainerId?: string | null;
   onFocusedContainerIdChange?: (id: string | null) => void;
   googleToken?: string | null;
+  onFilterTagChange?: (tag: string) => void;
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -381,7 +382,8 @@ export default function MindMapCanvas({
   onFocusedTaskIdChange,
   focusedContainerId: propFocusedContainerId,
   onFocusedContainerIdChange,
-  googleToken
+  googleToken,
+  onFilterTagChange
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -8772,13 +8774,20 @@ export default function MindMapCanvas({
                             <span 
                               key={tag}
                               style={style}
-                              className={`text-[9.5px] font-semibold px-2 py-0.5 rounded-md select-none transition-all ${
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onFilterTagChange) {
+                                  onFilterTagChange(tag);
+                                }
+                              }}
+                              className={`text-[9.5px] font-semibold px-2 py-0.5 rounded-md select-none transition-all cursor-pointer hover:scale-105 ${
                                 isRoot 
                                   ? 'bg-indigo-700 text-indigo-100 opacity-90' 
                                   : color 
                                     ? '' 
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-transparent'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-transparent hover:border-indigo-300'
                               }`}
+                              title={`Фильтровать по тегу #${tag}`}
                             >
                               #{tag}
                             </span>
