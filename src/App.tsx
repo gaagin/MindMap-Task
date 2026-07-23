@@ -1575,6 +1575,95 @@ export default function App() {
   const lastAppliedFocusIdRef = React.useRef<string | null>(null);
   const prevFocusedContainerIdRef = React.useRef<string | null>(null);
   const lastProcessedFocusedTaskIdRef = React.useRef<string | null>(null);
+  const focusContainerStackRef = React.useRef<string[]>([]);
+
+  useEffect(() => {
+    if (focusedContainerId) {
+      const stack = focusContainerStackRef.current;
+      if (stack[stack.length - 1] !== focusedContainerId) {
+        const idx = stack.indexOf(focusedContainerId);
+        if (idx !== -1) {
+          focusContainerStackRef.current = stack.slice(0, idx + 1);
+        } else {
+          focusContainerStackRef.current = [...stack, focusedContainerId];
+        }
+      }
+    } else {
+      focusContainerStackRef.current = [];
+    }
+  }, [focusedContainerId]);
+
+  const handleGoBackOneFocusLevel = React.useCallback(() => {
+    const projectNodes = state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : [];
+
+    const getAncestor = (nodeId: string | null): TaskNode | null => {
+      if (!nodeId) return null;
+      const p = projectNodes.find(n => n.id === nodeId);
+      if (!p) return null;
+      if (p.isContainer || p.isEquipment) return p;
+      return getAncestor(p.parentId);
+    };
+
+    const getContainingParentContainer = (node: TaskNode): TaskNode | null => {
+      return projectNodes.find(c => {
+        if (c.id === node.id || (!c.isContainer && !c.isEquipment)) return false;
+        const w = c.width || (c.isContainer ? 520 : 220);
+        const h = c.height || (c.isContainer ? 400 : 140);
+        const dx = Math.abs(node.x - c.x);
+        const dy = Math.abs(node.y - c.y);
+        return dx <= w / 2 && dy <= h / 2;
+      }) || null;
+    };
+
+    if (focusedContainerId) {
+      const stack = focusContainerStackRef.current;
+      if (stack.length > 1 && stack[stack.length - 1] === focusedContainerId) {
+        const parentInStack = stack[stack.length - 2];
+        focusContainerStackRef.current = stack.slice(0, stack.length - 1);
+        setFocusedContainerId(parentInStack);
+        setFocusedTaskId(null);
+        return;
+      }
+
+      const containerNode = projectNodes.find(n => n.id === focusedContainerId);
+      if (containerNode) {
+        const ancestorContainer = getAncestor(containerNode.parentId) || getContainingParentContainer(containerNode);
+        const directParent = containerNode.parentId ? projectNodes.find(n => n.id === containerNode.parentId) : null;
+
+        if (ancestorContainer) {
+          setFocusedContainerId(ancestorContainer.id);
+          setFocusedTaskId(null);
+          return;
+        } else if (directParent) {
+          setFocusedTaskId(directParent.id);
+          setFocusedContainerId(null);
+          return;
+        }
+      }
+
+      setFocusedContainerId(null);
+      setFocusedTaskId(null);
+    } else if (focusedTaskId) {
+      const focusedTask = projectNodes.find(n => n.id === focusedTaskId);
+      if (focusedTask) {
+        const ancestorContainer = getAncestor(focusedTask.parentId) || getContainingParentContainer(focusedTask);
+        const directParent = focusedTask.parentId ? projectNodes.find(n => n.id === focusedTask.parentId) : null;
+
+        if (ancestorContainer) {
+          setFocusedContainerId(ancestorContainer.id);
+          setFocusedTaskId(directParent && directParent.id !== ancestorContainer.id && !directParent.isContainer && !directParent.isEquipment ? directParent.id : null);
+          return;
+        } else if (directParent) {
+          setFocusedTaskId(directParent.id);
+          setFocusedContainerId(null);
+          return;
+        }
+      }
+
+      setFocusedTaskId(null);
+      setFocusedContainerId(null);
+    }
+  }, [focusedContainerId, focusedTaskId, state.activeProjectId, state.nodes]);
 
   // Auto-switch viewMode and load/restore filters on focused node change
   useEffect(() => {
@@ -5780,12 +5869,12 @@ export default function App() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setFocusedContainerId(null);
+                          handleGoBackOneFocusLevel();
                         }}
                         className="ml-1 px-1 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white text-[8px] font-extrabold uppercase transition-all cursor-pointer shadow-xs border-none"
-                        title="Выйти из режима фокусировки"
+                        title={containerNode?.parentId ? "Назад на уровень выше" : "Выйти из режима фокусировки"}
                       >
-                        Выйти
+                        {containerNode?.parentId ? "Назад" : "Выйти"}
                       </button>
                     </span>
                   );
@@ -6686,21 +6775,12 @@ export default function App() {
                     return null;
                   })()}
                   <button
-                    onClick={() => {
-                      if (focusedContainerId) setFocusedContainerId(null);
-                      if (focusedTaskId) {
-                        const focusedTask = activeNodes.find(n => n.id === focusedTaskId);
-                        if (focusedTask && focusedTask.parentId) {
-                          setFocusedTaskId(focusedTask.parentId);
-                        } else {
-                          setFocusedTaskId(null);
-                        }
-                      }
-                    }}
+                    onClick={handleGoBackOneFocusLevel}
                     className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-450 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
                     title={
-                      focusedTaskId && activeNodes.find(n => n.id === focusedTaskId)?.parentId
-                        ? "Назад к родительской задаче"
+                      (focusedContainerId && activeNodes.find(n => n.id === focusedContainerId)?.parentId) ||
+                      (focusedTaskId && activeNodes.find(n => n.id === focusedTaskId)?.parentId)
+                        ? "Назад на один уровень выше"
                         : "Выйти из режима фокуса (назад к общему списку)"
                     }
                   >
