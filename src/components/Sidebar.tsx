@@ -561,13 +561,13 @@ export default function Sidebar({
       {/* Mobile Drawer Overlay */}
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-slate-900/20 dark:bg-slate-950/40 backdrop-blur-xs z-40 lg:hidden"
+          className="fixed inset-0 bg-slate-900/30 dark:bg-slate-950/55 backdrop-blur-xs z-[140] lg:hidden"
           onClick={onClose}
         />
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 glass-panel border-r border-slate-205/30 dark:border-slate-850/30 w-72 flex flex-col z-50 transform transition-all duration-300 ease-out shrink-0 ${
+        className={`fixed inset-y-0 left-0 bg-white dark:bg-slate-900 lg:glass-panel border-r border-slate-205/30 dark:border-slate-850/30 w-72 flex flex-col z-[150] transform transition-all duration-300 ease-out shrink-0 ${
           isOpen 
             ? 'translate-x-0 opacity-100 shadow-xl' 
             : '-translate-x-full opacity-0 pointer-events-none'

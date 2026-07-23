@@ -1534,7 +1534,7 @@ export default function MobileListView({
 
       {/* Main interactive Tasks container */}
       <div 
-        className="flex-1 overflow-y-auto px-4 py-3 space-y-2 relative"
+        className="flex-1 overflow-y-auto px-4 pt-3 pb-24 space-y-2 relative"
         onDragOver={(e) => {
           e.preventDefault();
         }}

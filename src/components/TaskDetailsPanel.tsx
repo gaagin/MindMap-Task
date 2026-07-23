@@ -128,7 +128,7 @@ const AsideWrapper = ({ children, isFullscreen, setIsFullscreen }: AsideWrapperP
   if (isFullscreen) {
     return (
       <div 
-        className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-0 md:p-6 animate-fade-in"
+        className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-[150] p-0 md:p-6 animate-fade-in"
         onClick={() => setIsFullscreen(false)}
       >
         <div 
@@ -4108,7 +4108,7 @@ export default function TaskDetailsPanel({
           className={
             isFullscreen
               ? "w-full h-full bg-white dark:bg-slate-900 md:rounded-2xl border border-slate-205/30 dark:border-slate-850/30 shadow-2xl flex flex-col overflow-hidden relative font-sans"
-              : "fixed inset-y-3 right-3 w-full max-w-[calc(100%-1.5rem)] md:w-[420px] bg-white dark:bg-slate-900 border border-slate-205/30 dark:border-slate-850/30 shadow-2xl rounded-2xl flex flex-col z-50 transform translate-x-0 transition-transform duration-300 ease-out font-sans"
+              : "fixed inset-y-3 right-3 w-full max-w-[calc(100%-1.5rem)] md:w-[420px] bg-white dark:bg-slate-900 border border-slate-205/30 dark:border-slate-850/30 shadow-2xl rounded-2xl flex flex-col z-[150] transform translate-x-0 transition-transform duration-300 ease-out font-sans"
           }
         >
 

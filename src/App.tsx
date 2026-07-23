@@ -683,6 +683,34 @@ export default function App() {
     localStorage.setItem('task_mindmap_sidebar_open', String(sidebarOpen));
   }, [sidebarOpen]);
 
+  // Track if any text input/textarea is focused to prevent mobile keyboard overlapping bottom bar
+  const [isInputFocused, setIsInputFocused] = useState(false);
+
+  useEffect(() => {
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.contentEditable === 'true')
+      ) {
+        setIsInputFocused(true);
+      }
+    };
+    const handleFocusOut = () => {
+      setIsInputFocused(false);
+    };
+
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('focusout', handleFocusOut);
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('focusout', handleFocusOut);
+    };
+  }, []);
+
 
   
   // Synchronized global state for active Pomodoro session
@@ -1776,7 +1804,7 @@ export default function App() {
 
   // Auto-center on focused task change
   useEffect(() => {
-    if (focusedTaskId) {
+    if (focusedTaskId && searchQuery.trim().length === 0) {
       let targetNode: TaskNode | undefined;
       for (const [projectId, nodeList] of Object.entries(state.nodes)) {
         const found = (nodeList as TaskNode[]).find(n => n.id === focusedTaskId);
@@ -1792,7 +1820,7 @@ export default function App() {
         setZoom(targetZoom);
       }
     }
-  }, [focusedTaskId, state.nodes]);
+  }, [focusedTaskId, state.nodes, searchQuery]);
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
@@ -5635,6 +5663,36 @@ export default function App() {
     const pid = state.activeProjectId;
     if (pid) {
       const currentNodes = state.nodes[pid] || [];
+
+      // Auto-focus parent container if target node is inside one, otherwise clear container focus
+      let closestContainerId: string | null = null;
+      let tempId: string | null = nodeId;
+      while (tempId !== null) {
+        const current = currentNodes.find(n => n.id === tempId);
+        if (current && current.parentId) {
+          const parent = currentNodes.find(n => n.id === current.parentId);
+          if (parent && (parent.isContainer || parent.isEquipment)) {
+            closestContainerId = parent.id;
+            break;
+          }
+          tempId = current.parentId;
+        } else {
+          tempId = null;
+        }
+      }
+
+      if (closestContainerId) {
+        if (focusedContainerId !== closestContainerId) {
+          setFocusedContainerId(closestContainerId);
+          setFocusedTaskId(null);
+        }
+      } else {
+        if (focusedContainerId !== null) {
+          setFocusedContainerId(null);
+          setFocusedTaskId(null);
+        }
+      }
+
       let updated = false;
 
       // Find all ancestors of the targeted node
@@ -5675,8 +5733,10 @@ export default function App() {
     // Pan canvas to center this searched node!
     const node = activeNodes.find(n => n.id === nodeId);
     if (node) {
-      setPanX(-node.x * zoom);
-      setPanY(-node.y * zoom);
+      const targetZoom = 1.0;
+      setZoom(targetZoom);
+      setPanX(-node.x * targetZoom);
+      setPanY(-node.y * targetZoom);
 
       // Auto-scroll Kanban or Mobile views if active
       setTimeout(() => {
@@ -5706,17 +5766,27 @@ export default function App() {
     handleSelectSearchedNode(searchedIds[prevIdx]);
   };
 
-  // Auto select first found node on search query change
+  const lastCenteredSearchRef = useRef<{ query: string; nodeId: string | null }>({ query: '', nodeId: null });
+
+  // Auto select first found node on search query change and center it in canvas view
   useEffect(() => {
-    if (searchQuery.trim().length > 0) {
-      if (searchedIds.length > 0) {
+    if (viewMode === 'canvas' && searchQuery.trim().length > 0 && searchedIds.length > 0) {
+      const firstNodeId = searchedIds[0];
+      const normalizedQuery = searchQuery.trim().toLowerCase();
+      
+      if (
+        lastCenteredSearchRef.current.query !== normalizedQuery ||
+        lastCenteredSearchRef.current.nodeId !== firstNodeId
+      ) {
+        lastCenteredSearchRef.current = { query: normalizedQuery, nodeId: firstNodeId };
         setCurrentSearchIndex(0);
-        handleSelectSearchedNode(searchedIds[0]);
+        handleSelectSearchedNode(firstNodeId);
       }
-    } else {
+    } else if (searchQuery.trim().length === 0) {
+      lastCenteredSearchRef.current = { query: '', nodeId: null };
       setCurrentSearchIndex(0);
     }
-  }, [searchQuery, state.activeProjectId]);
+  }, [searchQuery, searchedIds, viewMode]);
 
   // ----- DATA PERSISTENCE IMPORT & EXPORT -----
   const handleExportData = () => {
@@ -6207,7 +6277,7 @@ export default function App() {
               className={`p-1.5 border rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.05] shrink-0 ${
                 isSyncingSheets
                   ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse animate-duration-1000'
-                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-emerald-600 dark:text-emerald-400'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-305'
               }`}
               title={
                 googleToken 
@@ -6216,7 +6286,7 @@ export default function App() {
               }
             >
               <FileSpreadsheet className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-          </button>
+            </button>
 
 
           </div>
@@ -6274,7 +6344,7 @@ export default function App() {
         )}
 
         {/* ALWAYS VISIBLE Mobile Bottom Action and Views Bar */}
-        <div className={`fixed bottom-0 left-0 right-0 z-[110] ${isDrawerOpen ? 'hidden' : 'flex'} sm:hidden flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_12px_rgba(0,0,0,0.08)] border-t border-slate-200 dark:border-slate-800 shrink-0 select-none`}>
+        <div className={`fixed bottom-0 left-0 right-0 z-[110] ${(isDrawerOpen || sidebarOpen || isInputFocused) ? 'hidden' : 'flex'} sm:hidden flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_12px_rgba(0,0,0,0.08)] border-t border-slate-200 dark:border-slate-800 shrink-0 select-none`}>
           {/* Row 2: Action controls */}
           <header className="h-14 flex items-center justify-between px-3 w-full">
             {/* Left: Hamburger menu & Undo/Cancel */}
@@ -7151,25 +7221,32 @@ export default function App() {
 
         {/* Task Properties slide-out drawer displays only on explicit open clicking Eye button */}
         {isDrawerOpen && selectedNode && (
-          <TaskDetailsPanel
-            node={selectedNode}
-            allNodes={activeNodes}
-            onClose={() => setIsDrawerOpen(false)}
-            onUpdateNode={handleUpdateNode}
-            onDeleteNode={handleDeleteNode}
-            onAddChildNode={handleAddChildNode}
-            onSelectNode={handleSelectAndCenterNode}
-            categories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
-            onCreateTagCategory={handleCreateTagCategory}
-            onUpdateTagCategory={handleUpdateTagCategory}
-            onDeleteTagCategory={handleDeleteTagCategory}
-            googleToken={googleToken}
-            onUpdateNodeParent={handleUpdateNodeParent}
-            initialTab={detailsPanelTab}
-            initialFullscreen={detailsPanelFullscreen}
-            lastCreatedNodeId={lastCreatedNodeId}
-            onDuplicateEquipment={handleDuplicateEquipment}
-          />
+          <>
+            {/* Backdrop overlay for mobile to click-away & close */}
+            <div 
+              className="fixed inset-0 bg-slate-900/30 dark:bg-slate-950/55 backdrop-blur-xs z-[140] sm:hidden"
+              onClick={() => setIsDrawerOpen(false)}
+            />
+            <TaskDetailsPanel
+              node={selectedNode}
+              allNodes={activeNodes}
+              onClose={() => setIsDrawerOpen(false)}
+              onUpdateNode={handleUpdateNode}
+              onDeleteNode={handleDeleteNode}
+              onAddChildNode={handleAddChildNode}
+              onSelectNode={handleSelectAndCenterNode}
+              categories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
+              onCreateTagCategory={handleCreateTagCategory}
+              onUpdateTagCategory={handleUpdateTagCategory}
+              onDeleteTagCategory={handleDeleteTagCategory}
+              googleToken={googleToken}
+              onUpdateNodeParent={handleUpdateNodeParent}
+              initialTab={detailsPanelTab}
+              initialFullscreen={detailsPanelFullscreen}
+              lastCreatedNodeId={lastCreatedNodeId}
+              onDuplicateEquipment={handleDuplicateEquipment}
+            />
+          </>
         )}
 
         {aiConsoleOpen && (
