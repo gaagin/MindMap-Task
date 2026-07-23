@@ -628,13 +628,14 @@ async function writeHeaders(spreadsheetId: string, accessToken: string) {
       values: [['Project ID', 'Name', 'Folder ID', 'Created At', 'Updated At']]
     },
     {
-      range: 'Nodes!A1:AG1',
+      range: 'Nodes!A1:AL1',
       values: [[
         'Node ID', 'Project ID', 'Text', 'X', 'Y', 'Parent ID', 'Priority', 'Tags', 'Notes',
         'Completed', 'Color', 'Collapsed', 'Due Date', 'Progress', 'Is Floating', 'Is Container',
         'Width', 'Height', 'Files (JSON)', 'Updated At',
         'Due Time', 'Start Date', 'Start Time', 'Reminder Date', 'Reminder Time', 'Reminder Minutes Before', 'Reminder Dismissed', 'Comments (JSON)',
-        'Is Workflow Rectangle', 'Workflow Connections (JSON)', 'Archived', 'Estimated Time', 'Is Not Task'
+        'Is Workflow Rectangle', 'Workflow Connections (JSON)', 'Archived', 'Estimated Time', 'Is Not Task',
+        'Is Equipment', 'Equipment Model', 'Equipment Barcode', 'Equipment Stock Code', 'Equipment Note'
       ]]
     },
     {
@@ -680,7 +681,7 @@ export async function syncWithGoogleSheets(
     }
 
     // 1. Fetch values from Google Sheet
-    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchGet?ranges=Folders!A1:D&ranges=Projects!A1:E&ranges=Nodes!A1:AG&ranges=TagCategories!A1:E&ranges=Deletions!A1:C`;
+    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values:batchGet?ranges=Folders!A1:D&ranges=Projects!A1:E&ranges=Nodes!A1:AL&ranges=TagCategories!A1:E&ranges=Deletions!A1:C`;
     const getRes = await fetch(getUrl, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -700,11 +701,11 @@ export async function syncWithGoogleSheets(
     const sheetTagCatsRows = valueRanges[3]?.values || [];
     const sheetDeletionsRows = valueRanges[4]?.values || [];
 
-    // Auto-upgrade existing Sheets without the AG Columns (Is Not Task)
-    if (sheetNodesRows.length > 0 && sheetNodesRows[0] && sheetNodesRows[0].length < 33) {
-      console.log('Upgrading existing spreadsheet with Is Not Task column');
+    // Auto-upgrade existing Sheets without the AG Columns (Is Not Task) or equipment columns
+    if (sheetNodesRows.length > 0 && sheetNodesRows[0] && sheetNodesRows[0].length < 38) {
+      console.log('Upgrading existing spreadsheet with Is Not Task and Equipment columns');
       try {
-        const updateHeadersUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Nodes!A1:AG1?valueInputOption=RAW`;
+        const updateHeadersUrl = `https://sheets.googleapis.com/v4/spreadsheets/${fileId}/values/Nodes!A1:AL1?valueInputOption=RAW`;
         await fetch(updateHeadersUrl, {
           method: 'PUT',
           headers: {
@@ -712,13 +713,14 @@ export async function syncWithGoogleSheets(
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            range: 'Nodes!A1:AG1',
+            range: 'Nodes!A1:AL1',
             values: [[
               'Node ID', 'Project ID', 'Text', 'X', 'Y', 'Parent ID', 'Priority', 'Tags', 'Notes',
               'Completed', 'Color', 'Collapsed', 'Due Date', 'Progress', 'Is Floating', 'Is Container',
               'Width', 'Height', 'Files (JSON)', 'Updated At',
               'Due Time', 'Start Date', 'Start Time', 'Reminder Date', 'Reminder Time', 'Reminder Minutes Before', 'Reminder Dismissed', 'Comments (JSON)',
-              'Is Workflow Rectangle', 'Workflow Connections (JSON)', 'Archived', 'Estimated Time', 'Is Not Task'
+              'Is Workflow Rectangle', 'Workflow Connections (JSON)', 'Archived', 'Estimated Time', 'Is Not Task',
+              'Is Equipment', 'Equipment Model', 'Equipment Barcode', 'Equipment Stock Code', 'Equipment Note'
             ]]
           })
         });
@@ -808,7 +810,12 @@ export async function syncWithGoogleSheets(
           workflowConnections: workflowConnections.length > 0 ? workflowConnections : undefined,
           archived: r[30] === 'TRUE' || r[30] === 'true',
           estimatedTime: r[31] && r[31] !== 'NULL' && !isNaN(Number(r[31])) ? Number(r[31]) : undefined,
-          isNotTask: r[32] === 'TRUE' || r[32] === 'true'
+          isNotTask: r[32] === 'TRUE' || r[32] === 'true',
+          isEquipment: r[33] === 'TRUE' || r[33] === 'true',
+          equipmentModel: r[34] === 'NULL' || !r[34] ? undefined : r[34],
+          equipmentBarcode: r[35] === 'NULL' || !r[35] ? undefined : r[35],
+          equipmentStockCode: r[36] === 'NULL' || !r[36] ? undefined : r[36],
+          equipmentNote: r[37] === 'NULL' || !r[37] ? undefined : r[37]
         };
       });
     };
@@ -1098,7 +1105,7 @@ export async function syncWithGoogleSheets(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:AG', 'TagCategories!A2:E', 'Deletions!A2:C']
+        ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:AL', 'TagCategories!A2:E', 'Deletions!A2:C']
       })
     });
     if (!clearRes.ok) {
@@ -1205,7 +1212,12 @@ export async function syncWithGoogleSheets(
         safeCellString(workflowConnectionsJson),
         n.archived ? 'TRUE' : 'FALSE',
         n.estimatedTime !== undefined && n.estimatedTime !== null && !isNaN(n.estimatedTime) ? n.estimatedTime : 'NULL',
-        n.isNotTask ? 'TRUE' : 'FALSE'
+        n.isNotTask ? 'TRUE' : 'FALSE',
+        n.isEquipment ? 'TRUE' : 'FALSE',
+        n.equipmentModel || 'NULL',
+        n.equipmentBarcode || 'NULL',
+        n.equipmentStockCode || 'NULL',
+        n.equipmentNote || 'NULL'
       ];
     });
 
@@ -1228,7 +1240,7 @@ export async function syncWithGoogleSheets(
     const dataToWrite = [];
     if (folderRows.length > 0) dataToWrite.push({ range: `Folders!A2:D${folderRows.length + 1}`, values: folderRows });
     if (projectRows.length > 0) dataToWrite.push({ range: `Projects!A2:E${projectRows.length + 1}`, values: projectRows });
-    if (nodeRows.length > 0) dataToWrite.push({ range: `Nodes!A2:AG${nodeRows.length + 1}`, values: nodeRows });
+    if (nodeRows.length > 0) dataToWrite.push({ range: `Nodes!A2:AL${nodeRows.length + 1}`, values: nodeRows });
     if (tagCatRows.length > 0) dataToWrite.push({ range: `TagCategories!A2:E${tagCatRows.length + 1}`, values: tagCatRows });
     if (deletionRows.length > 0) dataToWrite.push({ range: `Deletions!A2:C${deletionRows.length + 1}`, values: deletionRows });
 

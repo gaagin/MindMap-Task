@@ -3677,8 +3677,8 @@ export default function MindMapCanvas({
   };
 
   // Zoom limits
-  const MIN_ZOOM = 0.25;
-  const MAX_ZOOM = 2.5;
+  const MIN_ZOOM = 0.01;
+  const MAX_ZOOM = 3.0;
 
   // Check if a node matches the active filter settings directly
   const isDirectNodeMatched = (node: TaskNode): boolean => {
@@ -4195,8 +4195,8 @@ export default function MindMapCanvas({
       }
 
       // Constraints
-      const minW = node.isContainer ? 300 : node.isEquipment ? 160 : 150;
-      const minH = node.isContainer ? 200 : node.isEquipment ? 100 : 40;
+      const minW = node.isContainer ? 80 : node.isEquipment ? 40 : 40;
+      const minH = node.isContainer ? 60 : node.isEquipment ? 30 : 20;
       const newWidth = Math.max(minW, newRight - newLeft);
       const newHeight = Math.max(minH, newBottom - newTop);
 
@@ -4897,8 +4897,8 @@ export default function MindMapCanvas({
       }
 
       // Constraints
-      const minW = node.isContainer ? 300 : node.isEquipment ? 160 : 150;
-      const minH = node.isContainer ? 200 : node.isEquipment ? 100 : 40;
+      const minW = node.isContainer ? 80 : node.isEquipment ? 40 : 40;
+      const minH = node.isContainer ? 60 : node.isEquipment ? 30 : 20;
       const newWidth = Math.max(minW, newRight - newLeft);
       const newHeight = Math.max(minH, newBottom - newTop);
 
@@ -8427,17 +8427,6 @@ export default function MindMapCanvas({
                       </span>
                     )}
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteNode(node.id);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className="p-1 text-slate-400 hover:text-rose-500 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                    title="Удалить оборудование"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
                 </div>
 
                 {/* Content Body: Key Properties */}
