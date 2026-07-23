@@ -4495,9 +4495,37 @@ export default function App() {
     });
 
     // Reset selection and close modal
-    setSelectedNodeIds([]);
+    const primaryNewId = nodesToCopy[0] ? idMap.get(nodesToCopy[0].id) : null;
+    if (primaryNewId && targetProjId === sourceProjId) {
+      setSelectedNodeIds([primaryNewId]);
+      setSelectedNodeId(primaryNewId);
+    } else {
+      setSelectedNodeIds([]);
+      setSelectedNodeId(null);
+    }
     setIsMultiSelectMode(false);
     setIsCopyModalOpen(false);
+  };
+
+  const handleDuplicateEquipment = (equipmentId: string) => {
+    const activeProjId = state.activeProjectId;
+    if (!activeProjId) return;
+    const projNodes = state.nodes[activeProjId] || [];
+    const targetEquipment = projNodes.find(n => n.id === equipmentId);
+    if (!targetEquipment) return;
+
+    const getDescendantIds = (id: string): string[] => {
+      const children = projNodes.filter(n => n.parentId === id && !n.archived);
+      let result: string[] = [];
+      for (const child of children) {
+        result.push(child.id);
+        result.push(...getDescendantIds(child.id));
+      }
+      return result;
+    };
+
+    const allIdsToDuplicate = [equipmentId, ...getDescendantIds(equipmentId)];
+    handlePerformCopy(allIdsToDuplicate, activeProjId, false);
   };
 
   const handleDuplicateProject = (projectId: string) => {
@@ -6976,6 +7004,7 @@ export default function App() {
                   setCopySourceNodeIds(ids);
                   setIsCopyModalOpen(true);
                 }}
+                onDuplicateEquipment={handleDuplicateEquipment}
                 onDeleteNode={handleDeleteNode}
                 onToggleNodeCompleted={handleToggleNodeCompleted}
                 onToggleNodeCollapse={handleToggleNodeCollapse}
@@ -7139,6 +7168,7 @@ export default function App() {
             initialTab={detailsPanelTab}
             initialFullscreen={detailsPanelFullscreen}
             lastCreatedNodeId={lastCreatedNodeId}
+            onDuplicateEquipment={handleDuplicateEquipment}
           />
         )}
 

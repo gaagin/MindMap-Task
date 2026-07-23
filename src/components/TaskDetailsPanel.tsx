@@ -105,6 +105,7 @@ interface TaskDetailsPanelProps {
   initialTab?: 'details' | 'chat';
   initialFullscreen?: boolean;
   lastCreatedNodeId?: string | null;
+  onDuplicateEquipment?: (id: string) => void;
 }
 
 const PASTEL_COLORS = [
@@ -308,7 +309,8 @@ export default function TaskDetailsPanel({
   onUpdateNodeParent,
   initialTab = 'details',
   initialFullscreen = false,
-  lastCreatedNodeId = null
+  lastCreatedNodeId = null,
+  onDuplicateEquipment
 }: TaskDetailsPanelProps) {
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
@@ -2816,25 +2818,42 @@ export default function TaskDetailsPanel({
                   <span className="text-sm">⚙️</span>
                   Оборудование и Аппаратура
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextIsEq = !node.isEquipment;
-                    onUpdateNode({
-                      ...node,
-                      isEquipment: nextIsEq,
-                      isNotTask: nextIsEq ? true : node.isNotTask,
-                      updatedAt: new Date().toISOString()
-                    });
-                  }}
-                  className={`text-[9px] font-extrabold uppercase py-0.5 px-2 rounded-full cursor-pointer transition-colors ${
-                    node.isEquipment 
-                      ? 'bg-amber-500 text-white shadow-xs' 
-                      : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-amber-100'
-                  }`}
-                >
-                  {node.isEquipment ? 'Оборудование ✓' : 'Сделать оборудованием'}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {node.isEquipment && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onDuplicateEquipment) {
+                          onDuplicateEquipment(node.id);
+                        }
+                      }}
+                      title="Дублировать оборудование со всеми свойствами"
+                      className="text-[9px] font-extrabold uppercase py-0.5 px-2 rounded-full cursor-pointer transition-colors bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1 shrink-0"
+                    >
+                      <Copy className="w-2.5 h-2.5" />
+                      Дублировать
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextIsEq = !node.isEquipment;
+                      onUpdateNode({
+                        ...node,
+                        isEquipment: nextIsEq,
+                        isNotTask: nextIsEq ? true : node.isNotTask,
+                        updatedAt: new Date().toISOString()
+                      });
+                    }}
+                    className={`text-[9px] font-extrabold uppercase py-0.5 px-2 rounded-full cursor-pointer transition-colors ${
+                      node.isEquipment 
+                        ? 'bg-amber-500 text-white shadow-xs' 
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-amber-100'
+                    }`}
+                  >
+                    {node.isEquipment ? 'Оборудование ✓' : 'Сделать оборудованием'}
+                  </button>
+                </div>
               </div>
 
               {/* Model */}
@@ -5711,25 +5730,42 @@ export default function TaskDetailsPanel({
               <span className="text-sm">⚙️</span>
               Оборудование и Аппаратура
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                const nextIsEq = !node.isEquipment;
-                onUpdateNode({
-                  ...node,
-                  isEquipment: nextIsEq,
-                  isNotTask: nextIsEq ? true : node.isNotTask,
-                  updatedAt: new Date().toISOString()
-                });
-              }}
-              className={`text-[9px] font-extrabold uppercase py-0.5 px-2 rounded-full cursor-pointer transition-colors ${
-                node.isEquipment 
-                  ? 'bg-amber-500 text-white shadow-xs' 
-                  : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-amber-100'
-              }`}
-            >
-              {node.isEquipment ? 'Оборудование ✓' : 'Сделать оборудованием'}
-            </button>
+            <div className="flex items-center gap-1.5">
+              {node.isEquipment && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onDuplicateEquipment) {
+                      onDuplicateEquipment(node.id);
+                    }
+                  }}
+                  title="Дублировать оборудование со всеми свойствами"
+                  className="text-[9px] font-extrabold uppercase py-0.5 px-2 rounded-full cursor-pointer transition-colors bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1 shrink-0"
+                >
+                  <Copy className="w-2.5 h-2.5" />
+                  Дублировать
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextIsEq = !node.isEquipment;
+                  onUpdateNode({
+                    ...node,
+                    isEquipment: nextIsEq,
+                    isNotTask: nextIsEq ? true : node.isNotTask,
+                    updatedAt: new Date().toISOString()
+                  });
+                }}
+                className={`text-[9px] font-extrabold uppercase py-0.5 px-2 rounded-full cursor-pointer transition-colors ${
+                  node.isEquipment 
+                    ? 'bg-amber-500 text-white shadow-xs' 
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-amber-100'
+                }`}
+              >
+                {node.isEquipment ? 'Оборудование ✓' : 'Сделать оборудованием'}
+              </button>
+            </div>
           </div>
 
           {/* Model */}
