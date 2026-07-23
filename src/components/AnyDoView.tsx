@@ -80,6 +80,23 @@ export default function AnyDoView({
   // Inline quick task inputs per container
   const [quickTaskTexts, setQuickTaskTexts] = useState<Record<string, string>>({});
 
+  // Helper to check if task matches search query (including equipment properties)
+  const checkTaskSearchMatch = (t: TaskNode, qStr: string): boolean => {
+    if (!qStr.trim()) return true;
+    const q = qStr.toLowerCase();
+    const textMatch = t.text?.toLowerCase().includes(q) || false;
+    const notesMatch = t.notes?.toLowerCase().includes(q) || false;
+    const tagMatch = t.tags?.some(tag => tag.toLowerCase().includes(q)) || false;
+    const eqModelMatch = t.equipmentModel?.toLowerCase().includes(q) || false;
+    const eqBarcodeMatch = t.equipmentBarcode?.toLowerCase().includes(q) || false;
+    const eqStockMatch = t.equipmentStockCode?.toLowerCase().includes(q) || false;
+    const eqNoteMatch = t.equipmentNote?.toLowerCase().includes(q) || false;
+    const customPropsMatch = t.customProperties?.some(
+      cp => cp.name?.toLowerCase().includes(q) || cp.value?.toLowerCase().includes(q)
+    ) || false;
+    return textMatch || notesMatch || tagMatch || eqModelMatch || eqBarcodeMatch || eqStockMatch || eqNoteMatch || customPropsMatch;
+  };
+
   // Helper to determine the container of a task node
   const getTaskContainerId = (node: TaskNode): string | null => {
     let curr: TaskNode | undefined = node;
@@ -251,10 +268,7 @@ export default function AnyDoView({
                 const inboxTasks = tasks.filter(t => {
                   const cId = getTaskContainerId(t);
                   const isMatch = cId === null;
-                  if (searchQuery.trim()) {
-                    return isMatch && t.text.toLowerCase().includes(searchQuery.toLowerCase());
-                  }
-                  return isMatch;
+                  return isMatch && checkTaskSearchMatch(t, searchQuery);
                 });
                 const inboxUncompleted = inboxTasks.filter(t => !t.completed);
 
@@ -289,10 +303,7 @@ export default function AnyDoView({
               {containers.map(container => {
                 const containerTasks = tasks.filter(t => {
                   const isMatch = isNodeInContainer(t, container.id);
-                  if (searchQuery.trim()) {
-                    return isMatch && t.text.toLowerCase().includes(searchQuery.toLowerCase());
-                  }
-                  return isMatch;
+                  return isMatch && checkTaskSearchMatch(t, searchQuery);
                 });
                 const uncompleted = containerTasks.filter(t => !t.completed);
                 const color = container.color || '#6366f1';
@@ -434,10 +445,7 @@ export default function AnyDoView({
               const displayedTasks = allTargetTasks.filter(t => {
                 if (expandedFilter === 'active' && t.completed) return false;
                 if (expandedFilter === 'completed' && !t.completed) return false;
-                if (searchQuery.trim()) {
-                  return t.text.toLowerCase().includes(searchQuery.toLowerCase());
-                }
-                return true;
+                return checkTaskSearchMatch(t, searchQuery);
               });
 
               return (

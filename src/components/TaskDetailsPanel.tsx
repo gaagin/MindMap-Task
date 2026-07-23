@@ -2809,6 +2809,151 @@ export default function TaskDetailsPanel({
 
           {/* COLUMN 3: SCHEDULES, CATEGORIES & FILES */}
           <div className="flex flex-col gap-4 min-h-0 h-full">
+            {/* EQUIPMENT & HARDWARE PROPERTIES CARD */}
+            <div className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-slate-900/5 dark:from-amber-950/20 dark:to-slate-900/40 p-3.5 rounded-xl border border-amber-500/30 dark:border-amber-500/20 shadow-xs space-y-3 shrink-0 text-left">
+              <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
+                <span className="text-xs font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-sm">⚙️</span>
+                  Оборудование и Аппаратура
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextIsEq = !node.isEquipment;
+                    onUpdateNode({
+                      ...node,
+                      isEquipment: nextIsEq,
+                      isNotTask: nextIsEq ? true : node.isNotTask,
+                      updatedAt: new Date().toISOString()
+                    });
+                  }}
+                  className={`text-[9px] font-extrabold uppercase py-0.5 px-2 rounded-full cursor-pointer transition-colors ${
+                    node.isEquipment 
+                      ? 'bg-amber-500 text-white shadow-xs' 
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-amber-100'
+                  }`}
+                >
+                  {node.isEquipment ? 'Оборудование ✓' : 'Сделать оборудованием'}
+                </button>
+              </div>
+
+              {/* Model */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+                  Модель (Model):
+                </label>
+                <input
+                  type="text"
+                  value={node.equipmentModel || ''}
+                  onChange={(e) => handlePropChange('equipmentModel', e.target.value)}
+                  placeholder="Например: Siemens 1FK7060"
+                  className="w-full text-xs font-semibold px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              {/* Barcode (Barkod) */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+                  Штрихкод (Barkod):
+                </label>
+                <input
+                  type="text"
+                  value={node.equipmentBarcode || ''}
+                  onChange={(e) => handlePropChange('equipmentBarcode', e.target.value)}
+                  placeholder="Например: 4820000123456"
+                  className="w-full text-xs font-mono font-semibold px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              {/* Stock code (Stok kod) */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+                  Складской код (Stok kod):
+                </label>
+                <input
+                  type="text"
+                  value={node.equipmentStockCode || ''}
+                  onChange={(e) => handlePropChange('equipmentStockCode', e.target.value)}
+                  placeholder="Например: STK-2024-889"
+                  className="w-full text-xs font-mono font-semibold px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              {/* Note (Qeyd) */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+                  Заметка / Примечание (Qeyd):
+                </label>
+                <textarea
+                  rows={2}
+                  value={node.equipmentNote || ''}
+                  onChange={(e) => handlePropChange('equipmentNote', e.target.value)}
+                  placeholder="Примечания по установке, мотору, обслуживанию"
+                  className="w-full text-xs font-sans px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100 resize-none"
+                />
+              </div>
+
+              {/* Custom Dynamic Properties */}
+              <div className="space-y-2 pt-2 border-t border-amber-500/20">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    Дополнительные свойства
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = node.customProperties || [];
+                      const newProp = { id: generateId(), name: '', value: '' };
+                      handlePropChange('customProperties', [...current, newProp]);
+                    }}
+                    className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> Добавить свойство
+                  </button>
+                </div>
+
+                {(node.customProperties || []).map((cp, idx) => (
+                  <div key={cp.id || idx} className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={cp.name}
+                      onChange={(e) => {
+                        const updated = (node.customProperties || []).map((item, i) =>
+                          i === idx ? { ...item, name: e.target.value } : item
+                        );
+                        handlePropChange('customProperties', updated);
+                      }}
+                      placeholder="Свойство (н-р: Мощность)"
+                      className="w-1/2 text-xs font-bold px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-slate-800 dark:text-slate-100"
+                    />
+                    <input
+                      type="text"
+                      value={cp.value}
+                      onChange={(e) => {
+                        const updated = (node.customProperties || []).map((item, i) =>
+                          i === idx ? { ...item, value: e.target.value } : item
+                        );
+                        handlePropChange('customProperties', updated);
+                      }}
+                      placeholder="Значение (н-р: 15кВт)"
+                      className="w-1/2 text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-slate-800 dark:text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = (node.customProperties || []).filter((_, i) => i !== idx);
+                        handlePropChange('customProperties', updated);
+                      }}
+                      className="p-1 text-slate-400 hover:text-rose-500 rounded cursor-pointer"
+                      title="Удалить свойство"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* SCHEDULE DATES & ESTIMATIONS CARD */}
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 p-4 shadow-xs shrink-0 flex flex-col h-[400px] overflow-hidden">
               <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 shrink-0 mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
@@ -5558,6 +5703,151 @@ export default function TaskDetailsPanel({
             </div>
           </div>
         )}
+
+        {/* EQUIPMENT & HARDWARE PROPERTIES CARD */}
+        <div className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-slate-900/5 dark:from-amber-950/20 dark:to-slate-900/40 p-3.5 rounded-xl border border-amber-500/30 dark:border-amber-500/20 shadow-xs space-y-3 text-left">
+          <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
+            <span className="text-xs font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span className="text-sm">⚙️</span>
+              Оборудование и Аппаратура
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const nextIsEq = !node.isEquipment;
+                onUpdateNode({
+                  ...node,
+                  isEquipment: nextIsEq,
+                  isNotTask: nextIsEq ? true : node.isNotTask,
+                  updatedAt: new Date().toISOString()
+                });
+              }}
+              className={`text-[9px] font-extrabold uppercase py-0.5 px-2 rounded-full cursor-pointer transition-colors ${
+                node.isEquipment 
+                  ? 'bg-amber-500 text-white shadow-xs' 
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-amber-100'
+              }`}
+            >
+              {node.isEquipment ? 'Оборудование ✓' : 'Сделать оборудованием'}
+            </button>
+          </div>
+
+          {/* Model */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+              Модель (Model):
+            </label>
+            <input
+              type="text"
+              value={node.equipmentModel || ''}
+              onChange={(e) => handlePropChange('equipmentModel', e.target.value)}
+              placeholder="Например: Siemens 1FK7060"
+              className="w-full text-xs font-semibold px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100"
+            />
+          </div>
+
+          {/* Barcode (Barkod) */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+              Штрихкод (Barkod):
+            </label>
+            <input
+              type="text"
+              value={node.equipmentBarcode || ''}
+              onChange={(e) => handlePropChange('equipmentBarcode', e.target.value)}
+              placeholder="Например: 4820000123456"
+              className="w-full text-xs font-mono font-semibold px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100"
+            />
+          </div>
+
+          {/* Stock code (Stok kod) */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+              Складской код (Stok kod):
+            </label>
+            <input
+              type="text"
+              value={node.equipmentStockCode || ''}
+              onChange={(e) => handlePropChange('equipmentStockCode', e.target.value)}
+              placeholder="Например: STK-2024-889"
+              className="w-full text-xs font-mono font-semibold px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100"
+            />
+          </div>
+
+          {/* Note (Qeyd) */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+              Заметка / Примечание (Qeyd):
+            </label>
+            <textarea
+              rows={2}
+              value={node.equipmentNote || ''}
+              onChange={(e) => handlePropChange('equipmentNote', e.target.value)}
+              placeholder="Примечания по установке, мотору, обслуживанию"
+              className="w-full text-xs font-sans px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100 resize-none"
+            />
+          </div>
+
+          {/* Custom Dynamic Properties */}
+          <div className="space-y-2 pt-2 border-t border-amber-500/20">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                Дополнительные свойства
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const current = node.customProperties || [];
+                  const newProp = { id: generateId(), name: '', value: '' };
+                  handlePropChange('customProperties', [...current, newProp]);
+                }}
+                className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3 h-3" /> Добавить свойство
+              </button>
+            </div>
+
+            {(node.customProperties || []).map((cp, idx) => (
+              <div key={cp.id || idx} className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={cp.name}
+                  onChange={(e) => {
+                    const updated = (node.customProperties || []).map((item, i) =>
+                      i === idx ? { ...item, name: e.target.value } : item
+                    );
+                    handlePropChange('customProperties', updated);
+                  }}
+                  placeholder="Свойство (н-р: Мощность)"
+                  className="w-1/2 text-xs font-bold px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-slate-800 dark:text-slate-100"
+                />
+                <input
+                  type="text"
+                  value={cp.value}
+                  onChange={(e) => {
+                    const updated = (node.customProperties || []).map((item, i) =>
+                      i === idx ? { ...item, value: e.target.value } : item
+                    );
+                    handlePropChange('customProperties', updated);
+                  }}
+                  placeholder="Значение (н-р: 15кВт)"
+                  className="w-1/2 text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-slate-800 dark:text-slate-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = (node.customProperties || []).filter((_, i) => i !== idx);
+                    handlePropChange('customProperties', updated);
+                  }}
+                  className="p-1 text-slate-400 hover:text-rose-500 rounded cursor-pointer"
+                  title="Удалить свойство"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Container Properties Section */}
         {!node.isWorkflowRectangle && !node.isContainer && (

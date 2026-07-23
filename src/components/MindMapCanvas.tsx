@@ -50,7 +50,8 @@ import {
   Target,
   GripVertical,
   Layers,
-  CornerUpLeft
+  CornerUpLeft,
+  Package
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
@@ -3294,7 +3295,7 @@ export default function MindMapCanvas({
     if (!nodeId) return null;
     let current = nodes.find(n => n.id === nodeId);
     while (current) {
-      if (current.isContainer) {
+      if (current.isContainer || current.isEquipment) {
         return current.id;
       }
       const parentId = current.parentId;
@@ -3377,13 +3378,29 @@ export default function MindMapCanvas({
 
   // Check if a node matches the active filter settings directly
   const isDirectNodeMatched = (node: TaskNode): boolean => {
-    // 1. Text search (text, tags, notes)
+    // 1. Text search (text, tags, notes, equipment properties)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const textMatches = node.text.toLowerCase().includes(q);
       const tagMatches = (node.tags || []).some(t => t.toLowerCase().includes(q));
       const notesMatches = (node.notes || "").toLowerCase().includes(q);
-      if (!textMatches && !tagMatches && !notesMatches) {
+      const eqModelMatches = (node.equipmentModel || "").toLowerCase().includes(q);
+      const eqBarcodeMatches = (node.equipmentBarcode || "").toLowerCase().includes(q);
+      const eqStockMatches = (node.equipmentStockCode || "").toLowerCase().includes(q);
+      const eqNoteMatches = (node.equipmentNote || "").toLowerCase().includes(q);
+      const customPropsMatches = (node.customProperties || []).some(
+        cp => (cp.name || "").toLowerCase().includes(q) || (cp.value || "").toLowerCase().includes(q)
+      );
+      if (
+        !textMatches &&
+        !tagMatches &&
+        !notesMatches &&
+        !eqModelMatches &&
+        !eqBarcodeMatches &&
+        !eqStockMatches &&
+        !eqNoteMatches &&
+        !customPropsMatches
+      ) {
         return false;
       }
     }
@@ -3555,12 +3572,14 @@ export default function MindMapCanvas({
     const draggingNode = nodes.find(n => n.id === draggingId);
     if (!draggingNode) return undefined;
 
-    // First attempt: Check for hover/overlap with regular non-container task nodes (containers can also overlap and snap here)
+    const isDraggingContainerLike = draggingNode.isContainer || draggingNode.isEquipment;
+
+    // First attempt: Check for hover/overlap with regular non-container task nodes
     const normalNodeOverlap = visibleNodes.find(otherNode => {
       if (otherNode.id === draggingId) return false;
-      if (draggingNode.isContainer) return false; // Containers cannot be parented under normal task nodes
+      if (isDraggingContainerLike) return false; // Containers/Equipment cannot be parented under normal task nodes
       if (isDescendantOrSelf(otherNode.id, draggingId, nodes)) return false;
-      if (otherNode.isContainer) return false;
+      if (otherNode.isContainer || otherNode.isEquipment) return false;
 
       const dx = Math.abs(newX - otherNode.x);
       const dy = Math.abs(newY - otherNode.y);
@@ -3569,19 +3588,19 @@ export default function MindMapCanvas({
 
     if (normalNodeOverlap) return normalNodeOverlap;
 
-    // Second attempt: Check for containment inside container nodes
+    // Second attempt: Check for containment inside container or equipment nodes
     const containerOverlap = visibleNodes.find(otherNode => {
       if (otherNode.id === draggingId) return false;
       if (isDescendantOrSelf(otherNode.id, draggingId, nodes)) return false;
-      if (!otherNode.isContainer) return false;
+      if (!otherNode.isContainer && !otherNode.isEquipment) return false;
 
-      // Relaxed constraint: Containers CAN go inside other containers
+      // Containers/Equipment CAN go inside other containers
       if (focusedContainerId === otherNode.id) return false; // Do not overlap with the focused container itself in focus mode
 
       // Do not instantly snap to container during active drag if currently nested under a standard task parent
       if (draggingNode.parentId) {
         const currentParent = nodes.find(p => p.id === draggingNode.parentId);
-        if (currentParent && !currentParent.isContainer) {
+        if (currentParent && !currentParent.isContainer && !currentParent.isEquipment) {
           return false;
         }
       }
@@ -3589,13 +3608,11 @@ export default function MindMapCanvas({
       const dx = Math.abs(newX - otherNode.x);
       const dy = Math.abs(newY - otherNode.y);
       
-      // All containers are always collapsed on the main canvas (width 220, height 100)
-      const targetW = 220;
-      const targetH = 100;
+      const targetW = otherNode.width || (otherNode.isEquipment ? 220 : 520);
+      const targetH = otherNode.height || (otherNode.isEquipment ? 140 : 400);
       
-      // Width and height of the dragging node
-      const dragW = draggingNode.isContainer ? 220 : getNodeWidth(draggingNode);
-      const dragH = draggingNode.isContainer ? 100 : getNodeHeight(draggingNode);
+      const dragW = isDraggingContainerLike ? (draggingNode.width || 220) : getNodeWidth(draggingNode);
+      const dragH = isDraggingContainerLike ? (draggingNode.height || 100) : getNodeHeight(draggingNode);
 
       // Check if they visually overlap/intersect
       const halfW = (dragW + targetW) / 2;
@@ -4966,7 +4983,7 @@ export default function MindMapCanvas({
     if (!nodeId) return null;
     const parent = nodes.find(n => n.id === nodeId);
     if (!parent) return null;
-    if (parent.isContainer) return parent;
+    if (parent.isContainer || parent.isEquipment) return parent;
     return getAncestorContainer(parent.parentId);
   };
 
@@ -5593,7 +5610,7 @@ export default function MindMapCanvas({
       while (currentParentId !== null && currentParentId !== focusedContainerId) {
         const parent = nodes.find(n => n.id === currentParentId);
         if (!parent) break;
-        if (parent.isContainer) {
+        if (parent.isContainer || parent.isEquipment) {
           return false; // Hidden because it's inside a nested sub-container which is not focused
         }
         if (parent.collapsed) {
@@ -5609,7 +5626,7 @@ export default function MindMapCanvas({
     while (currentParentId !== null) {
       const parent = nodes.find(n => n.id === currentParentId);
       if (!parent) break;
-      if (parent.isContainer) {
+      if (parent.isContainer || parent.isEquipment) {
         return false; // Hidden from main canvas because it is inside a container
       }
       if (parent.collapsed) {
@@ -5638,7 +5655,7 @@ export default function MindMapCanvas({
       const parent = visibleNodes.find(p => p.id === node.parentId);
       return { child: node, parent };
     })
-    .filter(conn => conn.parent !== undefined && !conn.parent.isContainer) as { child: TaskNode; parent: TaskNode }[];
+    .filter(conn => conn.parent !== undefined && !conn.parent.isContainer && !conn.parent.isEquipment) as { child: TaskNode; parent: TaskNode }[];
 
   return (
     <div 
@@ -5752,7 +5769,9 @@ export default function MindMapCanvas({
                     </span>
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans">Режим фокусировки</div>
+                    <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold tracking-wider uppercase font-sans">
+                      {focusedContainer.isEquipment ? '⚙️ Оборудование (Фокус)' : 'Режим фокусировки'}
+                    </div>
                     <input
                       type="text"
                       value={focusedContainer.text}
@@ -5763,7 +5782,7 @@ export default function MindMapCanvas({
                         });
                       }}
                       className="text-sm font-sans font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b border-dashed border-amber-300 dark:border-amber-800 focus:border-amber-500 focus:outline-none focus:ring-0 px-0.5 py-0 min-w-0 max-w-[130px] sm:max-w-[200px]"
-                      placeholder="Имя контейнера"
+                      placeholder={focusedContainer.isEquipment ? "Название оборудования" : "Имя контейнера"}
                     />
                   </div>
                 </div>
@@ -5783,6 +5802,19 @@ export default function MindMapCanvas({
                 </div>
 
                 <div className="flex items-center gap-1.5">
+                  {focusedContainer.isEquipment && (
+                    <button
+                      onClick={() => {
+                        onSelectNode(focusedContainer.id);
+                        onOpenDrawer();
+                      }}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wide font-extrabold bg-blue-500 hover:bg-blue-600 text-white shadow-md hover:scale-[1.02] transition-all cursor-pointer border border-transparent"
+                      title="Свойства оборудования"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-white" />
+                      <span>Свойства</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       const x = Math.round(-panX / zoom);
@@ -6148,6 +6180,36 @@ export default function MindMapCanvas({
               <div className="flex flex-col min-w-0">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Workflow шаг</span>
                 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Блок-схема с коннекторами</span>
+              </div>
+            </button>
+
+            {/* Equipment Rectangle Button */}
+            <button
+              onClick={() => {
+                const x = Math.round(-panX / zoom);
+                const y = Math.round(-panY / zoom);
+                onAddFloatingNode(x, y, focusedTaskId || focusedContainerId || null, 'Оборудование / Мотор', {
+                  isEquipment: true,
+                  isContainer: true,
+                  isNotTask: true,
+                  width: 220,
+                  height: 140,
+                  equipmentModel: '',
+                  equipmentBarcode: '',
+                  equipmentStockCode: '',
+                  equipmentNote: '',
+                  customProperties: []
+                });
+                setIsElementDropdownOpen(false);
+              }}
+              className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"
+            >
+              <div className="w-9 h-9 rounded-xl bg-amber-500/15 dark:bg-amber-950/40 flex items-center justify-center shrink-0 border border-amber-500/20 group-hover:scale-105 transition-transform text-sm flex items-center justify-center">
+                ⚙️
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Оборудование</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Моторы, техника, свойства</span>
               </div>
             </button>
 
@@ -7687,6 +7749,354 @@ export default function MindMapCanvas({
                       className="flex items-center justify-center w-8 h-8 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors animate-pulse"
                     >
                       <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </React.Fragment>
+          );
+        }
+
+        if (node.isEquipment) {
+          if (focusedContainerId === node.id) return null;
+          const eqW = node.width || 220;
+          const eqH = node.height || 140;
+          const cardZIndex = isSelected ? 1000 : 8;
+          const equipmentChildren = nodes.filter(n => n.parentId === node.id && !n.archived);
+
+          return (
+            <React.Fragment key={node.id}>
+              <div
+                data-node-id={node.id}
+                style={{
+                  position: 'absolute',
+                  left: node.x,
+                  top: node.y,
+                  transform: 'translate(-50%, -50%)',
+                  zIndex: cardZIndex,
+                  width: `${eqW}px`,
+                  height: `${eqH}px`,
+                  transition: isAutoArranging ? 'left 0.8s cubic-bezier(0.16, 1, 0.3, 1), top 0.8s cubic-bezier(0.16, 1, 0.3, 1)' : undefined,
+                }}
+                onMouseDown={(e) => {
+                  const target = e.target as HTMLElement;
+                  if (target.tagName === 'INPUT' || target.closest('button') || target.closest('.resize-handle')) return;
+                  if (editingNodeId) {
+                    (document.activeElement as HTMLElement)?.blur();
+                  }
+                  startDragNode(e, node);
+                }}
+                onClick={(e) => {
+                  if (hasDraggedNode || didDragRef.current) return;
+                  e.stopPropagation();
+                  onSelectNode(node.id, e);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  onSelectNode(node.id, e);
+                  onOpenDrawer();
+                }}
+                className={`absolute group cursor-grab active:cursor-grabbing rounded-xl border-2 p-2.5 bg-gradient-to-br from-amber-500/10 via-white to-slate-50 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900/90 shadow-md transition-all ${
+                  isSelected
+                    ? 'border-amber-500 ring-4 ring-amber-500/25 shadow-xl scale-[1.01]'
+                    : hoverTargetId === node.id
+                      ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
+                      : 'border-amber-500/40 hover:border-amber-500/80 dark:border-amber-500/30 dark:hover:border-amber-500/60'
+                }`}
+              >
+                {/* Header bar */}
+                <div className="flex items-center justify-between border-b border-amber-500/20 pb-1.5 mb-1.5 select-none">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <span className="text-sm shrink-0">⚙️</span>
+                    {editingNodeId === node.id ? (
+                      <input
+                        type="text"
+                        value={node.text}
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                        onBlur={() => setEditingNodeId(null)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter' || e.key === 'Escape') setEditingNodeId(null);
+                        }}
+                        onChange={(e) => onUpdateNode({ ...node, text: e.target.value })}
+                        className="w-full text-xs font-bold bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 py-0.5 px-1 rounded border border-amber-500 focus:outline-none"
+                      />
+                    ) : (
+                      <span
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setEditingNodeId(node.id);
+                        }}
+                        className="text-xs font-black text-slate-800 dark:text-slate-100 truncate cursor-text"
+                        title="Двойной клик для быстрого переименования"
+                      >
+                        {node.text || 'Оборудование'}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteNode(node.id);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="p-0.5 text-slate-400 hover:text-rose-500 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                    title="Удалить оборудование"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Content Body: Key Properties */}
+                <div className="space-y-1 text-[10.5px] overflow-hidden flex-1 select-none text-left">
+                  {node.equipmentModel && (
+                    <div className="flex items-center gap-1 truncate text-slate-700 dark:text-slate-300">
+                      <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">Model:</span>
+                      <span className="truncate font-semibold">{node.equipmentModel}</span>
+                    </div>
+                  )}
+                  {node.equipmentBarcode && (
+                    <div className="flex items-center gap-1 truncate text-slate-700 dark:text-slate-300">
+                      <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">Barkod:</span>
+                      <span className="font-mono text-[9.5px] truncate">{node.equipmentBarcode}</span>
+                    </div>
+                  )}
+                  {node.equipmentStockCode && (
+                    <div className="flex items-center gap-1 truncate text-slate-700 dark:text-slate-300">
+                      <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">Stok kod:</span>
+                      <span className="font-mono text-[9.5px] truncate">{node.equipmentStockCode}</span>
+                    </div>
+                  )}
+                  {node.equipmentNote && (
+                    <p className="text-[9.5px] text-slate-500 dark:text-slate-400 italic line-clamp-2 leading-tight mt-0.5">
+                      {node.equipmentNote}
+                    </p>
+                  )}
+
+                  {/* Dynamic custom properties tags preview */}
+                  {node.customProperties && node.customProperties.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1 max-h-12 overflow-hidden">
+                      {node.customProperties.slice(0, 3).map((cp, idx) => (
+                        <span
+                          key={cp.id || idx}
+                          className="bg-amber-500/15 text-amber-800 dark:text-amber-300 text-[8.5px] font-bold px-1.5 py-0.5 rounded border border-amber-500/20 truncate max-w-[120px]"
+                        >
+                          {cp.name ? `${cp.name}: ` : ''}{cp.value}
+                        </span>
+                      ))}
+                      {node.customProperties.length > 3 && (
+                        <span className="text-[8.5px] font-bold text-amber-600 dark:text-amber-400">
+                          +{node.customProperties.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Nested children badge */}
+                  {equipmentChildren.length > 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFocusedContainerId(node.id);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="mt-1 flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-[9.5px] font-bold cursor-pointer transition-colors w-full"
+                      title="Войти внутрь оборудования для просмотра вложенных элементов"
+                    >
+                      <Package className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span className="truncate">Вложено элементов: {equipmentChildren.length}</span>
+                      <Maximize2 className="w-2.5 h-2.5 ml-auto opacity-70 shrink-0" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Hover reparent highlight notification */}
+                {hoverTargetId === node.id && (
+                  <div className="absolute -top-7 left-1/2 transform -translate-x-1/2 bg-amber-600 text-white px-3 py-1 rounded-full text-[9px] font-bold tracking-wider uppercase animate-bounce shadow-md whitespace-nowrap z-50">
+                    Поместить в контейнер
+                  </div>
+                )}
+
+                {/* Anchor connection dots */}
+                {(isSelected || hoveredNodeId === node.id || activeConnector) && (
+                  <>
+                    <div
+                      onMouseDown={(e) => startConnectorDrag(e, node.id, 'top')}
+                      onTouchStart={(e) => startConnectorDrag(e, node.id, 'top')}
+                      className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-amber-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs"
+                      title="Тянуть связь вверх"
+                    >
+                      <div className="w-1 h-1 rounded-full bg-amber-500" />
+                    </div>
+                    <div
+                      onMouseDown={(e) => startConnectorDrag(e, node.id, 'right')}
+                      onTouchStart={(e) => startConnectorDrag(e, node.id, 'right')}
+                      className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-amber-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs"
+                      title="Тянуть связь вправо"
+                    >
+                      <div className="w-1 h-1 rounded-full bg-amber-500" />
+                    </div>
+                    <div
+                      onMouseDown={(e) => startConnectorDrag(e, node.id, 'bottom')}
+                      onTouchStart={(e) => startConnectorDrag(e, node.id, 'bottom')}
+                      className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-3 h-3 rounded-full border border-amber-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs"
+                      title="Тянуть связь вниз"
+                    >
+                      <div className="w-1 h-1 rounded-full bg-amber-500" />
+                    </div>
+                    <div
+                      onMouseDown={(e) => startConnectorDrag(e, node.id, 'left')}
+                      onTouchStart={(e) => startConnectorDrag(e, node.id, 'left')}
+                      className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-amber-500 bg-white dark:bg-slate-900 cursor-crosshair z-40 flex items-center justify-center transition-all hover:scale-125 shadow-xs"
+                      title="Тянуть связь влево"
+                    >
+                      <div className="w-1 h-1 rounded-full bg-amber-500" />
+                    </div>
+                  </>
+                )}
+
+                {/* Resizer Handle at bottom right */}
+                <div
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    const startW = node.width || 220;
+                    const startH = node.height || 140;
+                    const startX = e.clientX;
+                    const startY = e.clientY;
+
+                    const handleMouseMove = (moveEvent: MouseEvent) => {
+                      const dx = moveEvent.clientX - startX;
+                      const dy = moveEvent.clientY - startY;
+                      onUpdateNode({
+                        ...node,
+                        width: Math.max(120, Math.min(1000, startW + dx)),
+                        height: Math.max(80, Math.min(800, startH + dy))
+                      });
+                    };
+
+                    const handleMouseUp = () => {
+                      document.removeEventListener('mousemove', handleMouseMove);
+                      document.removeEventListener('mouseup', handleMouseUp);
+                    };
+
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                  }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    if (e.touches.length === 0) return;
+                    const startW = node.width || 220;
+                    const startH = node.height || 140;
+                    const startX = e.touches[0].clientX;
+                    const startY = e.touches[0].clientY;
+
+                    const handleTouchMove = (moveEvent: TouchEvent) => {
+                      if (moveEvent.touches.length === 0) return;
+                      const dx = moveEvent.touches[0].clientX - startX;
+                      const dy = moveEvent.touches[0].clientY - startY;
+                      onUpdateNode({
+                        ...node,
+                        width: Math.max(120, Math.min(1000, startW + dx)),
+                        height: Math.max(80, Math.min(800, startH + dy))
+                      });
+                    };
+
+                    const handleTouchEnd = () => {
+                      document.removeEventListener('touchmove', handleTouchMove);
+                      document.removeEventListener('touchend', handleTouchEnd);
+                    };
+
+                    document.addEventListener('touchmove', handleTouchMove);
+                    document.addEventListener('touchend', handleTouchEnd);
+                  }}
+                  title="Зажмите и тяните для изменения размеров"
+                  className="resize-handle absolute bottom-1 right-1 w-4 h-4 cursor-se-resize flex items-center justify-center opacity-40 hover:opacity-100 group-hover:opacity-70 transition-opacity z-20"
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" className="text-amber-500">
+                    <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="10" y1="4" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="10" y1="8" x2="8" y2="10" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Floating Action Menu for Equipment when selected */}
+              {isSelected && draggingNodeId === null && potentialDragNodeIdRef.current === null && (
+                <div
+                  data-drag-ignore
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute flex items-center gap-1.5 px-2 py-1.5 bg-white dark:bg-slate-900 border border-amber-500/40 rounded-full shadow-[0_8px_25px_-4px_rgba(245,158,11,0.35)] dark:shadow-[0_8px_25px_-4px_rgba(0,0,0,0.6)] z-50 pointer-events-auto whitespace-nowrap animate-fade-in"
+                  style={{
+                    left: node.x,
+                    top: node.y + eqH / 2 + 24,
+                    transform: `translateX(-50%) scale(${1 / zoom})`,
+                    transformOrigin: 'top center'
+                  }}
+                >
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddFloatingNode(node.x, node.y, node.id, 'Новая задача');
+                    }}
+                    title="Добавить задачу внутрь"
+                    className="flex items-center justify-center w-8 h-8 text-amber-600 dark:text-amber-450 hover:bg-amber-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+
+                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddContainerNode(node.x, node.y, node.id);
+                    }}
+                    title="Добавить вложенную группу/контейнер внутрь"
+                    className="flex items-center justify-center w-8 h-8 text-amber-600 dark:text-amber-450 hover:bg-amber-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                  >
+                    <Package className="w-4 h-4" />
+                  </button>
+
+                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFocusedContainerId(node.id);
+                    }}
+                    title="Войти внутрь (Фокусировка)"
+                    className="flex items-center justify-center w-8 h-8 text-indigo-650 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                  </button>
+
+                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenDrawer();
+                    }}
+                    title="Свойства оборудования (Model, Barkod, Stok kod...)"
+                    className="flex items-center justify-center w-8 h-8 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+
+                  <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteNode(node.id);
+                    }}
+                    title="Удалить оборудование"
+                    className="flex items-center justify-center w-8 h-8 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               )}

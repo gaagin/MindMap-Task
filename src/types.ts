@@ -95,6 +95,12 @@ export interface TaskNode {
   googleCalendarId?: string; // Optional reference to specific Google Calendar ID
   estimatedTime?: number; // Optional estimated time of work (in hours)
   isNotTask?: boolean; // Optional flag to mark task as a non-task (hide from all views)
+  isEquipment?: boolean; // Optional flag for equipment/machinery non-task rectangles
+  equipmentModel?: string; // Equipment Model property
+  equipmentBarcode?: string; // Equipment Barcode (Barkod) property
+  equipmentStockCode?: string; // Equipment Stock Code (Stok kod) property
+  equipmentNote?: string; // Equipment Note (Qeyd) property
+  customProperties?: { id: string; name: string; value: string }[]; // Dynamic custom key-value properties
   blockedBy?: string[]; // Optional array of node IDs that block this node
   defaultView?: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo'; // Optional view mode to display by default when focused
   useExactCoordinates?: boolean; // Special flag to skip radial placement and use click coordinates

@@ -149,7 +149,16 @@ export default function EisenhowerMatrixView({
       if (n.archived) {
         if (!isSearchActive) return false;
         const q = searchQuery.toLowerCase();
-        return n.text.toLowerCase().includes(q) || n.notes?.toLowerCase().includes(q);
+        const textMatch = n.text.toLowerCase().includes(q);
+        const notesMatch = n.notes?.toLowerCase().includes(q) || false;
+        const eqModelMatches = n.equipmentModel?.toLowerCase().includes(q) || false;
+        const eqBarcodeMatches = n.equipmentBarcode?.toLowerCase().includes(q) || false;
+        const eqStockMatches = n.equipmentStockCode?.toLowerCase().includes(q) || false;
+        const eqNoteMatches = n.equipmentNote?.toLowerCase().includes(q) || false;
+        const customPropsMatches = n.customProperties?.some(
+          cp => cp.name?.toLowerCase().includes(q) || cp.value?.toLowerCase().includes(q)
+        ) || false;
+        return textMatch || notesMatch || eqModelMatches || eqBarcodeMatches || eqStockMatches || eqNoteMatches || customPropsMatches;
       }
 
       // Filter by search query
@@ -158,7 +167,14 @@ export default function EisenhowerMatrixView({
         const textMatch = n.text.toLowerCase().includes(q);
         const tagMatch = n.tags?.some(t => t.toLowerCase().includes(q)) || false;
         const notesMatch = n.notes?.toLowerCase().includes(q) || false;
-        if (!textMatch && !tagMatch && !notesMatch) return false;
+        const eqModelMatches = n.equipmentModel?.toLowerCase().includes(q) || false;
+        const eqBarcodeMatches = n.equipmentBarcode?.toLowerCase().includes(q) || false;
+        const eqStockMatches = n.equipmentStockCode?.toLowerCase().includes(q) || false;
+        const eqNoteMatches = n.equipmentNote?.toLowerCase().includes(q) || false;
+        const customPropsMatches = n.customProperties?.some(
+          cp => cp.name?.toLowerCase().includes(q) || cp.value?.toLowerCase().includes(q)
+        ) || false;
+        if (!textMatch && !tagMatch && !notesMatch && !eqModelMatches && !eqBarcodeMatches && !eqStockMatches && !eqNoteMatches && !customPropsMatches) return false;
       }
 
       // Filter by completion status

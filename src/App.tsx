@@ -145,6 +145,12 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         pn.pomodoroSessionsCount !== nn.pomodoroSessionsCount ||
         pn.archived !== nn.archived ||
         pn.isNotTask !== nn.isNotTask ||
+        pn.isEquipment !== nn.isEquipment ||
+        pn.equipmentModel !== nn.equipmentModel ||
+        pn.equipmentBarcode !== nn.equipmentBarcode ||
+        pn.equipmentStockCode !== nn.equipmentStockCode ||
+        pn.equipmentNote !== nn.equipmentNote ||
+        JSON.stringify(pn.customProperties) !== JSON.stringify(nn.customProperties) ||
         pn.defaultView !== nn.defaultView ||
         pn.externalLink !== nn.externalLink ||
         JSON.stringify(pn.externalLinks) !== JSON.stringify(nn.externalLinks) ||
@@ -3426,13 +3432,29 @@ export default function App() {
       return false;
     }
 
-    // 1. Text search (text, tags, notes)
+    // 1. Text search (text, tags, notes, equipment properties)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const textMatches = node.text.toLowerCase().includes(q);
       const tagMatches = (node.tags || []).some(t => t.toLowerCase().includes(q));
       const notesMatches = (node.notes || "").toLowerCase().includes(q);
-      if (!textMatches && !tagMatches && !notesMatches) {
+      const eqModelMatches = (node.equipmentModel || "").toLowerCase().includes(q);
+      const eqBarcodeMatches = (node.equipmentBarcode || "").toLowerCase().includes(q);
+      const eqStockMatches = (node.equipmentStockCode || "").toLowerCase().includes(q);
+      const eqNoteMatches = (node.equipmentNote || "").toLowerCase().includes(q);
+      const customPropsMatches = (node.customProperties || []).some(
+        cp => (cp.name || "").toLowerCase().includes(q) || (cp.value || "").toLowerCase().includes(q)
+      );
+      if (
+        !textMatches &&
+        !tagMatches &&
+        !notesMatches &&
+        !eqModelMatches &&
+        !eqBarcodeMatches &&
+        !eqStockMatches &&
+        !eqNoteMatches &&
+        !customPropsMatches
+      ) {
         return false;
       }
     }
@@ -6001,7 +6023,10 @@ export default function App() {
                             className="flex-1 text-left truncate cursor-pointer"
                           >
                             <span className="truncate pr-1 block font-semibold">{n.text}</span>
-                            <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400">
+                            <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400 flex-wrap">
+                              {n.equipmentModel && <span className="text-blue-600 dark:text-blue-400 font-sans font-bold">⚙️ {n.equipmentModel}</span>}
+                              {n.equipmentBarcode && <span>Barkod: {n.equipmentBarcode}</span>}
+                              {n.equipmentStockCode && <span>Stok: {n.equipmentStockCode}</span>}
                               <span>#{n.priority || 'none'}</span>
                               {n.archived && (
                                 <span className="bg-amber-100 dark:bg-amber-950/45 text-amber-705 dark:text-amber-400 px-1 rounded-sm font-black text-[8.5px]">📦 АРХИВ</span>

@@ -159,7 +159,14 @@ export default function MobileListView({
       const matchesText = n.text?.toLowerCase().includes(query);
       const matchesNotes = n.notes?.toLowerCase().includes(query) || false;
       const matchesTags = n.tags?.some(t => t.toLowerCase().includes(query)) || false;
-      return matchesText || matchesNotes || matchesTags;
+      const matchesEqModel = n.equipmentModel?.toLowerCase().includes(query) || false;
+      const matchesEqBarcode = n.equipmentBarcode?.toLowerCase().includes(query) || false;
+      const matchesEqStock = n.equipmentStockCode?.toLowerCase().includes(query) || false;
+      const matchesEqNote = n.equipmentNote?.toLowerCase().includes(query) || false;
+      const matchesCustomProps = n.customProperties?.some(
+        cp => cp.name?.toLowerCase().includes(query) || cp.value?.toLowerCase().includes(query)
+      ) || false;
+      return matchesText || matchesNotes || matchesTags || matchesEqModel || matchesEqBarcode || matchesEqStock || matchesEqNote || matchesCustomProps;
     });
   }, [nodes, searchQuery]);
 
@@ -743,7 +750,14 @@ export default function MobileListView({
         const matchesText = n.text?.toLowerCase().includes(query);
         const matchesNotes = n.notes?.toLowerCase().includes(query);
         const matchesTags = n.tags?.some(t => t.toLowerCase().includes(query));
-        if (!matchesText && !matchesNotes && !matchesTags) return false;
+        const matchesEqModel = n.equipmentModel?.toLowerCase().includes(query);
+        const matchesEqBarcode = n.equipmentBarcode?.toLowerCase().includes(query);
+        const matchesEqStock = n.equipmentStockCode?.toLowerCase().includes(query);
+        const matchesEqNote = n.equipmentNote?.toLowerCase().includes(query);
+        const matchesCustomProps = n.customProperties?.some(
+          cp => cp.name?.toLowerCase().includes(query) || cp.value?.toLowerCase().includes(query)
+        );
+        if (!matchesText && !matchesNotes && !matchesTags && !matchesEqModel && !matchesEqBarcode && !matchesEqStock && !matchesEqNote && !matchesCustomProps) return false;
       }
 
       return true;

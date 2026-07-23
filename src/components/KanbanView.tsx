@@ -710,7 +710,14 @@ export default function KanbanView({
       const textMatches = n.text?.toLowerCase().includes(q);
       const tagMatches = n.tags?.some(t => t.toLowerCase().includes(q)) || false;
       const notesMatches = n.notes?.toLowerCase().includes(q) || false;
-      return textMatches || tagMatches || notesMatches;
+      const eqModelMatches = n.equipmentModel?.toLowerCase().includes(q) || false;
+      const eqBarcodeMatches = n.equipmentBarcode?.toLowerCase().includes(q) || false;
+      const eqStockMatches = n.equipmentStockCode?.toLowerCase().includes(q) || false;
+      const eqNoteMatches = n.equipmentNote?.toLowerCase().includes(q) || false;
+      const customPropsMatches = n.customProperties?.some(
+        cp => cp.name?.toLowerCase().includes(q) || cp.value?.toLowerCase().includes(q)
+      ) || false;
+      return !!(textMatches || tagMatches || notesMatches || eqModelMatches || eqBarcodeMatches || eqStockMatches || eqNoteMatches || customPropsMatches);
     }
     return false;
   };
@@ -722,7 +729,14 @@ export default function KanbanView({
       const textMatches = n.text?.toLowerCase().includes(q);
       const tagMatches = n.tags?.some(t => t.toLowerCase().includes(q)) || false;
       const notesMatches = n.notes?.toLowerCase().includes(q) || false;
-      if (!textMatches && !tagMatches && !notesMatches) return false;
+      const eqModelMatches = n.equipmentModel?.toLowerCase().includes(q) || false;
+      const eqBarcodeMatches = n.equipmentBarcode?.toLowerCase().includes(q) || false;
+      const eqStockMatches = n.equipmentStockCode?.toLowerCase().includes(q) || false;
+      const eqNoteMatches = n.equipmentNote?.toLowerCase().includes(q) || false;
+      const customPropsMatches = n.customProperties?.some(
+        cp => cp.name?.toLowerCase().includes(q) || cp.value?.toLowerCase().includes(q)
+      ) || false;
+      if (!textMatches && !tagMatches && !notesMatches && !eqModelMatches && !eqBarcodeMatches && !eqStockMatches && !eqNoteMatches && !customPropsMatches) return false;
     }
 
     // 2. Status filter
