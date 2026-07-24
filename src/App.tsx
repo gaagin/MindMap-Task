@@ -3900,7 +3900,7 @@ export default function App() {
           
           const isNewParent = n.parentId !== newParentId;
 
-          if (newParentId !== null && parent && !parent.isContainer && isNewParent) {
+          if (newParentId !== null && parent && !parent.isContainer && isNewParent && newX === undefined && newY === undefined) {
             // New attachment of child task to parent task node!
             // Let's find an empty slot around the parent to prevent overlap/intersection
             const isLeft = parent.x < 0;

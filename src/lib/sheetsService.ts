@@ -8,7 +8,7 @@ const SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DRIVE_API_URL = 'https://www.googleapis.com/drive/v3/files';
 
 /**
- * Creates a new Google Spreadsheet with two tabs: SyncState (for JSON metadata) and Tasks_View (for physical rows)
+ * Creates a new Google Spreadsheet with three tabs: SyncState (for JSON metadata), Tasks_View (for physical task rows), and Equipment_View (for dedicated equipment list)
  */
 export async function createSyncSpreadsheet(accessToken: string, title: string): Promise<string> {
   const response = await fetch(SHEETS_API_URL, {
@@ -36,6 +36,11 @@ export async function createSyncSpreadsheet(accessToken: string, title: string):
             title: 'Tasks_View',
           },
         },
+        {
+          properties: {
+            title: 'Equipment_View',
+          },
+        },
       ],
     }),
   });
@@ -50,7 +55,7 @@ export async function createSyncSpreadsheet(accessToken: string, title: string):
 }
 
 /**
- * Check if the sheets exist, if not, create them via batch update.
+ * Check if the required sheets exist, if not, create them via batch update.
  */
 async function ensureSheetTabsExist(accessToken: string, spreadsheetId: string): Promise<void> {
   const getUrl = `${SHEETS_API_URL}/${spreadsheetId}`;
@@ -85,6 +90,16 @@ async function ensureSheetTabsExist(accessToken: string, spreadsheetId: string):
     });
   }
 
+  if (!existingTitles.includes('Equipment_View')) {
+    requests.push({
+      addSheet: {
+        properties: {
+          title: 'Equipment_View',
+        },
+      },
+    });
+  }
+
   if (requests.length > 0) {
     await fetch(`${SHEETS_API_URL}/${spreadsheetId}:batchUpdate`, {
       method: 'POST',
@@ -99,7 +114,7 @@ async function ensureSheetTabsExist(accessToken: string, spreadsheetId: string):
 
 /**
  * Saves the local workspace state to a specified Google Spreadsheet.
- * Writes JSON model to 'SyncState' tab and interactive columns to 'Tasks_View' tab.
+ * Writes JSON model to 'SyncState' tab, interactive task columns to 'Tasks_View' tab, and equipment items to 'Equipment_View' tab.
  */
 export async function saveStateToGoogleSheets(
   accessToken: string,
@@ -157,10 +172,17 @@ export async function saveStateToGoogleSheets(
     throw new Error(`Ошибка при переносе JSON в SyncState: ${errText}`);
   }
 
-  // 2. Clear entire Tasks_View tab and rewrite it as a nice visual table of all tasks across all projects
-  // Clear the existing visual range
-  const clearUrl = `${SHEETS_API_URL}/${spreadsheetId}/values/Tasks_View!A1:V1000:clear`;
-  await fetch(clearUrl, {
+  // 2. Clear entire Tasks_View and Equipment_View tabs
+  const clearTasksUrl = `${SHEETS_API_URL}/${spreadsheetId}/values/Tasks_View!A1:V1000:clear`;
+  await fetch(clearTasksUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+    },
+  });
+
+  const clearEquipmentUrl = `${SHEETS_API_URL}/${spreadsheetId}/values/Equipment_View!A1:V1000:clear`;
+  await fetch(clearEquipmentUrl, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,
@@ -185,6 +207,20 @@ export async function saveStateToGoogleSheets(
     'Ориентировочное время (мин)',
   ];
 
+  const equipmentHeaders = [
+    'ID оборудования',
+    'Проект ID',
+    'Проект название',
+    'Текст / Название',
+    'Модель оборудования',
+    'Штрихкод (Barkod)',
+    'Артикул / Код товара (Stok)',
+    'Заметки (Qeyd)',
+    'Архивировано',
+    'ID Родителя',
+    'Дата обновления',
+  ];
+
   const safeCellString = (val: any): any => {
     if (typeof val === 'string' && val.length > 35000) {
       return val.substring(0, 35000) + '... [Текст обрезан из-за ограничений Google Sheets]';
@@ -193,30 +229,49 @@ export async function saveStateToGoogleSheets(
   };
 
   const rows: any[][] = [headers];
+  const equipmentRows: any[][] = [equipmentHeaders];
 
-  // Collect all task nodes
+  // Collect all nodes
   Object.keys(state.nodes || {}).forEach(projectId => {
     const project = state.projects?.find(p => p.id === projectId);
     const projectName = project ? project.name : 'Неизвестный проект';
     const nodes = state.nodes[projectId] || [];
 
     nodes.forEach(node => {
-      rows.push([
-        node.id || '',
-        node.projectId || '',
-        projectName,
-        safeCellString(node.text || ''),
-        node.completed ? 'Да' : 'Нет',
-        node.priority || 'none',
-        node.progress !== undefined ? node.progress : '',
-        node.dueDate || '',
-        node.tags ? node.tags.join(', ') : '',
-        safeCellString(node.notes || ''),
-        node.parentId || '',
-        node.isFloating ? 'Да' : 'Нет',
-        node.archived ? 'Да' : 'Нет',
-        node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) ? node.estimatedTime : '',
-      ]);
+      const isEquipmentNode = node.isEquipment || !!(node.equipmentModel || node.equipmentBarcode || node.equipmentStockCode || node.equipmentNote);
+
+      if (isEquipmentNode) {
+        equipmentRows.push([
+          node.id || '',
+          node.projectId || '',
+          projectName,
+          safeCellString(node.text || ''),
+          safeCellString(node.equipmentModel || ''),
+          safeCellString(node.equipmentBarcode || ''),
+          safeCellString(node.equipmentStockCode || ''),
+          safeCellString(node.equipmentNote || node.notes || ''),
+          node.archived ? 'Да' : 'Нет',
+          node.parentId || '',
+          node.updatedAt || '',
+        ]);
+      } else {
+        rows.push([
+          node.id || '',
+          node.projectId || '',
+          projectName,
+          safeCellString(node.text || ''),
+          node.completed ? 'Да' : 'Нет',
+          node.priority || 'none',
+          node.progress !== undefined ? node.progress : '',
+          node.dueDate || '',
+          node.tags ? node.tags.join(', ') : '',
+          safeCellString(node.notes || ''),
+          node.parentId || '',
+          node.isFloating ? 'Да' : 'Нет',
+          node.archived ? 'Да' : 'Нет',
+          node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) ? node.estimatedTime : '',
+        ]);
+      }
     });
   });
 
@@ -233,6 +288,23 @@ export async function saveStateToGoogleSheets(
         range: 'Tasks_View!A1',
         majorDimension: 'ROWS',
         values: rows,
+      }),
+    });
+  }
+
+  // Write Equipment_View spreadsheet
+  if (equipmentRows.length > 0) {
+    const updateEquipmentUrl = `${SHEETS_API_URL}/${spreadsheetId}/values/Equipment_View!A1?valueInputOption=RAW`;
+    await fetch(updateEquipmentUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        range: 'Equipment_View!A1',
+        majorDimension: 'ROWS',
+        values: equipmentRows,
       }),
     });
   }

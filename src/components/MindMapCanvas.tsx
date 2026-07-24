@@ -3873,62 +3873,7 @@ export default function MindMapCanvas({
   const isTransitioningTransform = !isPanning && !draggingNodeId && pinchStartDistRef.current === null && !isLongPressDragging && !isWheeling;
 
   const getOverlapParent = (draggingId: string, newX: number, newY: number): TaskNode | undefined => {
-    const draggingNode = nodes.find(n => n.id === draggingId);
-    if (!draggingNode) return undefined;
-
-    const isDraggingContainerLike = draggingNode.isContainer || draggingNode.isEquipment;
-
-    // First attempt: Check for hover/overlap with regular non-container task nodes
-    const normalNodeOverlap = visibleNodes.find(otherNode => {
-      if (otherNode.id === draggingId) return false;
-      if (isDraggingContainerLike) return false; // Containers/Equipment cannot be parented under normal task nodes
-      if (isDescendantOrSelf(otherNode.id, draggingId, nodes)) return false;
-      if (otherNode.isContainer || otherNode.isEquipment) return false;
-
-      const dx = Math.abs(newX - otherNode.x);
-      const dy = Math.abs(newY - otherNode.y);
-      return dx < 120 && dy < 75;
-    });
-
-    if (normalNodeOverlap) return normalNodeOverlap;
-
-    // Second attempt: Check for containment inside container or equipment nodes
-    const candidateContainers = visibleNodes.filter(otherNode => {
-      if (otherNode.id === draggingId) return false;
-      if (isDescendantOrSelf(otherNode.id, draggingId, nodes)) return false;
-      if (!otherNode.isContainer && !otherNode.isEquipment) return false;
-
-      // Containers/Equipment CAN go inside other containers
-      if (focusedContainerId === otherNode.id) return false; // Do not overlap with the focused container itself in focus mode
-
-      // Do not instantly snap to container during active drag if currently nested under a standard task parent
-      if (draggingNode.parentId) {
-        const currentParent = nodes.find(p => p.id === draggingNode.parentId);
-        if (currentParent && !currentParent.isContainer && !currentParent.isEquipment) {
-          return false;
-        }
-      }
-
-      const dx = Math.abs(newX - otherNode.x);
-      const dy = Math.abs(newY - otherNode.y);
-      
-      const targetW = getNodeWidth(otherNode);
-      const targetH = getNodeHeight(otherNode);
-
-      // Node/Equipment enters container ONLY IF its position passes OVER the container rectangle
-      return dx <= targetW / 2 && dy <= targetH / 2;
-    });
-
-    if (candidateContainers.length === 0) return undefined;
-
-    // If multiple containers overlap (e.g. nested containers), select the inner (smallest area) container
-    candidateContainers.sort((a, b) => {
-      const areaA = getNodeWidth(a) * getNodeHeight(a);
-      const areaB = getNodeWidth(b) * getNodeHeight(b);
-      return areaA - areaB;
-    });
-
-    return candidateContainers[0];
+    return undefined;
   };
 
   const handleZoomIn = () => {
@@ -4429,43 +4374,6 @@ export default function MindMapCanvas({
           });
         } else {
           onUpdateNodeCoordinates(draggingNodeId, node.x, node.y);
-        }
-        const overlap = getOverlapParent(draggingNodeId, node.x, node.y);
-        const currentParent = nodes.find(p => p.id === node.parentId);
-        
-        if (overlap) {
-          if (overlap.id !== node.parentId) {
-            // Snap inside container or parent directly on drop and pass coordinates
-            onUpdateNodeParent(node.id, overlap.id, node.x, node.y);
-          }
-        } else if (currentParent) {
-          if (currentParent.isContainer || currentParent.isEquipment) {
-            const dx = Math.abs(node.x - currentParent.x);
-            const dy = Math.abs(node.y - currentParent.y);
-            let shouldDetach = false;
-
-            if (focusedContainerId) {
-              const maxW = getNodeWidth(currentParent) / 2 + 400;
-              const maxH = getNodeHeight(currentParent) / 2 + 400;
-              shouldDetach = dx > maxW || dy > maxH;
-            } else {
-              const maxW = getNodeWidth(currentParent) / 2;
-              const maxH = getNodeHeight(currentParent) / 2;
-              shouldDetach = dx > maxW || dy > maxH;
-            }
-
-            if (shouldDetach) {
-              if (focusedContainerId) {
-                if (node.parentId !== focusedContainerId) {
-                  onUpdateNodeParent(node.id, focusedContainerId, node.x, node.y);
-                }
-              } else {
-                onUpdateNodeParent(node.id, null, node.x, node.y);
-              }
-            }
-          } else {
-            // Dragged away from standard parent -> do not auto-detach on drag (only via detach button)
-          }
         }
       }
     }

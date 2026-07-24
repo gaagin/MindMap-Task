@@ -573,6 +573,56 @@ async function findSpreadsheet(accessToken: string): Promise<string | null> {
 }
 
 /**
+ * Check if all required tabs exist in the spreadsheet and create any missing ones.
+ */
+async function ensureAllSheetsExist(spreadsheetId: string, accessToken: string): Promise<void> {
+  try {
+    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`;
+    const res = await fetch(getUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const existingTitles = (data.sheets || []).map((s: any) => s.properties?.title);
+
+    const requiredSheets = ['Folders', 'Projects', 'Nodes', 'TagCategories', 'Deletions', 'Equipment'];
+    const missing = requiredSheets.filter(title => !existingTitles.includes(title));
+
+    if (missing.length > 0) {
+      const requests = missing.map(title => ({
+        addSheet: { properties: { title } }
+      }));
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ requests })
+      });
+
+      if (missing.includes('Equipment')) {
+        const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Equipment!A1:K1?valueInputOption=RAW`;
+        await fetch(updateUrl, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            range: 'Equipment!A1:K1',
+            values: [['Equipment ID', 'Project ID', 'Project Name', 'Text / Name', 'Model', 'Barcode', 'Stock Code', 'Equipment Note', 'Archived', 'Parent ID', 'Updated At']]
+          })
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Error ensuring sheet tabs exist:', err);
+  }
+}
+
+/**
  * Creates the workbook with Sheets for Folders, Projects, Nodes, TagCategories, and Deletions.
  */
 async function createSpreadsheet(accessToken: string): Promise<string> {
@@ -586,7 +636,8 @@ async function createSpreadsheet(accessToken: string): Promise<string> {
       { properties: { title: 'Projects' } },
       { properties: { title: 'Nodes' } },
       { properties: { title: 'TagCategories' } },
-      { properties: { title: 'Deletions' } }
+      { properties: { title: 'Deletions' } },
+      { properties: { title: 'Equipment' } }
     ]
   };
 
@@ -645,6 +696,10 @@ async function writeHeaders(spreadsheetId: string, accessToken: string) {
     {
       range: 'Deletions!A1:C1',
       values: [['Type', 'Deleted ID', 'Deleted At']]
+    },
+    {
+      range: 'Equipment!A1:K1',
+      values: [['Equipment ID', 'Project ID', 'Project Name', 'Text / Name', 'Model', 'Barcode', 'Stock Code', 'Equipment Note', 'Archived', 'Parent ID', 'Updated At']]
     }
   ];
 
@@ -678,6 +733,8 @@ export async function syncWithGoogleSheets(
     if (!fileId) {
       console.log('Sync spreadsheet not found. Creating a new one in Google Drive');
       fileId = await createSpreadsheet(accessToken);
+    } else {
+      await ensureAllSheetsExist(fileId, accessToken);
     }
 
     // 1. Fetch values from Google Sheet
@@ -1105,7 +1162,7 @@ export async function syncWithGoogleSheets(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:AL', 'TagCategories!A2:E', 'Deletions!A2:C']
+        ranges: ['Folders!A2:D', 'Projects!A2:E', 'Nodes!A2:AL', 'TagCategories!A2:E', 'Deletions!A2:C', 'Equipment!A2:K']
       })
     });
     if (!clearRes.ok) {
@@ -1221,6 +1278,25 @@ export async function syncWithGoogleSheets(
       ];
     });
 
+    const equipmentRows = Object.values(finalNodesMap).flat()
+      .filter(n => n.isEquipment || !!(n.equipmentModel || n.equipmentBarcode || n.equipmentStockCode || n.equipmentNote))
+      .map(n => {
+        const project = finalProjects.find(p => p.id === n.projectId);
+        return [
+          n.id,
+          n.projectId,
+          project ? project.name : 'Unknown Project',
+          safeCellString(n.text || ''),
+          safeCellString(n.equipmentModel || ''),
+          safeCellString(n.equipmentBarcode || ''),
+          safeCellString(n.equipmentStockCode || ''),
+          safeCellString(n.equipmentNote || n.notes || ''),
+          n.archived ? 'TRUE' : 'FALSE',
+          n.parentId || 'NULL',
+          n.updatedAt || new Date().toISOString()
+        ];
+      });
+
     const tagCatRows = finalTagCats.map(tc => [
       tc.id,
       tc.name,
@@ -1241,6 +1317,7 @@ export async function syncWithGoogleSheets(
     if (folderRows.length > 0) dataToWrite.push({ range: `Folders!A2:D${folderRows.length + 1}`, values: folderRows });
     if (projectRows.length > 0) dataToWrite.push({ range: `Projects!A2:E${projectRows.length + 1}`, values: projectRows });
     if (nodeRows.length > 0) dataToWrite.push({ range: `Nodes!A2:AL${nodeRows.length + 1}`, values: nodeRows });
+    if (equipmentRows.length > 0) dataToWrite.push({ range: `Equipment!A2:K${equipmentRows.length + 1}`, values: equipmentRows });
     if (tagCatRows.length > 0) dataToWrite.push({ range: `TagCategories!A2:E${tagCatRows.length + 1}`, values: tagCatRows });
     if (deletionRows.length > 0) dataToWrite.push({ range: `Deletions!A2:C${deletionRows.length + 1}`, values: deletionRows });
 
