@@ -4124,67 +4124,6 @@ export default function MindMapCanvas({
       handleLocalUpdateCoordinates(draggingNodeId, snappedX, snappedY);
       setAlignmentLines(lines);
 
-      // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
-      const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
-      if (parentContainer) {
-        const W = parentContainer.width || 520;
-        const H = parentContainer.height || 400;
-
-        const cardW = 210;
-        const cardH = 110;
-
-        const nodeLeft = snappedX - cardW / 2;
-        const nodeRight = snappedX + cardW / 2;
-        const nodeTop = snappedY - cardH / 2;
-        const nodeBottom = snappedY + cardH / 2;
-
-        const currentLeft = parentContainer.x - W / 2;
-        const currentRight = parentContainer.x + W / 2;
-        const currentTop = parentContainer.y - H / 2;
-        const currentBottom = parentContainer.y + H / 2;
-
-        const padding = 35;
-
-        let needsResize = false;
-
-        if (nodeLeft - padding < currentLeft) {
-          needsResize = true;
-        }
-        if (nodeRight + padding > currentRight) {
-          needsResize = true;
-        }
-        if (nodeTop - padding < currentTop) {
-          needsResize = true;
-        }
-        if (nodeBottom + padding > currentBottom) {
-          needsResize = true;
-        }
-
-        if (needsResize) {
-          // Keep x and y center coordinates strictly unchanged.
-          // Grow W and H symmetrically around the center.
-          const currentX = parentContainer.x;
-          const currentY = parentContainer.y;
-          
-          const halfW = Math.max(W / 2, Math.abs(currentX - (nodeLeft - padding)), Math.abs((nodeRight + padding) - currentX));
-          const halfH = Math.max(H / 2, Math.abs(currentY - (nodeTop - padding)), Math.abs((nodeBottom + padding) - currentY));
-          
-          const newW = Math.round(halfW * 2);
-          const newH = Math.round(halfH * 2);
-
-          setLocalNodes(prev => prev.map(n => {
-            if (n.id === parentContainer.id) {
-              return {
-                ...n,
-                width: newW,
-                height: newH
-              };
-            }
-            return n;
-          }));
-        }
-      }
-
       // Check support for re-parenting by hovering over another task card or container
       const overlapNode = getOverlapParent(draggingNodeId, snappedX, snappedY);
 
@@ -4277,13 +4216,6 @@ export default function MindMapCanvas({
     if (draggingNodeId && hasDraggedNode) {
       const node = nodes.find(n => n.id === draggingNodeId);
       if (node) {
-        if (node.parentId) {
-          const localParent = localNodes.find(p => p.id === node.parentId);
-          const incomingParent = incomingNodes.find(p => p.id === node.parentId);
-          if (localParent && incomingParent && (localParent.width !== incomingParent.width || localParent.height !== incomingParent.height)) {
-            onUpdateNode(localParent);
-          }
-        }
         const updatedTags = checkWorkflowTriggerCollisions(node, node.x, node.y);
         if (updatedTags) {
           onUpdateNode({
@@ -4806,67 +4738,6 @@ export default function MindMapCanvas({
       handleLocalUpdateCoordinates(draggingNodeId, snappedX, snappedY);
       setAlignmentLines(lines);
 
-      // Auto-expand container if children are pushed close to or outside the container bounds (only in focus mode)
-      const parentContainer = (node.parentId && node.parentId === focusedContainerId) ? nodes.find(p => p.id === node.parentId && p.isContainer) : null;
-      if (parentContainer) {
-        const W = parentContainer.width || 520;
-        const H = parentContainer.height || 400;
-
-        const cardW = 210;
-        const cardH = 110;
-
-        const nodeLeft = snappedX - cardW / 2;
-        const nodeRight = snappedX + cardW / 2;
-        const nodeTop = snappedY - cardH / 2;
-        const nodeBottom = snappedY + cardH / 2;
-
-        const currentLeft = parentContainer.x - W / 2;
-        const currentRight = parentContainer.x + W / 2;
-        const currentTop = parentContainer.y - H / 2;
-        const currentBottom = parentContainer.y + H / 2;
-
-        const padding = 35;
-
-        let needsResize = false;
-
-        if (nodeLeft - padding < currentLeft) {
-          needsResize = true;
-        }
-        if (nodeRight + padding > currentRight) {
-          needsResize = true;
-        }
-        if (nodeTop - padding < currentTop) {
-          needsResize = true;
-        }
-        if (nodeBottom + padding > currentBottom) {
-          needsResize = true;
-        }
-
-        if (needsResize) {
-          // Keep x and y center coordinates strictly unchanged.
-          // Grow W and H symmetrically around the center.
-          const currentX = parentContainer.x;
-          const currentY = parentContainer.y;
-          
-          const halfW = Math.max(W / 2, Math.abs(currentX - (nodeLeft - padding)), Math.abs((nodeRight + padding) - currentX));
-          const halfH = Math.max(H / 2, Math.abs(currentY - (nodeTop - padding)), Math.abs((nodeBottom + padding) - currentY));
-          
-          const newW = Math.round(halfW * 2);
-          const newH = Math.round(halfH * 2);
-
-          setLocalNodes(prev => prev.map(n => {
-            if (n.id === parentContainer.id) {
-              return {
-                ...n,
-                width: newW,
-                height: newH
-              };
-            }
-            return n;
-          }));
-        }
-      }
-
       // Check support for re-parenting by hovering over another task card or container
       const overlapNode = getOverlapParent(draggingNodeId, snappedX, snappedY);
 
@@ -5030,13 +4901,6 @@ export default function MindMapCanvas({
       if (draggingNodeId && hasDraggedNode) {
         const node = nodes.find(n => n.id === draggingNodeId);
         if (node) {
-          if (node.parentId) {
-            const localParent = localNodes.find(p => p.id === node.parentId);
-            const incomingParent = incomingNodes.find(p => p.id === node.parentId);
-            if (localParent && incomingParent && (localParent.width !== incomingParent.width || localParent.height !== incomingParent.height)) {
-              onUpdateNode(localParent);
-            }
-          }
           const updatedTags = checkWorkflowTriggerCollisions(node, node.x, node.y);
           if (updatedTags) {
             onUpdateNode({
