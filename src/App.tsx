@@ -1392,7 +1392,7 @@ export default function App() {
                   requireInteraction: true // Keep it showing until the user explicitly taps or clears it
                 };
 
-                if ('serviceWorker' in navigator) {
+                if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
                   navigator.serviceWorker.ready.then((reg) => {
                     reg.showNotification(title, options);
                   }).catch(() => {
@@ -1941,7 +1941,7 @@ export default function App() {
             vibrate: [200, 100, 200, 100, 300],
             tag: 'permission-success'
           };
-          if ('serviceWorker' in navigator) {
+          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
             navigator.serviceWorker.ready.then((reg) => {
               reg.showNotification('Уведомления включены! 🔔', options);
             });
