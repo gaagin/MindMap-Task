@@ -3395,6 +3395,73 @@ export default function MindMapCanvas({
     }
   }, [focusedContainerId]);
 
+  // Track latest nodes state for the centering effect without triggering on node coordinate changes
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  // Automatically center and fit children when entering a container or a focused task
+  useEffect(() => {
+    const focusId = focusedContainerId || focusedTaskId;
+    if (focusId) {
+      const currentNodes = nodesRef.current;
+      // Find all nested child/descendant nodes belonging to this focused item
+      const containerChildren = currentNodes.filter(n => n.parentId === focusId && !n.archived);
+      const parentNode = currentNodes.find(n => n.id === focusId);
+
+      if (containerChildren.length === 0) {
+        // If empty inside, center on the container/task itself with a comfortable zoom
+        if (parentNode) {
+          const targetZoom = 0.85;
+          setZoom(targetZoom);
+          setPanX(-parentNode.x * targetZoom);
+          setPanY(-parentNode.y * targetZoom);
+        }
+      } else {
+        // Calculate bounding box of all objects inside the focused container
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        containerChildren.forEach(n => {
+          const w = getNodeWidth(n);
+          const h = getNodeHeight(n);
+          const left = n.x - w / 2;
+          const right = n.x + w / 2;
+          const top = n.y - h / 2;
+          const bottom = n.y + h / 2;
+
+          if (left < minX) minX = left;
+          if (right > maxX) maxX = right;
+          if (top < minY) minY = top;
+          if (bottom > maxY) maxY = bottom;
+        });
+
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+
+        const bboxWidth = maxX - minX;
+        const bboxHeight = maxY - minY;
+
+        const rect = containerRef.current?.getBoundingClientRect();
+        const viewportW = rect ? rect.width : window.innerWidth;
+        const viewportH = rect ? rect.height : window.innerHeight;
+
+        const padding = 160;
+        const scaleX = (viewportW - padding) / Math.max(bboxWidth, 200);
+        const scaleY = (viewportH - padding) / Math.max(bboxHeight, 200);
+        // Constraint zoom to reasonable bounds
+        const fitZoom = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.0);
+
+        setZoom(fitZoom);
+        setPanX(-centerX * fitZoom);
+        setPanY(-centerY * fitZoom);
+      }
+    }
+  }, [focusedContainerId, focusedTaskId]);
+
   // Center screen on a specific node
   const centerOnNode = (nodeId: string) => {
     const targetNode = nodes.find(n => n.id === nodeId);
