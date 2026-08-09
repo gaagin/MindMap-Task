@@ -621,6 +621,21 @@ export function isContainerOverdue(containerNode: TaskNode, allNodes: TaskNode[]
   );
 }
 
+// Helper to check if a container contains any active non-overdue task (with unexpired date or without date)
+export function hasContainerNonOverdueTasks(containerNode: TaskNode, allNodes: TaskNode[]): boolean {
+  if (!containerNode.isContainer) return false;
+  return allNodes.some(n => 
+    !n.isContainer && 
+    !n.isWorkflowRectangle &&
+    !n.isNotTask &&
+    !n.completed &&
+    !n.archived &&
+    isDescendantOrSelf(n.id, containerNode.id, allNodes) && 
+    n.id !== containerNode.id &&
+    !isNodeOverdue(n)
+  );
+}
+
 // Filters task history versions to keep only those from the last 30 days
 export function pruneWorkspaceTaskHistories(state: WorkspaceState): WorkspaceState {
   const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;

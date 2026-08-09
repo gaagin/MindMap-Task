@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TaskNode, TagCategory, Priority } from '../types';
-import { isNodeOverdue, isContainerOverdue, getPomoStatsForNode, formatTotalPomoTime, getTaskExternalLinks } from '../utils';
+import { isNodeOverdue, isContainerOverdue, hasContainerNonOverdueTasks, getPomoStatsForNode, formatTotalPomoTime, getTaskExternalLinks } from '../utils';
 
 interface KanbanViewProps {
   nodes: TaskNode[];
@@ -2548,6 +2548,7 @@ export default function KanbanView({
             const isDraggedOver = draggedOverColumn === col.id;
             const containerNode = groupBy === 'container' && col.id !== 'no-container' ? nodes.find(n => n.id === col.id) : null;
             const isOverdueCont = containerNode ? isContainerOverdue(containerNode, nodes) : false;
+            const hasNonOverdueCont = containerNode ? hasContainerNonOverdueTasks(containerNode, nodes) : false;
 
             return (
               <div
@@ -2560,17 +2561,19 @@ export default function KanbanView({
                 className={`w-64 sm:w-72 shrink-0 rounded-2xl border p-4 flex flex-col h-full transition-all duration-250 scrollbar-thin ${
                   isOverdueCont
                     ? 'border-rose-300 dark:border-rose-800 bg-rose-50/10 dark:bg-rose-950/5 ring-2 ring-rose-500/10 shadow-[0_10px_25px_rgba(244,63,94,0.04)]'
-                    : isDraggedOver 
-                      ? 'border-indigo-400 dark:border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/10 scale-[1.01] ring-2 ring-indigo-500/10 shadow-[0_10px_30px_rgba(99,102,241,0.08)]' 
-                      : 'border-slate-200 dark:border-slate-800 bg-[#f8fafc] dark:bg-slate-900/80 shadow-[0_2px_8px_rgba(15,23,42,0.015),0_1px_3px_rgba(15,23,42,0.01)]'
+                    : hasNonOverdueCont
+                      ? 'border-sky-300 dark:border-sky-800 bg-sky-50/10 dark:bg-sky-950/5 ring-2 ring-sky-500/10 shadow-[0_10px_25px_rgba(14,165,233,0.04)]'
+                      : isDraggedOver 
+                        ? 'border-indigo-400 dark:border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/10 scale-[1.01] ring-2 ring-indigo-500/10 shadow-[0_10px_30px_rgba(99,102,241,0.08)]' 
+                        : 'border-slate-200 dark:border-slate-800 bg-[#f8fafc] dark:bg-slate-900/80 shadow-[0_2px_8px_rgba(15,23,42,0.015),0_1px_3px_rgba(15,23,42,0.01)]'
                 }`}
-                style={{ borderTop: isOverdueCont ? '3px solid #f43f5e' : `3px solid ${col.color}` }}
+                style={{ borderTop: isOverdueCont ? '3px solid #f43f5e' : hasNonOverdueCont ? '3px solid #0284c7' : `3px solid ${col.color}` }}
               >
                 {/* Column top header */}
                 <div className="flex items-center justify-between pb-3 mb-3 px-1 border-b border-slate-200/50 dark:border-slate-800/30">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: isOverdueCont ? '#f43f5e' : col.color }} />
-                    <h4 className={`text-[14px] font-medium truncate ${isOverdueCont ? 'text-rose-600 dark:text-rose-400 font-medium' : 'text-slate-800 dark:text-slate-100'}`} title={col.title}>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: isOverdueCont ? '#f43f5e' : hasNonOverdueCont ? '#0284c7' : col.color }} />
+                    <h4 className={`text-[14px] font-medium truncate ${isOverdueCont ? 'text-rose-600 dark:text-rose-400 font-medium' : hasNonOverdueCont ? 'text-sky-600 dark:text-sky-400 font-medium' : 'text-slate-800 dark:text-slate-100'}`} title={col.title}>
                       {isOverdueCont && '⚠️ '}{col.title}
                     </h4>
                     <span className={`px-2 py-0.5 rounded-full text-[11.5px] font-medium font-mono shrink-0 ${isOverdueCont ? 'bg-rose-200/60 dark:bg-rose-900/40 text-rose-700 dark:text-rose-400' : 'bg-slate-200/60 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>

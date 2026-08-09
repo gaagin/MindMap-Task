@@ -56,7 +56,7 @@ import {
   Home
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
-import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
+import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, hasContainerNonOverdueTasks, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface MindMapCanvasProps {
@@ -6204,7 +6204,9 @@ export default function MindMapCanvas({
                   return containers.map(container => {
                     const childCount = nodes.filter(n => n.parentId === container.id && !n.archived).length;
                     const progress = calculateProgress(container.id, nodes) || 0;
-                    
+                    const isOverdueCont = isContainerOverdue(container, nodes);
+                    const hasNonOverdueCont = hasContainerNonOverdueTasks(container, nodes);
+
                     return (
                       <div
                         key={container.id}
@@ -6233,8 +6235,14 @@ export default function MindMapCanvas({
                           }}
                           className="flex-1 min-w-0 flex items-center gap-2.5 text-left cursor-pointer"
                         >
-                          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform">
-                            <Layers className="w-4 h-4 text-indigo-500" />
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border group-hover:scale-105 transition-transform ${
+                            isOverdueCont
+                              ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-500 border-rose-200 dark:border-rose-900/40'
+                              : hasNonOverdueCont
+                                ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-500 border-sky-200 dark:border-sky-900/40'
+                                : 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 border-indigo-100 dark:border-indigo-900/20'
+                          }`}>
+                            <Layers className="w-4 h-4" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-1">
@@ -7149,6 +7157,7 @@ export default function MindMapCanvas({
             const matches = isNodeMatched(node);
             const isDimmed = isAnyFilterActive && !matches;
             const isOverdueCont = isContainerOverdue(node, nodes);
+            const hasNonOverdueCont = hasContainerNonOverdueTasks(node, nodes);
             const isOpponentHovered = hoveredNodeId === node.id;
 
             // Stats calculations for detailed display on the card
@@ -7222,9 +7231,11 @@ export default function MindMapCanvas({
                       ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
                       : isOverdueCont
                         ? 'bg-white dark:bg-slate-900 border-rose-500 dark:border-rose-600/80 shadow-[0_0_15px_rgba(239,68,68,0.25)] ring-4 ring-rose-500/20'
-                        : isContainerSelected
-                          ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
-                          : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
+                        : hasNonOverdueCont
+                          ? 'bg-sky-50/30 dark:bg-sky-950/20 border-sky-500 dark:border-sky-500/80 shadow-[0_0_15px_rgba(56,189,248,0.25)] ring-4 ring-sky-500/20'
+                          : isContainerSelected
+                            ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
+                            : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
                 } flex flex-col`}
                 onMouseDown={(e) => {
                   const target = e.target as HTMLElement;
@@ -7272,9 +7283,11 @@ export default function MindMapCanvas({
                   <div className={`flex items-center gap-1.5 px-3 py-1 font-sans font-extrabold text-[11px] uppercase tracking-wider whitespace-nowrap rounded-[5px] border cursor-grab active:cursor-grabbing select-none shadow-sm transition-all duration-150 ${
                     isOverdueCont
                       ? 'bg-rose-500 text-white border-rose-600 shadow-md animate-pulse'
-                      : isContainerSelected
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-md'
-                        : 'bg-slate-100 dark:bg-slate-805 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-750'
+                      : hasNonOverdueCont
+                        ? 'bg-sky-500 text-white border-sky-600 shadow-md'
+                        : isContainerSelected
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-md'
+                          : 'bg-slate-100 dark:bg-slate-805 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-750'
                   }`}>
                     {editingNodeId === node.id ? (
                       <input
@@ -7322,7 +7335,15 @@ export default function MindMapCanvas({
                 </div>
 
                 {/* Header of Container Canvas */}
-                <div className={`px-3 py-2 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white dark:bg-slate-950 select-none`}>
+                <div className={`px-3 py-2 flex items-center justify-between border-b ${
+                  isOverdueCont
+                    ? 'border-rose-200 dark:border-rose-900/50 bg-rose-50/20 dark:bg-rose-950/20'
+                    : hasNonOverdueCont
+                      ? 'border-sky-200 dark:border-sky-900/50 bg-sky-50/20 dark:bg-sky-950/20'
+                      : isContainerSelected
+                        ? 'border-amber-200 dark:border-amber-900/50'
+                        : 'border-slate-200/80 dark:border-slate-800'
+                } rounded-t-2xl bg-white dark:bg-slate-950 select-none`}>
                   <div className="flex items-center gap-1.5 min-w-0 flex-1">
                     <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate font-sans tracking-wide">
                       {node.text || 'Контейнер'}
