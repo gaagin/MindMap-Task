@@ -1548,90 +1548,10 @@ export default function MindMapCanvas({
   };
 
   const renderContainerBody = (node: TaskNode, rawChildren: TaskNode[], isFullScreen = false) => {
-    const containerChildren = rawChildren;
-
-    if (containerChildren.length === 0) {
-      return (
-        <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto transition-all">
-          <span className="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest mb-1">Свободный холст</span>
-          <span className="text-[9px] text-slate-400 dark:text-slate-500 max-w-[200px] mb-3">
-            Дочерние подзадачи свободно перемещаются по этому прямоугольнику.
-          </span>
-          <div className="flex gap-2 pointer-events-auto">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddFloatingNode(node.x, node.y, node.id, 'Workflow Шаг', { isWorkflowRectangle: true });
-              }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wide uppercase bg-indigo-500 hover:bg-indigo-600 text-white shadow-xs transition-transform hover:scale-105 cursor-pointer"
-            >
-              <Network className="w-3 h-3 text-white" />
-              🟦 Прямоугольник Workflow
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddContainerNode(node.x, node.y, node.id);
-              }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wide uppercase bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-transform hover:scale-105 cursor-pointer"
-            >
-              <span className="text-xs">📦</span>
-              Группа задач
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddFloatingNode(node.x, node.y, node.id, 'Новая задача');
-              }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wide uppercase bg-slate-150 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-250 dark:border-slate-700 shadow-xs transition-transform hover:scale-105 cursor-pointer"
-            >
-              <Plus className="w-3 h-3 text-slate-500 dark:text-slate-400" />
-              Обычная задача
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const originalRenderContainerBody_OLD_UNUSED = (node: TaskNode, rawChildren: TaskNode[], isFullScreen = false) => {
     const viewMode = containerViewModes[node.id] || 'canvas';
     const containerChildren = viewMode === 'canvas' ? rawChildren : rawChildren.filter(n => !n.isWorkflowRectangle);
 
     if (viewMode === 'canvas') {
-      if (containerChildren.length === 0) {
-        return (
-          <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200/50 dark:border-slate-800/50 rounded-xl select-none min-h-[140px] text-center my-auto transition-all">
-            <span className="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest mb-1">Свободный холст</span>
-            <span className="text-[9px] text-slate-400 dark:text-slate-500 max-w-[200px] mb-3">
-              Дочерние подзадачи свободно перемещаются по этому прямоугольнику.
-            </span>
-            <div className="flex gap-2 pointer-events-auto">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddFloatingNode(node.x, node.y, node.id, 'Workflow Шаг', { isWorkflowRectangle: true });
-                }}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wide uppercase bg-indigo-500 hover:bg-indigo-600 text-white shadow-xs transition-transform hover:scale-105 cursor-pointer"
-              >
-                <Network className="w-3 h-3 text-white" />
-                🟦 Прямоугольник Workflow
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddFloatingNode(node.x, node.y, node.id, 'Новая задача');
-                }}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wide uppercase bg-slate-150 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-250 dark:border-slate-700 shadow-xs transition-transform hover:scale-105 cursor-pointer"
-              >
-                <Plus className="w-3 h-3 text-slate-500 dark:text-slate-400" />
-                Обычная задача
-              </button>
-            </div>
-          </div>
-        );
-      }
       return null;
     }
 
@@ -7266,7 +7186,7 @@ export default function MindMapCanvas({
             const completedChildren = containerChildren.filter(n => n.completed).length;
             const containerProgress = calculateProgress(node.id, nodes) || 0;
             const isContainerSelected = isSelected;
-            const isContainerCollapsed = true; // Always collapsed on the main canvas!
+            const isContainerCollapsed = node.collapsed ?? false;
             const isDraggingThisNode = draggingNodeId === node.id || (isLongPressDragging && potentialDragNodeIdRef.current === node.id);
             const matches = isNodeMatched(node);
             const isDimmed = isAnyFilterActive && !matches;
@@ -7296,8 +7216,8 @@ export default function MindMapCanvas({
                   top: node.y,
                   transform: 'translate(-50%, -50%)',
                   zIndex: isContainerSelected ? 1000 : (lastActiveContainerId === node.id ? 30 : 10), 
-                  width: isContainerCollapsed ? '220px' : `${node.width || 520}px`,
-                  height: isContainerCollapsed ? '100px' : `${node.height || 400}px`,
+                  width: `${node.width || (isContainerCollapsed ? 220 : 360)}px`,
+                  height: `${node.height || (isContainerCollapsed ? 110 : 220)}px`,
                   transition: isAutoArranging ? 'left 0.8s cubic-bezier(0.16, 1, 0.3, 1), top 0.8s cubic-bezier(0.16, 1, 0.3, 1)' : undefined,
                 }}
                 onDragOver={(e) => {
@@ -7436,269 +7356,117 @@ export default function MindMapCanvas({
                         onMouseDown={(e) => e.stopPropagation()}
                       />
                     ) : (
-                      <span>{node.text || 'ОБЛАСТЬ'}</span>
-                    )}
-                    {node.collapsed && (
-                      <span className={`text-[9px] font-mono rounded px-1 ${isContainerSelected ? 'bg-amber-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
-                        {totalChildren}
-                      </span>
+                      <span>{node.text || 'КОНТЕЙНЕР'}</span>
                     )}
                   </div>
                 </div>
 
                 {/* Header of Container Canvas */}
-                <div className={`p-3 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white dark:bg-slate-950 select-none pb-2.5`}>
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <div className="relative w-8 h-8 flex items-center justify-center shrink-0 mr-1.5">
-                      <svg className="w-full h-full transform -rotate-90 select-none" viewBox="0 0 32 32">
-                        <circle
-                          cx="16"
-                          cy="16"
-                          r="13"
-                          className="text-slate-100 dark:text-slate-800"
-                          strokeWidth="2.5"
-                          stroke="currentColor"
-                          fill="transparent"
-                        />
-                        <circle
-                          cx="16"
-                          cy="16"
-                          r="13"
-                          className={`${isOverdueCont ? 'text-rose-500' : 'text-amber-500 dark:text-amber-400'} transition-all duration-300`}
-                          strokeWidth="2.5"
-                          strokeDasharray={2 * Math.PI * 13}
-                          strokeDashoffset={2 * Math.PI * 13 * (1 - containerProgress / 100)}
-                          strokeLinecap="round"
-                          stroke="currentColor"
-                          fill="transparent"
-                        />
-                      </svg>
-                      <span className="absolute text-[8px] font-black text-slate-700 dark:text-slate-300 font-mono">
-                        {containerProgress}%
-                      </span>
-                    </div>
-                    {/* Display title name instead of duplicated static label 'Контейнер' */}
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-350 truncate font-sans tracking-wide">
-                      {node.text || 'Область задач'}
+                <div className={`px-3 py-2 flex items-center justify-between border-b ${isContainerSelected ? 'border-amber-200 dark:border-amber-900/50' : 'border-slate-200/80 dark:border-slate-800'} rounded-t-2xl bg-white dark:bg-slate-950 select-none`}>
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate font-sans tracking-wide">
+                      {node.text || 'Контейнер'}
                     </span>
-                  </div>
-
-                  {/* Container Action Buttons */}
-                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                    {/* Add child task/branch inside container */}
-                    {!node.collapsed && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAddChildNode(node.id);
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        data-drag-ignore
-                        title="Добавить задачу внутрь контейнера"
-                        className="p-1 rounded-md text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-350 hover:bg-emerald-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {/* Add workflow rectangle inside container */}
-                    {!node.collapsed && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAddFloatingNode(node.x, node.y, node.id, 'Workflow Шаг', { isWorkflowRectangle: true });
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        data-drag-ignore
-                        title="Добавить прямоугольник workflow в контейнер"
-                        className="p-1 rounded-md text-indigo-600 dark:text-indigo-450 hover:text-indigo-700 dark:hover:text-indigo-350 hover:bg-indigo-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                      >
-                        <Network className="w-3.5 h-3.5" />
-                      </button>
-                    )}
                   </div>
                 </div>
 
                 {/* Body / Workspace Area */}
-                <div className="relative flex-1 p-3 flex flex-col justify-between min-h-0 bg-transparent rounded-b-2xl">
+                <div className="relative flex-1 p-2 flex flex-col justify-between min-h-0 bg-transparent rounded-b-2xl">
                   {isContainerCollapsed ? (
-                    <div className="flex-1 flex flex-col justify-center p-2.5 select-none space-y-1.5 bg-slate-50/40 dark:bg-slate-900/10 rounded-b-2xl animate-fade-in">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-700 dark:text-slate-200">
-                          📦 Свернуто: {totalChildren} задач
-                        </span>
-                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                          {containerProgress}%
-                        </span>
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-amber-500 transition-all duration-300"
-                          style={{ width: `${containerProgress}%` }}
-                        />
-                      </div>
-
-                      {/* Quick Status and Time Breakdown */}
-                      <div className="flex items-center justify-between text-[9px] text-slate-500 dark:text-slate-400">
-                        <div className="flex items-center gap-1.5 font-medium">
-                          <span title="В планах">⚪ {todoCount}</span>
-                          <span title="В работе">🔵 {progressCount}</span>
-                          <span title="Ожидают">🟡 {waitingCount}</span>
-                          <span title="Выполнено">🟢 {doneCount}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 font-medium">
-                          {overdueCount > 0 && <span className="text-rose-500 font-bold" title="Просрочено">📅 {overdueCount}</span>}
-                          {urgentCount > 0 && <span className="text-red-500 font-bold" title="Критических">🚨 {urgentCount}</span>}
-                          <span>⏱️ {formatTotalPomoTime(totalPomoTime)}</span>
-                        </div>
-                      </div>
-                    </div>
+                    <div className="flex-1 flex flex-col justify-center p-2 select-none bg-slate-50/40 dark:bg-slate-900/10 rounded-b-2xl" />
                   ) : (
-                    <>
-                      {/* Inner interactive view */}
-                      <div className="flex-1 flex flex-col min-h-0 z-10 select-text overflow-hidden mb-2">
-                        {renderContainerBody(node, containerChildren)}
-                      </div>
-
-                      {/* Detailed task stats breakdown panel */}
-                      <div className="mt-1 mb-2 px-2.5 py-1.5 flex flex-wrap items-center justify-between text-[9px] bg-slate-50/55 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/60 rounded-md select-none gap-2 font-medium z-10 shrink-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-slate-400 dark:text-slate-500 font-bold">Задачи:</span>
-                          <span className="inline-flex items-center gap-0.5 text-slate-600 dark:text-slate-300" title="В планах">
-                            ⚪ {todoCount}
-                          </span>
-                          <span className="inline-flex items-center gap-0.5 text-blue-600 dark:text-blue-400" title="В работе">
-                            🔵 {progressCount}
-                          </span>
-                          <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400" title="Ожидают">
-                            🟡 {waitingCount}
-                          </span>
-                          <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400" title="Выполнено">
-                            🟢 {doneCount}
-                          </span>
-                        </div>
-                        
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {overdueCount > 0 && (
-                            <span className="bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-black px-1.5 py-0.5 rounded border border-rose-100 dark:border-rose-900/40 animate-pulse flex items-center gap-0.5" title="Просроченные задачи">
-                              📅 {overdueCount}
-                            </span>
-                          )}
-                          {urgentCount > 0 && (
-                            <span className="bg-red-50 dark:bg-red-950/40 text-red-650 dark:text-red-400 font-black px-1.5 py-0.5 rounded border border-red-100 dark:border-red-900/40 flex items-center gap-0.5" title="Критические приоритеты">
-                              🚨 {urgentCount}
-                            </span>
-                          )}
-                          {totalEstimated > 0 && (
-                            <span className="text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-850 px-1 py-0.5 rounded font-black" title="Общее ориентировочное время работы">
-                              ⏱️ {totalEstimated}ч
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Small dynamic status overview bar at the bottom */}
-                      <div className="mt-auto pt-2 border-t border-slate-100/40 dark:border-slate-800/40 flex flex-wrap items-center justify-between select-none bg-white dark:bg-slate-950 px-2 py-1.5 rounded-lg z-10 shrink-0 gap-y-1.5">
-                        <div className="flex flex-wrap items-center gap-1.5 min-w-0 flex-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setNotesModalNodeId(node.id);
-                            }}
-                            className="text-[9px] text-slate-500 dark:text-slate-400 hover:text-amber-600 shadow-sm flex items-center gap-1 py-0.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md transition-all font-semibold cursor-pointer border border-slate-205 dark:border-slate-755 bg-white/50 dark:bg-slate-900/50 shrink-0"
-                          >
-                            <FileText className="w-3 h-3 text-amber-500" /> Описание
-                          </button>
-
-                          <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 font-sans truncate">
-                            {totalChildren} задач ({completedChildren} вып.) • ⏱️ {formatTotalPomoTime(totalPomoTime)}
-                          </span>
-                        </div>
-                        
-                        <div className="w-20 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden shrink-0">
-                          <div 
-                            className="h-full bg-amber-500 transition-all duration-300"
-                            style={{ width: `${containerProgress}%` }}
-                          />
-                        </div>
-                      </div>
-                    </>
+                    <div className="flex-1 flex flex-col min-h-0 z-10 select-text overflow-hidden">
+                      {renderContainerBody(node, containerChildren)}
+                    </div>
                   )}
                 </div>
 
                 {/* Resize Handles for container from all sides (Large touch-responsive targets) */}
-                {!isContainerCollapsed && (
-                  <>
-                    {/* Top border resizer */}
-                    <div
-                      onMouseDown={(e) => startResize(e, node, 'n')}
-                      onTouchStart={(e) => startResizeTouch(e, node, 'n')}
-                      data-drag-ignore
-                      className="absolute -top-1.5 left-4 right-4 h-3 cursor-ns-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
-                      title="Изменить высоту (вверх)"
-                    />
-                    {/* Bottom border resizer */}
-                    <div
-                      onMouseDown={(e) => startResize(e, node, 's')}
-                      onTouchStart={(e) => startResizeTouch(e, node, 's')}
-                      data-drag-ignore
-                      className="absolute -bottom-1.5 left-4 right-4 h-3 cursor-ns-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
-                      title="Изменить высоту (вниз)"
-                    />
-                    {/* Left border resizer */}
-                    <div
-                      onMouseDown={(e) => startResize(e, node, 'w')}
-                      onTouchStart={(e) => startResizeTouch(e, node, 'w')}
-                      data-drag-ignore
-                      className="absolute top-4 bottom-4 -left-1.5 w-3 cursor-ew-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
-                      title="Изменить ширину (влево)"
-                    />
-                    {/* Right border resizer */}
-                    <div
-                      onMouseDown={(e) => startResize(e, node, 'e')}
-                      onTouchStart={(e) => startResizeTouch(e, node, 'e')}
-                      data-drag-ignore
-                      className="absolute top-4 bottom-4 -right-1.5 w-3 cursor-ew-resize z-30 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded transition-all duration-150"
-                      title="Изменить ширину (вправо)"
-                    />
+                <>
+                  {/* Top border resizer */}
+                  <div
+                    onMouseDown={(e) => startResize(e, node, 'n')}
+                    onTouchStart={(e) => startResizeTouch(e, node, 'n')}
+                    data-drag-ignore
+                    className={`absolute -top-1.5 left-4 right-4 h-3 cursor-ns-resize z-30 select-none hover:bg-amber-500/30 active:bg-amber-500/50 rounded transition-all duration-150 ${
+                      isContainerSelected ? 'opacity-100 bg-amber-500/10' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                    title="Изменить высоту (вверх)"
+                  />
+                  {/* Bottom border resizer */}
+                  <div
+                    onMouseDown={(e) => startResize(e, node, 's')}
+                    onTouchStart={(e) => startResizeTouch(e, node, 's')}
+                    data-drag-ignore
+                    className={`absolute -bottom-1.5 left-4 right-4 h-3 cursor-ns-resize z-30 select-none hover:bg-amber-500/30 active:bg-amber-500/50 rounded transition-all duration-150 ${
+                      isContainerSelected ? 'opacity-100 bg-amber-500/10' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                    title="Изменить высоту (вниз)"
+                  />
+                  {/* Left border resizer */}
+                  <div
+                    onMouseDown={(e) => startResize(e, node, 'w')}
+                    onTouchStart={(e) => startResizeTouch(e, node, 'w')}
+                    data-drag-ignore
+                    className={`absolute top-4 bottom-4 -left-1.5 w-3 cursor-ew-resize z-30 select-none hover:bg-amber-500/30 active:bg-amber-500/50 rounded transition-all duration-150 ${
+                      isContainerSelected ? 'opacity-100 bg-amber-500/10' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                    title="Изменить ширину (влево)"
+                  />
+                  {/* Right border resizer */}
+                  <div
+                    onMouseDown={(e) => startResize(e, node, 'e')}
+                    onTouchStart={(e) => startResizeTouch(e, node, 'e')}
+                    data-drag-ignore
+                    className={`absolute top-4 bottom-4 -right-1.5 w-3 cursor-ew-resize z-30 select-none hover:bg-amber-500/30 active:bg-amber-500/50 rounded transition-all duration-150 ${
+                      isContainerSelected ? 'opacity-100 bg-amber-500/10' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                    title="Изменить ширину (вправо)"
+                  />
 
-                    {/* Corner resizers */}
-                    <div
-                      onMouseDown={(e) => startResize(e, node, 'nw')}
-                      onTouchStart={(e) => startResizeTouch(e, node, 'nw')}
-                      data-drag-ignore
-                      className="absolute -top-2 -left-2 w-4 h-4 cursor-nwse-resize z-40 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded-full border border-amber-500/30 bg-white dark:bg-slate-900 transition-all duration-150"
-                      title="Сверху-слева"
-                    />
-                    <div
-                      onMouseDown={(e) => startResize(e, node, 'ne')}
-                      onTouchStart={(e) => startResizeTouch(e, node, 'ne')}
-                      data-drag-ignore
-                      className="absolute -top-2 -right-2 w-4 h-4 cursor-nesw-resize z-40 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded-full border border-amber-500/30 bg-white dark:bg-slate-900 transition-all duration-150"
-                      title="Сверху-справа"
-                    />
-                    <div
-                      onMouseDown={(e) => startResize(e, node, 'sw')}
-                      onTouchStart={(e) => startResizeTouch(e, node, 'sw')}
-                      data-drag-ignore
-                      className="absolute -bottom-2 -left-2 w-4 h-4 cursor-nesw-resize z-40 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded-full border border-amber-500/30 bg-white dark:bg-slate-900 transition-all duration-150"
-                      title="Снизу-слева"
-                    />
-                    <div
-                      onMouseDown={(e) => startResize(e, node, 'se')}
-                      onTouchStart={(e) => startResizeTouch(e, node, 'se')}
-                      data-drag-ignore
-                      className="absolute -bottom-2.5 -right-2.5 w-5 h-5 cursor-nwse-resize z-40 select-none opacity-0 group-hover:opacity-100 hover:bg-amber-500/25 active:bg-amber-500/50 rounded-full border border-amber-500/30 bg-white dark:bg-slate-900 transition-all duration-150 flex items-center justify-center"
-                      title="Снизу-справа"
-                    >
-                      <svg width="6" height="6" viewBox="0 0 6 6" className="text-amber-600 dark:text-amber-450 opacity-80">
-                        <line x1="6" y1="0" x2="0" y2="6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
-                        <line x1="6" y1="3" x2="3" y2="6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
-                      </svg>
-                    </div>
-                  </>
-                )}
+                  {/* Corner resizers */}
+                  <div
+                    onMouseDown={(e) => startResize(e, node, 'nw')}
+                    onTouchStart={(e) => startResizeTouch(e, node, 'nw')}
+                    data-drag-ignore
+                    className={`absolute -top-2 -left-2 w-4 h-4 cursor-nwse-resize z-40 select-none hover:bg-amber-500/30 active:bg-amber-500/50 rounded-full border-2 border-amber-500 bg-white dark:bg-slate-900 shadow-sm transition-all duration-150 ${
+                      isContainerSelected ? 'opacity-100 scale-110' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                    title="Сверху-слева"
+                  />
+                  <div
+                    onMouseDown={(e) => startResize(e, node, 'ne')}
+                    onTouchStart={(e) => startResizeTouch(e, node, 'ne')}
+                    data-drag-ignore
+                    className={`absolute -top-2 -right-2 w-4 h-4 cursor-nesw-resize z-40 select-none hover:bg-amber-500/30 active:bg-amber-500/50 rounded-full border-2 border-amber-500 bg-white dark:bg-slate-900 shadow-sm transition-all duration-150 ${
+                      isContainerSelected ? 'opacity-100 scale-110' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                    title="Сверху-справа"
+                  />
+                  <div
+                    onMouseDown={(e) => startResize(e, node, 'sw')}
+                    onTouchStart={(e) => startResizeTouch(e, node, 'sw')}
+                    data-drag-ignore
+                    className={`absolute -bottom-2 -left-2 w-4 h-4 cursor-nesw-resize z-40 select-none hover:bg-amber-500/30 active:bg-amber-500/50 rounded-full border-2 border-amber-500 bg-white dark:bg-slate-900 shadow-sm transition-all duration-150 ${
+                      isContainerSelected ? 'opacity-100 scale-110' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                    title="Снизу-слева"
+                  />
+                  <div
+                    onMouseDown={(e) => startResize(e, node, 'se')}
+                    onTouchStart={(e) => startResizeTouch(e, node, 'se')}
+                    data-drag-ignore
+                    className={`absolute -bottom-2.5 -right-2.5 w-5 h-5 cursor-nwse-resize z-40 select-none hover:bg-amber-500/30 active:bg-amber-500/50 rounded-full border-2 border-amber-500 bg-white dark:bg-slate-900 shadow-sm transition-all duration-150 flex items-center justify-center ${
+                      isContainerSelected ? 'opacity-100 scale-110' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                    title="Снизу-справа"
+                  >
+                    <svg width="6" height="6" viewBox="0 0 6 6" className="text-amber-600 dark:text-amber-450 opacity-90">
+                      <line x1="6" y1="0" x2="0" y2="6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                      <line x1="6" y1="3" x2="3" y2="6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                </>
 
                 {/* Anchor connection handles on active select/hover */}
                 {(isSelected || isOpponentHovered || hoveredNodeId === node.id || activeConnector) && (
