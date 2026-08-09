@@ -69,6 +69,122 @@ app.all('/api/google-proxy', express.raw({ type: '*/*', limit: '50mb' }), async 
 
 app.use(express.json());
 
+// Notion Integration API Proxies to bypass browser CORS constraints
+app.post('/api/notion/test-connection', async (req, res) => {
+  const { apiKey, databaseId } = req.body;
+  if (!apiKey || !databaseId) {
+    return res.status(400).json({ error: 'Пожалуйста, заполните API ключ и ID базы данных Notion.' });
+  }
+
+  try {
+    const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await response.json() as any;
+
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: data.message || `Notion API returned status ${response.status}` 
+      });
+    }
+
+    res.json({
+      success: true,
+      title: data.title?.[0]?.plain_text || 'Без названия',
+      properties: data.properties
+    });
+  } catch (err: any) {
+    console.error('Notion test connection failed:', err);
+    res.status(500).json({ error: err.message || 'Ошибка соединения с Notion.' });
+  }
+});
+
+app.post('/api/notion/create-page', async (req, res) => {
+  const { apiKey, databaseId, properties, icon } = req.body;
+  if (!apiKey || !databaseId || !properties) {
+    return res.status(400).json({ error: 'Не все обязательные параметры (apiKey, databaseId, properties) переданы.' });
+  }
+
+  try {
+    const payload: any = {
+      parent: { database_id: databaseId },
+      properties
+    };
+    if (icon) {
+      payload.icon = icon;
+    }
+
+    const response = await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json() as any;
+
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: data.message || `Notion API returned status ${response.status}` 
+      });
+    }
+
+    res.json({
+      success: true,
+      pageId: data.id,
+      url: data.url
+    });
+  } catch (err: any) {
+    console.error('Notion page creation failed:', err);
+    res.status(500).json({ error: err.message || 'Ошибка соединения с Notion.' });
+  }
+});
+
+app.post('/api/notion/update-page', async (req, res) => {
+  const { apiKey, pageId, properties } = req.body;
+  if (!apiKey || !pageId || !properties) {
+    return res.status(400).json({ error: 'Не все обязательные параметры (apiKey, pageId, properties) переданы.' });
+  }
+
+  try {
+    const response = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ properties })
+    });
+
+    const data = await response.json() as any;
+
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: data.message || `Notion API returned status ${response.status}` 
+      });
+    }
+
+    res.json({
+      success: true,
+      pageId: data.id,
+      url: data.url
+    });
+  } catch (err: any) {
+    console.error('Notion page update failed:', err);
+    res.status(500).json({ error: err.message || 'Ошибка соединения с Notion.' });
+  }
+});
+
 // Lazy-initialized Gemini-client to avoid crashing if key is missing on startup
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {

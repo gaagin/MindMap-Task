@@ -54,6 +54,7 @@ import {
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime, getTaskExternalLinks } from './utils';
+import { testNotionConnection, createNotionPage, updateNotionPage } from './lib/notionService';
 import Sidebar from './components/Sidebar';
 import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
@@ -514,7 +515,59 @@ export default function App() {
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const isSyncingSheetsRef = useRef(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
-  const [syncModalTab, setSyncModalTab] = useState<'sheets' | 'backups'>('sheets');
+  const [syncModalTab, setSyncModalTab] = useState<'sheets' | 'notion' | 'backups'>('sheets');
+  const [notionApiKey, setNotionApiKey] = useState(() => localStorage.getItem('milli_notion_api_key') || '');
+  const [notionDatabaseId, setNotionDatabaseId] = useState(() => localStorage.getItem('milli_notion_database_id') || '');
+  const [notionAutoSync, setNotionAutoSync] = useState(() => localStorage.getItem('milli_notion_auto_sync') === 'true');
+  const [notionDbTitle, setNotionDbTitle] = useState(() => localStorage.getItem('milli_notion_db_title') || '');
+  const [notionSchema, setNotionSchema] = useState<any>(() => {
+    try {
+      const raw = localStorage.getItem('milli_notion_schema');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isTestingNotion, setIsTestingNotion] = useState(false);
+  const [notionTestError, setNotionTestError] = useState<string | null>(null);
+  const [notionTestSuccess, setNotionTestSuccess] = useState<string | null>(null);
+  const syncingNodeIdsRef = useRef<Set<string>>(new Set());
+
+  // Background Automatic Notion Sync Effect for newly created tasks
+  useEffect(() => {
+    if (!notionAutoSync || !notionApiKey || !notionDatabaseId) return;
+
+    const allNodes = Object.values(state.nodes).flat() as TaskNode[];
+    const unsyncedNewTasks = allNodes.filter((n: TaskNode) => !n.isNotTask && !n.isEquipment && !n.notionPageId && !syncingNodeIdsRef.current.has(n.id));
+
+    if (unsyncedNewTasks.length === 0) return;
+
+    unsyncedNewTasks.forEach(async (node) => {
+      syncingNodeIdsRef.current.add(node.id);
+      try {
+        const res = await createNotionPage(node, notionApiKey, notionDatabaseId, notionSchema);
+        if (res.success && res.pageId) {
+          setState(prev => {
+            const projNodes = (prev.nodes[node.projectId] || []) as TaskNode[];
+            if (!projNodes.some(n => n.id === node.id)) return prev;
+            
+            return {
+              ...prev,
+              nodes: {
+                ...prev.nodes,
+                [node.projectId]: projNodes.map(n => n.id === node.id ? { ...n, notionPageId: res.pageId } : n)
+              }
+            };
+          });
+        }
+      } catch (err) {
+        console.error(`Auto Notion sync failed for task ${node.id}:`, err);
+      } finally {
+        syncingNodeIdsRef.current.delete(node.id);
+      }
+    });
+  }, [state.nodes, notionAutoSync, notionApiKey, notionDatabaseId, notionSchema]);
+
   const [backupsList, setBackupsList] = useState<any[]>([]);
   const [backupRestoreSuccess, setBackupRestoreSuccess] = useState<string | null>(null);
   const [backupRestoreConfirmId, setBackupRestoreConfirmId] = useState<string | null>(null);
@@ -7372,6 +7425,17 @@ export default function App() {
                 </button>
                 <button 
                   type="button"
+                  onClick={() => setSyncModalTab('notion')}
+                  className={`flex-1 py-3 text-center text-xs font-extrabold border-b-2 transition-all cursor-pointer ${
+                    syncModalTab === 'notion' 
+                      ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 font-bold' 
+                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100/50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  📝 Notion база данных
+                </button>
+                <button 
+                  type="button"
                   onClick={() => setSyncModalTab('backups')}
                   className={`flex-1 py-3 text-center text-xs font-extrabold border-b-2 transition-all cursor-pointer ${
                     syncModalTab === 'backups' 
@@ -7903,6 +7967,254 @@ export default function App() {
                   )}
                 </div>
               </>
+            )}
+
+            {syncModalTab === 'notion' && (
+              <div className="space-y-5 animate-in fade-in duration-200">
+                {/* Visual Header */}
+                <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl flex items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5">
+                      <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                        <path d="M4.172 3.011C3.151 3.011 2.54 3.73 2.54 4.88v14.24c0 1.151.611 1.87 1.632 1.87h15.656c1.021 0 1.632-.719 1.632-1.87V4.88c0-1.151-.611-1.87-1.632-1.87H4.172zm3.327 3.32h9.002c.408 0 .68.204.68.51v1.1c0 .306-.272.51-.68.51H15.02v8.291c0 .544.34.884.884.884h1.6c.408 0 .68.204.68.51v1.1c0 .306-.272.51-.68.51H11.53c-.408 0-.68-.204-.68-.51v-1.1c0-.306.272-.51.68-.51h1.6c.544 0 .884-.34.884-.884V8.961H11.66V13.88c0 .544.34.884.884.884h1.12c.408 0 .68.204.68.51v1.1c0 .306-.272.51-.68.51h-5.01c-.408 0-.68-.204-.68-.51v-1.1c0-.306.272-.51.68-.51h1.12c.544 0 .884-.34.884-.884V8.961H7.5c-.408 0-.68-.204-.68-.51v-1.1c0-.306.272-.51.68-.51z"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-[12px] text-slate-800 dark:text-slate-200 leading-tight">
+                        Интеграция с базой данных Notion
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                        Синхронизируйте ваши задачи из интеллект-карты напрямую в Notion. Каждая задача будет представлена отдельной страницей в вашей базе данных со статусом, приоритетом и сроками!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Connection Status Badge */}
+                {notionDbTitle && (
+                  <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 p-3 rounded-lg flex items-center justify-between text-[11px] text-emerald-800 dark:text-emerald-400">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                      <span>Активное подключение к базе: <b>{notionDbTitle}</b></span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotionDbTitle('');
+                        setNotionSchema(null);
+                        localStorage.removeItem('milli_notion_db_title');
+                        localStorage.removeItem('milli_notion_schema');
+                      }}
+                      className="text-xs hover:underline cursor-pointer text-emerald-600 dark:text-emerald-500 font-bold"
+                    >
+                      Отключить
+                    </button>
+                  </div>
+                )}
+
+                {/* Notion API Configuration Form */}
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4.5 space-y-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-1">
+                      1. Секретный токен интеграции Notion (Integration Secret)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                      value={notionApiKey}
+                      onChange={(e) => {
+                        const val = e.target.value.trim();
+                        setNotionApiKey(val);
+                        localStorage.setItem('milli_notion_api_key', val);
+                      }}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-1">
+                      2. ID Базы Данных Notion (Database ID)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="32-значный UUID базы данных Notion"
+                      value={notionDatabaseId}
+                      onChange={(e) => {
+                        const val = e.target.value.trim();
+                        setNotionDatabaseId(val);
+                        localStorage.setItem('milli_notion_database_id', val);
+                      }}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-1 block">
+                      ID базы данных находится в ссылке Notion страницы сразу после домена / и перед знаком вопроса. Пример: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">notion.so/<b>a1b2c3d4...</b>?v=...</code>
+                    </span>
+                  </div>
+
+                  {/* Auto-sync Option */}
+                  <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
+                    <div>
+                      <h5 className="font-bold text-slate-700 dark:text-slate-300 text-[11px]">Автоматический экспорт новых задач</h5>
+                      <p className="text-[9.5px] text-slate-400">При добавлении задачи на интеллект-карту она сразу появится в Notion</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = !notionAutoSync;
+                        setNotionAutoSync(val);
+                        localStorage.setItem('milli_notion_auto_sync', String(val));
+                      }}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        notionAutoSync ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                          notionAutoSync ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex gap-2 border-t border-slate-100 dark:border-slate-800 pt-3.5">
+                    <button
+                      type="button"
+                      disabled={isTestingNotion || !notionApiKey || !notionDatabaseId}
+                      onClick={async () => {
+                        setIsTestingNotion(true);
+                        setNotionTestError(null);
+                        setNotionTestSuccess(null);
+                        const res = await testNotionConnection(notionApiKey, notionDatabaseId);
+                        setIsTestingNotion(false);
+                        if (res.success) {
+                          setNotionDbTitle(res.title || 'Подключенная база Notion');
+                          setNotionSchema(res.properties);
+                          localStorage.setItem('milli_notion_db_title', res.title || 'Подключенная база Notion');
+                          localStorage.setItem('milli_notion_schema', JSON.stringify(res.properties));
+                          setNotionTestSuccess(`Успешно! Связь установлена с базой: "${res.title}"`);
+                        } else {
+                          setNotionTestError(res.error || 'Ошибка проверки связи. Проверьте правильность токена и ID базы.');
+                        }
+                      }}
+                      className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg text-xs font-extrabold shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {isTestingNotion ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Проверка...</span>
+                        </>
+                      ) : (
+                        <span>Проверить соединение</span>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Errors & Success displays */}
+                  {notionTestError && (
+                    <div className="p-2.5 rounded-lg text-[10px] bg-rose-50 dark:bg-rose-950/20 text-rose-750 dark:text-rose-400 border border-rose-100 dark:border-rose-900/40 font-medium animate-bounce">
+                      ⚠️ {notionTestError}
+                    </div>
+                  )}
+                  {notionTestSuccess && (
+                    <div className="p-2.5 rounded-lg text-[10px] bg-emerald-50 dark:bg-emerald-950/20 text-emerald-750 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/30 font-medium">
+                      ✅ {notionTestSuccess}
+                    </div>
+                  )}
+                </div>
+
+                {/* Bulk Synchronization Actions */}
+                {notionDbTitle && (
+                  <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl space-y-3 animate-slide-in">
+                    <h5 className="font-extrabold text-[11px] text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+                      Массовая синхронизация задач
+                    </h5>
+
+                    {(() => {
+                      const allNodes = Object.values(state.nodes).flat() as TaskNode[];
+                      const filteredTasks = allNodes.filter(n => !n.isNotTask && !n.isEquipment);
+                      const syncedCount = filteredTasks.filter(n => n.notionPageId).length;
+                      const unsyncedCount = filteredTasks.length - syncedCount;
+
+                      return (
+                        <div className="space-y-3.5">
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="p-2 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-lg">
+                              <span className="block text-[10px] text-slate-400">Всего задач</span>
+                              <span className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{filteredTasks.length}</span>
+                            </div>
+                            <div className="p-2 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-lg">
+                              <span className="block text-[10px] text-slate-400">В Notion</span>
+                              <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">{syncedCount}</span>
+                            </div>
+                            <div className="p-2 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-lg">
+                              <span className="block text-[10px] text-slate-400">Не выгружено</span>
+                              <span className="text-sm font-extrabold text-indigo-600 dark:text-indigo-400">{unsyncedCount}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={isTestingNotion || unsyncedCount === 0}
+                            onClick={async () => {
+                              setIsTestingNotion(true);
+                              setNotionTestError(null);
+                              setNotionTestSuccess(`Экспорт начат... Выгружаем ${unsyncedCount} задач...`);
+
+                              let count = 0;
+                              let updatedNodesMap = { ...state.nodes };
+
+                              try {
+                                const unsyncedTasks = filteredTasks.filter(n => !n.notionPageId);
+                                for (const node of unsyncedTasks) {
+                                  const res = await createNotionPage(node, notionApiKey, notionDatabaseId, notionSchema);
+                                  if (res.success && res.pageId) {
+                                    const projNodes = updatedNodesMap[node.projectId] || [];
+                                    updatedNodesMap[node.projectId] = projNodes.map(n => n.id === node.id ? { ...n, notionPageId: res.pageId } : n);
+                                    count++;
+                                    setNotionTestSuccess(`Выгрузка в Notion: ${count} из ${unsyncedCount}...`);
+                                  } else {
+                                    console.error(`Ошибка импорта задачи "${node.text}":`, res.error);
+                                  }
+                                }
+
+                                setState(prev => ({
+                                  ...prev,
+                                  nodes: updatedNodesMap
+                                }));
+
+                                setNotionTestSuccess(`Успешно синхронизировано с Notion задач: ${count}!`);
+                              } catch (err: any) {
+                                setNotionTestError(`Ошибка при выгрузке: ${err.message || err}`);
+                              } finally {
+                                setIsTestingNotion(false);
+                              }
+                            }}
+                            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                              <path d="M4.172 3.011C3.151 3.011 2.54 3.73 2.54 4.88v14.24c0 1.151.611 1.87 1.632 1.87h15.656c1.021 0 1.632-.719 1.632-1.87V4.88c0-1.151-.611-1.87-1.632-1.87H4.172zm3.327 3.32h9.002c.408 0 .68.204.68.51v1.1c0 .306-.272.51-.68.51H15.02v8.291c0 .544.34.884.884.884h1.6c.408 0 .68.204.68.51v1.1c0 .306-.272.51-.68.51H11.53c-.408 0-.68-.204-.68-.51v-1.1c0-.306.272-.51.68-.51h1.6c.544 0 .884-.34.884-.884V8.961H11.66V13.88c0 .544.34.884.884.884h1.12c.408 0 .68.204.68.51v1.1c0 .306-.272.51-.68.51h-5.01c-.408 0-.68-.204-.68-.51v-1.1c0-.306.272-.51.68-.51h1.12c.544 0 .884-.34.884-.884V8.961H7.5c-.408 0-.68-.204-.68-.51v-1.1c0-.306.272-.51.68-.51z"/>
+                            </svg>
+                            <span>Выгрузить несинхронизированные ({unsyncedCount}) задачи в Notion</span>
+                          </button>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Instruction help banner */}
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-155 dark:border-slate-800 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400 space-y-2">
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Как настроить Notion интеграцию:</p>
+                  <ol className="list-decimal pl-4 space-y-1.5">
+                    <li>Перейдите в <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline font-bold">Панель управления интеграциями Notion</a> и создайте новую интеграцию.</li>
+                    <li>Скопируйте полученный <b>Internal Integration Secret</b> и вставьте его в поле №1 выше.</li>
+                    <li>Откройте нужную базу данных в Notion как страницу. В правом верхнем углу нажмите кнопку <b>... (три точки)</b>, прокрутите до конца до <b>Add connections</b> и найдите вашу созданную интеграцию. Подключите её.</li>
+                    <li>Скопируйте 32-значный ID базы данных из URL-адреса и вставьте его в поле №2 выше.</li>
+                    <li>Нажмите "Проверить соединение", чтобы связать и загрузить схему полей вашей базы!</li>
+                  </ol>
+                </div>
+              </div>
             )}
 
 
