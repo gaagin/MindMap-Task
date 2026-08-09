@@ -606,11 +606,12 @@ export function isNodeOverdue(node: TaskNode, allNodes?: TaskNode[]): boolean {
   return false;
 }
 
-// Helper to check if a container contains any overdue task
+// Helper to check if a container or equipment contains any overdue task
 export function isContainerOverdue(containerNode: TaskNode, allNodes: TaskNode[]): boolean {
-  if (!containerNode.isContainer) return false;
+  if (!containerNode.isContainer && !containerNode.isEquipment) return false;
   return allNodes.some(n => 
     !n.isContainer && 
+    !n.isEquipment &&
     !n.isWorkflowRectangle &&
     !n.isNotTask &&
     !n.completed &&
@@ -621,11 +622,12 @@ export function isContainerOverdue(containerNode: TaskNode, allNodes: TaskNode[]
   );
 }
 
-// Helper to check if a container contains any active non-overdue task (with unexpired date or without date)
+// Helper to check if a container or equipment contains any active non-overdue task (with unexpired date or without date)
 export function hasContainerNonOverdueTasks(containerNode: TaskNode, allNodes: TaskNode[]): boolean {
-  if (!containerNode.isContainer) return false;
+  if (!containerNode.isContainer && !containerNode.isEquipment) return false;
   return allNodes.some(n => 
     !n.isContainer && 
+    !n.isEquipment &&
     !n.isWorkflowRectangle &&
     !n.isNotTask &&
     !n.completed &&

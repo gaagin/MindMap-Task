@@ -8027,6 +8027,8 @@ export default function MindMapCanvas({
           const eqH = node.height || 140;
           const cardZIndex = isSelected ? 1000 : 8;
           const equipmentChildren = nodes.filter(n => n.parentId === node.id && !n.archived);
+          const isOverdueEq = isContainerOverdue(node, nodes);
+          const hasNonOverdueEq = hasContainerNonOverdueTasks(node, nodes);
 
           return (
             <React.Fragment key={node.id}>
@@ -8060,16 +8062,26 @@ export default function MindMapCanvas({
                   onSelectNode(node.id, e);
                   onOpenDrawer();
                 }}
-                className={`absolute group cursor-grab active:cursor-grabbing rounded-2xl border-2 p-3 bg-white dark:bg-slate-900 shadow-sm transition-all ${
+                className={`absolute group cursor-grab active:cursor-grabbing rounded-2xl border-2 p-3 shadow-sm transition-all ${
                   isSelected
-                    ? 'border-amber-400 ring-4 ring-amber-400/20 shadow-lg scale-[1.01]'
+                    ? 'border-amber-400 ring-4 ring-amber-400/20 shadow-lg scale-[1.01] bg-white dark:bg-slate-900'
                     : hoverTargetId === node.id
                       ? 'bg-amber-50/50 dark:bg-amber-950/40 border-amber-400 ring-4 ring-amber-400/30 scale-[1.015]'
-                      : 'border-amber-400/80 hover:border-amber-500 dark:border-amber-500/60'
+                      : isOverdueEq
+                        ? 'bg-rose-50/20 dark:bg-rose-950/20 border-rose-500 dark:border-rose-600/80 shadow-[0_0_15px_rgba(239,68,68,0.25)] ring-4 ring-rose-500/20'
+                        : hasNonOverdueEq
+                          ? 'bg-sky-50/20 dark:bg-sky-950/20 border-sky-500 dark:border-sky-500/80 shadow-[0_0_15px_rgba(56,189,248,0.25)] ring-4 ring-sky-500/20'
+                          : 'bg-white dark:bg-slate-900 border-amber-400/80 hover:border-amber-500 dark:border-amber-500/60'
                 }`}
               >
                 {/* Header bar */}
-                <div className="flex items-center justify-between border-b border-amber-200/80 dark:border-amber-800/40 pb-2 mb-2 select-none">
+                <div className={`flex items-center justify-between border-b pb-2 mb-2 select-none ${
+                  isOverdueEq
+                    ? 'border-rose-200 dark:border-rose-900/50'
+                    : hasNonOverdueEq
+                      ? 'border-sky-200 dark:border-sky-900/50'
+                      : 'border-amber-200/80 dark:border-amber-800/40'
+                }`}>
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="text-base shrink-0">⚙️</span>
                     {editingNodeId === node.id ? (
