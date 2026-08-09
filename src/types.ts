@@ -93,8 +93,6 @@ export interface TaskNode {
   subtaskOrder?: number; // Optional field for manual sorting of subtasks
   googleCalendarEventId?: string; // Optional reference to synced Google Calendar event ID
   googleCalendarId?: string; // Optional reference to specific Google Calendar ID
-  notionPageId?: string; // Optional reference to synced Notion page ID
-  notionDatabaseId?: string; // Optional reference to specific Notion database ID
   estimatedTime?: number; // Optional estimated time of work (in hours)
   isNotTask?: boolean; // Optional flag to mark task as a non-task (hide from all views)
   isEquipment?: boolean; // Optional flag for equipment/machinery non-task rectangles
