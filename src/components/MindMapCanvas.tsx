@@ -6194,51 +6194,73 @@ export default function MindMapCanvas({
                     const progress = calculateProgress(container.id, nodes) || 0;
                     
                     return (
-                      <button
+                      <div
                         key={container.id}
-                        onClick={() => {
-                          const targetZoom = 0.85;
-                          setZoom(targetZoom);
-                          
-                          const viewportWidth = window.innerWidth;
-                          const viewportHeight = window.innerHeight;
-                          const cWidth = container.width || 520;
-                          const cHeight = container.height || 400;
-                          
-                          // Center container on the viewport
-                          const targetPanX = (viewportWidth / 2) - (container.x + cWidth / 2) * targetZoom;
-                          const targetPanY = (viewportHeight / 2) - (container.y + cHeight / 2) * targetZoom;
-                          
-                          setPanX(targetPanX);
-                          setPanY(targetPanY);
-                          
-                          onSelectNode(container.id);
-                          setFocusedContainerId(container.id);
-                          setIsContainersDropdownOpen(false);
-                        }}
-                        className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer group animate-in fade-in duration-100"
+                        className="w-full font-semibold hover:bg-slate-50 dark:hover:bg-slate-800/80 p-2 rounded-xl flex items-center justify-between gap-2 transition-colors group animate-in fade-in duration-100 border border-transparent hover:border-slate-200/60 dark:hover:border-slate-700/60"
                       >
-                        <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform">
-                          <Layers className="w-4 h-4 text-indigo-500" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
-                              {container.text || 'Без названия'}
-                            </span>
-                            <span className="text-[9px] text-slate-400 dark:text-slate-500 shrink-0 font-medium font-mono">
-                              Задач: {childCount}
-                            </span>
+                        <button
+                          onClick={() => {
+                            const targetZoom = 0.85;
+                            setZoom(targetZoom);
+                            
+                            const viewportWidth = window.innerWidth;
+                            const viewportHeight = window.innerHeight;
+                            const cWidth = container.width || 520;
+                            const cHeight = container.height || 400;
+                            
+                            // Center container on the viewport
+                            const targetPanX = (viewportWidth / 2) - (container.x + cWidth / 2) * targetZoom;
+                            const targetPanY = (viewportHeight / 2) - (container.y + cHeight / 2) * targetZoom;
+                            
+                            setPanX(targetPanX);
+                            setPanY(targetPanY);
+                            
+                            onSelectNode(container.id);
+                            setFocusedContainerId(container.id);
+                            setIsContainersDropdownOpen(false);
+                          }}
+                          className="flex-1 min-w-0 flex items-center gap-2.5 text-left cursor-pointer"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform">
+                            <Layers className="w-4 h-4 text-indigo-500" />
                           </div>
-                          {/* Progress bar inside dropdown item */}
-                          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full mt-1 overflow-hidden">
-                            <div 
-                              className="bg-indigo-500 h-full rounded-full transition-all duration-300" 
-                              style={{ width: `${progress}%` }}
-                            />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                                {container.text || 'Без названия'}
+                              </span>
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 shrink-0 font-medium font-mono">
+                                Задач: {childCount}
+                              </span>
+                            </div>
+                            {/* Progress bar inside dropdown item */}
+                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full mt-1 overflow-hidden">
+                              <div 
+                                className="bg-indigo-500 h-full rounded-full transition-all duration-300" 
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        
+                        {/* Duplicate Container Action Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onDuplicateEquipment) {
+                              onDuplicateEquipment(container.id);
+                            } else if (onCopyNodes) {
+                              onCopyNodes([container.id]);
+                            }
+                            setIsContainersDropdownOpen(false);
+                          }}
+                          title="Дублировать контейнер со всем содержимым"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 border border-transparent hover:border-amber-200 dark:hover:border-amber-900/40 transition-all cursor-pointer shrink-0"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     );
                   });
                 })()}
@@ -6391,71 +6413,131 @@ export default function MindMapCanvas({
               </div>
             </button>
 
-            {/* Quick Equipment Duplication Option */}
+            {/* Quick Container / Equipment Duplication Options */}
             {(() => {
+              const selContainer = (selectedNodeIds.length === 1 ? nodes.find(n => n.id === selectedNodeIds[0] && n.isContainer) : null) ||
+                                   (selectedNodeId ? nodes.find(n => n.id === selectedNodeId && n.isContainer) : null) ||
+                                   (focusedContainerId ? nodes.find(n => n.id === focusedContainerId && n.isContainer) : null);
               const selEq = (selectedNodeIds.length === 1 ? nodes.find(n => n.id === selectedNodeIds[0] && n.isEquipment) : null) ||
                             (selectedNodeId ? nodes.find(n => n.id === selectedNodeId && n.isEquipment) : null) ||
                             (focusedContainerId ? nodes.find(n => n.id === focusedContainerId && n.isEquipment) : null);
+              
+              const allContainers = nodes.filter(n => n.isContainer && !n.archived);
               const allEqs = nodes.filter(n => n.isEquipment && !n.archived);
 
-              if (selEq) {
-                return (
-                  <button
-                    onClick={() => {
-                      if (onDuplicateEquipment) {
-                        onDuplicateEquipment(selEq.id);
-                      } else if (onCopyNodes) {
-                        onCopyNodes([selEq.id]);
-                      }
-                      setIsElementDropdownOpen(false);
-                    }}
-                    className="w-full text-left font-semibold hover:bg-amber-50 dark:hover:bg-amber-950/40 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group border-t border-amber-200/60 dark:border-amber-900/40 mt-1"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 dark:bg-amber-950/60 flex items-center justify-center shrink-0 border border-amber-500/30 group-hover:scale-105 transition-transform text-amber-600 dark:text-amber-400">
-                      <Copy className="w-5 h-5" />
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300 truncate">
-                        Дублировать «{selEq.text || 'Оборудование'}»
-                      </span>
-                      <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">
-                        Быстрая копия со всеми свойствами
-                      </span>
-                    </div>
-                  </button>
-                );
-              }
+              return (
+                <div className="pt-1 mt-1 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-1.5">
+                  {/* Selected/Focused Container Duplication */}
+                  {selContainer && (
+                    <button
+                      onClick={() => {
+                        if (onDuplicateEquipment) {
+                          onDuplicateEquipment(selContainer.id);
+                        } else if (onCopyNodes) {
+                          onCopyNodes([selContainer.id]);
+                        }
+                        setIsElementDropdownOpen(false);
+                      }}
+                      className="w-full text-left font-semibold hover:bg-amber-50 dark:hover:bg-amber-950/40 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 dark:bg-amber-950/60 flex items-center justify-center shrink-0 border border-amber-500/30 group-hover:scale-105 transition-transform text-amber-600 dark:text-amber-400">
+                        <Copy className="w-5 h-5" />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs font-bold text-amber-700 dark:text-amber-300 truncate">
+                          Дублировать контейнер «{selContainer.text || 'Без названия'}»
+                        </span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">
+                          Быстрая копия со всем содержимым
+                        </span>
+                      </div>
+                    </button>
+                  )}
 
-              if (allEqs.length > 0) {
-                return (
-                  <div className="pt-1.5 mt-1 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-1">
-                    <span className="px-2 text-[10px] font-extrabold uppercase text-amber-600 dark:text-amber-400 tracking-wider">
-                      Дублировать оборудование:
-                    </span>
-                    <div className="max-h-28 overflow-y-auto space-y-0.5">
-                      {allEqs.map(eq => (
-                        <button
-                          key={eq.id}
-                          onClick={() => {
-                            if (onDuplicateEquipment) {
-                              onDuplicateEquipment(eq.id);
-                            } else if (onCopyNodes) {
-                              onCopyNodes([eq.id]);
-                            }
-                            setIsElementDropdownOpen(false);
-                          }}
-                          className="w-full text-left hover:bg-amber-50 dark:hover:bg-amber-950/40 px-2 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer"
-                        >
-                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{eq.text || 'Оборудование'}</span>
-                          <Copy className="w-3.5 h-3.5 text-amber-500 shrink-0 ml-1.5" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              }
+                  {/* Selected/Focused Equipment Duplication */}
+                  {selEq && !selContainer && (
+                    <button
+                      onClick={() => {
+                        if (onDuplicateEquipment) {
+                          onDuplicateEquipment(selEq.id);
+                        } else if (onCopyNodes) {
+                          onCopyNodes([selEq.id]);
+                        }
+                        setIsElementDropdownOpen(false);
+                      }}
+                      className="w-full text-left font-semibold hover:bg-amber-50 dark:hover:bg-amber-950/40 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 dark:bg-amber-950/60 flex items-center justify-center shrink-0 border border-amber-500/30 group-hover:scale-105 transition-transform text-amber-600 dark:text-amber-400">
+                        <Copy className="w-5 h-5" />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs font-bold text-amber-700 dark:text-amber-300 truncate">
+                          Дублировать «{selEq.text || 'Оборудование'}»
+                        </span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">
+                          Быстрая копия со всеми свойствами
+                        </span>
+                      </div>
+                    </button>
+                  )}
 
-              return null;
+                  {/* Container Quick List */}
+                  {!selContainer && allContainers.length > 0 && (
+                    <div className="space-y-1">
+                      <span className="px-2 text-[10px] font-extrabold uppercase text-amber-600 dark:text-amber-400 tracking-wider">
+                        Дублировать контейнер:
+                      </span>
+                      <div className="max-h-28 overflow-y-auto space-y-0.5 custom-scrollbar">
+                        {allContainers.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => {
+                              if (onDuplicateEquipment) {
+                                onDuplicateEquipment(c.id);
+                              } else if (onCopyNodes) {
+                                onCopyNodes([c.id]);
+                              }
+                              setIsElementDropdownOpen(false);
+                            }}
+                            className="w-full text-left hover:bg-amber-50 dark:hover:bg-amber-950/40 px-2 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer"
+                          >
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{c.text || 'Контейнер'}</span>
+                            <Copy className="w-3.5 h-3.5 text-amber-500 shrink-0 ml-1.5" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Equipment Quick List */}
+                  {!selEq && allEqs.length > 0 && (
+                    <div className="space-y-1">
+                      <span className="px-2 text-[10px] font-extrabold uppercase text-amber-600 dark:text-amber-400 tracking-wider">
+                        Дублировать оборудование:
+                      </span>
+                      <div className="max-h-28 overflow-y-auto space-y-0.5 custom-scrollbar">
+                        {allEqs.map(eq => (
+                          <button
+                            key={eq.id}
+                            onClick={() => {
+                              if (onDuplicateEquipment) {
+                                onDuplicateEquipment(eq.id);
+                              } else if (onCopyNodes) {
+                                onCopyNodes([eq.id]);
+                              }
+                              setIsElementDropdownOpen(false);
+                            }}
+                            className="w-full text-left hover:bg-amber-50 dark:hover:bg-amber-950/40 px-2 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer"
+                          >
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{eq.text || 'Оборудование'}</span>
+                            <Copy className="w-3.5 h-3.5 text-amber-500 shrink-0 ml-1.5" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
             })()}
           </div>
         )}
@@ -7448,6 +7530,23 @@ export default function MindMapCanvas({
                       className="flex items-center justify-center w-8 h-8 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
                     >
                       <Eye className="w-4 h-4" />
+                    </button>
+
+                    <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onDuplicateEquipment) {
+                          onDuplicateEquipment(node.id);
+                        } else if (onCopyNodes) {
+                          onCopyNodes([node.id]);
+                        }
+                      }}
+                      title="Дублировать контейнер со всем содержимым"
+                      className="flex items-center justify-center w-8 h-8 text-indigo-650 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-full cursor-pointer transition-colors"
+                    >
+                      <Copy className="w-4 h-4" />
                     </button>
 
                     <div className="w-[1px] h-4.5 bg-slate-200 dark:bg-slate-800 mx-0.5" />
