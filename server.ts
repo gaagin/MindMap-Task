@@ -461,7 +461,24 @@ app.post('/api/gemini/generate', async (req, res) => {
 // ----------------- VITE SERVING MIDDLEWARE -----------------
 
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  let isProduction = process.env.NODE_ENV === 'production';
+  try {
+    if (typeof __filename !== 'undefined') {
+      if (!__filename.endsWith('.ts')) {
+        isProduction = true;
+      }
+    } else if (typeof import.meta !== 'undefined' && import.meta.url) {
+      if (!import.meta.url.endsWith('.ts')) {
+        isProduction = true;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  console.log(`[Server] Starting in ${isProduction ? 'production' : 'development'} mode (NODE_ENV=${process.env.NODE_ENV})...`);
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
