@@ -52,6 +52,11 @@ self.addEventListener('fetch', (event) => {
   // Only handle HTTP/HTTPS, skip other schemes like chrome-extension
   if (!event.request.url.startsWith('http')) return;
 
+  // CRITICAL: Do not intercept non-GET requests or API proxy calls
+  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {

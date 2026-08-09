@@ -70,8 +70,31 @@ app.all('/api/google-proxy', express.raw({ type: '*/*', limit: '50mb' }), async 
 app.use(express.json());
 
 // Notion Integration API Proxies to bypass browser CORS constraints
+function extractNotionDatabaseId(input: string): string {
+  if (!input) return '';
+  const trimmed = input.trim();
+  
+  // If it's a full URL, try to extract the 32-character hex ID before the '?'
+  // e.g. https://www.notion.so/my-workspace/a1b2c3d4e5f678901234567890abcdef?v=...
+  // The ID is always a 32-char hex string (optionally with hyphens)
+  const urlMatch = trimmed.match(/notion\.so\/(?:[^\/]+\/)?([a-fA-F0-9]{32}|[a-fA-F0-9-]{36})/);
+  if (urlMatch && urlMatch[1]) {
+    return urlMatch[1].replace(/-/g, '');
+  }
+  
+  // Otherwise, just strip hyphens and check if it's a 32-character hex string
+  const clean = trimmed.replace(/-/g, '');
+  const hexMatch = clean.match(/([a-fA-F0-9]{32})/);
+  if (hexMatch) {
+    return hexMatch[1];
+  }
+  
+  return trimmed; // fallback
+}
+
 app.post('/api/notion/test-connection', async (req, res) => {
-  const { apiKey, databaseId } = req.body;
+  const { apiKey } = req.body;
+  const databaseId = extractNotionDatabaseId(req.body.databaseId);
   if (!apiKey || !databaseId) {
     return res.status(200).json({ success: false, error: 'Пожалуйста, заполните API ключ и ID базы данных Notion.' });
   }
@@ -122,7 +145,8 @@ app.post('/api/notion/test-connection', async (req, res) => {
 });
 
 app.post('/api/notion/create-page', async (req, res) => {
-  const { apiKey, databaseId, properties, icon } = req.body;
+  const { apiKey, properties, icon } = req.body;
+  const databaseId = extractNotionDatabaseId(req.body.databaseId);
   if (!apiKey || !databaseId || !properties) {
     return res.status(200).json({ success: false, error: 'Не все обязательные параметры (apiKey, databaseId, properties) переданы.' });
   }
