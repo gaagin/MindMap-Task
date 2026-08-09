@@ -108,6 +108,212 @@ interface TaskDetailsPanelProps {
   onDuplicateEquipment?: (id: string) => void;
 }
 
+interface ContainerSearchSelectorProps {
+  currentNodeId: string;
+  currentParentId?: string | null;
+  allNodes: TaskNode[];
+  onSelectContainer: (containerId: string | null) => void;
+  filterByProject?: boolean;
+  currentProjectId?: string;
+  allowWorkflowRectangles?: boolean;
+  accentColor?: 'indigo' | 'amber';
+  label?: string;
+}
+
+const ContainerSearchSelector: React.FC<ContainerSearchSelectorProps> = ({
+  currentNodeId,
+  currentParentId,
+  allNodes,
+  onSelectContainer,
+  filterByProject = false,
+  currentProjectId,
+  allowWorkflowRectangles = false,
+  accentColor = 'indigo',
+  label = 'Родительский контейнер:'
+}) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Filter available containers
+  const containers = React.useMemo(() => {
+    return allNodes.filter(n => {
+      if (n.id === currentNodeId) return false;
+      const isEligible = n.isContainer || (allowWorkflowRectangles && n.isWorkflowRectangle);
+      if (!isEligible) return false;
+      if (filterByProject && currentProjectId && n.projectId !== currentProjectId) return false;
+      return true;
+    });
+  }, [allNodes, currentNodeId, allowWorkflowRectangles, filterByProject, currentProjectId]);
+
+  const filteredContainers = React.useMemo(() => {
+    if (!searchQuery.trim()) return containers;
+    const q = searchQuery.toLowerCase().trim();
+    return containers.filter(c => (c.text || '').toLowerCase().includes(q));
+  }, [containers, searchQuery]);
+
+  const currentContainer = React.useMemo(() => {
+    if (!currentParentId || currentParentId === 'no-container') return null;
+    return allNodes.find(n => n.id === currentParentId) || null;
+  }, [allNodes, currentParentId]);
+
+  const handleSelect = (containerId: string | null) => {
+    onSelectContainer(containerId);
+    setSearchQuery('');
+    setIsExpanded(false);
+  };
+
+  const focusRing = accentColor === 'amber' 
+    ? 'focus:ring-amber-500 border-amber-300 dark:border-amber-700' 
+    : 'focus:ring-indigo-500 border-slate-200 dark:border-slate-700';
+
+  const badgeBg = accentColor === 'amber' 
+    ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-100 border-amber-200 dark:border-amber-800' 
+    : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 border-indigo-200 dark:border-indigo-800/80';
+
+  return (
+    <div className="space-y-2">
+      {label && (
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+            {label}
+          </span>
+          {containers.length > 0 && (
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+              Доступно: {containers.length}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Selected Container Display Badge */}
+      <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs ${
+        currentContainer 
+          ? badgeBg 
+          : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+      }`}>
+        <div className="flex items-center gap-1.5 min-w-0 pr-2">
+          <span className="text-sm shrink-0">
+            {currentContainer ? '📥' : '📦'}
+          </span>
+          <span className="truncate font-semibold">
+            {currentContainer ? (currentContainer.text || 'Контейнер без названия') : 'Без контейнера (Свободная задача)'}
+          </span>
+        </div>
+        {currentContainer && (
+          <button
+            type="button"
+            onClick={() => handleSelect(null)}
+            className="text-[10px] px-2 py-0.5 rounded bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 text-slate-700 dark:text-slate-200 font-bold shrink-0 cursor-pointer transition-colors"
+            title="Отвязать от контейнера"
+          >
+            Сбросить
+          </button>
+        )}
+      </div>
+
+      {/* Live Search Input Field */}
+      <div className="relative">
+        <input
+          type="text"
+          placeholder="Введите название контейнера..."
+          value={searchQuery}
+          onFocus={() => setIsExpanded(true)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setIsExpanded(true);
+          }}
+          className={`w-full text-xs pl-8 pr-7 py-2 bg-white dark:bg-slate-800 border rounded-lg focus:outline-none focus:ring-2 ${focusRing} text-slate-800 dark:text-slate-100 placeholder-slate-400 shadow-sm transition-all`}
+        />
+        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Filtered Container Results List */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-[11px] px-0.5 text-slate-500 dark:text-slate-400">
+          {searchQuery.trim() ? (
+            <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+              Найдено совпадений: {filteredContainers.length}
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 cursor-pointer py-0.5"
+            >
+              <span>{isExpanded ? 'Свернуть список' : 'Показать все доступные контейнеры'}</span>
+              <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+        </div>
+
+        {/* Live Container List */}
+        {(searchQuery.trim() || isExpanded) && (
+          <div className="max-h-52 overflow-y-auto space-y-1 p-1 bg-white dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700 rounded-lg shadow-md">
+            {/* Free/No Container Option */}
+            <button
+              type="button"
+              onClick={() => handleSelect(null)}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors cursor-pointer text-left ${
+                !currentParentId || currentParentId === 'no-container'
+                  ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-900 dark:text-indigo-200 font-bold border border-indigo-200 dark:border-indigo-800'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2 truncate">
+                <span className="text-sm">📦</span>
+                <span className="truncate">Без контейнера (Свободная задача)</span>
+              </div>
+              {(!currentParentId || currentParentId === 'no-container') && (
+                <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              )}
+            </button>
+
+            {/* Matching Items */}
+            {filteredContainers.length > 0 ? (
+              filteredContainers.map(container => {
+                const isSelected = container.id === currentParentId;
+                return (
+                  <button
+                    key={container.id}
+                    type="button"
+                    onClick={() => handleSelect(container.id)}
+                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-md text-xs transition-all cursor-pointer text-left ${
+                      isSelected
+                        ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-900 dark:text-indigo-100 font-bold border border-indigo-300 dark:border-indigo-700'
+                        : 'hover:bg-indigo-50/70 dark:hover:bg-slate-700/80 text-slate-800 dark:text-slate-200 border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 pr-2">
+                      <span className="text-sm shrink-0">📥</span>
+                      <span className="truncate font-medium">{container.text || 'Контейнер без названия'}</span>
+                    </div>
+                    {isSelected && (
+                      <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    )}
+                  </button>
+                );
+              })
+            ) : searchQuery.trim() ? (
+              <div className="p-3 text-center text-xs text-slate-400 dark:text-slate-500 italic">
+                Контейнеры с названием "{searchQuery}" не найдены 🔍
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const PASTEL_COLORS = [
   { value: '#6366f1', name: 'Индиго' },
   { value: '#3b82f6', name: 'Синий' },
@@ -357,6 +563,8 @@ export default function TaskDetailsPanel({
       setOriginalText(node.text || '');
       setOriginalNotes(node.notes || '');
       setActiveModalParam(null);
+      setContainerSearch('');
+      setBlockerSearch('');
     }
   }, [node?.id]);
 
@@ -439,6 +647,7 @@ export default function TaskDetailsPanel({
   const [activeTab, setActiveTab] = useState<'details' | 'chat'>(initialTab);
   const [detailsSubTab, setDetailsSubTab] = useState<'main' | 'dates' | 'tags'>('main');
   const [blockerSearch, setBlockerSearch] = useState('');
+  const [containerSearch, setContainerSearch] = useState('');
 
   // GTD sorting wizard states
   const [isGTDWizardOpen, setIsGTDWizardOpen] = useState(false);
@@ -3190,32 +3399,14 @@ export default function TaskDetailsPanel({
                     {!node.isWorkflowRectangle && !node.isContainer && (
                       <div className="space-y-2 bg-slate-50/40 dark:bg-slate-800/15 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800/50">
                         {onUpdateNodeParent && (
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-505 uppercase block">
-                              Переместить в контейнер:
-                            </span>
-                            <select
-                              value={node.parentId || 'no-container'}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === 'no-container') {
-                                  onUpdateNodeParent(node.id, null);
-                                } else {
-                                  onUpdateNodeParent(node.id, val);
-                                }
-                              }}
-                              className="w-full px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded text-xs focus:outline-none dark:text-slate-100 cursor-pointer"
-                            >
-                              <option value="no-container">📦 Без контейнера</option>
-                              {allNodes
-                                .filter(n => n.isContainer && n.id !== node.id)
-                                .map(container => (
-                                  <option key={container.id} value={container.id}>
-                                    📥 {container.text || 'Без имени'}
-                                  </option>
-                                ))}
-                            </select>
-                          </div>
+                          <ContainerSearchSelector
+                            currentNodeId={node.id}
+                            currentParentId={node.parentId}
+                            allNodes={allNodes}
+                            onSelectContainer={(containerId) => onUpdateNodeParent(node.id, containerId)}
+                            label="Переместить в контейнер:"
+                            accentColor="indigo"
+                          />
                         )}
 
                         {node.containerPlace && (
@@ -5248,26 +5439,23 @@ export default function TaskDetailsPanel({
                         В текущем проекте не обнаружен контейнер, соответствующий шагу "{pendingGtdType === 'trash' ? 'Корзина' : pendingGtdType === 'someday' ? 'Когда-нибудь / Может быть' : pendingGtdType === 'reference' ? 'Справочник' : pendingGtdType === 'projects' ? 'Проекты' : pendingGtdType === 'waiting' ? 'В ожидании' : pendingGtdType === 'calendar' ? 'Календарь' : 'Следующие действия'}".
                         Пожалуйста, выберите нужную область вручную:
                       </p>
-                      <select
-                        value={manualContainerId}
-                        onChange={(e) => setManualContainerId(e.target.value)}
-                        className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-xs dark:text-slate-100 cursor-pointer"
-                      >
-                        <option value="">-- Выберите контейнер --</option>
-                        {allNodes
-                          .filter(n => (n.isContainer || n.isWorkflowRectangle) && n.id !== node.id && n.projectId === node.projectId)
-                          .map(c => (
-                            <option key={c.id} value={c.id}>
-                              📥 {c.text || 'Без названия'}
-                            </option>
-                          ))}
-                      </select>
+                      <ContainerSearchSelector
+                        currentNodeId={node.id}
+                        currentParentId={manualContainerId}
+                        allNodes={allNodes}
+                        onSelectContainer={(containerId) => setManualContainerId(containerId || '')}
+                        filterByProject={true}
+                        currentProjectId={node.projectId}
+                        allowWorkflowRectangles={true}
+                        accentColor="amber"
+                        label="Выбор контейнера:"
+                      />
                       <button
                         type="button"
                         onClick={handleManualMappingSubmit}
                         disabled={!manualContainerId}
-                        className={`w-full py-1.5 rounded-md font-bold text-xs cursor-pointer text-center ${
-                          manualContainerId ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                        className={`w-full py-2 rounded-md font-bold text-xs cursor-pointer text-center transition-colors ${
+                          manualContainerId ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm' : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                         }`}
                       >
                         Переместить в выбранный контейнер
@@ -8541,19 +8729,14 @@ export default function TaskDetailsPanel({
             {activeModalParam === 'container' && (
               <div className="space-y-4">
                 {onUpdateNodeParent && (
-                  <div className="space-y-1.5">
-                    <span className="text-xs font-bold text-slate-450 uppercase block">Родительский контейнер:</span>
-                    <select
-                      value={node.parentId || 'no-container'}
-                      onChange={(e) => onUpdateNodeParent(node.id, e.target.value === 'no-container' ? null : e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 rounded-lg text-xs"
-                    >
-                      <option value="no-container">📦 Вне области (Свободная задача)</option>
-                      {allNodes.filter(n => n.isContainer && n.id !== node.id).map(container => (
-                        <option key={container.id} value={container.id}>📥 {container.text || 'Без имени'}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <ContainerSearchSelector
+                    currentNodeId={node.id}
+                    currentParentId={node.parentId}
+                    allNodes={allNodes}
+                    onSelectContainer={(containerId) => onUpdateNodeParent(node.id, containerId)}
+                    label="Родительский контейнер:"
+                    accentColor="indigo"
+                  />
                 )}
                 {node.containerPlace && (
                   <p className="text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200">
