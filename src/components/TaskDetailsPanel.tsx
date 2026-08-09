@@ -8117,7 +8117,7 @@ export default function TaskDetailsPanel({
     {/* Parameter Settings Modal Overlay */}
     {activeModalParam && (
       <div 
-        className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/75 backdrop-blur-xs flex items-center justify-center z-[110] p-4 animate-fade-in"
+        className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/75 backdrop-blur-xs flex items-center justify-center z-[200] p-4 animate-fade-in"
         onClick={() => setActiveModalParam(null)}
       >
         <div 
@@ -8809,7 +8809,7 @@ export default function TaskDetailsPanel({
 
     {/* Elegant Attachment Image Lightbox Modal */}
     {lightboxImage && (
-      <div className="fixed inset-0 bg-slate-950/90 z-[100] flex flex-col items-center justify-center select-none" onClick={() => setLightboxImage(null)}>
+      <div className="fixed inset-0 bg-slate-950/90 z-[210] flex flex-col items-center justify-center select-none" onClick={() => setLightboxImage(null)}>
         {/* Lightbox Header */}
         <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-black/85 to-transparent px-6 flex items-center justify-between text-white z-10" onClick={e => e.stopPropagation()}>
           <div className="min-w-0">
