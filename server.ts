@@ -86,7 +86,20 @@ app.post('/api/notion/test-connection', async (req, res) => {
       }
     });
 
-    const data = await response.json() as any;
+    const text = await response.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      if (response.status === 404) {
+        return res.status(404).json({
+          error: 'База данных Notion не найдена (404). Пожалуйста, убедитесь, что вы скопировали правильный Database ID и предоставили вашей Интеграции доступ к этой базе данных (через кнопку "..." -> "Add connections" в Notion).'
+        });
+      }
+      return res.status(response.status).json({
+        error: `Некорректный ответ от Notion API (Код ${response.status}). Возможно, неверный ID базы или токен. Ответ сервера: ${text.substring(0, 150)}...`
+      });
+    }
 
     if (!response.ok) {
       return res.status(response.status).json({ 
@@ -130,7 +143,20 @@ app.post('/api/notion/create-page', async (req, res) => {
       body: JSON.stringify(payload)
     });
 
-    const data = await response.json() as any;
+    const text = await response.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      if (response.status === 404) {
+        return res.status(404).json({
+          error: 'База данных или страница Notion не найдена (404). Убедитесь, что интеграция подключена к базе.'
+        });
+      }
+      return res.status(response.status).json({
+        error: `Некорректный ответ от Notion API при создании (Код ${response.status}). Ответ сервера: ${text.substring(0, 150)}...`
+      });
+    }
 
     if (!response.ok) {
       return res.status(response.status).json({ 
@@ -166,7 +192,15 @@ app.post('/api/notion/update-page', async (req, res) => {
       body: JSON.stringify({ properties })
     });
 
-    const data = await response.json() as any;
+    const text = await response.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      return res.status(response.status).json({
+        error: `Некорректный ответ от Notion API при обновлении (Код ${response.status}). Ответ сервера: ${text.substring(0, 150)}...`
+      });
+    }
 
     if (!response.ok) {
       return res.status(response.status).json({ 
