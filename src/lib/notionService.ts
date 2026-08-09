@@ -27,8 +27,18 @@ export async function testNotionConnection(apiKey: string, databaseId: string): 
       body: JSON.stringify({ apiKey, databaseId })
     });
 
-    const data = await res.json();
-    if (!res.ok) {
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      return { 
+        success: false, 
+        error: `Некорректный формат ответа сервера (Код ${res.status}). Возможна ошибка прокси. Ответ сервера: ${text.substring(0, 100)}...` 
+      };
+    }
+
+    if (!res.ok || data.success === false) {
       return { success: false, error: data.error || 'Не удалось связаться с базой данных Notion.' };
     }
 
@@ -191,8 +201,18 @@ export async function createNotionPage(
       body: JSON.stringify({ apiKey, databaseId, properties: pageProperties, icon })
     });
 
-    const data = await res.json();
-    if (!res.ok) {
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      return { 
+        success: false, 
+        error: `Некорректный формат ответа сервера при создании страницы (Код ${res.status}). Ответ сервера: ${text.substring(0, 100)}...` 
+      };
+    }
+
+    if (!res.ok || data.success === false) {
       return { success: false, error: data.error || 'Не удалось создать страницу в Notion.' };
     }
 
@@ -226,8 +246,18 @@ export async function updateNotionPage(
       body: JSON.stringify({ apiKey, pageId, properties: pageProperties })
     });
 
-    const data = await res.json();
-    if (!res.ok) {
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      return { 
+        success: false, 
+        error: `Некорректный формат ответа сервера при обновлении страницы (Код ${res.status}). Ответ сервера: ${text.substring(0, 100)}...` 
+      };
+    }
+
+    if (!res.ok || data.success === false) {
       return { success: false, error: data.error || 'Не удалось обновить страницу в Notion.' };
     }
 

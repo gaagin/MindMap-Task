@@ -73,7 +73,7 @@ app.use(express.json());
 app.post('/api/notion/test-connection', async (req, res) => {
   const { apiKey, databaseId } = req.body;
   if (!apiKey || !databaseId) {
-    return res.status(400).json({ error: 'Пожалуйста, заполните API ключ и ID базы данных Notion.' });
+    return res.status(200).json({ success: false, error: 'Пожалуйста, заполните API ключ и ID базы данных Notion.' });
   }
 
   try {
@@ -92,17 +92,20 @@ app.post('/api/notion/test-connection', async (req, res) => {
       data = JSON.parse(text);
     } catch (e) {
       if (response.status === 404) {
-        return res.status(404).json({
+        return res.status(200).json({
+          success: false,
           error: 'База данных Notion не найдена (404). Пожалуйста, убедитесь, что вы скопировали правильный Database ID и предоставили вашей Интеграции доступ к этой базе данных (через кнопку "..." -> "Add connections" в Notion).'
         });
       }
-      return res.status(response.status).json({
+      return res.status(200).json({
+        success: false,
         error: `Некорректный ответ от Notion API (Код ${response.status}). Возможно, неверный ID базы или токен. Ответ сервера: ${text.substring(0, 150)}...`
       });
     }
 
     if (!response.ok) {
-      return res.status(response.status).json({ 
+      return res.status(200).json({ 
+        success: false,
         error: data.message || `Notion API returned status ${response.status}` 
       });
     }
@@ -114,14 +117,14 @@ app.post('/api/notion/test-connection', async (req, res) => {
     });
   } catch (err: any) {
     console.error('Notion test connection failed:', err);
-    res.status(500).json({ error: err.message || 'Ошибка соединения с Notion.' });
+    res.status(200).json({ success: false, error: err.message || 'Ошибка соединения с Notion.' });
   }
 });
 
 app.post('/api/notion/create-page', async (req, res) => {
   const { apiKey, databaseId, properties, icon } = req.body;
   if (!apiKey || !databaseId || !properties) {
-    return res.status(400).json({ error: 'Не все обязательные параметры (apiKey, databaseId, properties) переданы.' });
+    return res.status(200).json({ success: false, error: 'Не все обязательные параметры (apiKey, databaseId, properties) переданы.' });
   }
 
   try {
@@ -149,17 +152,20 @@ app.post('/api/notion/create-page', async (req, res) => {
       data = JSON.parse(text);
     } catch (e) {
       if (response.status === 404) {
-        return res.status(404).json({
+        return res.status(200).json({
+          success: false,
           error: 'База данных или страница Notion не найдена (404). Убедитесь, что интеграция подключена к базе.'
         });
       }
-      return res.status(response.status).json({
+      return res.status(200).json({
+        success: false,
         error: `Некорректный ответ от Notion API при создании (Код ${response.status}). Ответ сервера: ${text.substring(0, 150)}...`
       });
     }
 
     if (!response.ok) {
-      return res.status(response.status).json({ 
+      return res.status(200).json({ 
+        success: false,
         error: data.message || `Notion API returned status ${response.status}` 
       });
     }
@@ -171,14 +177,14 @@ app.post('/api/notion/create-page', async (req, res) => {
     });
   } catch (err: any) {
     console.error('Notion page creation failed:', err);
-    res.status(500).json({ error: err.message || 'Ошибка соединения с Notion.' });
+    res.status(200).json({ success: false, error: err.message || 'Ошибка соединения с Notion.' });
   }
 });
 
 app.post('/api/notion/update-page', async (req, res) => {
   const { apiKey, pageId, properties } = req.body;
   if (!apiKey || !pageId || !properties) {
-    return res.status(400).json({ error: 'Не все обязательные параметры (apiKey, pageId, properties) переданы.' });
+    return res.status(200).json({ success: false, error: 'Не все обязательные параметры (apiKey, pageId, properties) переданы.' });
   }
 
   try {
@@ -197,13 +203,15 @@ app.post('/api/notion/update-page', async (req, res) => {
     try {
       data = JSON.parse(text);
     } catch (e) {
-      return res.status(response.status).json({
+      return res.status(200).json({
+        success: false,
         error: `Некорректный ответ от Notion API при обновлении (Код ${response.status}). Ответ сервера: ${text.substring(0, 150)}...`
       });
     }
 
     if (!response.ok) {
-      return res.status(response.status).json({ 
+      return res.status(200).json({ 
+        success: false,
         error: data.message || `Notion API returned status ${response.status}` 
       });
     }
@@ -215,7 +223,7 @@ app.post('/api/notion/update-page', async (req, res) => {
     });
   } catch (err: any) {
     console.error('Notion page update failed:', err);
-    res.status(500).json({ error: err.message || 'Ошибка соединения с Notion.' });
+    res.status(200).json({ success: false, error: err.message || 'Ошибка соединения с Notion.' });
   }
 });
 
