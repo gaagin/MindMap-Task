@@ -3590,7 +3590,19 @@ export default function MindMapCanvas({
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (isButtonOrCardInput(e)) return;
     const target = e.target as HTMLElement;
-    if (target.closest('[data-node-id]')) return; // ignore nodes double clicks
+
+    const nodeElement = target.closest('[data-node-id]');
+    if (nodeElement) {
+      const nodeId = nodeElement.getAttribute('data-node-id');
+      const node = nodes.find(n => n.id === nodeId);
+      if (node && (node.isContainer || node.isEquipment)) {
+        e.stopPropagation();
+        setPanX(-node.x * zoom);
+        setPanY(-node.y * zoom);
+        return;
+      }
+      return; // ignore non-container node double clicks
+    }
 
     const coords = getCanvasCoordinates(e.clientX, e.clientY);
     onAddFloatingNode(coords.x, coords.y, focusedContainerId || focusedTaskId, undefined, { useExactCoordinates: true });
@@ -7245,6 +7257,8 @@ export default function MindMapCanvas({
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     setEditingNodeId(node.id);
+                    setPanX(-node.x * zoom);
+                    setPanY(-node.y * zoom);
                   }}
                   onMouseDown={(e) => {
                     const target = e.target as HTMLElement;
