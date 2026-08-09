@@ -3394,6 +3394,64 @@ export default function MindMapCanvas({
       containerFocusStackRef.current = [];
     }
   }, [focusedContainerId]);
+
+  // Center screen on a specific node
+  const centerOnNode = (nodeId: string) => {
+    const targetNode = nodes.find(n => n.id === nodeId);
+    if (!targetNode) return;
+
+    const currentZoom = zoom || 1;
+    setPanX(-targetNode.x * currentZoom);
+    setPanY(-targetNode.y * currentZoom);
+  };
+
+  // Center screen relative to all objects on the main screen (bounding box calculation)
+  const centerOnAllMainObjects = () => {
+    const mainNodes = nodes.filter(n => !n.archived && n.parentId !== 'inbox');
+    if (mainNodes.length === 0) {
+      setPanX(0);
+      setPanY(0);
+      return;
+    }
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    mainNodes.forEach(n => {
+      const w = getNodeWidth(n);
+      const h = getNodeHeight(n);
+      const left = n.x - w / 2;
+      const right = n.x + w / 2;
+      const top = n.y - h / 2;
+      const bottom = n.y + h / 2;
+
+      if (left < minX) minX = left;
+      if (right > maxX) maxX = right;
+      if (top < minY) minY = top;
+      if (bottom > maxY) maxY = bottom;
+    });
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    const bboxWidth = maxX - minX;
+    const bboxHeight = maxY - minY;
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    const viewportW = rect ? rect.width : window.innerWidth;
+    const viewportH = rect ? rect.height : window.innerHeight;
+
+    const padding = 160;
+    const scaleX = (viewportW - padding) / Math.max(bboxWidth, 200);
+    const scaleY = (viewportH - padding) / Math.max(bboxHeight, 200);
+    const fitZoom = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.0);
+
+    setZoom(fitZoom);
+    setPanX(-centerX * fitZoom);
+    setPanY(-centerY * fitZoom);
+  };
   const [isFocusStatsMobileExpanded, setIsFocusStatsMobileExpanded] = useState<boolean>(false);
   const [isMobileViewsListExpanded, setIsMobileViewsListExpanded] = useState<boolean>(false);
 
@@ -3817,9 +3875,7 @@ export default function MindMapCanvas({
   };
 
   const handleRecenter = () => {
-    setPanX(0);
-    setPanY(0);
-    setZoom(1);
+    centerOnAllMainObjects();
   };
 
   // Background Canvas Drag/Panning Handlers
@@ -5009,11 +5065,6 @@ export default function MindMapCanvas({
 
   // Unified function to navigate one level up from focus mode or return to main canvas screen
   const handleGoBackFocus = () => {
-    const centerOffset = {
-      x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
-      y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0
-    };
-
     if (focusedContainerId) {
       const focusedContainer = nodes.find(n => n.id === focusedContainerId);
 
@@ -5024,10 +5075,7 @@ export default function MindMapCanvas({
         const previousContainer = nodes.find(n => n.id === previousContainerId);
         if (previousContainer) {
           containerFocusStackRef.current = stack.slice(0, stack.length - 1);
-          const targetZoom = 0.85;
-          setZoom(targetZoom);
-          setPanX(-previousContainer.x * targetZoom + centerOffset.x);
-          setPanY(-previousContainer.y * targetZoom + centerOffset.y);
+          centerOnNode(previousContainer.id);
           onSelectNode(previousContainer.id);
           setFocusedContainerId(previousContainer.id);
           if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
@@ -5039,10 +5087,7 @@ export default function MindMapCanvas({
       if (focusedContainer && focusedContainer.parentId) {
         const parentNode = nodes.find(n => n.id === focusedContainer.parentId);
         if (parentNode && parentNode.id !== focusedContainer.id) {
-          const targetZoom = 0.85;
-          setZoom(targetZoom);
-          setPanX(-parentNode.x * targetZoom + centerOffset.x);
-          setPanY(-parentNode.y * targetZoom + centerOffset.y);
+          centerOnNode(parentNode.id);
           onSelectNode(parentNode.id);
 
           if (parentNode.isContainer || parentNode.isEquipment) {
@@ -5057,16 +5102,10 @@ export default function MindMapCanvas({
       }
 
       // 3. Return to main canvas screen if at top level or no parent
-      if (focusedContainer) {
-        const targetZoom = 0.85;
-        setZoom(targetZoom);
-        setPanX(-focusedContainer.x * targetZoom + centerOffset.x);
-        setPanY(-focusedContainer.y * targetZoom + centerOffset.y);
-        onSelectNode(focusedContainer.id);
-      }
       setFocusedContainerId(null);
       if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
       containerFocusStackRef.current = [];
+      centerOnAllMainObjects();
       return;
     }
 
@@ -5075,10 +5114,7 @@ export default function MindMapCanvas({
       if (focusedTask && focusedTask.parentId) {
         const parentNode = nodes.find(n => n.id === focusedTask.parentId);
         if (parentNode && parentNode.id !== focusedTask.id) {
-          const targetZoom = 0.85;
-          setZoom(targetZoom);
-          setPanX(-parentNode.x * targetZoom + centerOffset.x);
-          setPanY(-parentNode.y * targetZoom + centerOffset.y);
+          centerOnNode(parentNode.id);
           onSelectNode(parentNode.id);
 
           if (parentNode.isContainer || parentNode.isEquipment) {
@@ -5096,6 +5132,7 @@ export default function MindMapCanvas({
       setFocusedContainerId(null);
       if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
       containerFocusStackRef.current = [];
+      centerOnAllMainObjects();
       return;
     }
 
@@ -5103,6 +5140,7 @@ export default function MindMapCanvas({
     setFocusedContainerId(null);
     if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
     containerFocusStackRef.current = [];
+    centerOnAllMainObjects();
   };
 
   // Check if a card is touching any workflow outer dashed trigger zone
@@ -5981,6 +6019,7 @@ export default function MindMapCanvas({
                     onClick={() => {
                       setFocusedContainerId(null);
                       if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+                      centerOnAllMainObjects();
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-amber-50 dark:hover:bg-slate-850 text-amber-700 dark:text-amber-300 hover:text-amber-800 rounded-lg text-[11px] font-extrabold transition-all duration-200 cursor-pointer border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-slate-900 shadow-sm"
                     title="Выйти из режима фокусировки на главный экран холста"
@@ -6075,6 +6114,7 @@ export default function MindMapCanvas({
                     onClick={() => {
                       setFocusedContainerId(null);
                       if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+                      centerOnAllMainObjects();
                     }}
                     className="p-1.5 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-slate-850 text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-950/20 transition-colors cursor-pointer"
                     title="Выйти на главный экран холста"
@@ -10374,11 +10414,15 @@ export default function MindMapCanvas({
             const previousId = fullscreenHistory[fullscreenHistory.length - 1];
             setFullscreenHistory(prev => prev.slice(0, -1));
             setFullscreenCardId(previousId);
+            centerOnNode(previousId);
           } else if (node.parentId && nodes.some(n => n.id === node.parentId)) {
-            setFullscreenCardId(node.parentId);
+            const parentId = node.parentId;
+            setFullscreenCardId(parentId);
+            centerOnNode(parentId);
           } else {
             setFullscreenCardId(null);
             setFullscreenHistory([]);
+            centerOnAllMainObjects();
           }
         };
 
