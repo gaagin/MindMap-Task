@@ -14,7 +14,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { TaskNode, WorkspaceState } from '../types';
-import { formatNotionDatabaseId } from '../lib/notionSyncService';
+import { formatNotionDatabaseId, testNotionConnectionClient, syncBidirectionalClient } from '../lib/notionClientSync';
 
 interface NotionSyncProps {
   currentWorkspaceState: WorkspaceState;
@@ -69,32 +69,18 @@ export default function NotionSync({
     setStatusMessage('Проверка соединения с Notion API...');
 
     try {
-      const res = await fetch('/api/notion/test-connection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notionKey, databaseId })
-      });
-      
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        const textError = await res.text();
-        setStatus('error');
-        setStatusMessage(`Сервер вернул некорректный ответ (HTML вместо JSON). Статус: ${res.status}. ${textError.includes('<!DOCTYPE') || textError.includes('The page') ? 'Возможно, бэкенд перезагружается или путь к API неверен.' : textError.substring(0, 120)}`);
-        return;
-      }
+      const result = await testNotionConnectionClient(notionKey, databaseId);
 
-      const data = await res.json();
-
-      if (data.success) {
+      if (result.success) {
         setStatus('success');
-        if (data.missingProperties && data.missingProperties.length > 0) {
-          setStatusMessage(`Подключено к базы "${data.databaseTitle}", но отсутствуют свойства: ${data.missingProperties.join(', ')}`);
+        if (result.missingProperties && result.missingProperties.length > 0) {
+          setStatusMessage(`Подключено к базе "${result.databaseTitle}", но отсутствуют свойства: ${result.missingProperties.join(', ')}`);
         } else {
-          setStatusMessage(`Успешное подключение к Notion базе: "${data.databaseTitle}"! Все свойства валидны.`);
+          setStatusMessage(`Успешное подключение к Notion базе: "${result.databaseTitle}"! Все свойства валидны.`);
         }
       } else {
         setStatus('error');
-        setStatusMessage(data.error || 'Не удалось подключиться к Notion.');
+        setStatusMessage(result.error || 'Не удалось подключиться к Notion.');
       }
     } catch (err: any) {
       setStatus('error');
@@ -113,36 +99,8 @@ export default function NotionSync({
       // Gather all current tasks across projects
       const allTasks: TaskNode[] = Object.values(currentWorkspaceState.nodes || {}).flat().filter(Boolean);
 
-      // Convert TaskNode to lightweight payload for server
-      const tasksPayload = allTasks.map(t => ({
-        id: t.id,
-        text: t.text,
-        completed: t.completed,
-        status: t.status || (t.completed ? 'done' : 'todo'),
-        notionPageId: t.notionPageId,
-        updatedAt: t.updatedAt || new Date().toISOString(),
-      }));
-
-      const res = await fetch('/api/notion/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tasks: tasksPayload,
-          notionKey,
-          databaseId
-        })
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        const textError = await res.text();
-        setStatus('error');
-        setStatusMessage(`Сервер вернул некорректный ответ при синхронизации (HTML вместо JSON). Статус: ${res.status}. ${textError.includes('<!DOCTYPE') || textError.includes('The page') ? 'Возможно, бэкенд перезагружается или не запущен.' : textError.substring(0, 120)}`);
-        isSyncingRef.current = false;
-        return;
-      }
-
-      const data = await res.json();
+      // Call the client-side bidirectional sync engine
+      const data = await syncBidirectionalClient(allTasks, notionKey, databaseId);
 
       if (data.success) {
         setStatus('success');
