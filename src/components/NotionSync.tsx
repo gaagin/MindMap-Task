@@ -74,6 +74,15 @@ export default function NotionSync({
       if (databaseId) queryParams.append('databaseId', databaseId);
 
       const res = await fetch(`/api/notion/test-connection?${queryParams.toString()}`);
+      
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const textError = await res.text();
+        setStatus('error');
+        setStatusMessage(`Сервер вернул некорректный ответ (HTML вместо JSON). Статус: ${res.status}. ${textError.includes('<!DOCTYPE') || textError.includes('The page') ? 'Возможно, бэкенд перезагружается или путь к API неверен.' : textError.substring(0, 120)}`);
+        return;
+      }
+
       const data = await res.json();
 
       if (data.success) {
@@ -123,6 +132,15 @@ export default function NotionSync({
           databaseId
         })
       });
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const textError = await res.text();
+        setStatus('error');
+        setStatusMessage(`Сервер вернул некорректный ответ при синхронизации (HTML вместо JSON). Статус: ${res.status}. ${textError.includes('<!DOCTYPE') || textError.includes('The page') ? 'Возможно, бэкенд перезагружается или не запущен.' : textError.substring(0, 120)}`);
+        isSyncingRef.current = false;
+        return;
+      }
 
       const data = await res.json();
 

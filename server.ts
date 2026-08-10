@@ -11,7 +11,7 @@ import {
   getNotionDatabaseId,
   NotionConfig,
   ServiceTask
-} from './src/lib/notionSyncService.js';
+} from './src/lib/notionSyncService';
 
 const app = express();
 const PORT = 3000;
