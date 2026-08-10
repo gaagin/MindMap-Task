@@ -19,6 +19,78 @@ export interface BidirectionalSyncResult {
 }
 
 /**
+ * Executes a fetch request to the target URL through a CORS proxy.
+ * Tries multiple options (including raw and encoded queries) to bypass CORS restrictions.
+ */
+async function fetchViaProxy(
+  url: string,
+  options: {
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+  }
+): Promise<Response> {
+  const proxyStrategies = [
+    {
+      name: 'corsproxy.io (raw)',
+      getUrl: (target: string) => `https://corsproxy.io/?${target}`
+    },
+    {
+      name: 'corsproxy.io (encoded)',
+      getUrl: (target: string) => `https://corsproxy.io/?${encodeURIComponent(target)}`
+    },
+    {
+      name: 'allorigins',
+      getUrl: (target: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`
+    }
+  ];
+
+  let lastError: Error | null = null;
+  for (const strategy of proxyStrategies) {
+    try {
+      const proxyUrl = strategy.getUrl(url);
+      console.log(`[ProxyFetch] Trying ${strategy.name}: ${proxyUrl}`);
+      const res = await fetch(proxyUrl, {
+        method: options.method,
+        headers: options.headers,
+        body: options.body
+      });
+      return res;
+    } catch (err: any) {
+      console.warn(`[ProxyFetch] Strategy ${strategy.name} failed:`, err.message || err);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Не удалось выполнить запрос через CORS-прокси. Проверьте сетевое подключение.');
+}
+
+/**
+ * Handles errors gracefully, reading raw text if JSON parsing fails to provide detailed error logs.
+ */
+async function handleResponseError(res: Response): Promise<never> {
+  let errorText = '';
+  try {
+    errorText = await res.text();
+  } catch (e) {
+    errorText = res.statusText || 'Unknown error';
+  }
+
+  let errorMsg = `Ошибка HTTP ${res.status}`;
+  try {
+    const parsed = JSON.parse(errorText);
+    if (parsed && parsed.message) {
+      errorMsg = `${parsed.message} (${parsed.code || res.status})`;
+    } else {
+      errorMsg = errorText || res.statusText || errorMsg;
+    }
+  } catch (e) {
+    errorMsg = errorText || res.statusText || errorMsg;
+  }
+  throw new Error(errorMsg);
+}
+
+/**
  * Format raw Notion Database ID or URL to standard UUID with hyphens:
  * XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
  */
@@ -88,9 +160,8 @@ export async function testNotionConnectionClient(
 
     const cleanDatabaseId = formatNotionDatabaseId(databaseId);
     const targetUrl = `https://api.notion.com/v1/databases/${cleanDatabaseId}`;
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
-    const res = await fetch(proxyUrl, {
+    const res = await fetchViaProxy(targetUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${notionKey}`,
@@ -100,11 +171,7 @@ export async function testNotionConnectionClient(
     });
 
     if (!res.ok) {
-      const errorText = await res.text();
-      return {
-        success: false,
-        error: `Ошибка Notion API (${res.status}): ${errorText}`
-      };
+      await handleResponseError(res);
     }
 
     const dbInfo = await res.json();
@@ -132,7 +199,7 @@ export async function testNotionConnectionClient(
     console.error('[testNotionConnectionClient Error]', err);
     return {
       success: false,
-      error: `Ошибка сети при проверке связи: ${err.message || err}`
+      error: `Ошибка при проверке связи: ${err.message || err}`
     };
   }
 }
@@ -186,9 +253,8 @@ async function createTaskInNotionClient(
     };
 
     const targetUrl = `https://api.notion.com/v1/pages`;
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
-    const res = await fetch(proxyUrl, {
+    const res = await fetchViaProxy(targetUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${notionKey}`,
@@ -202,8 +268,7 @@ async function createTaskInNotionClient(
     });
 
     if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Ошибка создания страницы в Notion (${res.status}): ${errText}`);
+      await handleResponseError(res);
     }
 
     const responseData = await res.json();
@@ -279,9 +344,8 @@ async function updateTaskInNotionClient(
     };
 
     const targetUrl = `https://api.notion.com/v1/pages/${task.notionPageId}`;
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
-    const res = await fetch(proxyUrl, {
+    const res = await fetchViaProxy(targetUrl, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${notionKey}`,
@@ -294,8 +358,7 @@ async function updateTaskInNotionClient(
     });
 
     if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Ошибка обновления страницы в Notion (${res.status}): ${errText}`);
+      await handleResponseError(res);
     }
 
     const syncedAtMs = Date.now();
@@ -339,10 +402,9 @@ export async function syncBidirectionalClient(
     console.log(`[NotionSyncClient] Starting bidirectional sync with database ${cleanDatabaseId}...`);
 
     const targetUrl = `https://api.notion.com/v1/databases/${cleanDatabaseId}/query`;
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
     // 1. Fetch all active pages from Notion Database
-    const res = await fetch(proxyUrl, {
+    const res = await fetchViaProxy(targetUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${notionKey}`,
@@ -355,8 +417,7 @@ export async function syncBidirectionalClient(
     });
 
     if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Ошибка запроса к Notion API (${res.status}): ${errText}`);
+      await handleResponseError(res);
     }
 
     const queryResponse = await res.json();
