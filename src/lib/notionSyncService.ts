@@ -40,6 +40,32 @@ export function getNotionClient(customKey?: string): Client {
 }
 
 /**
+ * Format raw Notion Database ID or URL to standard UUID with hyphens:
+ * XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+ */
+export function formatNotionDatabaseId(rawInput: string): string {
+  if (!rawInput) return '';
+
+  let cleaned = rawInput.trim();
+
+  // If a full URL was pasted (e.g., https://www.notion.so/myworkspace/8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d?v=...)
+  const urlMatch = cleaned.match(/([a-f0-9]{32})/i) || cleaned.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+  if (urlMatch) {
+    cleaned = urlMatch[1];
+  }
+
+  // Remove existing hyphens
+  const hexOnly = cleaned.replace(/-/g, '');
+
+  // Format 32-hex string into UUID with hyphens (8-4-4-4-12)
+  if (hexOnly.length === 32 && /^[a-f0-9]{32}$/i.test(hexOnly)) {
+    return `${hexOnly.slice(0, 8)}-${hexOnly.slice(8, 12)}-${hexOnly.slice(12, 16)}-${hexOnly.slice(16, 20)}-${hexOnly.slice(20)}`;
+  }
+
+  return rawInput.trim();
+}
+
+/**
  * Helper to get Notion Database ID from config or environment
  */
 export function getNotionDatabaseId(customDbId?: string): string {
@@ -47,7 +73,7 @@ export function getNotionDatabaseId(customDbId?: string): string {
   if (!dbId) {
     throw new Error('NOTION_DATABASE_ID is not defined. Please set NOTION_DATABASE_ID environment variable.');
   }
-  return dbId.replace(/-/g, ''); // Standardize formatted UUIDs
+  return formatNotionDatabaseId(dbId);
 }
 
 /**

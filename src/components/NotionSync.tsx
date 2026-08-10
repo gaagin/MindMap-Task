@@ -14,6 +14,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { TaskNode, WorkspaceState } from '../types';
+import { formatNotionDatabaseId } from '../lib/notionSyncService';
 
 interface NotionSyncProps {
   currentWorkspaceState: WorkspaceState;
@@ -27,7 +28,12 @@ export default function NotionSync({
   activeProjectId
 }: NotionSyncProps) {
   const [notionKey, setNotionKey] = useState<string>(() => localStorage.getItem('notion_key') || '');
-  const [databaseId, setDatabaseId] = useState<string>(() => localStorage.getItem('notion_database_id') || '');
+  const [databaseId, setDatabaseId] = useState<string>(() => formatNotionDatabaseId(localStorage.getItem('notion_database_id') || ''));
+
+  const handleDatabaseIdChange = (value: string) => {
+    const formatted = formatNotionDatabaseId(value);
+    setDatabaseId(formatted);
+  };
   const [autoSync, setAutoSync] = useState<boolean>(() => localStorage.getItem('notion_auto_sync') === 'true');
   const [pollInterval, setPollInterval] = useState<number>(30); // seconds
 
@@ -289,9 +295,10 @@ export default function NotionSync({
             <Database className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" />
             <input
               type="text"
-              placeholder="32-символьный ID базы данных"
+              placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
               value={databaseId}
               onChange={(e) => setDatabaseId(e.target.value)}
+              onBlur={(e) => setDatabaseId(formatNotionDatabaseId(e.target.value))}
               className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
             />
           </div>
