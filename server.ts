@@ -313,9 +313,9 @@ app.post('/api/gemini/generate', async (req, res) => {
 // ----------------- NOTION SYNC API ROUTES -----------------
 
 // Test connection endpoint
-app.get('/api/notion/test-connection', async (req, res) => {
-  const notionKey = (req.query.notionKey as string) || process.env.NOTION_KEY;
-  const databaseId = (req.query.databaseId as string) || process.env.NOTION_DATABASE_ID;
+app.all('/api/notion/test-connection', async (req, res) => {
+  const notionKey = (req.body?.notionKey as string) || (req.query?.notionKey as string) || process.env.NOTION_KEY;
+  const databaseId = (req.body?.databaseId as string) || (req.query?.databaseId as string) || process.env.NOTION_DATABASE_ID;
 
   try {
     if (!notionKey || !databaseId) {

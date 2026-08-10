@@ -69,11 +69,11 @@ export default function NotionSync({
     setStatusMessage('Проверка соединения с Notion API...');
 
     try {
-      const queryParams = new URLSearchParams();
-      if (notionKey) queryParams.append('notionKey', notionKey);
-      if (databaseId) queryParams.append('databaseId', databaseId);
-
-      const res = await fetch(`/api/notion/test-connection?${queryParams.toString()}`);
+      const res = await fetch('/api/notion/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notionKey, databaseId })
+      });
       
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
