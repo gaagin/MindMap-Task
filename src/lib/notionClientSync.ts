@@ -19,75 +19,54 @@ export interface BidirectionalSyncResult {
 }
 
 /**
- * Executes a fetch request to the target URL through a CORS proxy.
- * Tries multiple options (including raw and encoded queries) to bypass CORS restrictions.
+ * Robust helper to fetch data from Notion via the reliable AllOrigins CORS proxy.
+ * Transmits proper Notion API headers and respects a 10-second request timeout.
  */
-async function fetchViaProxy(
+async function fetchNotionViaProxy(
   url: string,
-  options: {
-    method: string;
-    headers: Record<string, string>;
-    body?: string;
-  }
-): Promise<Response> {
-  const proxyStrategies = [
-    {
-      name: 'corsproxy.io (raw)',
-      getUrl: (target: string) => `https://corsproxy.io/?${target}`
-    },
-    {
-      name: 'corsproxy.io (encoded)',
-      getUrl: (target: string) => `https://corsproxy.io/?${encodeURIComponent(target)}`
-    },
-    {
-      name: 'allorigins',
-      getUrl: (target: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`
-    }
-  ];
+  key: string,
+  method: 'GET' | 'POST' | 'PATCH' = 'POST',
+  body: any = null
+): Promise<any> {
+  const targetUrl = encodeURIComponent(url);
+  const proxyUrl = `https://api.allorigins.win/raw?url=${targetUrl}`;
+  
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${key.trim()}`,
+    'Notion-Version': '2022-06-28',
+    'Content-Type': 'application/json'
+  };
 
-  let lastError: Error | null = null;
-  for (const strategy of proxyStrategies) {
-    try {
-      const proxyUrl = strategy.getUrl(url);
-      console.log(`[ProxyFetch] Trying ${strategy.name}: ${proxyUrl}`);
-      const res = await fetch(proxyUrl, {
-        method: options.method,
-        headers: options.headers,
-        body: options.body
-      });
-      return res;
-    } catch (err: any) {
-      console.warn(`[ProxyFetch] Strategy ${strategy.name} failed:`, err.message || err);
-      lastError = err;
-    }
+  const options: RequestInit = {
+    method: method,
+    headers: headers,
+  };
+
+  if (body && method !== 'GET') {
+    options.body = JSON.stringify(body);
   }
 
-  throw lastError || new Error('Не удалось выполнить запрос через CORS-прокси. Проверьте сетевое подключение.');
-}
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 sec timeout
+  options.signal = controller.signal;
 
-/**
- * Handles errors gracefully, reading raw text if JSON parsing fails to provide detailed error logs.
- */
-async function handleResponseError(res: Response): Promise<never> {
-  let errorText = '';
   try {
-    errorText = await res.text();
-  } catch (e) {
-    errorText = res.statusText || 'Unknown error';
-  }
+    const response = await fetch(proxyUrl, options);
+    clearTimeout(timeoutId);
 
-  let errorMsg = `Ошибка HTTP ${res.status}`;
-  try {
-    const parsed = JSON.parse(errorText);
-    if (parsed && parsed.message) {
-      errorMsg = `${parsed.message} (${parsed.code || res.status})`;
-    } else {
-      errorMsg = errorText || res.statusText || errorMsg;
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Notion API Error (${response.status}): ${errorText.slice(0, 150)}`);
     }
-  } catch (e) {
-    errorMsg = errorText || res.statusText || errorMsg;
+
+    return await response.json();
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('Превышено время ожидания ответа от Notion (Таймаут 10 сек)');
+    }
+    throw err;
   }
-  throw new Error(errorMsg);
 }
 
 /**
@@ -161,20 +140,8 @@ export async function testNotionConnectionClient(
     const cleanDatabaseId = formatNotionDatabaseId(databaseId);
     const targetUrl = `https://api.notion.com/v1/databases/${cleanDatabaseId}`;
 
-    const res = await fetchViaProxy(targetUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${notionKey}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      }
-    });
+    const dbInfo = await fetchNotionViaProxy(targetUrl, notionKey, 'GET');
 
-    if (!res.ok) {
-      await handleResponseError(res);
-    }
-
-    const dbInfo = await res.json();
     const props = dbInfo.properties || {};
     const hasTitle = Boolean(props.Title || props.Name);
     const hasStatus = Boolean(props.Status);
@@ -254,24 +221,10 @@ async function createTaskInNotionClient(
 
     const targetUrl = `https://api.notion.com/v1/pages`;
 
-    const res = await fetchViaProxy(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${notionKey}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        parent: { database_id: cleanDatabaseId },
-        properties,
-      })
+    const responseData = await fetchNotionViaProxy(targetUrl, notionKey, 'POST', {
+      parent: { database_id: cleanDatabaseId },
+      properties,
     });
-
-    if (!res.ok) {
-      await handleResponseError(res);
-    }
-
-    const responseData = await res.json();
     const notionPageId = responseData.id;
     const syncedAtMs = Date.now();
 
@@ -345,21 +298,9 @@ async function updateTaskInNotionClient(
 
     const targetUrl = `https://api.notion.com/v1/pages/${task.notionPageId}`;
 
-    const res = await fetchViaProxy(targetUrl, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${notionKey}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        properties,
-      })
+    await fetchNotionViaProxy(targetUrl, notionKey, 'PATCH', {
+      properties,
     });
-
-    if (!res.ok) {
-      await handleResponseError(res);
-    }
 
     const syncedAtMs = Date.now();
     syncTimestampCache.set(task.id, syncedAtMs);
@@ -404,23 +345,9 @@ export async function syncBidirectionalClient(
     const targetUrl = `https://api.notion.com/v1/databases/${cleanDatabaseId}/query`;
 
     // 1. Fetch all active pages from Notion Database
-    const res = await fetchViaProxy(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${notionKey}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        page_size: 100
-      })
+    const queryResponse = await fetchNotionViaProxy(targetUrl, notionKey, 'POST', {
+      page_size: 100
     });
-
-    if (!res.ok) {
-      await handleResponseError(res);
-    }
-
-    const queryResponse = await res.json();
     const notionPages = queryResponse.results || [];
     console.log(`[NotionSyncClient] Fetched ${notionPages.length} active pages from Notion.`);
 
