@@ -3401,9 +3401,21 @@ export default function MindMapCanvas({
     nodesRef.current = nodes;
   }, [nodes]);
 
+  // Track previous focus state to detect returning to main canvas view
+  const prevFocusRef = useRef<{ containerId: string | null; taskId: string | null }>({
+    containerId: focusedContainerId,
+    taskId: focusedTaskId
+  });
+
+  // Track active project changes to center canvas on project switch
+  const prevProjectIdRef = useRef<string | null>(activeProjectId);
+
   // Automatically center and fit children when entering a container or a focused task
   useEffect(() => {
+    const wasFocused = prevFocusRef.current.containerId !== null || prevFocusRef.current.taskId !== null;
     const focusId = focusedContainerId || focusedTaskId;
+    prevFocusRef.current = { containerId: focusedContainerId, taskId: focusedTaskId };
+
     if (focusId) {
       const currentNodes = nodesRef.current;
       // Find all nested child/descendant nodes belonging to this focused item
@@ -3459,8 +3471,23 @@ export default function MindMapCanvas({
         setPanX(-centerX * fitZoom);
         setPanY(-centerY * fitZoom);
       }
+    } else if (wasFocused && !focusId) {
+      // Exited focus mode back to main canvas screen
+      setTimeout(() => {
+        centerOnAllMainObjects();
+      }, 20);
     }
   }, [focusedContainerId, focusedTaskId]);
+
+  // Recenter when active project changes
+  useEffect(() => {
+    if (prevProjectIdRef.current !== activeProjectId) {
+      prevProjectIdRef.current = activeProjectId;
+      setTimeout(() => {
+        centerOnAllMainObjects();
+      }, 50);
+    }
+  }, [activeProjectId]);
 
   // Center screen on a specific node
   const centerOnNode = (nodeId: string) => {
@@ -3474,10 +3501,40 @@ export default function MindMapCanvas({
 
   // Center screen relative to all objects on the main screen (bounding box calculation)
   const centerOnAllMainObjects = () => {
-    const mainNodes = nodes.filter(n => !n.archived && n.parentId !== 'inbox');
-    if (mainNodes.length === 0) {
+    const currentNodes = nodesRef.current && nodesRef.current.length > 0 ? nodesRef.current : nodes;
+
+    // Filter nodes that are visible directly on the main canvas level (not inbox, not archived, not inside a container card)
+    let candidateNodes = currentNodes.filter(n => {
+      if (n.archived || n.parentId === 'inbox') return false;
+
+      // Always include top-level root nodes, containers, equipment, workflow blocks, or floating items
+      if (n.parentId === null || n.parentId === 'root' || n.isContainer || n.isEquipment || n.isWorkflowRectangle || n.isFloating) {
+        return true;
+      }
+
+      // Check if node is nested inside a container/equipment or collapsed ancestor
+      let currentParentId = n.parentId;
+      while (currentParentId !== null) {
+        const parent = currentNodes.find(p => p.id === currentParentId);
+        if (!parent) break;
+        if (parent.isContainer || parent.isEquipment || parent.collapsed) {
+          return false; // Hidden from main canvas or rendered inside container
+        }
+        currentParentId = parent.parentId;
+      }
+      return true;
+    });
+
+    // Fallback 1: If no top-level candidate nodes exist, fall back to any active non-inbox nodes
+    if (candidateNodes.length === 0) {
+      candidateNodes = currentNodes.filter(n => !n.archived && n.parentId !== 'inbox');
+    }
+
+    // Fallback 2: If the project has no nodes at all, center at (0, 0)
+    if (candidateNodes.length === 0) {
       setPanX(0);
       setPanY(0);
+      setZoom(1);
       return;
     }
 
@@ -3486,7 +3543,7 @@ export default function MindMapCanvas({
     let minY = Infinity;
     let maxY = -Infinity;
 
-    mainNodes.forEach(n => {
+    candidateNodes.forEach(n => {
       const w = getNodeWidth(n);
       const h = getNodeHeight(n);
       const left = n.x - w / 2;
@@ -3507,10 +3564,10 @@ export default function MindMapCanvas({
     const bboxHeight = maxY - minY;
 
     const rect = containerRef.current?.getBoundingClientRect();
-    const viewportW = rect ? rect.width : window.innerWidth;
-    const viewportH = rect ? rect.height : window.innerHeight;
+    const viewportW = rect && rect.width > 0 ? rect.width : window.innerWidth;
+    const viewportH = rect && rect.height > 0 ? rect.height : window.innerHeight;
 
-    const padding = 160;
+    const padding = 220;
     const scaleX = (viewportW - padding) / Math.max(bboxWidth, 200);
     const scaleY = (viewportH - padding) / Math.max(bboxHeight, 200);
     const fitZoom = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.0);
@@ -10558,7 +10615,7 @@ export default function MindMapCanvas({
         };
 
         return (
-          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-fade-in" onClick={() => { setFullscreenCardId(null); setFullscreenHistory([]); }}>
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-fade-in" onClick={() => { setFullscreenCardId(null); setFullscreenHistory([]); centerOnAllMainObjects(); }}>
             <div className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-3xl shadow-2xl w-full max-w-lg h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
               {/* Header with High Contrast */}
               <div className="px-6 py-4 border-b-2 border-slate-300 dark:border-slate-800 flex items-center justify-between bg-slate-100 dark:bg-slate-950">
@@ -10583,6 +10640,7 @@ export default function MindMapCanvas({
                   onClick={() => {
                     setFullscreenCardId(null);
                     setFullscreenHistory([]);
+                    centerOnAllMainObjects();
                   }}
                   className="p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-900 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer border border-transparent hover:border-slate-300 dark:hover:border-slate-700"
                   title="Вернуться к стандартному виду"
