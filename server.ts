@@ -2,6 +2,16 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { 
+  syncBidirectional, 
+  createTaskInNotion, 
+  updateTaskInNotion, 
+  deleteTaskInNotion,
+  getNotionClient,
+  getNotionDatabaseId,
+  NotionConfig,
+  ServiceTask
+} from './src/lib/notionSyncService.js';
 
 const app = express();
 const PORT = 3000;
@@ -297,6 +307,138 @@ app.post('/api/gemini/generate', async (req, res) => {
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Ошибка обработки запроса к Gemini API.' });
+  }
+});
+
+// ----------------- NOTION SYNC API ROUTES -----------------
+
+// Test connection endpoint
+app.get('/api/notion/test-connection', async (req, res) => {
+  const notionKey = (req.query.notionKey as string) || process.env.NOTION_KEY;
+  const databaseId = (req.query.databaseId as string) || process.env.NOTION_DATABASE_ID;
+
+  try {
+    if (!notionKey || !databaseId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Переменные NOTION_KEY и NOTION_DATABASE_ID не настроены. Укажите их в .env файле или передайте в параметрах.'
+      });
+    }
+
+    const notion = getNotionClient(notionKey);
+    const dbId = getNotionDatabaseId(databaseId);
+
+    const dbInfo = await notion.databases.retrieve({ database_id: dbId });
+    
+    // Validate required properties
+    const props = (dbInfo as any).properties || {};
+    const hasTitle = Boolean(props.Title || props.Name);
+    const hasStatus = Boolean(props.Status);
+    const hasAppId = Boolean(props.App_ID);
+
+    res.json({
+      success: true,
+      databaseTitle: (dbInfo as any).title?.[0]?.plain_text || 'Untitled Database',
+      propertiesCheck: {
+        hasTitle,
+        hasStatus,
+        hasAppId,
+      },
+      missingProperties: [
+        !hasTitle && 'Title (title)',
+        !hasStatus && 'Status (select или status)',
+        !hasAppId && 'App_ID (rich_text или number)'
+      ].filter(Boolean)
+    });
+  } catch (error: any) {
+    console.error('[Notion API Test Error]', error);
+    res.status(500).json({
+      success: false,
+      error: `Ошибка подключения к Notion: ${error.message || error}`
+    });
+  }
+});
+
+// Full Bidirectional Sync endpoint
+app.post('/api/notion/sync', async (req, res) => {
+  try {
+    const { tasks, notionKey, databaseId } = req.body;
+    
+    if (!Array.isArray(tasks)) {
+      return res.status(400).json({ error: 'Поле tasks должно быть массивом задач.' });
+    }
+
+    const config: NotionConfig = {
+      notionKey: notionKey || process.env.NOTION_KEY,
+      databaseId: databaseId || process.env.NOTION_DATABASE_ID,
+    };
+
+    const result = await syncBidirectional(tasks as ServiceTask[], config);
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    console.error('[Notion Sync Endpoint Error]', error);
+    res.status(500).json({ success: false, error: error.message || 'Ошибка двусторонней синхронизации Notion.' });
+  }
+});
+
+// Single Task CRUD endpoints
+app.post('/api/notion/create-task', async (req, res) => {
+  try {
+    const { task, notionKey, databaseId } = req.body;
+    if (!task || !task.id) {
+      return res.status(400).json({ error: 'Укажите объект task с уникальным id.' });
+    }
+
+    const config: NotionConfig = {
+      notionKey: notionKey || process.env.NOTION_KEY,
+      databaseId: databaseId || process.env.NOTION_DATABASE_ID,
+    };
+
+    const notionPageId = await createTaskInNotion(task as ServiceTask, config);
+    res.json({ success: true, notionPageId });
+  } catch (error: any) {
+    console.error('[Notion Create Task Error]', error);
+    res.status(500).json({ success: false, error: error.message || 'Ошибка создания задачи в Notion.' });
+  }
+});
+
+app.post('/api/notion/update-task', async (req, res) => {
+  try {
+    const { task, notionKey, databaseId } = req.body;
+    if (!task || !task.id) {
+      return res.status(400).json({ error: 'Укажите объект task с уникальным id.' });
+    }
+
+    const config: NotionConfig = {
+      notionKey: notionKey || process.env.NOTION_KEY,
+      databaseId: databaseId || process.env.NOTION_DATABASE_ID,
+    };
+
+    const updated = await updateTaskInNotion(task as ServiceTask, config);
+    res.json({ success: true, updated });
+  } catch (error: any) {
+    console.error('[Notion Update Task Error]', error);
+    res.status(500).json({ success: false, error: error.message || 'Ошибка обновления задачи в Notion.' });
+  }
+});
+
+app.post('/api/notion/delete-task', async (req, res) => {
+  try {
+    const { notionPageId, notionKey, databaseId } = req.body;
+    if (!notionPageId) {
+      return res.status(400).json({ error: 'Укажите notionPageId для архивации.' });
+    }
+
+    const config: NotionConfig = {
+      notionKey: notionKey || process.env.NOTION_KEY,
+      databaseId: databaseId || process.env.NOTION_DATABASE_ID,
+    };
+
+    const archived = await deleteTaskInNotion(notionPageId, config);
+    res.json({ success: true, archived });
+  } catch (error: any) {
+    console.error('[Notion Delete Task Error]', error);
+    res.status(500).json({ success: false, error: error.message || 'Ошибка архивации страницы в Notion.' });
   }
 });
 

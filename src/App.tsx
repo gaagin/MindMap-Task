@@ -65,6 +65,7 @@ import TableView from './components/TableView';
 import EisenhowerMatrixView from './components/EisenhowerMatrixView';
 import AnyDoView from './components/AnyDoView';
 import GeminiAiConsole from './components/GeminiAiConsole';
+import NotionSync from './components/NotionSync';
 
 // Import Google Sheets & Firebase Auth systems
 import { 
@@ -514,7 +515,7 @@ export default function App() {
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const isSyncingSheetsRef = useRef(false);
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
-  const [syncModalTab, setSyncModalTab] = useState<'sheets' | 'backups'>('sheets');
+  const [syncModalTab, setSyncModalTab] = useState<'sheets' | 'notion' | 'backups'>('sheets');
   const [backupsList, setBackupsList] = useState<any[]>([]);
   const [backupRestoreSuccess, setBackupRestoreSuccess] = useState<string | null>(null);
   const [backupRestoreConfirmId, setBackupRestoreConfirmId] = useState<string | null>(null);
@@ -7372,6 +7373,17 @@ export default function App() {
                 </button>
                 <button 
                   type="button"
+                  onClick={() => setSyncModalTab('notion')}
+                  className={`flex-1 py-3 text-center text-xs font-extrabold border-b-2 transition-all cursor-pointer ${
+                    syncModalTab === 'notion' 
+                      ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 font-bold' 
+                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100/50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  📝 Notion Database
+                </button>
+                <button 
+                  type="button"
                   onClick={() => setSyncModalTab('backups')}
                   className={`flex-1 py-3 text-center text-xs font-extrabold border-b-2 transition-all cursor-pointer ${
                     syncModalTab === 'backups' 
@@ -7906,6 +7918,22 @@ export default function App() {
             )}
 
 
+
+            {syncModalTab === 'notion' && (
+              <div className="animate-in fade-in duration-200">
+                <NotionSync
+                  currentWorkspaceState={state}
+                  activeProjectId={state.activeProjectId}
+                  onApplySyncedNodes={(updatedNodes) => {
+                    setState(prev => {
+                      const nextState = { ...prev, nodes: updatedNodes };
+                      saveWorkspace(nextState);
+                      return nextState;
+                    });
+                  }}
+                />
+              </div>
+            )}
 
             {syncModalTab === 'backups' && (
               <div className="space-y-5 animate-in fade-in duration-200">
