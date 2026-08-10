@@ -260,18 +260,24 @@ function getNodeWidth(n: TaskNode): number {
   if (n.isWorkflowRectangle) {
     return n.width || (n.workflowShape === 'rhomb' ? 120 : 170);
   }
-  if (n.isContainer) {
-    return n.collapsed ? 220 : (n.width || 520);
+  if (n.isEquipment) {
+    return n.width || 340;
   }
-  return n.width || 210;
+  if (n.isContainer) {
+    return n.collapsed ? 220 : (n.width || 360);
+  }
+  return n.width || 220;
 }
 
 function getNodeHeight(n: TaskNode): number {
   if (n.isWorkflowRectangle) {
     return n.height || (n.workflowShape === 'rhomb' ? 120 : 70);
   }
+  if (n.isEquipment) {
+    return n.height || 220;
+  }
   if (n.isContainer) {
-    return n.collapsed ? 100 : (n.height || 400);
+    return n.collapsed ? 110 : (n.height || 220);
   }
   return n.height || 110;
 }
@@ -3503,29 +3509,24 @@ export default function MindMapCanvas({
   const centerOnAllMainObjects = () => {
     const currentNodes = nodesRef.current && nodesRef.current.length > 0 ? nodesRef.current : nodes;
 
-    // Filter nodes that are visible directly on the main canvas level (not inbox, not archived, not inside a container card)
+    // Filter nodes that are rendered on the main canvas level
+    // (excludes archived, inbox, collapsed children, and cards nested inside containers/equipment which use relative coords)
     let candidateNodes = currentNodes.filter(n => {
       if (n.archived || n.parentId === 'inbox') return false;
 
-      // Always include top-level root nodes, containers, equipment, workflow blocks, or floating items
-      if (n.parentId === null || n.parentId === 'root' || n.isContainer || n.isEquipment || n.isWorkflowRectangle || n.isFloating) {
-        return true;
-      }
-
-      // Check if node is nested inside a container/equipment or collapsed ancestor
-      let currentParentId = n.parentId;
-      while (currentParentId !== null) {
-        const parent = currentNodes.find(p => p.id === currentParentId);
+      let currId = n.parentId;
+      while (currId !== null && currId !== 'root') {
+        const parent = currentNodes.find(p => p.id === currId);
         if (!parent) break;
         if (parent.isContainer || parent.isEquipment || parent.collapsed) {
-          return false; // Hidden from main canvas or rendered inside container
+          return false; // Rendered inside a container/equipment or hidden under collapsed parent
         }
-        currentParentId = parent.parentId;
+        currId = parent.parentId;
       }
       return true;
     });
 
-    // Fallback 1: If no top-level candidate nodes exist, fall back to any active non-inbox nodes
+    // Fallback 1: If no top-level candidate nodes exist, fall back to active non-inbox nodes
     if (candidateNodes.length === 0) {
       candidateNodes = currentNodes.filter(n => !n.archived && n.parentId !== 'inbox');
     }
@@ -3543,6 +3544,12 @@ export default function MindMapCanvas({
     let minY = Infinity;
     let maxY = -Infinity;
 
+    let topMinX = Infinity;
+    let topMaxX = -Infinity;
+    let topMinY = Infinity;
+    let topMaxY = -Infinity;
+    let hasTopLevel = false;
+
     candidateNodes.forEach(n => {
       const w = getNodeWidth(n);
       const h = getNodeHeight(n);
@@ -3555,10 +3562,30 @@ export default function MindMapCanvas({
       if (right > maxX) maxX = right;
       if (top < minY) minY = top;
       if (bottom > maxY) maxY = bottom;
+
+      // Track primary/top-level cards (root nodes, containers, equipment, workflow blocks)
+      if (n.parentId === null || n.parentId === 'root' || n.isContainer || n.isEquipment || n.isWorkflowRectangle) {
+        if (left < topMinX) topMinX = left;
+        if (right > topMaxX) topMaxX = right;
+        if (top < topMinY) topMinY = top;
+        if (bottom > topMaxY) topMaxY = bottom;
+        hasTopLevel = true;
+      }
     });
 
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
+    const bboxCenterX = (minX + maxX) / 2;
+    const bboxCenterY = (minY + maxY) / 2;
+
+    let centerX = bboxCenterX;
+    let centerY = bboxCenterY;
+
+    if (hasTopLevel && topMinX !== Infinity) {
+      const topCenterX = (topMinX + topMaxX) / 2;
+      const topCenterY = (topMinY + topMaxY) / 2;
+      // Balance smoothly between top-level primary cards and overall tree bounding box
+      centerX = topCenterX * 0.5 + bboxCenterX * 0.5;
+      centerY = topCenterY * 0.5 + bboxCenterY * 0.5;
+    }
 
     const bboxWidth = maxX - minX;
     const bboxHeight = maxY - minY;
@@ -3567,7 +3594,7 @@ export default function MindMapCanvas({
     const viewportW = rect && rect.width > 0 ? rect.width : window.innerWidth;
     const viewportH = rect && rect.height > 0 ? rect.height : window.innerHeight;
 
-    const padding = 220;
+    const padding = 180; // Screen padding around objects
     const scaleX = (viewportW - padding) / Math.max(bboxWidth, 200);
     const scaleY = (viewportH - padding) / Math.max(bboxHeight, 200);
     const fitZoom = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.0);
