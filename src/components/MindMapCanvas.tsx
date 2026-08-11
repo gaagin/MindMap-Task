@@ -5279,6 +5279,24 @@ export default function MindMapCanvas({
         }
       }
 
+      if (focusedTask) {
+        const containingContainer = nodes.find(c => {
+          if (c.id === focusedTask.id || (!c.isContainer && !c.isEquipment)) return false;
+          const w = c.width || (c.isContainer ? 520 : 220);
+          const h = c.height || (c.isContainer ? 400 : 140);
+          const dx = Math.abs(focusedTask.x - c.x);
+          const dy = Math.abs(focusedTask.y - c.y);
+          return dx <= w / 2 && dy <= h / 2;
+        });
+        if (containingContainer) {
+          centerOnNode(containingContainer.id);
+          onSelectNode(containingContainer.id);
+          setFocusedContainerId(containingContainer.id);
+          if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);
+          return;
+        }
+      }
+
       // Exit focus mode completely to main canvas
       setFocusedContainerId(null);
       if (onFocusedTaskIdChange) onFocusedTaskIdChange(null);

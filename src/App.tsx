@@ -1593,37 +1593,90 @@ export default function App() {
   const lastAppliedFocusIdRef = React.useRef<string | null>(null);
   const prevFocusedContainerIdRef = React.useRef<string | null>(null);
   const lastProcessedFocusedTaskIdRef = React.useRef<string | null>(null);
-  const focusContainerStackRef = React.useRef<string[]>([]);
+  const focusStackRef = React.useRef<{ id: string; type: 'container' | 'task' }[]>([]);
 
   useEffect(() => {
-    if (focusedContainerId) {
-      const stack = focusContainerStackRef.current;
-      if (stack[stack.length - 1] !== focusedContainerId) {
-        const idx = stack.indexOf(focusedContainerId);
-        if (idx !== -1) {
-          focusContainerStackRef.current = stack.slice(0, idx + 1);
-        } else {
-          focusContainerStackRef.current = [...stack, focusedContainerId];
-        }
+    const activeItem: { id: string; type: 'container' | 'task' } | null = 
+      focusedContainerId ? { id: focusedContainerId, type: 'container' } :
+      focusedTaskId ? { id: focusedTaskId, type: 'task' } : null;
+
+    if (activeItem) {
+      const stack = focusStackRef.current;
+      const existingIdx = stack.findIndex(item => item.id === activeItem.id && item.type === activeItem.type);
+      if (existingIdx !== -1) {
+        focusStackRef.current = stack.slice(0, existingIdx + 1);
+      } else {
+        focusStackRef.current = [...stack, activeItem];
       }
     } else {
-      focusContainerStackRef.current = [];
+      focusStackRef.current = [];
     }
-  }, [focusedContainerId]);
+  }, [focusedContainerId, focusedTaskId]);
 
   const handleGoBackOneFocusLevel = React.useCallback(() => {
     const projectNodes = state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : [];
 
-    if (focusedContainerId) {
-      const stack = focusContainerStackRef.current;
-      if (stack.length > 1 && stack[stack.length - 1] === focusedContainerId) {
-        const parentInStack = stack[stack.length - 2];
-        focusContainerStackRef.current = stack.slice(0, stack.length - 1);
-        setFocusedContainerId(parentInStack);
+    // 1. First check focus history stack (e.g. entered Container -> Task -> Subtask)
+    const stack = focusStackRef.current;
+    if (stack.length > 1) {
+      const parentInStack = stack[stack.length - 2];
+      focusStackRef.current = stack.slice(0, stack.length - 1);
+      if (parentInStack.type === 'container') {
+        setFocusedContainerId(parentInStack.id);
         setFocusedTaskId(null);
-        return;
+      } else {
+        setFocusedTaskId(parentInStack.id);
+        setFocusedContainerId(null);
+      }
+      return;
+    }
+
+    // 2. Structural hierarchy fallback if stack doesn't have a parent item
+    if (focusedTaskId) {
+      const focusedTask = projectNodes.find(n => n.id === focusedTaskId);
+
+      // 2a. Check explicit parentId
+      if (focusedTask && focusedTask.parentId) {
+        const parentNode = projectNodes.find(n => n.id === focusedTask.parentId);
+        if (parentNode && parentNode.id !== focusedTask.id) {
+          if (parentNode.isContainer || parentNode.isEquipment) {
+            setFocusedContainerId(parentNode.id);
+            setFocusedTaskId(null);
+            return;
+          } else {
+            setFocusedTaskId(parentNode.id);
+            setFocusedContainerId(null);
+            return;
+          }
+        }
       }
 
+      // 2b. Check containing container bounds if parentId is not explicitly set on task
+      if (focusedTask) {
+        const containingContainer = projectNodes.find(c => {
+          if (c.id === focusedTask.id || (!c.isContainer && !c.isEquipment)) return false;
+          const w = c.width || (c.isContainer ? 520 : 220);
+          const h = c.height || (c.isContainer ? 400 : 140);
+          const dx = Math.abs(focusedTask.x - c.x);
+          const dy = Math.abs(focusedTask.y - c.y);
+          return dx <= w / 2 && dy <= h / 2;
+        });
+
+        if (containingContainer) {
+          setFocusedContainerId(containingContainer.id);
+          setFocusedTaskId(null);
+          return;
+        }
+      }
+
+      // 2c. Exit focus mode completely to main screen if at top level task
+      setFocusedTaskId(null);
+      setFocusedContainerId(null);
+      focusStackRef.current = [];
+      return;
+    }
+
+    if (focusedContainerId) {
       const containerNode = projectNodes.find(n => n.id === focusedContainerId);
       if (containerNode && containerNode.parentId) {
         const parentNode = projectNodes.find(n => n.id === containerNode.parentId);
@@ -1640,41 +1693,17 @@ export default function App() {
         }
       }
 
-      // Exit focus mode completely to main screen if at top level or no parent
+      // Exit focus mode completely to main screen if at top level container
       setFocusedContainerId(null);
       setFocusedTaskId(null);
-      focusContainerStackRef.current = [];
-      return;
-    }
-
-    if (focusedTaskId) {
-      const focusedTask = projectNodes.find(n => n.id === focusedTaskId);
-      if (focusedTask && focusedTask.parentId) {
-        const parentNode = projectNodes.find(n => n.id === focusedTask.parentId);
-        if (parentNode && parentNode.id !== focusedTask.id) {
-          if (parentNode.isContainer || parentNode.isEquipment) {
-            setFocusedContainerId(parentNode.id);
-            setFocusedTaskId(null);
-            return;
-          } else {
-            setFocusedTaskId(parentNode.id);
-            setFocusedContainerId(null);
-            return;
-          }
-        }
-      }
-
-      // Exit focus mode completely to main screen if at top level
-      setFocusedTaskId(null);
-      setFocusedContainerId(null);
-      focusContainerStackRef.current = [];
+      focusStackRef.current = [];
       return;
     }
 
     // Default exit
     setFocusedContainerId(null);
     setFocusedTaskId(null);
-    focusContainerStackRef.current = [];
+    focusStackRef.current = [];
   }, [focusedContainerId, focusedTaskId, state.activeProjectId, state.nodes]);
 
   // Auto-switch viewMode and load/restore filters on focused node change
@@ -5967,6 +5996,12 @@ export default function App() {
                 })()}
                 {focusedTaskId && (() => {
                   const taskNode = activeNodes.find(n => n.id === focusedTaskId);
+                  const hasParent = taskNode && (
+                    taskNode.parentId ||
+                    activeNodes.some(c => (c.isContainer || c.isEquipment) &&
+                      Math.abs(taskNode.x - c.x) <= ((c.width || 520) / 2) &&
+                      Math.abs(taskNode.y - c.y) <= ((c.height || 400) / 2))
+                  ) || (focusStackRef.current && focusStackRef.current.length > 1);
                   return (
                     <span className="inline-flex items-center gap-1.5 bg-rose-500/15 dark:bg-rose-550/20 border border-rose-200/50 dark:border-rose-900/40 px-2 py-0.5 rounded-full text-[10px] text-rose-700 dark:text-rose-400 font-bold shrink-0">
                       <span className="animate-pulse w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
@@ -5974,12 +6009,12 @@ export default function App() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setFocusedTaskId(null);
+                          handleGoBackOneFocusLevel();
                         }}
-                        className="ml-1 px-1 py-0.5 rounded bg-rose-50 hover:bg-rose-650 text-white text-[8px] font-extrabold uppercase transition-all cursor-pointer shadow-xs border-none"
-                        title="Выйти из режима фокуса"
+                        className="ml-1 px-1 py-0.5 rounded bg-rose-500 hover:bg-rose-600 text-white text-[8px] font-extrabold uppercase transition-all cursor-pointer shadow-xs border-none"
+                        title={hasParent ? "Назад на один уровень выше" : "Выйти из режима фокуса"}
                       >
-                        Выйти
+                        {hasParent ? "Назад" : "Выйти"}
                       </button>
                     </span>
                   );
@@ -6876,7 +6911,7 @@ export default function App() {
                     onClick={() => {
                       setFocusedContainerId(null);
                       setFocusedTaskId(null);
-                      focusContainerStackRef.current = [];
+                      focusStackRef.current = [];
                     }}
                     className="p-1.5 px-2.5 hover:bg-amber-50 dark:hover:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors flex items-center gap-1.5"
                     title="Выйти из режима фокуса на главный экран"
