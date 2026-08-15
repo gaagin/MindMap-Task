@@ -76,16 +76,23 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
   }
 };
 
-export const signInGuest = async (): Promise<User> => {
+export const signInGuest = async (): Promise<User | null> => {
   try {
     const result = await signInAnonymously(auth);
     try {
       localStorage.removeItem('explicit_logout');
     } catch (e) {}
     return result.user;
-  } catch (error) {
-    console.error('Anonymous guest sign in error:', error);
-    throw error;
+  } catch (error: any) {
+    if (
+      error?.code === 'auth/admin-restricted-operation' ||
+      error?.code === 'auth/operation-not-allowed'
+    ) {
+      console.info('[Firebase Auth] Anonymous authentication is disabled in Firebase console. Operating in local guest mode.');
+      return null;
+    }
+    console.warn('[Firebase Auth] Anonymous sign in not available:', error?.message || error);
+    return null;
   }
 };
 

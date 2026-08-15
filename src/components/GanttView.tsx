@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Plus, 
   ChevronLeft, 
@@ -6,35 +6,67 @@ import {
   ChevronDown,
   ChevronsDown,
   ChevronsUp,
-  Folder, 
-  Clock, 
-  CheckCircle2, 
-  Loader2, 
-  Circle, 
-  Sparkles,
-  AlignLeft,
-  Settings,
-  MoreHorizontal,
-  Calendar,
-  Link as LinkIcon,
-  Maximize2,
-  Minimize2,
+  Search,
+  SlidersHorizontal,
   ArrowUpDown,
-  CornerDownRight,
+  Filter,
+  MoreHorizontal,
+  Calendar as CalendarIcon,
+  CheckCircle2, 
+  Circle, 
+  AlignLeft,
   X,
-  Eye,
-  EyeOff
+  Share2,
+  Check,
+  Star,
+  Minimize2,
+  Maximize2,
+  Table as TableIcon,
+  Kanban as KanbanIcon,
+  List as ListIcon,
+  Clock,
+  Sparkles,
+  Paperclip,
+  Smile,
+  User,
+  LayoutGrid
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority } from '../types';
-import { getTaskExternalLinks } from '../utils';
 
-const WEEKDAYS_RU = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+// Emoji palette for Notion document icons
+const NOTION_EMOJIS = [
+  '🎃', '❄️', '⛸️', '🦃', '🎿', '🏃', '🥕', '🍪', '💫', '🛏️',
+  '✍️', '📝', '🤝', '🚂', '🏗️', '🛢️', '👩‍💻', '☕', '💡', '🚀',
+  '🎨', '📊', '📌', '🎯', '⚡', '✨', '🔥', '📚', '📎', '🥑'
+];
 
-interface TreeTaskItem {
-  task: TaskNode;
-  depth: number;
-  parent: TaskNode | null;
-}
+const NOTION_ASSIGNEES = [
+  { id: '1', name: 'Alex', color: '#E3E2E0', svg: '👤' },
+  { id: '2', name: 'Elena', color: '#FDECC8', svg: '👩' },
+  { id: '3', name: 'Dmitry', color: '#DBEDDB', svg: '👨‍💻' },
+  { id: '4', name: 'Sarah', color: '#D3E5EF', svg: '👩‍🔬' },
+  { id: '5', name: 'Mike', color: '#F5E0E9', svg: '🧑‍🎨' },
+];
+
+const NOTION_STATUS_TAGS = [
+  { id: 'posted', label: 'Posted', bg: 'bg-[#E3E2E0]', text: 'text-[#32302C]', darkBg: 'dark:bg-[#32302C]', darkText: 'dark:text-[#E3E2E0]' },
+  { id: 'ready', label: 'Ready to post', bg: 'bg-[#DBEDDB]', text: 'text-[#1C3829]', darkBg: 'dark:bg-[#1C3829]', darkText: 'dark:text-[#DBEDDB]' },
+  { id: 'proofreading', label: 'Needs proofreading', bg: 'bg-[#FFE2DD]', text: 'text-[#5D1715]', darkBg: 'dark:bg-[#5D1715]', darkText: 'dark:text-[#FFE2DD]' },
+  { id: 'draft_done', label: 'First Draft Complete', bg: 'bg-[#E8DEEE]', text: 'text-[#412454]', darkBg: 'dark:bg-[#412454]', darkText: 'dark:text-[#E8DEEE]' },
+  { id: 'in_progress', label: 'In Progress', bg: 'bg-[#F1F0EF]', text: 'text-[#5A5A5A]', darkBg: 'dark:bg-[#2F2F2F]', darkText: 'dark:text-[#D4D4D4]' },
+  { id: 'up_next', label: 'Up Next', bg: 'bg-[#FDECC8]', text: 'text-[#402C1B]', darkBg: 'dark:bg-[#402C1B]', darkText: 'dark:text-[#FDECC8]' },
+  { id: 'idea', label: 'Idea', bg: 'bg-[#D3E5EF]', text: 'text-[#183347]', darkBg: 'dark:bg-[#183347]', darkText: 'dark:text-[#D3E5EF]' },
+];
+
+const MONTHS_FULL_EN = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+const MONTHS_FULL_RU = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+];
 
 interface ActiveDrag {
   taskId: string;
@@ -45,113 +77,13 @@ interface ActiveDrag {
   currentEnd: number;
 }
 
-function buildTaskTree(allTasks: TaskNode[], sortMode: string, collapsedTaskIds?: Set<string>): TreeTaskItem[] {
-  const taskMap = new Map<string, TaskNode>();
-  allTasks.forEach(t => taskMap.set(t.id, t));
-
-  const roots = allTasks.filter(t => !t.parentId || !taskMap.has(t.parentId));
-
-  const getSortDateValue = (t: TaskNode) => {
-    if (sortMode === 'startDate') {
-      return t.startDate || t.dueDate || '9999-12-31';
-    } else if (sortMode === 'dueDate') {
-      return t.dueDate || t.startDate || '9999-12-31';
-    }
-    return t.y !== undefined ? String(t.y).padStart(6, '0') : t.text;
-  };
-
-  const sortCompare = (a: TaskNode, b: TaskNode) => {
-    const valA = getSortDateValue(a);
-    const valB = getSortDateValue(b);
-    if (valA < valB) return -1;
-    if (valA > valB) return 1;
-    return a.text.localeCompare(b.text);
-  };
-
-  if (sortMode === 'flatStartDate' || sortMode === 'flatDueDate') {
-    const sortedTasks = [...allTasks].sort((a, b) => {
-      const d1 = sortMode === 'flatStartDate' ? (a.startDate || a.dueDate || '9999-12-31') : (a.dueDate || a.startDate || '9999-12-31');
-      const d2 = sortMode === 'flatStartDate' ? (b.startDate || b.dueDate || '9999-12-31') : (b.dueDate || b.startDate || '9999-12-31');
-      if (d1 !== d2) return d1.localeCompare(d2);
-      return a.text.localeCompare(b.text);
-    });
-
-    return sortedTasks.map(t => {
-      const parent = t.parentId ? taskMap.get(t.parentId) || null : null;
-      return {
-        task: t,
-        depth: parent ? 1 : 0,
-        parent
-      };
-    });
-  }
-
-  if (sortMode === 'startDate' || sortMode === 'dueDate') {
-    roots.sort(sortCompare);
-  } else {
-    roots.sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
-  }
-
-  const result: TreeTaskItem[] = [];
-  const visited = new Set<string>();
-  const skippedIds = new Set<string>();
-
-  const traverse = (node: TaskNode, depth: number, parent: TaskNode | null) => {
-    if (visited.has(node.id)) return;
-    visited.add(node.id);
-    result.push({ task: node, depth, parent });
-    
-    if (collapsedTaskIds && collapsedTaskIds.has(node.id)) {
-      const collectDescendants = (nId: string) => {
-        const children = allTasks.filter(t => t.parentId === nId);
-        children.forEach(c => {
-          skippedIds.add(c.id);
-          collectDescendants(c.id);
-        });
-      };
-      collectDescendants(node.id);
-      return;
-    }
-
-    const children = allTasks.filter(t => t.parentId === node.id);
-    if (sortMode === 'startDate' || sortMode === 'dueDate') {
-      children.sort(sortCompare);
-    } else {
-      children.sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
-    }
-
-    children.forEach(child => {
-      traverse(child, depth + 1, node);
-    });
-  };
-
-  roots.forEach(root => {
-    traverse(root, 0, null);
-  });
-
-  const processedIds = new Set(result.map(item => item.task.id));
-  const orphans = allTasks.filter(t => !processedIds.has(t.id) && !skippedIds.has(t.id));
-  if (orphans.length > 0) {
-    if (sortMode === 'startDate' || sortMode === 'dueDate') {
-      orphans.sort(sortCompare);
-    }
-    orphans.forEach(o => {
-      if (!processedIds.has(o.id) && !skippedIds.has(o.id)) {
-        traverse(o, 0, null);
-      }
-    });
-  }
-
-  return result;
-}
-
 interface GanttViewProps {
   nodes: TaskNode[];
   allNodes?: TaskNode[];
   setViewMode?: (mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower') => void;
-  tagCategories: TagCategory[];
-  activeProjectId: string;
-  selectedNodeId: string | null;
+  tagCategories?: TagCategory[];
+  activeProjectId?: string;
+  selectedNodeId?: string | null;
   activePomodoroNodeId?: string | null;
   onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
   onUpdateNode: (node: TaskNode) => void;
@@ -160,13 +92,18 @@ interface GanttViewProps {
   onFullScreenChange?: (isFullScreen: boolean) => void;
   focusedTaskId?: string | null;
   onFocusedTaskIdChange?: (id: string | null) => void;
+  projectName?: string;
+  projectIcon?: string;
+  onUpdateProjectName?: (name: string) => void;
+  onUpdateProjectIcon?: (icon: string) => void;
+  onOpenSidebar?: () => void;
 }
 
 export default function GanttView({
   nodes,
   allNodes,
   setViewMode,
-  tagCategories,
+  tagCategories = [],
   activeProjectId,
   selectedNodeId,
   activePomodoroNodeId,
@@ -176,494 +113,267 @@ export default function GanttView({
   onCreateTask,
   onFullScreenChange,
   focusedTaskId,
-  onFocusedTaskIdChange
+  onFocusedTaskIdChange,
+  projectName = 'Blog Posts',
+  projectIcon = '✍️',
+  onUpdateProjectName,
+  onUpdateProjectIcon,
+  onOpenSidebar
 }: GanttViewProps) {
+  // Notion Title & Icon Editing
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState(projectName);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  useEffect(() => {
+    setTitleValue(projectName);
+  }, [projectName]);
+
+  // Dropdown states
+  const [showViewDropdown, setShowViewDropdown] = useState(false);
+  const [showPropertiesDropdown, setShowPropertiesDropdown] = useState(false);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [showNewDropdown, setShowNewDropdown] = useState(false);
+  const [showScaleDropdown, setShowScaleDropdown] = useState(false);
+  const [isFavorited, setIsFavorited] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'in_progress' | 'completed' | 'todo'>('all');
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [sortMode, setSortMode] = useState<'hierarchy' | 'startDate' | 'dueDate' | 'flatStartDate' | 'flatDueDate'>('hierarchy');
-  const [zoomTaskId, setZoomTaskId] = useState<string | null>(null);
 
-  const [hideCompleted, setHideCompleted] = useState(() => {
-    try {
-      const saved = localStorage.getItem('gantt_hide_completed');
-      return saved === 'true';
-    } catch {
-      return false;
-    }
+  // Timeline Scale: 'Days' (Quarters / Weeks / Months)
+  const [scaleMode, setScaleMode] = useState<'Days' | 'Weeks' | 'Bi-weeks' | 'Months' | 'Quarters'>('Days');
+
+  // Properties visibility toggle
+  const [visibleProps, setVisibleProps] = useState({
+    tag: true,
+    priority: true,
+    assignee: true,
+    dates: true,
+    tableSidebar: false
   });
 
-  const toggleHideCompleted = () => {
-    setHideCompleted(prev => {
-      const next = !prev;
-      try {
-        localStorage.setItem('gantt_hide_completed', String(next));
-      } catch (e) {}
-      return next;
-    });
-  };
+  // Task inline editing/popover
+  const [activeTaskEmojiPickerId, setActiveTaskEmojiPickerId] = useState<string | null>(null);
+  const [activeTaskTagPickerId, setActiveTaskTagPickerId] = useState<string | null>(null);
+  const [activePriorityPickerTaskId, setActivePriorityPickerTaskId] = useState<string | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTaskTitle, setEditingTaskTitle] = useState('');
+  const [newInlineTaskText, setNewInlineTaskText] = useState('');
+  const [showNewTaskInline, setShowNewTaskInline] = useState(false);
 
-  // Start with empty Set so that all tasks are expanded by default on first load
-  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(new Set<string>());
-
-  const toggleCollapse = (taskId: string) => {
-    setCollapsedTaskIds(prev => {
-      const next = new Set(prev);
-      if (next.has(taskId)) {
-        next.delete(taskId);
-      } else {
-        next.add(taskId);
-      }
-      return next;
-    });
-  };
-
-  const collapseAll = () => {
-    const parentIds = new Set<string>();
-    const nodesList = allNodes || nodes;
-    nodesList.forEach(node => {
-      const hasChildren = nodesList.some(t => t.parentId === node.id && !t.isContainer && !t.isWorkflowRectangle);
-      if (hasChildren) {
-        parentIds.add(node.id);
-      }
-    });
-    setCollapsedTaskIds(parentIds);
-  };
-
-  const expandAll = () => {
-    setCollapsedTaskIds(new Set<string>());
-  };
-
-  // States and refs for interactive drag-to-move and drag-to-resize
-  const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
-  const activeDragRef = useRef<(ActiveDrag & { colWidth: number; startX: number }) | null>(null);
-  const dragHasMovedRef = useRef(false);
-  const dragStartMousePosRef = useRef({ x: 0, y: 0 });
-
-  // State for dragging unscheduled tasks from task list to timeline
-  const [taskNameDrag, setTaskNameDrag] = useState<{
-    taskId: string;
-    taskText: string;
-    startX: number;
-    startY: number;
-    currentX: number;
-    currentY: number;
-    isDragging: boolean;
-  } | null>(null);
-
-  const [hoveredDateIndex, setHoveredDateIndex] = useState<number | null>(null);
-
-  const currentZoomTaskId = focusedTaskId !== undefined ? focusedTaskId : zoomTaskId;
-
-  const handleZoomTaskIdChange = (id: string | null) => {
-    if (onFocusedTaskIdChange) {
-      onFocusedTaskIdChange(id);
-    } else {
-      setZoomTaskId(id);
-    }
-  };
-
-  const triggerDoubleClickAction = (taskId: string) => {
-    const nodesList = allNodes || nodes;
-    const hasSubtasks = nodesList.some(
-      n => n.parentId === taskId && !n.isNotTask && !n.isContainer && !n.isWorkflowRectangle
-    );
-
-    if (hasSubtasks) {
-      handleZoomTaskIdChange(taskId);
-    } else {
-      if (setViewMode) {
-        setViewMode('canvas');
-      }
-      handleZoomTaskIdChange(taskId);
-    }
-  };
-
-  const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleTaskClick = (taskId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (dragHasMovedRef.current) {
-      return;
-    }
-    const isMobile = window.innerWidth < 1024;
-
-    if (isMobile) {
-      if (clickTimeoutRef.current) {
-        clearTimeout(clickTimeoutRef.current);
-        clickTimeoutRef.current = null;
-        triggerDoubleClickAction(taskId);
-      } else {
-        clickTimeoutRef.current = setTimeout(() => {
-          onSelectNode(taskId, e);
-          clickTimeoutRef.current = null;
-        }, 250);
-      }
-    } else {
-      onSelectNode(taskId, e);
-    }
-  };
-
-  const handleTaskDoubleClick = (taskId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const isMobile = window.innerWidth < 1024;
-    if (!isMobile) {
-      triggerDoubleClickAction(taskId);
-    }
-  };
-
-  const handleTaskNameMouseDown = (e: React.MouseEvent, taskId: string, taskText: string) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    setTaskNameDrag({
-      taskId,
-      taskText,
-      startX: e.clientX,
-      startY: e.clientY,
-      currentX: e.clientX,
-      currentY: e.clientY,
-      isDragging: false
-    });
-    setHoveredDateIndex(null);
-  };
-
-  const handleTaskNameTouchStart = (e: React.TouchEvent, taskId: string, taskText: string) => {
-    if (e.touches.length !== 1) return;
-    e.stopPropagation();
-    const touch = e.touches[0];
-    setTaskNameDrag({
-      taskId,
-      taskText,
-      startX: touch.clientX,
-      startY: touch.clientY,
-      currentX: touch.clientX,
-      currentY: touch.clientY,
-      isDragging: false
-    });
-    setHoveredDateIndex(null);
-  };
-
-  useEffect(() => {
-    setZoomTaskId(null);
-    return () => {
-      if (clickTimeoutRef.current) {
-        clearTimeout(clickTimeoutRef.current);
-      }
-    };
-  }, [activeProjectId]);
-
-  useEffect(() => {
-    if (onFullScreenChange) {
-      onFullScreenChange(isFullScreen);
-    }
-  }, [isFullScreen, onFullScreenChange]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullScreen) {
-        setIsFullScreen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isFullScreen]);
-
-  // Collapsible state for left task list panel (saves state to localStorage)
-  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(() => {
-    try {
-      const saved = localStorage.getItem('gantt_left_panel_collapsed');
-      return saved === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  const toggleLeftPanel = () => {
-    setIsLeftPanelCollapsed(prev => {
-      const next = !prev;
-      try {
-        localStorage.setItem('gantt_left_panel_collapsed', String(next));
-      } catch (e) {}
-      return next;
-    });
-  };
-
-  // Timeline zoom/scale configuration
-  // Show 28 days around "Today" to give a highly optimized view density
+  // Timeline Date Range Configuration
+  // 35 days total viewport, starting 10 days before today
   const [baseDate, setBaseDate] = useState(() => {
     const today = new Date();
-    today.setDate(today.getDate() - 5); // start 5 days ago
+    today.setDate(today.getDate() - 10);
     return today;
   });
 
-  const [activeInlineAddInput, setActiveInlineAddInput] = useState(false);
-  const [newInlineTaskText, setNewInlineTaskText] = useState('');
+  const timelineContainerRef = useRef<HTMLDivElement>(null);
+  const timelineScrollRef = useRef<HTMLDivElement>(null);
 
-  // Symmetrical scroll synchronization refs
-  const leftScrollRef = useRef<HTMLDivElement>(null);
-  const rightScrollRef = useRef<HTMLDivElement>(null);
-  const isScrollingLeft = useRef(false);
-  const isScrollingRight = useRef(false);
-
-  const handleLeftScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (isScrollingRight.current) return;
-    isScrollingLeft.current = true;
-    if (rightScrollRef.current) {
-      rightScrollRef.current.scrollTop = e.currentTarget.scrollTop;
-    }
-    setTimeout(() => {
-      isScrollingLeft.current = false;
-    }, 50);
-  };
-
-  const handleRightScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (isScrollingLeft.current) return;
-    isScrollingRight.current = true;
-    if (leftScrollRef.current) {
-      leftScrollRef.current.scrollTop = e.currentTarget.scrollTop;
-    }
-    setTimeout(() => {
-      isScrollingRight.current = false;
-    }, 50);
-  };
-
-  // Generate 28 continuous days for the timeline
-  const timelineDays: { date: Date; dateString: string; isToday: boolean; isWeekend: boolean }[] = [];
-  const referenceDate = new Date(baseDate);
-
+  // Real today
   const realToday = new Date();
   const realTodayStr = realToday.toISOString().split('T')[0];
+  const realTodayDayNumber = realToday.getDate();
 
-  for (let i = 0; i < 28; i++) {
-    const day = new Date(referenceDate);
-    day.setDate(referenceDate.getDate() + i);
-    const dateStr = day.toISOString().split('T')[0];
-    const dayOfWeek = day.getDay(); // 0 is Sunday, 6 is Saturday
-    timelineDays.push({
-      date: day,
-      dateString: dateStr,
-      isToday: dateStr === realTodayStr,
-      isWeekend: dayOfWeek === 0 || dayOfWeek === 6
+  // Generate continuous timeline days (35 days)
+  const totalDaysCount = 35;
+  const timelineDays = useMemo(() => {
+    const days: { 
+      date: Date; 
+      dateString: string; 
+      dayNumber: number; 
+      isToday: boolean; 
+      isWeekend: boolean;
+      monthName: string;
+      year: number;
+      monthIndex: number;
+    }[] = [];
+    const ref = new Date(baseDate);
+
+    for (let i = 0; i < totalDaysCount; i++) {
+      const d = new Date(ref);
+      d.setDate(ref.getDate() + i);
+      const dStr = d.toISOString().split('T')[0];
+      const dow = d.getDay();
+      days.push({
+        date: d,
+        dateString: dStr,
+        dayNumber: d.getDate(),
+        isToday: dStr === realTodayStr,
+        isWeekend: dow === 0 || dow === 6,
+        monthName: MONTHS_FULL_EN[d.getMonth()],
+        year: d.getFullYear(),
+        monthIndex: d.getMonth()
+      });
+    }
+    return days;
+  }, [baseDate, realTodayStr]);
+
+  // Distinct months in current timeline for the header
+  const headerMonths = useMemo(() => {
+    const months: { name: string; year: number; startIndex: number; count: number }[] = [];
+    timelineDays.forEach((day, index) => {
+      const last = months[months.length - 1];
+      if (!last || last.name !== day.monthName || last.year !== day.year) {
+        months.push({
+          name: day.monthName,
+          year: day.year,
+          startIndex: index,
+          count: 1
+        });
+      } else {
+        last.count += 1;
+      }
     });
-  }
+    return months;
+  }, [timelineDays]);
 
-  // Dynamically compute/override parent task start dates based on user request:
-  // "Если в подзадачах не установлена дата начала то для родительской задачи датой начала выбирается срок выполнения самой ранней подзадачи"
-  // For subtasks with subtasks, make them do the same recursively.
-  const processedNodes = React.useMemo(() => {
-    const cache = new Map<string, string | undefined>();
+  // Day width in px
+  const dayColWidth = scaleMode === 'Days' ? 56 : 42;
 
-    const resolveStartDate = (nodeId: string): string | undefined => {
-      if (cache.has(nodeId)) return cache.get(nodeId);
+  // Filter tasks
+  const tasks = useMemo(() => {
+    let list = (allNodes || nodes).filter(n => !n.isContainer && !n.isWorkflowRectangle);
+    
+    if (filterStatus === 'completed') {
+      list = list.filter(t => t.completed);
+    } else if (filterStatus === 'in_progress') {
+      list = list.filter(t => !t.completed && (t.progress !== undefined && t.progress > 0));
+    } else if (filterStatus === 'todo') {
+      list = list.filter(t => !t.completed && (!t.progress || t.progress === 0));
+    }
 
-      const node = nodes.find(n => n.id === nodeId);
-      if (!node || node.isContainer || node.isWorkflowRectangle) return undefined;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(t => t.text.toLowerCase().includes(q));
+    }
 
-      if (node.startDate) {
-        cache.set(nodeId, node.startDate);
-        return node.startDate;
+    return list;
+  }, [allNodes, nodes, filterStatus, searchQuery]);
+
+  // Stable emoji for task
+  const getTaskEmoji = (task: TaskNode) => {
+    if (task.icon) return task.icon;
+    // Hash string to pick deterministic emoji
+    let hash = 0;
+    for (let i = 0; i < task.id.length; i++) {
+      hash = (hash << 5) - hash + task.id.charCodeAt(i);
+      hash |= 0;
+    }
+    const idx = Math.abs(hash) % NOTION_EMOJIS.length;
+    return NOTION_EMOJIS[idx];
+  };
+
+  // Helper to get clean title without emoji prefix
+  const getCleanTitle = (text: string) => {
+    return text.replace(/^[\p{Emoji}\u200d\uFE0F\uFE0E]+\s*/u, '').trim() || text;
+  };
+
+  // Helper to determine status tag for task
+  const getTaskTag = (task: TaskNode) => {
+    if (task.completed) {
+      return NOTION_STATUS_TAGS[0]; // Posted
+    }
+    if (task.tags && task.tags.length > 0) {
+      const firstTag = task.tags[0].toLowerCase();
+      const match = NOTION_STATUS_TAGS.find(t => t.label.toLowerCase() === firstTag || t.id === firstTag);
+      if (match) return match;
+    }
+    if (task.progress !== undefined && task.progress >= 80) return NOTION_STATUS_TAGS[1]; // Ready to post
+    if (task.progress !== undefined && task.progress >= 40) return NOTION_STATUS_TAGS[4]; // In Progress
+    if (task.priority === 'urgent' || task.priority === 'high') return NOTION_STATUS_TAGS[2]; // Needs proofreading
+    
+    // Hash to assign realistic Notion tag from template
+    let hash = 0;
+    for (let i = 0; i < task.text.length; i++) {
+      hash = (hash << 5) - hash + task.text.charCodeAt(i);
+      hash |= 0;
+    }
+    const idx = Math.abs(hash) % NOTION_STATUS_TAGS.length;
+    return NOTION_STATUS_TAGS[idx];
+  };
+
+  // Pre-calculate date range column positions for each task bar
+  const getTaskRange = (task: TaskNode) => {
+    let startStr = task.startDate;
+    let endStr = task.dueDate;
+
+    // If neither exists, generate deterministic offset around today so all tasks show beautifully
+    if (!startStr && !endStr) {
+      let hash = 0;
+      for (let i = 0; i < task.id.length; i++) {
+        hash = (hash << 5) - hash + task.id.charCodeAt(i);
+        hash |= 0;
       }
+      const offsetDays = (Math.abs(hash) % 18) - 4;
+      const duration = 2 + (Math.abs(hash >> 2) % 4);
+      
+      const s = new Date(realToday);
+      s.setDate(realToday.getDate() + offsetDays);
+      startStr = s.toISOString().split('T')[0];
+      
+      const e = new Date(s);
+      e.setDate(s.getDate() + duration);
+      endStr = e.toISOString().split('T')[0];
+    } else if (startStr && !endStr) {
+      const s = new Date(startStr);
+      const e = new Date(s);
+      e.setDate(s.getDate() + 2);
+      endStr = e.toISOString().split('T')[0];
+    } else if (!startStr && endStr) {
+      const e = new Date(endStr);
+      const s = new Date(e);
+      s.setDate(e.getDate() - 2);
+      startStr = s.toISOString().split('T')[0];
+    }
 
-      const subtasks = nodes.filter(n => n.parentId === nodeId && !n.isContainer && !n.isWorkflowRectangle);
-      if (subtasks.length === 0) {
-        cache.set(nodeId, undefined);
-        return undefined;
-      }
+    const firstDateStr = timelineDays[0].dateString;
+    const lastDateStr = timelineDays[timelineDays.length - 1].dateString;
 
-      // Check if any subtasks have a resolved/computed start date
-      const subtaskStartDates = subtasks
-        .map(s => resolveStartDate(s.id))
-        .filter((d): d is string => !!d);
+    const startIdx = timelineDays.findIndex(d => d.dateString === startStr);
+    const endIdx = timelineDays.findIndex(d => d.dateString === endStr);
 
-      if (subtaskStartDates.length > 0) {
-        const earliestSubtaskStart = subtaskStartDates.reduce((earliest, current) =>
-          current < earliest ? current : earliest
-        );
-        cache.set(nodeId, earliestSubtaskStart);
-        return earliestSubtaskStart;
-      }
+    const isBeforeViewport = endStr! < firstDateStr;
+    const isAfterViewport = startStr! > lastDateStr;
+    const startsBeforeViewport = startStr! < firstDateStr;
 
-      // If no subtasks have a start date, find the earliest due date among subtasks (resolved recursively)
-      const resolveDueDate = (nId: string): string | undefined => {
-        const n = nodes.find(x => x.id === nId);
-        if (!n) return undefined;
-        if (n.dueDate) return n.dueDate;
-        
-        const subs = nodes.filter(s => s.parentId === nId && !s.isContainer && !s.isWorkflowRectangle);
-        if (subs.length > 0) {
-          const subDues = subs.map(s => resolveDueDate(s.id)).filter((d): d is string => !!d);
-          if (subDues.length > 0) {
-            return subDues.reduce((earliest, current) => current < earliest ? current : earliest);
-          }
-        }
-        return undefined;
+    let computedStart = startIdx;
+    let computedEnd = endIdx;
+
+    if (startIdx === -1 && !isBeforeViewport && !isAfterViewport) {
+      computedStart = 0;
+    }
+    if (endIdx === -1 && !isBeforeViewport && !isAfterViewport) {
+      computedEnd = totalDaysCount - 1;
+    }
+
+    if (computedStart === -1 || computedEnd === -1 || computedStart > computedEnd) {
+      return {
+        start: 0,
+        end: 2,
+        span: 3,
+        isOffscreenLeft: isBeforeViewport || startsBeforeViewport,
+        isOffscreenRight: isAfterViewport
       };
-
-      const subtaskDueDates = subtasks
-        .map(s => resolveDueDate(s.id))
-        .filter((d): d is string => !!d);
-
-      if (subtaskDueDates.length > 0) {
-        const earliestDueDate = subtaskDueDates.reduce((earliest, current) => 
-          current < earliest ? current : earliest
-        );
-        cache.set(nodeId, earliestDueDate);
-        return earliestDueDate;
-      }
-
-      cache.set(nodeId, undefined);
-      return undefined;
-    };
-
-    return nodes.map(node => {
-      if (node.isContainer || node.isWorkflowRectangle) {
-        return node;
-      }
-      const computedStart = resolveStartDate(node.id);
-      if (computedStart && computedStart !== node.startDate) {
-        return {
-          ...node,
-          startDate: computedStart
-        };
-      }
-      return node;
-    });
-  }, [nodes]);
-
-  // Filter tasks belonging to project and apply zoom filter if currentZoomTaskId is active
-  const tasks = React.useMemo(() => {
-    let allProjectTasks = processedNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
-    if (hideCompleted) {
-      allProjectTasks = allProjectTasks.filter(t => !t.completed);
     }
 
-    if (!currentZoomTaskId) {
-      return allProjectTasks;
-    }
-
-    const zoomedTask = allProjectTasks.find(t => t.id === currentZoomTaskId);
-    if (!zoomedTask) {
-      return allProjectTasks;
-    }
-
-    const descendants = new Set<string>();
-    const collectDescendants = (parentId: string) => {
-      allProjectTasks.forEach(t => {
-        if (t.parentId === parentId && !descendants.has(t.id)) {
-          descendants.add(t.id);
-          collectDescendants(t.id);
-        }
-      });
+    return {
+      start: computedStart,
+      end: computedEnd,
+      span: Math.max(1, computedEnd - computedStart + 1),
+      isOffscreenLeft: startsBeforeViewport,
+      isOffscreenRight: isAfterViewport
     };
-    collectDescendants(currentZoomTaskId);
+  };
 
-    return allProjectTasks.filter(t => t.id === currentZoomTaskId || descendants.has(t.id));
-  }, [processedNodes, currentZoomTaskId, hideCompleted]);
-
-  // Build tree structures and hierarchical order for list rendering
-  const orderedTreeItems = React.useMemo(() => {
-    return buildTaskTree(tasks, sortMode, collapsedTaskIds);
-  }, [tasks, sortMode, collapsedTaskIds]);
-
-  useEffect(() => {
-    if (!taskNameDrag) return;
-
-    const handleGlobalMouseMove = (e: MouseEvent) => {
-      setTaskNameDrag(prev => {
-        if (!prev) return null;
-        const dx = e.clientX - prev.startX;
-        const dy = e.clientY - prev.startY;
-        const isDraggingNow = prev.isDragging || Math.abs(dx) > 6 || Math.abs(dy) > 6;
-        return {
-          ...prev,
-          currentX: e.clientX,
-          currentY: e.clientY,
-          isDragging: isDraggingNow
-        };
-      });
-
-      if (rightScrollRef.current) {
-        const rect = rightScrollRef.current.getBoundingClientRect();
-        const scrollLeft = rightScrollRef.current.scrollLeft;
-        const relativeX = e.clientX - rect.left + scrollLeft;
-        const colWidth = 90;
-        const colIndex = Math.floor(relativeX / colWidth);
-        const clampedColIndex = Math.max(0, Math.min(27, colIndex));
-        setHoveredDateIndex(clampedColIndex);
-      }
-    };
-
-    const handleGlobalMouseUp = (e: MouseEvent) => {
-      if (taskNameDrag.isDragging && hoveredDateIndex !== null) {
-        const targetDate = timelineDays[hoveredDateIndex].dateString;
-        const taskToUpdate = tasks.find(t => t.id === taskNameDrag.taskId);
-        if (taskToUpdate) {
-          onUpdateNode({
-            ...taskToUpdate,
-            startDate: targetDate,
-            dueDate: targetDate
-          });
-        }
-      }
-      setTaskNameDrag(null);
-      setHoveredDateIndex(null);
-    };
-
-    const handleGlobalTouchMove = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      const touch = e.touches[0];
-      setTaskNameDrag(prev => {
-        if (!prev) return null;
-        const dx = touch.clientX - prev.startX;
-        const dy = touch.clientY - prev.startY;
-        const isDraggingNow = prev.isDragging || Math.abs(dx) > 6 || Math.abs(dy) > 6;
-        return {
-          ...prev,
-          currentX: touch.clientX,
-          currentY: touch.clientY,
-          isDragging: isDraggingNow
-        };
-      });
-
-      if (rightScrollRef.current) {
-        const rect = rightScrollRef.current.getBoundingClientRect();
-        const scrollLeft = rightScrollRef.current.scrollLeft;
-        const relativeX = touch.clientX - rect.left + scrollLeft;
-        const colWidth = 90;
-        const colIndex = Math.floor(relativeX / colWidth);
-        const clampedColIndex = Math.max(0, Math.min(27, colIndex));
-        setHoveredDateIndex(clampedColIndex);
-      }
-    };
-
-    const handleGlobalTouchEnd = (e: TouchEvent) => {
-      if (taskNameDrag.isDragging && hoveredDateIndex !== null) {
-        const targetDate = timelineDays[hoveredDateIndex].dateString;
-        const taskToUpdate = tasks.find(t => t.id === taskNameDrag.taskId);
-        if (taskToUpdate) {
-          onUpdateNode({
-            ...taskToUpdate,
-            startDate: targetDate,
-            dueDate: targetDate
-          });
-        }
-      }
-      setTaskNameDrag(null);
-      setHoveredDateIndex(null);
-    };
-
-    window.addEventListener('mousemove', handleGlobalMouseMove);
-    window.addEventListener('mouseup', handleGlobalMouseUp);
-    window.addEventListener('touchmove', handleGlobalTouchMove, { passive: true });
-    window.addEventListener('touchend', handleGlobalTouchEnd);
-
-    return () => {
-      window.removeEventListener('mousemove', handleGlobalMouseMove);
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
-      window.removeEventListener('touchmove', handleGlobalTouchMove);
-      window.removeEventListener('touchend', handleGlobalTouchEnd);
-    };
-  }, [taskNameDrag, hoveredDateIndex, timelineDays, tasks, onUpdateNode]);
+  // Drag-to-move and drag-to-resize handlers
+  const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
+  const activeDragRef = useRef<{ drag: ActiveDrag; startX: number; colWidth: number } | null>(null);
+  const dragHasMovedRef = useRef(false);
 
   const handleBarMouseDown = (
     e: React.MouseEvent,
@@ -673,1044 +383,1090 @@ export default function GanttView({
     endIdx: number
   ) => {
     if (e.button !== 0) return;
-    
     e.stopPropagation();
     e.preventDefault();
 
     dragHasMovedRef.current = false;
-    dragStartMousePosRef.current = { x: e.clientX, y: e.clientY };
-
-    const rowEl = (e.currentTarget as HTMLElement).closest('[data-row-container]');
-    const gridWidth = rowEl?.getBoundingClientRect().width || 2520;
-    const colWidth = gridWidth / 28;
-
-    const dragInfo = {
-      taskId,
-      type,
-      initialStart: startIdx,
-      initialEnd: endIdx,
-      currentStart: startIdx,
-      currentEnd: endIdx,
-      colWidth,
-      startX: e.clientX
-    };
-
-    activeDragRef.current = dragInfo;
-    setActiveDrag({
+    const dragData: ActiveDrag = {
       taskId,
       type,
       initialStart: startIdx,
       initialEnd: endIdx,
       currentStart: startIdx,
       currentEnd: endIdx
-    });
-  };
-
-  const handleBarTouchStart = (
-    e: React.TouchEvent,
-    taskId: string,
-    type: 'move' | 'resize-start' | 'resize-end',
-    startIdx: number,
-    endIdx: number
-  ) => {
-    e.stopPropagation();
-    if (e.touches.length !== 1) return;
-    const touch = e.touches[0];
-
-    dragHasMovedRef.current = false;
-    dragStartMousePosRef.current = { x: touch.clientX, y: touch.clientY };
-
-    const rowEl = (e.currentTarget as HTMLElement).closest('[data-row-container]');
-    const gridWidth = rowEl?.getBoundingClientRect().width || 2520;
-    const colWidth = gridWidth / 28;
-
-    const dragInfo = {
-      taskId,
-      type,
-      initialStart: startIdx,
-      initialEnd: endIdx,
-      currentStart: startIdx,
-      currentEnd: endIdx,
-      colWidth,
-      startX: touch.clientX
     };
 
-    activeDragRef.current = dragInfo;
-    setActiveDrag({
-      taskId,
-      type,
-      initialStart: startIdx,
-      initialEnd: endIdx,
-      currentStart: startIdx,
-      currentEnd: endIdx
-    });
+    activeDragRef.current = {
+      drag: dragData,
+      startX: e.clientX,
+      colWidth: dayColWidth
+    };
+    setActiveDrag(dragData);
   };
 
   useEffect(() => {
     if (!activeDrag) return;
 
-    const handleGlobalMove = (clientX: number) => {
-      const drag = activeDragRef.current;
-      if (!drag) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      const info = activeDragRef.current;
+      if (!info) return;
 
-      const dx = clientX - drag.startX;
-      
-      if (!dragHasMovedRef.current) {
-        const dist = Math.abs(dx);
-        if (dist > 3) {
-          dragHasMovedRef.current = true;
-        }
+      const dx = e.clientX - info.startX;
+      if (Math.abs(dx) > 4) {
+        dragHasMovedRef.current = true;
       }
 
       if (dragHasMovedRef.current) {
-        const dayDiff = Math.round(dx / drag.colWidth);
-        let newStart = drag.initialStart;
-        let newEnd = drag.initialEnd;
+        const dayDiff = Math.round(dx / info.colWidth);
+        let newStart = info.drag.initialStart;
+        let newEnd = info.drag.initialEnd;
 
-        if (drag.type === 'move') {
-          const span = drag.initialEnd - drag.initialStart;
-          newStart = drag.initialStart + dayDiff;
-          newEnd = drag.initialEnd + dayDiff;
-
-          if (newStart < 0) {
-            newStart = 0;
-            newEnd = span;
-          } else if (newEnd > 27) {
-            newEnd = 27;
-            newStart = 27 - span;
-          }
-        } else if (drag.type === 'resize-start') {
-          newStart = drag.initialStart + dayDiff;
-          newStart = Math.max(0, Math.min(drag.initialEnd, newStart));
-        } else if (drag.type === 'resize-end') {
-          newEnd = drag.initialEnd + dayDiff;
-          newEnd = Math.max(drag.initialStart, Math.min(27, newEnd));
+        if (info.drag.type === 'move') {
+          const span = info.drag.initialEnd - info.drag.initialStart;
+          newStart = Math.max(0, Math.min(totalDaysCount - 1 - span, info.drag.initialStart + dayDiff));
+          newEnd = newStart + span;
+        } else if (info.drag.type === 'resize-start') {
+          newStart = Math.max(0, Math.min(info.drag.initialEnd, info.drag.initialStart + dayDiff));
+        } else if (info.drag.type === 'resize-end') {
+          newEnd = Math.max(info.drag.initialStart, Math.min(totalDaysCount - 1, info.drag.initialEnd + dayDiff));
         }
 
-        setActiveDrag(prev => {
-          if (!prev) return null;
-          if (prev.currentStart === newStart && prev.currentEnd === newEnd) return prev;
-          return {
-            ...prev,
-            currentStart: newStart,
-            currentEnd: newEnd
-          };
-        });
+        setActiveDrag(prev => prev ? { ...prev, currentStart: newStart, currentEnd: newEnd } : null);
       }
     };
 
-    const handleGlobalEnd = (clientX: number) => {
-      const drag = activeDragRef.current;
+    const handleMouseUp = () => {
+      const info = activeDragRef.current;
       activeDragRef.current = null;
       setActiveDrag(null);
 
-      if (drag && dragHasMovedRef.current) {
-        const dx = clientX - drag.startX;
-        const dayDiff = Math.round(dx / drag.colWidth);
-        let finalStart = drag.initialStart;
-        let finalEnd = drag.initialEnd;
-
-        if (drag.type === 'move') {
-          const span = drag.initialEnd - drag.initialStart;
-          finalStart = drag.initialStart + dayDiff;
-          finalEnd = drag.initialEnd + dayDiff;
-
-          if (finalStart < 0) {
-            finalStart = 0;
-            finalEnd = span;
-          } else if (finalEnd > 27) {
-            finalEnd = 27;
-            finalStart = 27 - span;
-          }
-        } else if (drag.type === 'resize-start') {
-          finalStart = drag.initialStart + dayDiff;
-          finalStart = Math.max(0, Math.min(drag.initialEnd, finalStart));
-        } else if (drag.type === 'resize-end') {
-          finalEnd = drag.initialEnd + dayDiff;
-          finalEnd = Math.max(drag.initialStart, Math.min(27, finalEnd));
-        }
-
-        const taskToUpdate = tasks.find(t => t.id === drag.taskId);
-        if (taskToUpdate) {
-          const newStartDate = timelineDays[finalStart].dateString;
-          const newDueDate = timelineDays[finalEnd].dateString;
-
+      if (info && dragHasMovedRef.current) {
+        const task = tasks.find(t => t.id === info.drag.taskId);
+        if (task) {
+          const newStartStr = timelineDays[Math.max(0, Math.min(totalDaysCount - 1, activeDrag.currentStart))].dateString;
+          const newEndStr = timelineDays[Math.max(0, Math.min(totalDaysCount - 1, activeDrag.currentEnd))].dateString;
           onUpdateNode({
-            ...taskToUpdate,
-            startDate: newStartDate,
-            dueDate: newDueDate
+            ...task,
+            startDate: newStartStr,
+            dueDate: newEndStr
           });
         }
-
-        setTimeout(() => {
-          dragHasMovedRef.current = false;
-        }, 50);
-      } else {
-        dragHasMovedRef.current = false;
       }
     };
 
-    const handleGlobalMouseMove = (e: MouseEvent) => {
-      handleGlobalMove(e.clientX);
-    };
-
-    const handleGlobalMouseUp = (e: MouseEvent) => {
-      handleGlobalEnd(e.clientX);
-    };
-
-    const handleGlobalTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        if (e.cancelable) e.preventDefault();
-        handleGlobalMove(e.touches[0].clientX);
-      }
-    };
-
-    const handleGlobalTouchEnd = (e: TouchEvent) => {
-      const clientX = e.changedTouches.length > 0 ? e.changedTouches[0].clientX : (activeDragRef.current?.startX || 0);
-      handleGlobalEnd(clientX);
-    };
-
-    if (activeDrag.type === 'move') {
-      document.body.style.cursor = 'grabbing';
-    } else {
-      document.body.style.cursor = 'ew-resize';
-    }
-
-    window.addEventListener('mousemove', handleGlobalMouseMove);
-    window.addEventListener('mouseup', handleGlobalMouseUp);
-    window.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
-    window.addEventListener('touchend', handleGlobalTouchEnd);
-
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
     return () => {
-      document.body.style.cursor = '';
-      window.removeEventListener('mousemove', handleGlobalMouseMove);
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
-      window.removeEventListener('touchmove', handleGlobalTouchMove);
-      window.removeEventListener('touchend', handleGlobalTouchEnd);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [activeDrag, timelineDays, tasks, onUpdateNode]);
+  }, [activeDrag, timelineDays, tasks, onUpdateNode, dayColWidth]);
 
+  // Navigate timeline
   const shiftDays = (count: number) => {
     setBaseDate(prev => {
-      const next = new Date(prev);
-      next.setDate(next.getDate() + count);
-      return next;
+      const n = new Date(prev);
+      n.setDate(n.getDate() + count);
+      return n;
     });
   };
 
   const jumpToToday = () => {
     const today = new Date();
-    today.setDate(today.getDate() - 5);
+    today.setDate(today.getDate() - 10);
     setBaseDate(today);
   };
 
-  const getPriorityColorBorder = (p: Priority) => {
-    switch (p) {
-      case 'urgent': return 'bg-rose-500/10 border-rose-500 hover:bg-rose-500/20';
-      case 'high': return 'bg-amber-500/10 border-amber-500 hover:bg-amber-500/20';
-      case 'medium': return 'bg-indigo-500/10 border-indigo-500 hover:bg-indigo-500/20';
-      case 'low': return 'bg-slate-500/15 border-slate-400 hover:bg-slate-500/20';
-      default: return 'bg-slate-100 dark:bg-slate-800/80 border-slate-300 dark:border-slate-700 hover:bg-slate-200';
-    }
-  };
+  const handleCreateNewTask = (customText?: string) => {
+    const text = customText || newInlineTaskText.trim() || 'Untitled Post';
+    const todayStr = new Date().toISOString().split('T')[0];
+    const end = new Date();
+    end.setDate(end.getDate() + 3);
+    const endStr = end.toISOString().split('T')[0];
 
-  const getPriorityTextClass = (p: Priority) => {
-    switch (p) {
-      case 'urgent': return 'text-rose-600 dark:text-rose-400 font-medium';
-      case 'high': return 'text-amber-600 dark:text-amber-400 font-medium';
-      case 'medium': return 'text-indigo-600 dark:text-indigo-400 font-medium';
-      default: return 'text-slate-500 dark:text-slate-400';
-    }
-  };
-
-  // Pre-calculate dates span positions for each task bar
-  const getTaskRangeColIndices = (task: TaskNode) => {
-    if (!task.startDate && !task.dueDate) return null;
-    
-    let startIdx = -1;
-    let endIdx = -1;
-
-    if (task.startDate) {
-      startIdx = timelineDays.findIndex(d => d.dateString === task.startDate);
-    }
-    if (task.dueDate) {
-      endIdx = timelineDays.findIndex(d => d.dateString === task.dueDate);
-    }
-
-    // If both dates are provided
-    if (task.startDate && task.dueDate) {
-      const startMs = new Date(task.startDate).getTime();
-      const endMs = new Date(task.dueDate).getTime();
-      
-      if (startMs <= endMs) {
-        if (startIdx === -1) {
-          const firstDayMs = timelineDays[0].date.getTime();
-          if (startMs < firstDayMs) {
-            startIdx = 0; // Starts before range
-          } else {
-            return null; // Starts after range
-          }
-        }
-        if (endIdx === -1) {
-          const lastDayMs = timelineDays[27].date.getTime();
-          if (endMs > lastDayMs) {
-            endIdx = 27; // Ends after range
-          } else {
-            return null; // Ends before range
-          }
-        }
-      } else {
-        // Swap if misconfigured
-        const temp = startIdx;
-        startIdx = endIdx;
-        endIdx = temp;
-      }
-    } else if (task.startDate) {
-      // Only startDate exists -> assume 3 days duration
-      if (startIdx === -1) {
-        const startMs = new Date(task.startDate).getTime();
-        const firstDayMs = timelineDays[0].date.getTime();
-        if (startMs < firstDayMs) return null;
-        return null;
-      }
-      endIdx = Math.min(27, startIdx + 2);
-    } else if (task.dueDate) {
-      // Only dueDate exists -> assume 1 day duration
-      if (endIdx === -1) {
-        return null;
-      }
-      startIdx = endIdx;
-    }
-
-    if (startIdx !== -1 && endIdx !== -1 && startIdx <= endIdx) {
-      return {
-        start: startIdx,
-        end: endIdx,
-        span: endIdx - startIdx + 1,
-      };
-    }
-    
-    return null;
-  };
-
-  const handleInlineTaskCreate = () => {
-    if (!newInlineTaskText.trim()) return;
     if (onCreateTask) {
-      // Create new task with no date to start with, or today's date
-      const todayStr = new Date().toISOString().split('T')[0];
-      onCreateTask(newInlineTaskText.trim(), [], todayStr);
+      onCreateTask(text, ['In Progress'], endStr);
     }
     setNewInlineTaskText('');
-    setActiveInlineAddInput(false);
+    setShowNewTaskInline(false);
   };
 
-  const formatCompactDate = (dateStr: string) => {
-    if (!dateStr) return '';
-    const parts = dateStr.split('-');
-    if (parts.length === 3) {
-      return `${parts[2]}.${parts[1]}.${parts[0].slice(2)}`;
-    }
-    return dateStr;
-  };
+  // Close open popovers when clicking outside
+  useEffect(() => {
+    const handleOutside = () => {
+      setShowViewDropdown(false);
+      setShowPropertiesDropdown(false);
+      setShowFilterDropdown(false);
+      setShowSortDropdown(false);
+      setShowNewDropdown(false);
+      setShowScaleDropdown(false);
+      setShowEmojiPicker(false);
+      setActiveTaskEmojiPickerId(null);
+      setActiveTaskTagPickerId(null);
+      setActivePriorityPickerTaskId(null);
+    };
+    window.addEventListener('click', handleOutside);
+    return () => window.removeEventListener('click', handleOutside);
+  }, []);
 
   return (
     <div 
-      id="gantt-chart-workspace" 
-      className={`flex flex-col bg-[#F9FAFC] dark:bg-slate-900 font-sans overflow-hidden transition-all duration-200 ${
-        isFullScreen 
-          ? 'fixed inset-0 z-[150] w-screen h-screen' 
-          : 'w-full h-full dark:bg-slate-950/20'
+      id="notion-timeline-workspace"
+      className={`flex flex-col bg-white dark:bg-[#191919] text-[#37352F] dark:text-[#D4D4D4] font-sans h-full w-full overflow-hidden select-none ${
+        isFullScreen ? 'fixed inset-0 z-[150] w-screen h-screen' : ''
       }`}
     >
-      
-      {/* Timeline Controls Toolbar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 p-2 px-3 sm:p-2.5 sm:px-4 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-1.5 flex-wrap min-w-0 w-full sm:w-auto">
-          <button
-            onClick={toggleLeftPanel}
-            aria-label={isLeftPanelCollapsed ? "Развернуть список задач" : "Свернуть список задач"}
-            className={`p-1 rounded-lg border transition-all cursor-pointer ${
-              isLeftPanelCollapsed 
-                ? 'bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-950/50 dark:border-indigo-800/50 dark:text-indigo-400 font-medium' 
-                : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700 dark:text-slate-300'
-            }`}
-            title={isLeftPanelCollapsed ? "Показать список задач" : "Скрыть список задач"}
-          >
-            <AlignLeft className="w-3.5 h-3.5" />
-          </button>
-
-
-
-          <span className="text-[10px] bg-slate-150 dark:bg-slate-800 px-2 py-0.5 rounded-full font-mono font-medium text-slate-500 dark:text-slate-400 shrink-0 whitespace-nowrap">
-            {formatCompactDate(timelineDays[0].dateString)} — {formatCompactDate(timelineDays[27].dateString)}
-          </span>
-
-          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-lg px-2 py-0.5 select-none">
-            <ArrowUpDown className="w-3 h-3 text-slate-450 dark:text-slate-500 shrink-0" />
-            <select
-              value={sortMode}
-              onChange={(e) => setSortMode(e.target.value as any)}
-              className="bg-transparent text-[10.5px] font-medium text-slate-600 dark:text-slate-300 focus:outline-none cursor-pointer pr-1"
-            >
-              <option value="hierarchy" className="dark:bg-slate-900">Иерархия (по холсту)</option>
-              <option value="startDate" className="dark:bg-slate-900">Иерархия (по дате начала)</option>
-              <option value="dueDate" className="dark:bg-slate-900">Иерархия (по сроку)</option>
-              <option value="flatStartDate" className="dark:bg-slate-900">Хронологически (списком)</option>
-              <option value="flatDueDate" className="dark:bg-slate-900">По сроку (списком)</option>
-            </select>
+      {/* 1. NOTION TOP HEADER (macOS controls, Breadcrumb, Share, Updates, Favorite) */}
+      <header className="h-11 px-3 sm:px-4 border-b border-[#EDEDEB] dark:border-[#2F2F2F] flex items-center justify-between shrink-0 bg-white dark:bg-[#191919] z-20">
+        
+        {/* Left: macOS dots, sidebar toggle, breadcrumb path */}
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          
+          {/* macOS window dots */}
+          <div className="hidden sm:flex items-center gap-1.5 mr-1">
+            <span className="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E]/50 inline-block" />
+            <span className="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123]/50 inline-block" />
+            <span className="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29]/50 inline-block" />
           </div>
 
+          {/* Sidebar Toggle Button */}
+          {onOpenSidebar && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenSidebar();
+              }}
+              className="p-1 hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] rounded text-[#787774] dark:text-[#9B9A97] cursor-pointer transition-colors"
+              title="Открыть меню"
+            >
+              <AlignLeft className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* History Nav */}
+          <div className="hidden sm:flex items-center text-[#787774] dark:text-[#9B9A97]">
+            <button 
+              onClick={() => shiftDays(-7)}
+              className="p-1 hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] rounded cursor-pointer"
+              title="Назад"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => shiftDays(7)}
+              className="p-1 hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] rounded cursor-pointer"
+              title="Вперед"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Breadcrumb matching Notion screenshot: ✍️ Blogging Manager / Blog Posts */}
+          <div className="flex items-center gap-1.5 text-[13.5px] truncate font-normal text-[#37352F] dark:text-[#D4D4D4]">
+            <span className="cursor-pointer hover:underline flex items-center gap-1 text-[#787774] dark:text-[#9B9A97]">
+              <span>{projectIcon}</span>
+              <span className="hidden sm:inline">Blogging Manager</span>
+            </span>
+            <span className="text-[#9B9A97] dark:text-[#6A6A6A]">/</span>
+            <span className="font-medium text-[#37352F] dark:text-[#EBEBEB] truncate">
+              {projectName}
+            </span>
+          </div>
+        </div>
+
+        {/* Right Header: Share, Updates, Favorite, More */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0 text-[13px] text-[#37352F] dark:text-[#D4D4D4]">
           <button
-            onClick={toggleHideCompleted}
-            className={`px-2.5 py-1 rounded-lg border text-[10.5px] font-medium transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
-              hideCompleted
-                ? 'bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-950/30 dark:border-indigo-850 dark:text-indigo-400 font-semibold'
-                : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700 dark:text-slate-300'
-            }`}
-            title={hideCompleted ? "Показать выполненные задачи" : "Скрыть выполненные задачи"}
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard?.writeText(window.location.href);
+            }}
+            className="hidden sm:flex items-center gap-1 px-2 py-1 hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] rounded text-[#37352F] dark:text-[#D4D4D4] cursor-pointer transition-colors"
+            title="Поделиться ссылкой на страницу"
           >
-            {hideCompleted ? (
-              <EyeOff className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
-            ) : (
-              <Eye className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
-            )}
-            <span>Скрыть выполненные</span>
+            <span>Share</span>
           </button>
 
-          {currentZoomTaskId && (
-            <div className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-900/50 rounded-lg px-2 py-0.5 select-none">
-              {(() => {
-                const focusedTask = processedNodes.find(t => t.id === currentZoomTaskId);
-                if (focusedTask && focusedTask.parentId) {
-                  return (
-                    <button
-                      onClick={() => handleZoomTaskIdChange(focusedTask.parentId)}
-                      className="p-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-950/60 rounded text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-200 cursor-pointer flex items-center justify-center border border-indigo-200/30 dark:border-indigo-800/30 mr-0.5"
-                      title="Назад к родительской задаче"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                    </button>
-                  );
-                }
-                return null;
-              })()}
-              <span className="text-[10.5px] font-medium text-indigo-600 dark:text-indigo-400 truncate max-w-[150px]" title={processedNodes.find(t => t.id === currentZoomTaskId)?.text}>
-                Фокус: {processedNodes.find(t => t.id === currentZoomTaskId)?.text || 'Задача'}
-              </span>
-              <button
-                onClick={() => handleZoomTaskIdChange(null)}
-                className="p-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-900 rounded text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 cursor-pointer flex items-center justify-center"
-                title="Показать весь проект"
+          <button
+            onClick={(e) => e.stopPropagation()}
+            className="hidden sm:flex items-center gap-1 px-2 py-1 hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] rounded text-[#37352F] dark:text-[#D4D4D4] cursor-pointer transition-colors"
+            title="История изменений"
+          >
+            <Check className="w-3.5 h-3.5 text-[#2383E2]" />
+            <span>Updates</span>
+          </button>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsFavorited(!isFavorited);
+            }}
+            className={`p-1.5 hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] rounded cursor-pointer transition-colors ${
+              isFavorited ? 'text-amber-500' : 'text-[#787774] dark:text-[#9B9A97]'
+            }`}
+            title="Добавить в избранное"
+          >
+            <Star className={`w-4 h-4 ${isFavorited ? 'fill-amber-500' : ''}`} />
+          </button>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsFullScreen(!isFullScreen);
+              if (onFullScreenChange) onFullScreenChange(!isFullScreen);
+            }}
+            className="p-1.5 hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] rounded text-[#787774] dark:text-[#9B9A97] cursor-pointer transition-colors"
+            title={isFullScreen ? "Свернуть" : "На весь экран"}
+          >
+            {isFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        </div>
+      </header>
+
+      {/* 2. NOTION PAGE H1 TITLE & ICON (Matching Blog_post_template.png) */}
+      <div className="px-4 sm:px-12 pt-6 pb-2 shrink-0 bg-white dark:bg-[#191919]">
+        <div className="flex items-center gap-3 group">
+          
+          {/* Large Project Icon */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowEmojiPicker(!showEmojiPicker);
+              }}
+              className="text-3xl sm:text-4xl p-1.5 rounded-lg hover:bg-[#F1F1EF] dark:hover:bg-[#2B2B2B] transition-colors cursor-pointer"
+              title="Изменить иконку страницы"
+            >
+              {projectIcon}
+            </button>
+
+            {/* Emoji Picker Popover */}
+            {showEmojiPicker && (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                className="absolute left-0 top-full mt-1.5 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-xl p-2.5 w-64 grid grid-cols-6 gap-1"
               >
-                <X className="w-3 h-3" />
+                {NOTION_EMOJIS.map(emoji => (
+                  <button
+                    key={emoji}
+                    onClick={() => {
+                      if (onUpdateProjectIcon) onUpdateProjectIcon(emoji);
+                      setShowEmojiPicker(false);
+                    }}
+                    className="text-xl p-1.5 rounded hover:bg-[#F1F1EF] dark:hover:bg-[#333333] transition-transform hover:scale-125 cursor-pointer flex items-center justify-center"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Large Page H1 Heading */}
+          <div className="flex-1 min-w-0">
+            {isEditingTitle ? (
+              <input
+                type="text"
+                autoFocus
+                value={titleValue}
+                onChange={(e) => setTitleValue(e.target.value)}
+                onBlur={() => {
+                  setIsEditingTitle(false);
+                  if (titleValue.trim() && onUpdateProjectName) {
+                    onUpdateProjectName(titleValue.trim());
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setIsEditingTitle(false);
+                    if (titleValue.trim() && onUpdateProjectName) {
+                      onUpdateProjectName(titleValue.trim());
+                    }
+                  }
+                  if (e.key === 'Escape') {
+                    setIsEditingTitle(false);
+                    setTitleValue(projectName);
+                  }
+                }}
+                className="text-2xl sm:text-4xl font-bold text-[#37352F] dark:text-[#FFFFFF] bg-transparent border-b border-[#2383E2] focus:outline-none w-full"
+              />
+            ) : (
+              <h1 
+                onClick={() => setIsEditingTitle(true)}
+                className="text-2xl sm:text-4xl font-bold text-[#37352F] dark:text-[#FFFFFF] cursor-pointer hover:bg-[#F7F7F5] dark:hover:bg-[#222222] rounded px-1.5 -mx-1.5 py-0.5 transition-colors truncate"
+                title="Нажмите для редактирования заголовка"
+              >
+                {projectName}
+              </h1>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. DATABASE CONTROL BAR ([Ξ Writing timeline ⌄], Properties, Filter, Sort, Search, New ⌄) */}
+      <div className="px-4 sm:px-12 py-2 border-b border-[#EDEDEB] dark:border-[#2F2F2F] flex items-center justify-between gap-2 shrink-0 bg-white dark:bg-[#191919]">
+        
+        {/* Left: View selector dropdown [Ξ Writing timeline ⌄] */}
+        <div className="relative">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowViewDropdown(!showViewDropdown);
+            }}
+            className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] text-[13.5px] font-medium text-[#37352F] dark:text-[#EBEBEB] cursor-pointer transition-colors"
+          >
+            <Clock className="w-4 h-4 text-[#787774] dark:text-[#9B9A97]" />
+            <span>Writing timeline</span>
+            <ChevronDown className="w-3.5 h-3.5 text-[#9B9A97]" />
+          </button>
+
+          {/* Views switcher popover */}
+          {showViewDropdown && (
+            <div 
+              onClick={(e) => e.stopPropagation()}
+              className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-lg py-1.5 w-48 text-[13px]"
+            >
+              <div className="px-3 py-1 text-[11px] font-semibold text-[#9B9A97] uppercase tracking-wider">Представления</div>
+              
+              <button
+                onClick={() => {
+                  setShowViewDropdown(false);
+                }}
+                className="w-full px-3 py-1.5 flex items-center gap-2 bg-[#EBF5FB] dark:bg-[#1E3A5F]/40 text-[#2383e2] dark:text-[#72B4FF] font-medium cursor-pointer"
+              >
+                <Clock className="w-4 h-4" />
+                <span>Timeline (Timeview)</span>
+                <Check className="w-3.5 h-3.5 ml-auto" />
               </button>
+
+              {setViewMode && (
+                <>
+                  <button
+                    onClick={() => {
+                      setViewMode('mobile-list');
+                      setShowViewDropdown(false);
+                    }}
+                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-[#F1F1EF] dark:hover:bg-[#303030] text-[#37352F] dark:text-[#D4D4D4] cursor-pointer"
+                  >
+                    <ListIcon className="w-4 h-4 text-[#787774]" />
+                    <span>List (Список)</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setViewMode('kanban');
+                      setShowViewDropdown(false);
+                    }}
+                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-[#F1F1EF] dark:hover:bg-[#303030] text-[#37352F] dark:text-[#D4D4D4] cursor-pointer"
+                  >
+                    <KanbanIcon className="w-4 h-4 text-[#787774]" />
+                    <span>Board (Канбан)</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setViewMode('calendar');
+                      setShowViewDropdown(false);
+                    }}
+                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-[#F1F1EF] dark:hover:bg-[#303030] text-[#37352F] dark:text-[#D4D4D4] cursor-pointer"
+                  >
+                    <CalendarIcon className="w-4 h-4 text-[#787774]" />
+                    <span>Calendar (Календарь)</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setViewMode('table');
+                      setShowViewDropdown(false);
+                    }}
+                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-[#F1F1EF] dark:hover:bg-[#303030] text-[#37352F] dark:text-[#D4D4D4] cursor-pointer"
+                  >
+                    <TableIcon className="w-4 h-4 text-[#787774]" />
+                    <span>Table (Таблица)</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setViewMode('canvas');
+                      setShowViewDropdown(false);
+                    }}
+                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-[#F1F1EF] dark:hover:bg-[#303030] text-[#37352F] dark:text-[#D4D4D4] cursor-pointer"
+                  >
+                    <LayoutGrid className="w-4 h-4 text-[#787774]" />
+                    <span>Canvas (Холст)</span>
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-start">
-          <button
-            onClick={jumpToToday}
-            className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-[11px] font-medium transition-all cursor-pointer border border-slate-200/60 dark:border-slate-800"
-          >
-            К сегодня
-          </button>
+        {/* Right: Properties, Filter, Sort, Search, New ⌄ button */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
           
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-200 dark:border-slate-700">
+          {/* Properties Toggle Popover */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowPropertiesDropdown(!showPropertiesDropdown);
+              }}
+              className="px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] text-[13px] text-[#787774] dark:text-[#9B9A97] cursor-pointer transition-colors hidden sm:block"
+            >
+              Properties
+            </button>
+
+            {showPropertiesDropdown && (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-lg p-2 w-52 text-[13px]"
+              >
+                <div className="px-2 py-1 text-[11px] font-semibold text-[#9B9A97] uppercase tracking-wider">Показывать поля</div>
+                
+                <label className="flex items-center justify-between px-2 py-1.5 hover:bg-[#F1F1EF] dark:hover:bg-[#303030] rounded cursor-pointer">
+                  <span>Статус / Тег</span>
+                  <input
+                    type="checkbox"
+                    checked={visibleProps.tag}
+                    onChange={(e) => setVisibleProps(p => ({ ...p, tag: e.target.checked }))}
+                    className="rounded text-[#2383e2] focus:ring-0"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between px-2 py-1.5 hover:bg-[#F1F1EF] dark:hover:bg-[#303030] rounded cursor-pointer">
+                  <span>Приоритет</span>
+                  <input
+                    type="checkbox"
+                    checked={visibleProps.priority}
+                    onChange={(e) => setVisibleProps(p => ({ ...p, priority: e.target.checked }))}
+                    className="rounded text-[#2383e2] focus:ring-0"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between px-2 py-1.5 hover:bg-[#F1F1EF] dark:hover:bg-[#303030] rounded cursor-pointer">
+                  <span>Боковая таблица</span>
+                  <input
+                    type="checkbox"
+                    checked={visibleProps.tableSidebar}
+                    onChange={(e) => setVisibleProps(p => ({ ...p, tableSidebar: e.target.checked }))}
+                    className="rounded text-[#2383e2] focus:ring-0"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* Filter Popover */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowFilterDropdown(!showFilterDropdown);
+              }}
+              className={`px-2 py-1 rounded text-[13px] cursor-pointer transition-colors ${
+                filterStatus !== 'all' 
+                  ? 'bg-[#EBF5FB] text-[#2383e2] font-medium' 
+                  : 'hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] text-[#787774] dark:text-[#9B9A97]'
+              }`}
+            >
+              Filter {filterStatus !== 'all' && `(${filterStatus})`}
+            </button>
+
+            {showFilterDropdown && (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-lg py-1 w-44 text-[13px]"
+              >
+                <button
+                  onClick={() => { setFilterStatus('all'); setShowFilterDropdown(false); }}
+                  className={`w-full px-3 py-1.5 text-left flex items-center justify-between hover:bg-[#F1F1EF] dark:hover:bg-[#303030] ${filterStatus === 'all' ? 'font-semibold text-[#2383E2]' : ''}`}
+                >
+                  <span>Все посты</span>
+                  {filterStatus === 'all' && <Check className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  onClick={() => { setFilterStatus('in_progress'); setShowFilterDropdown(false); }}
+                  className={`w-full px-3 py-1.5 text-left flex items-center justify-between hover:bg-[#F1F1EF] dark:hover:bg-[#303030] ${filterStatus === 'in_progress' ? 'font-semibold text-[#2383E2]' : ''}`}
+                >
+                  <span>В работе</span>
+                  {filterStatus === 'in_progress' && <Check className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  onClick={() => { setFilterStatus('todo'); setShowFilterDropdown(false); }}
+                  className={`w-full px-3 py-1.5 text-left flex items-center justify-between hover:bg-[#F1F1EF] dark:hover:bg-[#303030] ${filterStatus === 'todo' ? 'font-semibold text-[#2383E2]' : ''}`}
+                >
+                  <span>К выполнению</span>
+                  {filterStatus === 'todo' && <Check className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  onClick={() => { setFilterStatus('completed'); setShowFilterDropdown(false); }}
+                  className={`w-full px-3 py-1.5 text-left flex items-center justify-between hover:bg-[#F1F1EF] dark:hover:bg-[#303030] ${filterStatus === 'completed' ? 'font-semibold text-[#2383E2]' : ''}`}
+                >
+                  <span>Опубликовано</span>
+                  {filterStatus === 'completed' && <Check className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Sort Button */}
+          <button
+            onClick={() => shiftDays(7)}
+            className="px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] text-[13px] text-[#787774] dark:text-[#9B9A97] cursor-pointer transition-colors hidden sm:block"
+          >
+            Sort
+          </button>
+
+          {/* Search Input / Icon */}
+          <div className="flex items-center">
+            {isSearchOpen ? (
+              <div className="flex items-center bg-[#F1F1EF] dark:bg-[#2B2B2B] rounded px-2 py-0.5">
+                <Search className="w-3.5 h-3.5 text-[#9B9A97] mr-1" />
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Поиск постов..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-transparent text-[12px] text-[#37352F] dark:text-[#EBEBEB] focus:outline-none w-28 sm:w-36"
+                />
+                <button onClick={() => { setSearchQuery(''); setIsSearchOpen(false); }} className="text-[#9B9A97] hover:text-[#37352F]">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsSearchOpen(true)}
+                className="p-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] text-[#787774] dark:text-[#9B9A97] cursor-pointer transition-colors flex items-center gap-1"
+                title="Поиск"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-[13px]">Search</span>
+              </button>
+            )}
+          </div>
+
+          {/* More ••• */}
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              setVisibleProps(p => ({ ...p, tableSidebar: !p.tableSidebar }));
+            }}
+            className="p-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] text-[#787774] dark:text-[#9B9A97] cursor-pointer"
+            title="Боковая панель таблицы"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+
+          {/* Iconic Notion Blue Button "New ⌄" */}
+          <div className="relative flex items-center shadow-xs">
+            <button
+              onClick={() => handleCreateNewTask()}
+              className="bg-[#2383E2] hover:bg-[#1D70C2] text-white px-2.5 sm:px-3 py-1 rounded-l text-[13px] font-medium cursor-pointer transition-colors flex items-center gap-1"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New</span>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowNewDropdown(!showNewDropdown);
+              }}
+              className="bg-[#2383E2] hover:bg-[#1D70C2] text-white px-1.5 py-1 rounded-r border-l border-[#1D70C2] text-[13px] cursor-pointer transition-colors"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+
+            {/* New templates dropdown */}
+            {showNewDropdown && (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-lg py-1 w-56 text-[13px]"
+              >
+                <div className="px-3 py-1 text-[11px] font-semibold text-[#9B9A97] uppercase tracking-wider">Шаблоны постов</div>
+                <button
+                  onClick={() => {
+                    handleCreateNewTask('Safe Trick-or-Treating Guide');
+                    setShowNewDropdown(false);
+                  }}
+                  className="w-full px-3 py-1.5 text-left hover:bg-[#F1F1EF] dark:hover:bg-[#303030] flex items-center gap-2 cursor-pointer"
+                >
+                  <span>🎃</span> <span>Holiday Guide Post</span>
+                </button>
+                <button
+                  onClick={() => {
+                    handleCreateNewTask('Cold Weather Running Gear');
+                    setShowNewDropdown(false);
+                  }}
+                  className="w-full px-3 py-1.5 text-left hover:bg-[#F1F1EF] dark:hover:bg-[#303030] flex items-center gap-2 cursor-pointer"
+                >
+                  <span>❄️</span> <span>Product Review / Gear</span>
+                </button>
+                <button
+                  onClick={() => {
+                    handleCreateNewTask('The Best Ski Gear for Beginners');
+                    setShowNewDropdown(false);
+                  }}
+                  className="w-full px-3 py-1.5 text-left hover:bg-[#F1F1EF] dark:hover:bg-[#303030] flex items-center gap-2 cursor-pointer"
+                >
+                  <span>🎿</span> <span>How-To Tutorial</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+
+      {/* 4. TIMELINE CONTROLS SUB-HEADER (» November 2026 ... December, [Quarters ⌄], < Today >) */}
+      <div className="border-b border-[#EDEDEB] dark:border-[#2F2F2F] bg-white dark:bg-[#191919] flex items-center justify-between px-4 sm:px-12 py-1.5 shrink-0 text-[13px] z-10">
+        
+        {/* Left: Month Indicators with Notion chevrons » Month Year */}
+        <div className="flex items-center gap-6 overflow-hidden">
+          {headerMonths.map((m, idx) => (
+            <div key={`${m.name}-${m.year}`} className="flex items-center gap-1.5 font-medium text-[#37352F] dark:text-[#EBEBEB]">
+              {idx === 0 && <span className="text-[#9B9A97] font-bold">»</span>}
+              <span>{m.name} {m.year}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Right: Scale Dropdown ([Quarters ⌄] / Days) and < Today > navigation */}
+        <div className="flex items-center gap-2 shrink-0">
+          
+          {/* Scale selector */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowScaleDropdown(!showScaleDropdown);
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] text-[#787774] dark:text-[#9B9A97] cursor-pointer transition-colors text-[12.5px]"
+            >
+              <span>{scaleMode}</span>
+              <ChevronDown className="w-3 h-3 text-[#9B9A97]" />
+            </button>
+
+            {showScaleDropdown && (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-lg py-1 w-36 text-[12.5px]"
+              >
+                {(['Days', 'Weeks', 'Bi-weeks', 'Months', 'Quarters'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      setScaleMode(mode);
+                      setShowScaleDropdown(false);
+                    }}
+                    className={`w-full px-3 py-1.5 text-left flex items-center justify-between hover:bg-[#F1F1EF] dark:hover:bg-[#303030] cursor-pointer ${
+                      scaleMode === mode ? 'font-semibold text-[#2383E2]' : ''
+                    }`}
+                  >
+                    <span>{mode}</span>
+                    {scaleMode === mode && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* < Today > navigation block */}
+          <div className="flex items-center text-[#787774] dark:text-[#9B9A97] bg-[#F7F7F5] dark:bg-[#252525] rounded p-0.5 border border-[#EDEDEB] dark:border-[#383838]">
             <button
               onClick={() => shiftDays(-7)}
-              className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded transition-all cursor-pointer"
+              className="p-1 hover:bg-white dark:hover:bg-[#303030] rounded cursor-pointer transition-colors"
               title="-1 неделя"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <span className="text-[10px] px-1 font-medium text-slate-400 block sm:hidden">Неделя</span>
+            <button
+              onClick={jumpToToday}
+              className="px-2 py-0.5 text-[12px] font-medium text-[#37352F] dark:text-[#EBEBEB] hover:bg-white dark:hover:bg-[#303030] rounded cursor-pointer transition-colors"
+            >
+              Today
+            </button>
             <button
               onClick={() => shiftDays(7)}
-              className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded transition-all cursor-pointer"
+              className="p-1 hover:bg-white dark:hover:bg-[#303030] rounded cursor-pointer transition-colors"
               title="+1 неделя"
             >
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          <button
-            onClick={() => setActiveInlineAddInput(true)}
-            className="p-1 px-2.5 sm:px-3 sm:py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] sm:text-xs font-medium shadow-xs transition-all cursor-pointer flex items-center gap-1 shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Новая задача</span>
-          </button>
-
-          <button
-            onClick={() => setIsFullScreen(!isFullScreen)}
-            className={`p-1 px-2.5 sm:px-3 sm:py-1 border rounded-lg text-[11px] sm:text-xs font-medium shadow-xs transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
-              isFullScreen
-                ? 'bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400'
-                : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700 dark:text-slate-300'
-            }`}
-            title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
-          >
-            {isFullScreen ? (
-              <>
-                <Minimize2 className="w-3.5 h-3.5" />
-                <span>Свернуть</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span>На весь экран</span>
-              </>
-            )}
-          </button>
         </div>
       </div>
 
-      {/* Primary Gantt Content - Left tasks pane & Right timeline grid */}
-      <div className="flex-1 flex overflow-hidden w-full relative">
+      {/* 5. MAIN TIMELINE CANVAS BODY (Notion Timeview Grid & Cards) */}
+      <div 
+        ref={timelineContainerRef}
+        className="flex-1 flex overflow-hidden relative bg-white dark:bg-[#191919]"
+      >
         
-        {/* Left lists table pane */}
-        <div 
-          className={`transition-all duration-300 overflow-hidden flex flex-col shrink-0 ${
-            isLeftPanelCollapsed 
-              ? 'w-0 border-r-0' 
-              : 'w-64 max-w-xs md:w-80 border-r border-slate-200 dark:border-slate-800'
-          } bg-white dark:bg-slate-900/40`}
-        >
-          <div className="h-10 px-4 flex items-center justify-between bg-slate-50/70 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 shrink-0 select-none">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="font-medium text-[10.5px] uppercase tracking-wider text-slate-400 truncate">
-                Задачи ({tasks.length})
-              </span>
-              <div className="flex items-center gap-0.5 shrink-0 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-200/50 dark:border-slate-700/50">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    expandAll();
-                  }}
-                  className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer flex items-center justify-center"
-                  title="Развернуть все подзадачи"
-                >
-                  <ChevronsDown className="w-3 h-3" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    collapseAll();
-                  }}
-                  className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer flex items-center justify-center"
-                  title="Свернуть все подзадачи"
-                >
-                  <ChevronsUp className="w-3 h-3" />
-                </button>
-              </div>
+        {/* Optional Left Table Sidebar (When enabled in Properties) */}
+        {visibleProps.tableSidebar && (
+          <div className="w-64 sm:w-72 border-r border-[#EDEDEB] dark:border-[#2F2F2F] flex flex-col shrink-0 bg-white dark:bg-[#191919] z-10">
+            <div className="h-8 px-4 flex items-center justify-between border-b border-[#EDEDEB] dark:border-[#2F2F2F] text-[11.5px] font-semibold text-[#9B9A97] uppercase tracking-wider">
+              <span>Title</span>
+              <span>Status</span>
             </div>
-            <button
-              onClick={toggleLeftPanel}
-              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 rounded transition-colors cursor-pointer shrink-0"
-              title="Свернуть список задач"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          
-          {/* Scrollable Tasks Table Column */}
-          <div 
-            ref={leftScrollRef}
-            onScroll={handleLeftScroll}
-            className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar select-none"
-          >
-            <div className="min-w-[280px] sm:min-w-[340px] divide-y divide-slate-100 dark:divide-slate-800/60 pr-0.5">
-              {activeInlineAddInput && (
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border-b border-indigo-100 dark:border-indigo-950">
-                  <input
-                    type="text"
-                    autoFocus
-                    placeholder="Новая задача... (Enter)"
-                    value={newInlineTaskText}
-                    onChange={(e) => setNewInlineTaskText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleInlineTaskCreate();
-                      if (e.key === 'Escape') setActiveInlineAddInput(false);
-                    }}
-                    className="w-full text-xs p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                  <div className="flex gap-1.5 justify-end mt-2">
-                    <button
-                      onClick={() => setActiveInlineAddInput(false)}
-                      className="px-2 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-medium cursor-pointer"
-                    >
-                      Отмена
-                    </button>
-                    <button
-                      onClick={handleInlineTaskCreate}
-                      className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-medium cursor-pointer"
-                    >
-                      Создать
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {orderedTreeItems.length === 0 ? (
-                <div className="py-12 px-4 text-center">
-                  <p className="text-xs text-slate-400">Нет доступных задач.</p>
-                </div>
-              ) : (
-                orderedTreeItems.map(({ task, depth, parent }) => {
-                  const isSubtask = depth > 0;
-                  return (
-                    <div
-                      key={task.id}
-                      data-task-id={task.id}
-                      onClick={(e) => handleTaskClick(task.id, e)}
-                      onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
-                      className={`h-11 px-3.5 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors border-l-4 ${
-                        selectedNodeId === task.id 
-                          ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-500' 
-                          : task.completed
-                            ? 'bg-emerald-50/5 dark:bg-emerald-950/5 border-transparent opacity-80'
-                            : 'border-transparent'
-                      }`}
-                      style={{ paddingLeft: `${14 + depth * 14}px` }}
-                    >
-                      <div className="flex items-center gap-2 overflow-hidden flex-1">
-                        {isSubtask && (
-                          <CornerDownRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
-                        )}
-                        {(() => {
-                          const hasSubtasks = tasks.some(t => t.parentId === task.id);
-                          if (hasSubtasks) {
-                            return (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleCollapse(task.id);
-                                }}
-                                className="p-0.5 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-400 text-slate-500 rounded transition-colors shrink-0 flex items-center justify-center cursor-pointer"
-                                title={collapsedTaskIds.has(task.id) ? "Развернуть подзадачи" : "Свернуть подзадачи"}
-                              >
-                                {collapsedTaskIds.has(task.id) ? (
-                                  <ChevronRight className="w-3.5 h-3.5" />
-                                ) : (
-                                  <ChevronDown className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            );
-                          } else {
-                            return <div className="w-[18px] h-[18px] shrink-0" />;
-                          }
-                        })()}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onUpdateNode({
-                              ...task,
-                              completed: !task.completed
-                            });
-                          }}
-                          className="text-slate-400 hover:text-emerald-650 dark:hover:text-emerald-400 p-0.5 rounded transition-transform shrink-0"
-                        >
-                          {task.completed ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                          ) : activePomodoroNodeId === task.id ? (
-                            <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                              <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                            </span>
-                          ) : (
-                            <Circle className="w-3.5 h-3.5 shrink-0" />
-                          )}
-                        </button>
-                        <span className={`text-xs truncate text-slate-700 dark:text-slate-200 ${
-                          depth === 0 ? 'font-medium' : 'font-medium text-slate-600 dark:text-slate-300'
-                        } ${
-                          task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''
-                        } flex items-center gap-1.5 min-w-0 ${
-                          (!task.startDate && !task.dueDate) ? 'cursor-grab active:cursor-grabbing hover:text-indigo-650 dark:hover:text-indigo-400 select-none' : ''
-                        }`}
-                        title={(!task.startDate && !task.dueDate) ? `${task.text} (Зажмите и перетащите вправо, чтобы задать дату)` : task.text}
-                        onMouseDown={(e) => {
-                          if (!task.startDate && !task.dueDate) {
-                            handleTaskNameMouseDown(e, task.id, task.text);
-                          }
-                        }}
-                        onTouchStart={(e) => {
-                          if (!task.startDate && !task.dueDate) {
-                            handleTaskNameTouchStart(e, task.id, task.text);
-                          }
-                        }}
-                        >
-                          {(!task.startDate && !task.dueDate) && (
-                            <Calendar className="w-3 h-3 text-indigo-550 shrink-0 select-none group-hover:text-indigo-650 transition-colors animate-pulse-subtle" />
-                          )}
-                          <span className="truncate">{task.text}</span>
-                          {parent && (sortMode === 'flatStartDate' || sortMode === 'flatDueDate') && (
-                            <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1 rounded-sm font-normal shrink-0 truncate max-w-[80px]" title={`Подзадача для: ${parent.text}`}>
-                              ← {parent.text}
-                            </span>
-                          )}
-                          {(() => {
-                            const taskLinks = getTaskExternalLinks(task);
-                            if (taskLinks.length === 0) return null;
-                            return taskLinks.map((linkUrl, lIdx) => (
-                              <a
-                                key={lIdx}
-                                href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                                title={`Открыть внешнюю ссылку (${lIdx + 1}/${taskLinks.length}): ${linkUrl}`}
-                              >
-                                <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
-                              </a>
-                            ));
-                          })()}
-                          {activePomodoroNodeId === task.id && (
-                            <span className="shrink-0 text-[10px] animate-pulse">🍅</span>
-                          )}
-                        </span>
-                      </div>
-
-                      {/* Short detail indicators */}
-                      <div className="flex items-center gap-1.5 shrink-0 font-mono text-[9px]">
-                        {task.dueDate && (
-                          <span className="text-slate-400 dark:text-slate-500">
-                            {task.dueDate.substring(8, 10)}.{task.dueDate.substring(5, 7)}
-                          </span>
-                        )}
-                        {task.progress !== undefined && task.progress > 0 && (
-                          <span className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 px-1 rounded-md font-medium">
-                            {task.progress}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Right timeline scale pane */}
-        <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar bg-slate-100/30 dark:bg-slate-950/20 relative">
-          
-          {isLeftPanelCollapsed && (
-            <button
-              onClick={toggleLeftPanel}
-              className="absolute left-2 top-1/2 -translate-y-1/2 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 shadow-lg hover:shadow-xl rounded-xl w-8 h-12 flex items-center justify-center z-50 cursor-pointer text-indigo-600 dark:text-indigo-400 transition-all group scale-95 hover:scale-100 animate-pulse-subtle"
-              title="Развернуть список задач"
-            >
-              <ChevronRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
-            </button>
-          )}
-
-          {/* Sizing scale container relative size matching column ranges */}
-          <div className="min-w-[2520px] h-full flex flex-col relative">
-            
-            {/* Timeline Header scale columns */}
-            <div className="h-10 flex border-b border-slate-200 dark:border-slate-800 shrink-0 bg-slate-50 dark:bg-slate-900 relative overflow-y-scroll custom-scrollbar">
-              {timelineDays.map((day, i) => {
-                const isFirstDayOffset = i % 7 === 0;
-                
+            <div className="flex-1 overflow-y-auto divide-y divide-[#F1F1EF] dark:divide-[#252525]">
+              {tasks.map(task => {
+                const emoji = getTaskEmoji(task);
+                const tag = getTaskTag(task);
+                const clean = getCleanTitle(task.text);
                 return (
                   <div
-                    key={day.dateString}
-                    className={`flex-1 flex flex-col items-center justify-center border-r border-slate-200 dark:border-slate-800 h-full select-none ${
-                      day.isWeekend ? 'bg-slate-100/40 dark:bg-slate-950/15' : ''
-                    } ${day.isToday ? 'bg-amber-500/10' : ''}`}
+                    key={`sidebar-${task.id}`}
+                    onClick={(e) => onSelectNode(task.id, e)}
+                    className="h-10 px-4 flex items-center justify-between gap-2 hover:bg-[#F7F7F5] dark:hover:bg-[#222222] cursor-pointer text-[13px]"
                   >
-                    <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
-                      {WEEKDAYS_RU[(day.date.getDay() + 6) % 7]}
-                    </span>
-                    <span className={`text-[10px] font-medium leading-none mt-0.5 ${
-                      day.isToday 
-                        ? 'bg-amber-500 text-white rounded-md px-1 py-0.5 font-mono' 
-                        : 'text-slate-600 dark:text-slate-400 font-mono'
-                    }`}>
-                      {day.date.getDate()}
+                    <div className="flex items-center gap-2 truncate min-w-0">
+                      <span>{emoji}</span>
+                      <span className="truncate text-[#37352F] dark:text-[#EBEBEB]">{clean}</span>
+                    </div>
+                    <span className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 font-medium ${tag.bg} ${tag.text} ${tag.darkBg} ${tag.darkText}`}>
+                      {tag.label}
                     </span>
                   </div>
                 );
               })}
             </div>
+          </div>
+        )}
 
-            {/* Gantt Bars Rows Scroll Panel grid line columns */}
-            <div 
-              ref={rightScrollRef}
-              onScroll={handleRightScroll}
-              className="flex-1 overflow-y-scroll divide-y divide-slate-100 dark:divide-slate-800/60 custom-scrollbar relative"
-            >
-              
-              {/* Vertical dotted grid guidelines rendering background */}
-              <div className="absolute inset-0 pointer-events-none flex">
-                {timelineDays.map(day => (
+        {/* Scrollable Timeline Grid Container */}
+        <div 
+          ref={timelineScrollRef}
+          className="flex-1 overflow-x-auto overflow-y-auto custom-scrollbar relative"
+        >
+          <div 
+            style={{ width: `${totalDaysCount * dayColWidth}px` }}
+            className="min-h-full flex flex-col relative"
+          >
+            
+            {/* Timeline Header Row (Date tick numbers: 1, 8, [10], 15, 22, 29...) */}
+            <div className="h-8 border-b border-[#EDEDEB] dark:border-[#2F2F2F] flex sticky top-0 bg-white/95 dark:bg-[#191919]/95 backdrop-blur-xs z-30 select-none">
+              {timelineDays.map((day) => {
+                return (
                   <div
-                    key={`guideline-${day.dateString}`}
-                    className={`flex-1 h-full border-r border-slate-200/40 dark:border-slate-800/40 ${
-                      day.isWeekend ? 'bg-slate-100/10 dark:bg-slate-950/5' : ''
-                    } ${day.isToday ? 'border-r-amber-400/50 bg-amber-500/2' : ''}`}
-                  />
-                ))}
-              </div>
+                    key={`header-${day.dateString}`}
+                    style={{ width: `${dayColWidth}px` }}
+                    className={`h-full border-r border-[#EDEDEB]/50 dark:border-[#2F2F2F]/50 flex items-center justify-center relative shrink-0 ${
+                      day.isWeekend ? 'bg-[#FAFAF9]/40 dark:bg-[#1C1C1C]/40' : ''
+                    }`}
+                  >
+                    {day.isToday ? (
+                      /* Red solid circle for Today matching screenshot: e.g. 🔴 10 */
+                      <div className="w-5 h-5 rounded-full bg-[#EB5757] text-white text-[11px] font-bold flex items-center justify-center shadow-xs">
+                        {day.dayNumber}
+                      </div>
+                    ) : (
+                      <span className="text-[12px] font-normal text-[#9B9A97] dark:text-[#7A7A7A]">
+                        {day.dayNumber}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
 
-              {/* Loop and render task rows */}
-              {orderedTreeItems.length === 0 ? (
-                <div className="py-12 text-center text-xs text-slate-400 col-span-28"></div>
+            {/* Vertical Red Line for Today & Grid Lines */}
+            <div className="absolute inset-0 pointer-events-none flex z-0">
+              {timelineDays.map((day, idx) => (
+                <div
+                  key={`grid-${day.dateString}`}
+                  style={{ width: `${dayColWidth}px` }}
+                  className={`h-full border-r border-[#EDEDEB]/30 dark:border-[#2F2F2F]/30 shrink-0 relative ${
+                    day.isWeekend ? 'bg-[#FAFAF9]/20 dark:bg-[#1C1C1C]/20' : ''
+                  }`}
+                >
+                  {/* Vertical Red Today Line */}
+                  {day.isToday && (
+                    <div className="absolute left-1/2 -translate-x-1/2 top-8 bottom-0 w-px bg-[#EB5757] z-10" />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Month Vertical Dividers */}
+            <div className="absolute inset-0 pointer-events-none flex z-0">
+              {headerMonths.map((m) => (
+                <div
+                  key={`month-divider-${m.name}`}
+                  style={{ 
+                    left: `${m.startIndex * dayColWidth}px`,
+                    width: `${m.count * dayColWidth}px`
+                  }}
+                  className="absolute top-0 bottom-0 border-l border-[#D9D9D7] dark:border-[#383838]"
+                />
+              ))}
+            </div>
+
+            {/* TIMELINE ROWS (Card items) */}
+            <div className="flex-1 py-3 flex flex-col gap-2 relative z-10">
+              
+              {tasks.length === 0 ? (
+                <div className="py-20 text-center text-[#9B9A97]">
+                  <p className="text-sm">Нет задач на таймлайне.</p>
+                  <button 
+                    onClick={() => handleCreateNewTask()}
+                    className="mt-3 text-[#2383E2] hover:underline text-xs font-medium"
+                  >
+                    + Добавить первый пост
+                  </button>
+                </div>
               ) : (
-                orderedTreeItems.map(({ task, depth, parent }, rowIndex) => {
-                  const range = getTaskRangeColIndices(task);
+                tasks.map((task, rowIndex) => {
+                  const range = getTaskRange(task);
                   const isSelected = selectedNodeId === task.id;
                   const isBeingDragged = activeDrag && activeDrag.taskId === task.id;
-                  const isNameDragging = taskNameDrag && taskNameDrag.taskId === task.id && taskNameDrag.isDragging;
-                  const displayRange = isBeingDragged && activeDrag
-                    ? {
-                        start: activeDrag.currentStart,
-                        end: activeDrag.currentEnd,
-                        span: activeDrag.currentEnd - activeDrag.currentStart + 1
-                      }
-                    : (isNameDragging && hoveredDateIndex !== null)
-                      ? {
-                          start: hoveredDateIndex,
-                          end: hoveredDateIndex,
-                          span: 1
-                        }
-                      : range;
+                  const emoji = getTaskEmoji(task);
+                  const tag = getTaskTag(task);
+                  const cleanTitle = getCleanTitle(task.text);
 
-                  // Calculate parent info if parent exists
-                  const rangeParent = parent ? getTaskRangeColIndices(parent) : null;
-                  const parentIndex = parent ? orderedTreeItems.findIndex(item => item.task.id === parent.id) : -1;
+                  const displayStart = isBeingDragged ? activeDrag.currentStart : range.start;
+                  const displayEnd = isBeingDragged ? activeDrag.currentEnd : range.end;
+                  const displaySpan = Math.max(1, displayEnd - displayStart + 1);
+
+                  const cardLeftPx = displayStart * dayColWidth;
+                  const cardWidthPx = Math.max(210, displaySpan * dayColWidth);
 
                   return (
                     <div
-                      key={`row-${task.id}`}
-                      data-row-container
-                      onClick={(e) => handleTaskClick(task.id, e)}
-                      onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
-                      className={`h-11 flex relative items-center transition-colors group cursor-pointer ${
-                        isSelected 
-                          ? 'bg-indigo-50/10 dark:bg-indigo-950/10' 
-                          : isNameDragging
-                            ? 'bg-indigo-500/10 dark:bg-indigo-500/5 ring-1 ring-inset ring-indigo-500/30'
-                            : task.completed
-                              ? 'bg-emerald-500/2 dark:bg-emerald-500/1 hover:bg-slate-100/50 dark:hover:bg-slate-900/50'
-                              : 'hover:bg-slate-50/30 dark:hover:bg-slate-900/30'
-                      }`}
+                      key={`timeline-row-${task.id}`}
+                      className="h-9 relative flex items-center group/row"
                     >
-                      {/* Subtask tree connector line */}
-                      {displayRange && rangeParent && parentIndex !== -1 && (
-                        <svg 
-                          className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-0"
-                          style={{ height: '44px' }}
+                      {/* Left Pinned Overhang Pill (when task starts before visible area matching screenshot `[← 🎃]` & `[← ❄️]`) */}
+                      {range.isOffscreenLeft && !isBeingDragged && (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            shiftDays(-7);
+                          }}
+                          className="sticky left-2 z-20 flex items-center gap-1.5 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#333333] shadow-xs px-2 py-1 rounded text-[12px] font-medium text-[#37352F] dark:text-[#EBEBEB] hover:bg-[#F7F7F5] dark:hover:bg-[#303030] cursor-pointer"
+                          title="Пост начался раньше — нажмите чтобы прокрутить назад"
                         >
-                          {/* Dot at parent start */}
-                          <circle 
-                            cx={rangeParent.start * 90 + 12} 
-                            cy={-((rowIndex - parentIndex) * 44) + 22} 
-                            r="3" 
-                            fill="#818cf8" 
-                            className="opacity-70 dark:fill-indigo-400" 
-                          />
-                          {/* Elbow line */}
-                          <path
-                            d={`M ${rangeParent.start * 90 + 12} ${-((rowIndex - parentIndex) * 44) + 22} L ${rangeParent.start * 90 + 12} 22 L ${displayRange.start * 90} 22`}
-                            fill="none"
-                            stroke="#818cf8"
-                            strokeWidth="1.5"
-                            strokeDasharray="3 3"
-                            className="opacity-50 dark:stroke-indigo-400/50"
-                          />
-                          {/* Arrow tip at child start */}
-                          {displayRange.start * 90 > rangeParent.start * 90 + 12 ? (
-                            <path 
-                              d={`M ${displayRange.start * 90 - 4} 19 L ${displayRange.start * 90} 22 L ${displayRange.start * 90 - 4} 25`} 
-                              fill="none" 
-                              stroke="#818cf8" 
-                              strokeWidth="1.5" 
-                              className="opacity-70 dark:stroke-indigo-400"
+                          <span className="text-[#9B9A97] text-[11px]">←</span>
+                          <span>{emoji}</span>
+                          <span className="truncate max-w-[120px]">{cleanTitle}</span>
+                        </div>
+                      )}
+
+                      {/* Floating Card Item matching Notion screenshot */}
+                      <div
+                        onClick={(e) => onSelectNode(task.id, e)}
+                        onMouseDown={(e) => handleBarMouseDown(e, task.id, 'move', range.start, range.end)}
+                        style={{
+                          left: `${cardLeftPx}px`,
+                          width: `${cardWidthPx}px`
+                        }}
+                        className={`absolute h-8.5 rounded-md border shadow-xs px-2.5 flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none transition-all ${
+                          isBeingDragged 
+                            ? 'ring-2 ring-[#2383E2] shadow-md z-30 scale-[1.01] bg-white dark:bg-[#252525]' 
+                            : isSelected
+                              ? 'bg-white dark:bg-[#222222] border-[#2383E2] ring-1 ring-[#2383E2]'
+                              : task.completed
+                                ? 'bg-[#FAFAF9] dark:bg-[#202020] border-[#E9E9E7] dark:border-[#2F2F2F] opacity-75'
+                                : 'bg-white dark:bg-[#222222] border-[#E9E9E7] dark:border-[#2F2F2F] hover:border-[#D0D0CE] dark:hover:border-[#3F3F3F]'
+                        }`}
+                        title={`${cleanTitle}\nСтатус: ${tag.label}`}
+                      >
+                        
+                        {/* Left Resize Handle */}
+                        <div
+                          onMouseDown={(e) => handleBarMouseDown(e, task.id, 'resize-start', range.start, range.end)}
+                          className="absolute left-0 top-0 bottom-0 w-2 hover:bg-[#2383E2]/30 cursor-ew-resize rounded-l group-hover/row:opacity-100 opacity-0 transition-opacity z-20"
+                          title="Изменить дату начала"
+                        />
+
+                        {/* Card Content: Emoji Icon + Title */}
+                        <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
+                          
+                          {/* Task Emoji Icon */}
+                          <div className="relative">
+                            <span 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveTaskEmojiPickerId(activeTaskEmojiPickerId === task.id ? null : task.id);
+                              }}
+                              className="text-[14px] cursor-pointer hover:scale-115 transition-transform shrink-0"
+                              title="Сменить иконку"
+                            >
+                              {emoji}
+                            </span>
+
+                            {activeTaskEmojiPickerId === task.id && (
+                              <div 
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute left-0 top-full mt-1.5 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-xl p-2 w-48 grid grid-cols-5 gap-1"
+                              >
+                                {NOTION_EMOJIS.slice(0, 15).map(em => (
+                                  <button
+                                    key={em}
+                                    onClick={() => {
+                                      onUpdateNode({ ...task, icon: em });
+                                      setActiveTaskEmojiPickerId(null);
+                                    }}
+                                    className="text-base p-1 rounded hover:bg-[#F1F1EF] dark:hover:bg-[#333333] cursor-pointer flex items-center justify-center"
+                                  >
+                                    {em}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Task Clean Title in Notion Font */}
+                          {editingTaskId === task.id ? (
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingTaskTitle}
+                              onChange={(e) => setEditingTaskTitle(e.target.value)}
+                              onBlur={() => {
+                                if (editingTaskTitle.trim()) {
+                                  onUpdateNode({ ...task, text: editingTaskTitle.trim() });
+                                }
+                                setEditingTaskId(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  if (editingTaskTitle.trim()) {
+                                    onUpdateNode({ ...task, text: editingTaskTitle.trim() });
+                                  }
+                                  setEditingTaskId(null);
+                                }
+                                if (e.key === 'Escape') setEditingTaskId(null);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full bg-white dark:bg-[#191919] border border-[#2383e2] rounded px-1 text-[13px] text-[#37352F] dark:text-[#EBEBEB] focus:outline-none"
                             />
                           ) : (
-                            <path 
-                              d={`M ${displayRange.start * 90 + 4} 19 L ${displayRange.start * 90} 22 L ${displayRange.start * 90 + 4} 25`} 
-                              fill="none" 
-                              stroke="#818cf8" 
-                              strokeWidth="1.5" 
-                              className="opacity-70 dark:stroke-indigo-400"
-                            />
-                          )}
-                        </svg>
-                      )}
-
-                      {/* Gantt Bar spanning multiple days based on dueDate */}
-                      {displayRange ? (
-                        <div
-                          onClick={(e) => handleTaskClick(task.id, e)}
-                          onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
-                          onMouseDown={(e) => {
-                            if (range) {
-                              handleBarMouseDown(e, task.id, 'move', range.start, range.end);
-                            }
-                          }}
-                          onTouchStart={(e) => {
-                            if (range) {
-                              handleBarTouchStart(e, task.id, 'move', range.start, range.end);
-                            }
-                          }}
-                          style={{
-                            left: `${(displayRange.start / 28) * 100}%`,
-                            width: `${(displayRange.span / 28) * 100}%`
-                          }}
-                          className={`absolute h-7 border rounded-xl shadow-xs p-1 flex flex-col justify-center cursor-pointer select-none overflow-hidden z-10 ${
-                            isBeingDragged || isNameDragging ? 'ring-2 ring-indigo-500/50 scale-[1.01] shadow-lg opacity-95' : 'transition-all duration-150'
-                          } ${
-                            isNameDragging ? 'bg-indigo-500/20 border-dashed border-indigo-500 animate-pulse' : ''
-                          } ${
-                            task.completed
-                              ? 'bg-emerald-500/10 border-emerald-500/45 dark:bg-emerald-500/5 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 opacity-70'
-                              : isNameDragging
-                                ? 'text-indigo-700 dark:text-indigo-400 font-medium'
-                                : getPriorityColorBorder(task.priority)
-                          } ${
-                            isSelected && !isBeingDragged ? 'ring-2 ring-indigo-500/30' : ''
-                          }`}
-                          title={`Задача: ${task.text}${parent ? ` (Подзадача для: ${parent.text})` : ''}\nСрок: ${task.dueDate}${task.completed ? ' (Решено)' : ''}`}
-                        >
-                          {/* Left Resize Handle */}
-                          {!task.completed && range && (
-                            <div
-                              className="absolute left-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-black/15 dark:hover:bg-white/15 z-20 flex items-center justify-center group/handle"
-                              onMouseDown={(e) => {
-                                handleBarMouseDown(e, task.id, 'resize-start', range.start, range.end);
+                            <span 
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                setEditingTaskId(task.id);
+                                setEditingTaskTitle(cleanTitle);
                               }}
-                              onTouchStart={(e) => {
-                                handleBarTouchStart(e, task.id, 'resize-start', range.start, range.end);
-                              }}
-                              title="Изменить дату начала"
+                              className={`text-[13px] font-medium text-[#37352F] dark:text-[#EBEBEB] group-hover/row:underline underline-offset-2 truncate transition-colors ${
+                                task.completed ? 'line-through opacity-60' : ''
+                              }`}
                             >
-                              <div className="w-1 h-3 bg-slate-400/50 dark:bg-slate-500/50 rounded-full group-hover/handle:bg-slate-600 dark:group-hover/handle:bg-slate-300 transition-colors" />
-                            </div>
-                          )}
-
-                          {/* Right Resize Handle */}
-                          {!task.completed && range && (
-                            <div
-                              className="absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-black/15 dark:hover:bg-white/15 z-20 flex items-center justify-center group/handle"
-                              onMouseDown={(e) => {
-                                handleBarMouseDown(e, task.id, 'resize-end', range.start, range.end);
-                              }}
-                              onTouchStart={(e) => {
-                                handleBarTouchStart(e, task.id, 'resize-end', range.start, range.end);
-                              }}
-                              title="Изменить срок выполнения"
-                            >
-                              <div className="w-1 h-3 bg-slate-400/50 dark:bg-slate-500/50 rounded-full group-hover/handle:bg-slate-600 dark:group-hover/handle:bg-slate-300 transition-colors" />
-                            </div>
-                          )}
-
-                          {/* Inner task text bar indicator details */}
-                          <div className="flex items-center justify-between gap-1 overflow-hidden w-full px-3">
-                            <span className={`text-[10px] font-medium truncate text-slate-700 dark:text-slate-200 flex items-center gap-1 min-w-0 ${task.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal' : ''}`}>
-                              {task.completed && <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />}
-                              {parent && <span className="text-slate-400 dark:text-slate-500 mr-1 font-sans">↳</span>}
-                              {task.text}
+                              {cleanTitle}
                             </span>
-                            {task.completed ? (
-                              <span className="text-[8px] font-mono font-medium text-emerald-600 dark:text-emerald-400 shrink-0 bg-emerald-500/10 dark:bg-emerald-500/20 px-1 py-0.5 rounded-xs uppercase tracking-wider scale-90">
-                                Решено
-                              </span>
-                            ) : (
-                              task.progress !== undefined && task.progress > 0 && (
-                                <span className="text-[8.5px] font-mono font-medium text-indigo-500 shrink-0">
-                                  {task.progress}%
-                                </span>
-                              )
-                            )}
-                          </div>
-
-                          {/* Linear progress fill visualization inside the bar bottom */}
-                          {!task.completed && task.progress !== undefined && task.progress > 0 && (
-                            <div className="mx-3 bg-slate-200 dark:bg-slate-800 h-1 rounded-full overflow-hidden mt-0.5">
-                              <div 
-                                className="bg-indigo-500 h-full rounded-full transition-all"
-                                style={{ width: `${task.progress}%` }}
-                              />
-                            </div>
                           )}
                         </div>
-                      ) : (
-                        /* Unscheduled card block visually spanning off-grid side, or showing placeholder */
-                        task.dueDate ? (
-                          <div 
-                            onClick={(e) => handleTaskClick(task.id, e)}
-                            onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
-                            className={`absolute right-0 text-[10px] border py-1 px-2.5 rounded-full z-10 shadow-xs mr-4 hover:text-indigo-500 transition-all cursor-pointer flex items-center gap-1 ${
-                              task.completed
-                                ? 'bg-emerald-500/5 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 opacity-85 line-through'
-                                : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500'
-                            }`}
-                          >
-                            {task.completed && <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />}
-                            Срок: {task.dueDate} (Вне диапазона) {task.completed && '• Решено'}
-                          </div>
-                        ) : (
-                          <div 
-                            onClick={(e) => handleTaskClick(task.id, e)}
-                            onDoubleClick={(e) => handleTaskDoubleClick(task.id, e)}
-                            className={`absolute left-4 h-7 border-2 border-dashed transition-all py-1 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer z-10 font-medium text-[9.5px] ${
-                              task.completed
-                                ? 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/2'
-                                : 'border-slate-200 dark:border-slate-800 bg-transparent text-slate-400 dark:text-slate-500 hover:border-slate-300 dark:hover:border-slate-700 hover:text-slate-600'
-                            }`}
-                          >
-                            {task.completed ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                            ) : (
-                              <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+
+                        {/* Status Tag Pill in Notion Pastel Color */}
+                        {visibleProps.tag && (
+                          <div className="relative shrink-0 ml-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveTaskTagPickerId(activeTaskTagPickerId === task.id ? null : task.id);
+                              }}
+                              className={`text-[11px] font-medium px-2 py-0.5 rounded transition-transform hover:scale-105 cursor-pointer whitespace-nowrap ${tag.bg} ${tag.text} ${tag.darkBg} ${tag.darkText}`}
+                            >
+                              {tag.label}
+                            </button>
+
+                            {activeTaskTagPickerId === task.id && (
+                              <div 
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-lg p-1.5 w-44 flex flex-col gap-1 text-[12px]"
+                              >
+                                {NOTION_STATUS_TAGS.map(t => (
+                                  <button
+                                    key={t.id}
+                                    onClick={() => {
+                                      onUpdateNode({
+                                        ...task,
+                                        tags: [t.label],
+                                        completed: t.id === 'posted'
+                                      });
+                                      setActiveTaskTagPickerId(null);
+                                    }}
+                                    className={`px-2 py-1 rounded text-left font-medium ${t.bg} ${t.text} ${t.darkBg} ${t.darkText} hover:opacity-85 flex items-center justify-between cursor-pointer`}
+                                  >
+                                    <span>{t.label}</span>
+                                    {tag.id === t.id && <Check className="w-3.5 h-3.5" />}
+                                  </button>
+                                ))}
+                              </div>
                             )}
-                            Срок не назначен {task.completed && '• Решено'}
                           </div>
-                        )
-                      )}
+                        )}
+
+                        {/* Priority Pill if enabled */}
+                        {visibleProps.priority && task.priority && task.priority !== 'none' && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 shrink-0">
+                            {task.priority === 'urgent' ? 'P1' : task.priority === 'high' ? 'P2' : task.priority === 'medium' ? 'P3' : 'P4'}
+                          </span>
+                        )}
+
+                        {/* Right Resize Handle */}
+                        <div
+                          onMouseDown={(e) => handleBarMouseDown(e, task.id, 'resize-end', range.start, range.end)}
+                          className="absolute right-0 top-0 bottom-0 w-2 hover:bg-[#2383E2]/30 cursor-ew-resize rounded-r group-hover/row:opacity-100 opacity-0 transition-opacity z-20"
+                          title="Изменить дату окончания"
+                        />
+                      </div>
                     </div>
                   );
                 })
               )}
-            </div>
-            
-            {/* Legend guide bar footer */}
-            <div className="h-6 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-end px-4 gap-4 font-mono text-[9px] text-slate-400 select-none shrink-0 uppercase tracking-widest">
-              <span>Сетка: 28 дней</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-rose-500 rounded" /> Срочно</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-amber-500 rounded" /> Высокий</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 bg-indigo-500 rounded" /> Средний</span>
-            </div>
-          </div>
 
+              {/* Bottom "+ New" row matching screenshot */}
+              <div className="h-8 flex items-center px-2 mt-1">
+                {showNewTaskInline ? (
+                  <div className="flex items-center gap-2 bg-white dark:bg-[#222222] border border-[#2383E2] rounded-md px-3 py-1 shadow-xs">
+                    <span>📝</span>
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Название нового поста... (Enter)"
+                      value={newInlineTaskText}
+                      onChange={(e) => setNewInlineTaskText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleCreateNewTask();
+                        if (e.key === 'Escape') setShowNewTaskInline(false);
+                      }}
+                      className="text-[13px] bg-transparent text-[#37352F] dark:text-[#EBEBEB] focus:outline-none w-56"
+                    />
+                    <button
+                      onClick={() => handleCreateNewTask()}
+                      className="text-xs bg-[#2383E2] text-white px-2 py-0.5 rounded font-medium cursor-pointer"
+                    >
+                      Создать
+                    </button>
+                    <button
+                      onClick={() => setShowNewTaskInline(false)}
+                      className="text-xs text-[#9B9A97] hover:text-[#37352F] cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowNewTaskInline(true)}
+                    className="flex items-center gap-1.5 text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#D4D4D4] text-[13px] px-2 py-1 rounded hover:bg-[#F7F7F5] dark:hover:bg-[#252525] transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>New</span>
+                  </button>
+                )}
+              </div>
+
+            </div>
+
+          </div>
         </div>
+
       </div>
 
-      {/* Floating preview pill when dragging a task name to schedule it */}
-      {taskNameDrag && taskNameDrag.isDragging && (
-        <div
-          className="fixed pointer-events-none z-[999] bg-indigo-600/95 dark:bg-indigo-500/95 text-white text-xs py-1.5 px-3.5 rounded-full shadow-lg font-medium backdrop-blur-xs flex items-center gap-1.5 border border-white/15 cursor-grabbing scale-105 transition-transform"
-          style={{
-            left: `${taskNameDrag.currentX + 15}px`,
-            top: `${taskNameDrag.currentY + 15}px`,
-          }}
-        >
-          <Calendar className="w-3.5 h-3.5 shrink-0" />
-          <span className="max-w-[150px] truncate">{taskNameDrag.taskText}</span>
-          {hoveredDateIndex !== null && (
-            <span className="bg-white/20 dark:bg-black/20 px-1.5 py-0.5 rounded text-[9.5px] font-mono whitespace-nowrap animate-pulse">
-              {(() => {
-                const parts = timelineDays[hoveredDateIndex].dateString.split('-');
-                return `${parts[2]}.${parts[1]}`;
-              })()}
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

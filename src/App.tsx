@@ -2068,17 +2068,16 @@ export default function App() {
         setSyncStatus(prev => ({ ...prev, firebase: 'idle', sheets: 'idle' }));
         setHasCheckedInitialAuth(true);
 
-        // Automatic anonymous authentication if the user did not explicitly log out
+        // Optional anonymous authentication if the user did not explicitly log out
         try {
           const explicitLogout = localStorage.getItem('explicit_logout') === 'true';
           if (!explicitLogout) {
-            console.log('[Auth] Automatic anonymous guest sign in triggered');
-            signInGuest().catch(err => {
-              console.error('[Auth] Failed to automatically sign in guest:', err);
+            signInGuest().catch(() => {
+              // Silently continue in local guest mode
             });
           }
         } catch (e) {
-          console.error('[Auth] Error checking explicit logout state:', e);
+          console.warn('[Auth] Running in local guest mode');
         }
       }
     );
@@ -6191,6 +6190,19 @@ export default function App() {
             onFullScreenChange={setIsViewFullScreen}
             focusedTaskId={focusedTaskId}
             onFocusedTaskIdChange={setFocusedTaskId}
+            projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Blog Posts'}
+            projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '✍️'}
+            onUpdateProjectName={(name) => {
+              if (state.activeProjectId) {
+                handleRenameProject(state.activeProjectId, name);
+              }
+            }}
+            onUpdateProjectIcon={(icon) => {
+              if (state.activeProjectId) {
+                handleUpdateProjectIcon(state.activeProjectId, icon);
+              }
+            }}
+            onOpenSidebar={() => setSidebarOpen(true)}
           />
         );
 

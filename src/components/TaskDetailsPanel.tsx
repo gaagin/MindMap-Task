@@ -38,7 +38,16 @@ import {
   GripVertical,
   ExternalLink,
   Globe,
-  Copy
+  Copy,
+  CircleDot,
+  Flame,
+  FolderTree,
+  ListTree,
+  BarChart2,
+  Tag,
+  Lock,
+  Hash,
+  Sparkles
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
@@ -48,6 +57,26 @@ import GoogleDriveImage from './GoogleDriveImage';
 import { motion } from 'motion/react';
 
 const fetch = proxiedFetch;
+
+const getNotionTagStyle = (tagName: string) => {
+  const notionPalettes = [
+    { bg: 'bg-[#E3E2E0] dark:bg-[#2C2C2C]', text: 'text-[#32302C] dark:text-[#D4D4D4]' }, // gray
+    { bg: 'bg-[#EEE0DA] dark:bg-[#432A1C]', text: 'text-[#64473A] dark:text-[#D4A373]' }, // brown
+    { bg: 'bg-[#FADEC9] dark:bg-[#4A2D13]', text: 'text-[#8A480B] dark:text-[#E89943]' }, // orange
+    { bg: 'bg-[#FDECC8] dark:bg-[#4D3A1B]', text: 'text-[#8A6700] dark:text-[#F3CE63]' }, // yellow
+    { bg: 'bg-[#DBEDDB] dark:bg-[#1E3B29]', text: 'text-[#1E7242] dark:text-[#8EE6A5]' }, // green
+    { bg: 'bg-[#D3E5EF] dark:bg-[#1C354A]', text: 'text-[#0B6E99] dark:text-[#7EBDE6]' }, // blue
+    { bg: 'bg-[#E8DEEE] dark:bg-[#3C254C]', text: 'text-[#6940A5] dark:text-[#D5B8F6]' }, // purple
+    { bg: 'bg-[#F5E0E9] dark:bg-[#4E2439]', text: 'text-[#961964] dark:text-[#EE85B5]' }, // pink
+    { bg: 'bg-[#FFE2DD] dark:bg-[#4D2420]', text: 'text-[#C23C32] dark:text-[#FFAAA0]' }, // red
+  ];
+  let hash = 0;
+  for (let i = 0; i < tagName.length; i++) {
+    hash = tagName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % notionPalettes.length;
+  return notionPalettes[idx];
+};
 
 const getDepthDistance = (child: TaskNode, ancestorId: string | null, allNodes: TaskNode[]): number => {
   if (child.parentId === ancestorId) return 1;
@@ -4490,219 +4519,358 @@ export default function TaskDetailsPanel({
               });
             })()}
 
-        {/* Quick Access Info Dashboard & Sub-tabs Switcher */}
-        <div className="space-y-3 bg-slate-50/50 dark:bg-slate-900/30 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/60 shadow-xs mb-4 shrink-0">
-          <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-            Быстрый доступ к параметрам
+        {/* Notion-style Properties Table */}
+        <div className="border-b border-slate-200/70 dark:border-slate-800 pb-3 mb-5 space-y-1 select-none font-sans text-xs shrink-0">
+          <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-1 pb-1 mb-0.5">
+            <span className="flex items-center gap-1.5">
+              <span>Свойства</span>
+            </span>
+            <span className="text-[9px] font-mono lowercase opacity-60">Notion style</span>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            {/* Main Subtab Button */}
-            <button
-              type="button"
-              onClick={() => {
-                setDetailsSubTab('main');
-                setActiveModalParam(null);
-              }}
-              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                detailsSubTab === 'main' && !activeModalParam
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
-                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
-              }`}
-            >
-              <span className="text-base">📊</span>
-              <span className="text-[10px] font-bold mt-1 leading-none">Главное</span>
-              <span className={`text-[9px] mt-1 font-medium ${detailsSubTab === 'main' && !activeModalParam ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                {(() => {
-                  const subCount = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length;
-                  return subCount > 0 ? `${subCount} подзад.` : 'Нет подзад.';
-                })()}
-              </span>
-            </button>
 
-            {/* Dates Modal Button */}
-            <button
-              type="button"
-              onClick={() => setActiveModalParam('dates')}
-              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                activeModalParam === 'dates'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
-                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
-              }`}
-            >
-              <span className="text-base">📅</span>
-              <span className="text-[10px] font-bold mt-1 leading-none">Сроки</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'dates' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                {node.dueDate ? (
-                  node.dueTime ? `${node.dueDate.slice(5)} ${node.dueTime}` : node.dueDate.slice(5)
+          {/* Status Property */}
+          <div 
+            onClick={() => setActiveModalParam('priority_status')}
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <CircleDot className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0" />
+              <span>Статус</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center justify-between gap-1.5">
+              <div className="flex items-center gap-1.5 min-w-0">
+                {node.completed ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#DBEDDB] dark:bg-[#1E3B29] text-[#1E7242] dark:text-[#8EE6A5]">
+                    <Check className="w-3 h-3 stroke-[2.5]" />
+                    Готово
+                  </span>
+                ) : pomo.isRunning ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#E8DEEE] dark:bg-[#3C254C] text-[#6940A5] dark:text-[#D5B8F6] animate-pulse">
+                    ● В работе (Фокус)
+                  </span>
                 ) : (
-                  'Не заданы'
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#E3E2E0] dark:bg-[#2C2C2C] text-[#32302C] dark:text-[#D4D4D4]">
+                    ○ К выполнению
+                  </span>
                 )}
-              </span>
-            </button>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePropChange('completed', !node.completed);
+                }}
+                className={`p-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors ${
+                  node.completed ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 hover:text-slate-600'
+                }`}
+                title={node.completed ? 'Отметить как невыполненную' : 'Отметить как выполненную'}
+              >
+                {node.completed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
 
-            {/* Tags Modal Button */}
-            <button
-              type="button"
-              onClick={() => setActiveModalParam('tags')}
-              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                activeModalParam === 'tags'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
-                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
-              }`}
-            >
-              <span className="text-base">🏷️</span>
-              <span className="text-[10px] font-bold mt-1 leading-none">Теги</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'tags' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                {node.tags && node.tags.length > 0 ? (
-                  `${node.tags.length} шт.`
-                ) : (
-                  'Без тегов'
-                )}
-              </span>
-            </button>
+          {/* Priority Property */}
+          <div 
+            onClick={() => setActiveModalParam('priority_status')}
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <Flame className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-500 transition-colors shrink-0" />
+              <span>Приоритет</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-1.5">
+              {(() => {
+                const p = node.priority;
+                if (p === 'urgent') {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#FFE2DD] dark:bg-[#4D2420] text-[#C23C32] dark:text-[#FFAAA0]">
+                      ⚡ Критический (P1)
+                    </span>
+                  );
+                }
+                if (p === 'high') {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#FDECC8] dark:bg-[#4D3A1B] text-[#B96A00] dark:text-[#FFE099]">
+                      🔥 Высокий (P2)
+                    </span>
+                  );
+                }
+                if (p === 'medium') {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#E8DEEE] dark:bg-[#342445] text-[#7A40A5] dark:text-[#C5A3E8]">
+                      🔹 Средний (P3)
+                    </span>
+                  );
+                }
+                if (p === 'low') {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#E3E2E0] dark:bg-[#2D2D2D] text-[#5A5A58] dark:text-[#B0B0B0]">
+                      ☕ Низкий (P4)
+                    </span>
+                  );
+                }
+                return (
+                  <span className="text-slate-400 dark:text-slate-500 italic text-[11px]">
+                    Не задан
+                  </span>
+                );
+              })()}
+            </div>
+          </div>
 
-            {/* Subtasks Modal Button */}
-            <button
-              type="button"
-              onClick={() => setActiveModalParam('subtasks')}
-              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                activeModalParam === 'subtasks'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
-                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
-              }`}
-            >
-              <span className="text-base">🪜</span>
-              <span className="text-[10px] font-bold mt-1 leading-none">Подзадачи</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'subtasks' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                {(() => {
-                  const subCount = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length;
-                  return subCount > 0 ? `${subCount} шт.` : 'Создать';
-                })()}
-              </span>
-            </button>
+          {/* Dates Property */}
+          <div 
+            onClick={() => setActiveModalParam('dates')}
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <Calendar className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-500 transition-colors shrink-0" />
+              <span>Сроки</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-1.5">
+              {node.dueDate ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[#D3E5EF]/60 dark:bg-[#1C354A]/60 text-[#0B6E99] dark:text-[#7EBDE6]">
+                  <span>{node.dueDate}</span>
+                  {node.dueTime && <span className="font-mono opacity-80">{node.dueTime}</span>}
+                  {node.reminderMinutesBefore !== undefined && <Bell className="w-3 h-3 text-amber-500" />}
+                </span>
+              ) : (
+                <span className="text-slate-400 dark:text-slate-500 italic text-[11px]">
+                  Пусто
+                </span>
+              )}
+            </div>
+          </div>
 
-            {/* Files Modal Button */}
-            <button
-              type="button"
-              onClick={() => setActiveModalParam('files')}
-              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                activeModalParam === 'files'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
-                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
-              }`}
-            >
-              <span className="text-base">📎</span>
-              <span className="text-[10px] font-bold mt-1 leading-none">Вложения</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'files' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                {node.files && node.files.length > 0 ? (
-                  `${node.files.length} файл.`
-                ) : (
-                  'Загрузить'
-                )}
-              </span>
-            </button>
+          {/* Tags Property */}
+          <div 
+            onClick={() => setActiveModalParam('tags')}
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <Tag className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-500 transition-colors shrink-0" />
+              <span>Теги</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center flex-wrap gap-1">
+              {node.tags && node.tags.length > 0 ? (
+                node.tags.map((t, idx) => {
+                  const style = getNotionTagStyle(t);
+                  return (
+                    <span 
+                      key={idx}
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${style.bg} ${style.text}`}
+                    >
+                      #{t}
+                    </span>
+                  );
+                })
+              ) : (
+                <span className="text-slate-400 dark:text-slate-500 italic text-[11px]">
+                  Пусто
+                </span>
+              )}
+            </div>
+          </div>
 
-            {/* Pomodoro Focus Modal Button */}
-            <button
-              type="button"
-              onClick={() => setActiveModalParam('pomodoro')}
-              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                activeModalParam === 'pomodoro'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
-                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
-              }`}
-            >
-              <span className="text-base">⏱️</span>
-              <span className="text-[10px] font-bold mt-1 leading-none">Помодоро</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'pomodoro' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                {formatTotalPomoTime(getPomoStatsForNode(node, allNodes).pomodoroTotalTime)}
-              </span>
-            </button>
+          {/* Subtasks Property */}
+          <div 
+            onClick={() => setActiveModalParam('subtasks')}
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <ListTree className="w-3.5 h-3.5 text-slate-400 group-hover:text-purple-500 transition-colors shrink-0" />
+              <span>Подзадачи</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center justify-between gap-1.5">
+              {(() => {
+                const subtasks = allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle);
+                if (subtasks.length === 0) {
+                  return (
+                    <span className="text-slate-400 dark:text-slate-500 italic text-[11px]">
+                      Пусто
+                    </span>
+                  );
+                }
+                const doneCount = subtasks.filter(s => s.completed).length;
+                return (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[#E8DEEE]/60 dark:bg-[#3C254C]/60 text-[#6940A5] dark:text-[#D5B8F6]">
+                    <span>{subtasks.length} {subtasks.length === 1 ? 'подзадача' : subtasks.length < 5 ? 'подзадачи' : 'подзадач'}</span>
+                    <span className="opacity-75 font-mono">({doneCount}/{subtasks.length})</span>
+                  </span>
+                );
+              })()}
+              {onAddChildNode && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddChildNode(node.id, true);
+                  }}
+                  className="p-1 rounded hover:bg-slate-200/60 dark:hover:bg-slate-700/60 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                  title="Добавить подзадачу"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
 
-            {/* Blockers Modal Button */}
-            <button
-              type="button"
-              onClick={() => setActiveModalParam('blockers')}
-              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                activeModalParam === 'blockers'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
-                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
-              }`}
-            >
-              <span className="text-base">🔒</span>
-              <span className="text-[10px] font-bold mt-1 leading-none">Блокеры</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'blockers' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                {(node.blockedBy || []).length > 0 ? (
-                  `${(node.blockedBy || []).length} шт.`
-                ) : (
-                  'Нет'
-                )}
-              </span>
-            </button>
+          {/* Files & Media Property */}
+          <div 
+            onClick={() => setActiveModalParam('files')}
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <Paperclip className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-500 transition-colors shrink-0" />
+              <span>Вложения</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-1.5">
+              {node.files && node.files.length > 0 ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  📎 {node.files.length} {node.files.length === 1 ? 'файл' : 'файла'}
+                </span>
+              ) : (
+                <span className="text-slate-400 dark:text-slate-500 italic text-[11px]">
+                  Пусто
+                </span>
+              )}
+            </div>
+          </div>
 
-            {/* Version History Modal Button */}
-            <button
-              type="button"
-              onClick={() => setActiveModalParam('history')}
-              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                activeModalParam === 'history'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
-                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
-              }`}
-            >
-              <span className="text-base">📜</span>
-              <span className="text-[10px] font-bold mt-1 leading-none">История</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'history' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                {(node.history || []).length > 0 ? (
-                  `${(node.history || []).length} верс.`
-                ) : (
-                  'Чисто'
-                )}
-              </span>
-            </button>
+          {/* Location / Container Property */}
+          <div 
+            onClick={() => setActiveModalParam('container')}
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <FolderTree className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0" />
+              <span>Область</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-1.5">
+              {(() => {
+                const parentContainer = node.parentId ? allNodes.find(p => p.id === node.parentId) : null;
+                if (parentContainer) {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 truncate max-w-full">
+                      📦 {parentContainer.text}
+                    </span>
+                  );
+                }
+                return (
+                  <span className="text-slate-400 dark:text-slate-500 italic text-[11px]">
+                    Свободная
+                  </span>
+                );
+              })()}
+            </div>
+          </div>
 
-            {/* Container Area Modal Button */}
-            <button
-              type="button"
-              onClick={() => setActiveModalParam('container')}
-              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                activeModalParam === 'container'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
-                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
-              }`}
-            >
-              <span className="text-base">📦</span>
-              <span className="text-[10px] font-bold mt-1 leading-none">Область</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'container' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                {(() => {
-                  const parentContainer = node.parentId ? allNodes.find(p => p.id === node.parentId) : null;
-                  return parentContainer ? parentContainer.text : 'Свободная';
-                })()}
-              </span>
-            </button>
+          {/* Pomodoro Focus Property */}
+          <div 
+            onClick={() => setActiveModalParam('pomodoro')}
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <Timer className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-500 transition-colors shrink-0" />
+              <span>Помодоро</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-1.5">
+              {(() => {
+                const stats = getPomoStatsForNode(node, allNodes);
+                return (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 font-mono">
+                    🍅 {formatTotalPomoTime(stats.pomodoroTotalTime)} {pomo.isRunning && '⚡'}
+                  </span>
+                );
+              })()}
+            </div>
+          </div>
 
-            {/* Priority and Status Modal Button */}
+          {/* Blockers Property */}
+          <div 
+            onClick={() => setActiveModalParam('blockers')}
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <Lock className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-500 transition-colors shrink-0" />
+              <span>Блокеры</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-1.5">
+              {(node.blockedBy || []).length > 0 ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400">
+                  🔒 {(node.blockedBy || []).length} блокер(а)
+                </span>
+              ) : (
+                <span className="text-slate-400 dark:text-slate-500 italic text-[11px]">
+                  Нет
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Version History Property */}
+          <div 
+            onClick={() => setActiveModalParam('history')}
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <History className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-colors shrink-0" />
+              <span>История</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-1.5">
+              {(node.history || []).length > 0 ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  📜 {(node.history || []).length} версий
+                </span>
+              ) : (
+                <span className="text-slate-400 dark:text-slate-500 italic text-[11px]">
+                  1 версия
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Progress Property */}
+          <div 
+            className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors group"
+          >
+            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+              <BarChart2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0" />
+              <span>Прогресс</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-2.5">
+              {(() => {
+                const rawProg = calculateProgress(node.id, allNodes);
+                const prog = rawProg !== null ? rawProg : (node.completed ? 100 : 0);
+                return (
+                  <div className="flex items-center gap-2 flex-1 max-w-[160px]">
+                    <div className="flex-1 h-1.5 bg-slate-200/80 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-300 ${
+                          prog === 100 ? 'bg-emerald-500' : prog > 50 ? 'bg-indigo-500' : 'bg-amber-500'
+                        }`}
+                        style={{ width: `${prog}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-mono font-medium text-slate-600 dark:text-slate-400 shrink-0">
+                      {prog}%
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* "+ Add a property" Notion button */}
+          <div className="pt-1">
             <button
               type="button"
               onClick={() => setActiveModalParam('priority_status')}
-              className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                activeModalParam === 'priority_status'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold'
-                  : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
-              }`}
+              className="flex items-center gap-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100/60 dark:hover:bg-slate-800/40 px-2 py-1 -mx-1 rounded-md transition-colors text-[11.5px] font-medium cursor-pointer w-full text-left"
             >
-              <span className="text-base">⚡</span>
-              <span className="text-[10px] font-bold mt-1 leading-none">Важность</span>
-              <span className={`text-[9px] mt-1 font-medium truncate max-w-full ${activeModalParam === 'priority_status' ? 'text-indigo-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                {(() => {
-                  const p = node.priority;
-                  if (p === 'low') return 'Низкий';
-                  if (p === 'medium') return 'Средний';
-                  if (p === 'high') return 'Высокий';
-                  if (p === 'urgent') return 'Критич.';
-                  return 'По умолч.';
-                })()}
-              </span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>Добавить свойство</span>
             </button>
           </div>
         </div>
