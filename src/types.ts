@@ -31,6 +31,8 @@ export interface Comment {
   imageUrl?: string; // Base64 data url or direct download/content link
   imageGoogleDriveId?: string; // Google Drive file ID if uploaded there
   imageWebViewLink?: string; // Optional Google Drive web view URL
+  reactions?: Record<string, string[]>; // e.g. { '👍': ['uid1', 'uid2'], '❤️': ['uid1'] }
+  resolved?: boolean;
 }
 
 export interface WorkflowConnection {

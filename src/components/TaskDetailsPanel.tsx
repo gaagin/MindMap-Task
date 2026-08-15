@@ -47,7 +47,12 @@ import {
   Tag,
   Lock,
   Hash,
-  Sparkles
+  Sparkles,
+  MessageSquare,
+  Smile,
+  CornerDownLeft,
+  MoreHorizontal,
+  CheckCheck
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
@@ -913,6 +918,76 @@ export default function TaskDetailsPanel({
     setCommentText('');
     setCommentImagePreview(null);
     setUploadedCommentImageInfo(null);
+  };
+
+  const [copiedCommentId, setCopiedCommentId] = useState<string | null>(null);
+  const [activeEmojiMenuCommentId, setActiveEmojiMenuCommentId] = useState<string | null>(null);
+  const [commentFilter, setCommentFilter] = useState<'all' | 'unresolved'>('all');
+
+  const formatNotionCommentDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      const now = new Date();
+      const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+      if (diffSec < 45) return 'только что';
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)} мин. назад`;
+      
+      const isToday = now.toDateString() === date.toDateString();
+      const timeStr = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      if (isToday) return `Сегодня в ${timeStr}`;
+      
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      if (yesterday.toDateString() === date.toDateString()) return `Вчера в ${timeStr}`;
+
+      const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+      const isSameYear = now.getFullYear() === date.getFullYear();
+      if (isSameYear) {
+        return `${date.getDate()} ${months[date.getMonth()]} в ${timeStr}`;
+      }
+      return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()} г. в ${timeStr}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const handleToggleReaction = (commentId: string, emoji: string) => {
+    if (!node?.comments) return;
+    const currentUid = auth.currentUser?.uid || 'anonymous';
+    const updated = node.comments.map(c => {
+      if (c.id !== commentId) return c;
+      const reactions = { ...(c.reactions || {}) };
+      const currentUsers = reactions[emoji] || [];
+      if (currentUsers.includes(currentUid)) {
+        const nextUsers = currentUsers.filter(u => u !== currentUid);
+        if (nextUsers.length === 0) {
+          delete reactions[emoji];
+        } else {
+          reactions[emoji] = nextUsers;
+        }
+      } else {
+        reactions[emoji] = [...currentUsers, currentUid];
+      }
+      return { ...c, reactions };
+    });
+    handlePropChange('comments', updated);
+    setActiveEmojiMenuCommentId(null);
+  };
+
+  const handleToggleResolveComment = (commentId: string) => {
+    if (!node?.comments) return;
+    const updated = node.comments.map(c => {
+      if (c.id !== commentId) return c;
+      return { ...c, resolved: !c.resolved };
+    });
+    handlePropChange('comments', updated);
+  };
+
+  const handleCopyCommentText = (comment: { id: string; text: string }) => {
+    if (!comment.text) return;
+    navigator.clipboard.writeText(comment.text);
+    setCopiedCommentId(comment.id);
+    setTimeout(() => setCopiedCommentId(null), 2000);
   };
 
   const handleDeleteComment = (commentId: string) => {
@@ -4178,61 +4253,142 @@ export default function TaskDetailsPanel({
 
           {/* COLUMN 4: DISCUSSIONS (CHAT) & VERSION HISTORY */}
           <div className="flex flex-col gap-4 min-h-0 h-full">
-            {/* DISCUSSION CHAT CARD */}
-            <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 shadow-xs overflow-hidden min-h-0">
-              <span className="text-xs font-bold text-slate-505 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 shrink-0 px-4 pt-4 pb-2 border-b border-slate-100 dark:border-slate-800/80">
-                <Send className="w-4 h-4 text-indigo-500" />
-                Обсуждение ({ (node.comments || []).length })
-              </span>
+            {/* DISCUSSION CHAT CARD (NOTION STYLE) */}
+            <div className="flex-1 flex flex-col bg-[#FFFFFF] dark:bg-[#1E1E1E] rounded-xl border border-[#EDEDEB] dark:border-[#2F2F2F] shadow-2xs overflow-hidden min-h-0 font-sans">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#EDEDEB] dark:border-[#2F2F2F] bg-[#FAFAFA]/75 dark:bg-[#202020]/60 shrink-0">
+                <span className="text-xs font-semibold text-[#37352F] dark:text-[#ECECEC] flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-[#787774] dark:text-[#9B9A97]" />
+                  Обсуждение
+                </span>
+                <span className="bg-[#E3E2E0] dark:bg-[#2C2C2C] text-[#32302C] dark:text-[#D4D4D4] text-[11px] px-2 py-0.5 rounded-full font-mono font-medium">
+                  {(node.comments || []).length}
+                </span>
+              </div>
 
               {/* Chat scrolling block */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3.5 min-h-0">
                 {(node.comments || []).length === 0 ? (
-                  <div className="text-center py-10 text-[11px] text-slate-400 italic">Начните обсуждение по задаче...</div>
+                  <div className="text-center py-10 text-xs text-[#787774] dark:text-[#9B9A97]">
+                    <MessageSquare className="w-6 h-6 mx-auto mb-1.5 opacity-40" />
+                    Начните обсуждение по задаче...
+                  </div>
                 ) : (
-                  (node.comments || []).map(comment => (
-                    <div key={comment.id} className="flex gap-2 items-start text-xs">
-                      <div className="w-6.5 h-6.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-[10px] shrink-0 border border-indigo-100">
-                        {comment.userName.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0 bg-slate-50 dark:bg-slate-950/40 p-2.5 rounded-xl">
-                        <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{comment.userName}</span>
-                          <span className="text-[8px] text-slate-400">{new Date(comment.createdAt).toLocaleTimeString()}</span>
+                  (node.comments || []).map(comment => {
+                    const isCurrentUser = comment.userId === (auth.currentUser?.uid || 'user');
+                    const avatarPalette = getNotionTagStyle(comment.userName || 'U');
+                    const isCopied = copiedCommentId === comment.id;
+
+                    return (
+                      <div key={comment.id} className="group pb-3 border-b border-[#F2F1ED] dark:border-[#282828] last:border-b-0">
+                        <div className="flex items-center justify-between gap-1.5 mb-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {comment.userPhoto ? (
+                              <img
+                                src={comment.userPhoto}
+                                alt={comment.userName}
+                                className="w-5 h-5 rounded-full border border-[#EDEDEB] dark:border-[#2F2F2F] bg-[#F7F6F3] shrink-0 object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className={`w-5 h-5 rounded-full ${avatarPalette.bg} ${avatarPalette.text} font-semibold flex items-center justify-center text-[9px] shrink-0 select-none border border-black/5`}>
+                                {(comment.userName || 'U').slice(0, 2).toUpperCase()}
+                              </div>
+                            )}
+                            <span className="text-xs font-semibold text-[#37352F] dark:text-[#ECECEC] truncate">
+                              {comment.userName}
+                            </span>
+                            {isCurrentUser && (
+                              <span className="text-[9px] text-[#787774] dark:text-[#9B9A97]">(Вы)</span>
+                            )}
+                            <span className="text-[10px] text-[#9B9A97] dark:text-[#787774]">
+                              {formatNotionCommentDate(comment.createdAt)}
+                            </span>
+                          </div>
+
+                          {/* Action Toolbar on hover */}
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0">
+                            {['👍', '❤️'].map(emoji => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => handleToggleReaction(comment.id, emoji)}
+                                className="p-0.5 hover:bg-[#F7F6F3] dark:hover:bg-[#303030] rounded text-[11px] cursor-pointer"
+                                title={`Поставить ${emoji}`}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCommentText(comment)}
+                              className="p-1 hover:bg-[#F7F6F3] dark:hover:bg-[#303030] rounded text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] transition cursor-pointer"
+                              title="Копировать текст"
+                            >
+                              {isCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteComment(comment.id)}
+                              className="p-1 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded text-[#787774] dark:text-[#9B9A97] hover:text-rose-600 transition cursor-pointer"
+                              title="Удалить"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
-                        <p className="text-slate-700 dark:text-slate-300 break-words">{comment.text}</p>
+
+                        <p className="pl-6.5 text-xs text-[#37352F] dark:text-[#D4D4D4] leading-relaxed whitespace-pre-wrap">
+                          {comment.text}
+                        </p>
+
+                        {/* Reaction Badges */}
+                        {comment.reactions && Object.keys(comment.reactions).length > 0 && (
+                          <div className="pl-6.5 mt-1.5 flex flex-wrap items-center gap-1">
+                            {Object.entries(comment.reactions).map(([emoji, users]) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => handleToggleReaction(comment.id, emoji)}
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[10px] bg-[#F7F6F3] dark:bg-[#252525] border border-[#EDEDEB] dark:border-[#333333] text-[#37352F] dark:text-[#D4D4D4] hover:bg-[#EDEDEB] cursor-pointer"
+                              >
+                                <span>{emoji}</span>
+                                <span className="font-mono">{users.length}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <button onClick={() => handleDeleteComment(comment.id)} className="text-slate-300 hover:text-rose-500 p-1 self-center transition-colors">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
                 <div ref={chatEndRef} />
               </div>
 
-              {/* Chat Comment input */}
-              <div className="p-3 border-t border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 flex gap-2 items-center shrink-0">
-                <input
-                  type="text"
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleSendComment();
-                    }
-                  }}
-                  placeholder="Задать вопрос или прокомментировать..."
-                  className="flex-1 text-xs bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 focus:outline-none dark:text-slate-100 font-sans"
-                />
-                <button
-                  onClick={handleSendComment}
-                  disabled={!commentText.trim()}
-                  className="p-1.5 px-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-45 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                >
-                  <Send className="w-3 h-3" /> Отправить
-                </button>
+              {/* Chat Comment input (Notion Style) */}
+              <div className="p-3 border-t border-[#EDEDEB] dark:border-[#2F2F2F] bg-[#FAFAFA]/75 dark:bg-[#202020]/60 shrink-0">
+                <div className="flex items-center gap-2 bg-[#FFFFFF] dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#333333] rounded-lg px-2.5 py-1.5 focus-within:border-indigo-500 shadow-2xs">
+                  <input
+                    type="text"
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSendComment();
+                      }
+                    }}
+                    placeholder="Добавить комментарий... (Enter)"
+                    className="flex-1 text-xs bg-transparent focus:outline-none text-[#37352F] dark:text-[#ECECEC] placeholder-[#9B9A97]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendComment}
+                    disabled={!commentText.trim()}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-[#E3E2E0] dark:disabled:bg-[#2F2F2F] text-white disabled:text-[#9B9A97] rounded text-xs font-medium transition flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <Send className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -4420,35 +4576,41 @@ export default function TaskDetailsPanel({
         </div>
       </div>
 
-      {/* Tab Switcher */}
-      <div className="flex border-b border-slate-150/25 dark:border-slate-805/20 bg-transparent p-2 gap-2 shrink-0 font-sans">
+      {/* Tab Switcher - Notion Tab Bar */}
+      <div className="flex border-b border-[#EDEDEB] dark:border-[#2F2F2F] bg-transparent px-4 pt-2 gap-4 shrink-0 font-sans">
         <button
           type="button"
           onClick={() => setActiveTab('details')}
-          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`pb-2.5 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer relative ${
             activeTab === 'details'
-              ? 'bg-white/95 dark:bg-slate-800/80 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-205/40 dark:border-slate-700/30'
-              : 'text-slate-505 hover:bg-slate-100/40 dark:hover:bg-slate-800/30 hover:text-slate-702 dark:hover:text-slate-350'
+              ? 'text-[#37352F] dark:text-[#ECECEC] font-bold'
+              : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#ECECEC]'
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
-          Параметры
+          <span>Свойства и параметры</span>
+          {activeTab === 'details' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#37352F] dark:bg-white rounded-full" />
+          )}
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('chat')}
-          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 relative cursor-pointer ${
+          className={`pb-2.5 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer relative ${
             activeTab === 'chat'
-              ? 'bg-white/95 dark:bg-slate-800/80 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-205/40 dark:border-slate-700/30'
-              : 'text-slate-505 hover:bg-slate-100/40 dark:hover:bg-slate-800/30 hover:text-slate-720 dark:hover:text-slate-350'
+              ? 'text-[#37352F] dark:text-[#ECECEC] font-bold'
+              : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#ECECEC]'
           }`}
         >
-          <FileText className="w-3.5 h-3.5" />
-          Чат и Обсуждение
+          <MessageSquare className="w-3.5 h-3.5" />
+          <span>Обсуждение</span>
           {node.comments && node.comments.length > 0 && (
-            <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-mono animate-pulse">
+            <span className="bg-[#E3E2E0] dark:bg-[#2C2C2C] text-[#32302C] dark:text-[#D4D4D4] text-[10px] px-1.5 py-0.5 rounded-full font-medium font-mono">
               {node.comments.length}
             </span>
+          )}
+          {activeTab === 'chat' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#37352F] dark:bg-white rounded-full" />
           )}
         </button>
       </div>
@@ -8027,114 +8189,284 @@ export default function TaskDetailsPanel({
       </div>
       )}
 
-      {/* Elegant Chat/Discussion tab view */}
+      {/* Elegant Notion-style Discussion / Comments Tab View */}
       {activeTab === 'chat' && (
-        <div className="flex-1 flex flex-col min-h-0 bg-slate-50/25 dark:bg-slate-900/50">
-          {/* Messages Scroll Panel */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-            {(node.comments || []).length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center p-6 text-slate-400 dark:text-slate-500 animate-fade-in">
-                <FileText className="w-10 h-10 mb-3 opacity-40 text-slate-400" />
-                <p className="text-xs font-bold uppercase tracking-wider mb-1">
-                  Обсуждение пусто
-                </p>
-                <p className="text-[11px] leading-relaxed max-w-[240px]">
-                  Задайте вопрос, оставьте примечание или прикрепите референс.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {(node.comments || []).map((comment) => (
-                  <div key={comment.id} className="flex gap-3 items-start group animate-fade-in">
-                    {comment.userPhoto ? (
-                      <img
-                        src={comment.userPhoto}
-                        alt={comment.userName}
-                        className="w-8 h-8 rounded-full border border-slate-200/60 dark:border-slate-800 bg-slate-100 shrink-0 object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-xs shrink-0 select-none border border-indigo-100/30">
-                        {comment.userName.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0 bg-white dark:bg-slate-850 border border-slate-150/65 dark:border-slate-800/80 rounded-2xl p-3 shadow-2xs">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 truncate">
-                          {comment.userName}
-                        </span>
-                        <span className="text-[9px] text-slate-400 dark:text-slate-550 font-mono shrink-0">
-                          {new Date(comment.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-700 dark:text-slate-300 break-words whitespace-pre-wrap leading-relaxed selection:bg-indigo-100 dark:selection:bg-indigo-950">
-                        {comment.text}
-                      </p>
+        <div className="flex-1 flex flex-col min-h-0 bg-[#FFFFFF] dark:bg-[#191919] font-sans">
+          {/* Notion Comments Header Toolbar */}
+          <div className="px-5 py-3 border-b border-[#EDEDEB] dark:border-[#2F2F2F] flex items-center justify-between bg-[#FAFAFA]/75 dark:bg-[#202020]/50 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-[#37352F] dark:text-[#ECECEC] flex items-center gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5 text-[#787774] dark:text-[#9B9A97]" />
+                Обсуждение
+              </span>
+              <span className="bg-[#E3E2E0] dark:bg-[#2C2C2C] text-[#32302C] dark:text-[#D4D4D4] text-[11px] px-2 py-0.5 rounded-full font-mono font-medium">
+                {(node.comments || []).length}
+              </span>
+            </div>
 
-                      {comment.imageUrl && (
-                        <div className="mt-2.5">
-                          <div
-                            onClick={() => setLightboxImage({
-                              id: comment.id,
-                              name: 'Изображение из обсуждения',
-                              type: 'image/jpeg',
-                              size: 0,
-                              dataUrl: comment.imageUrl || '',
-                              googleDriveId: comment.imageGoogleDriveId,
-                              webViewLink: comment.imageWebViewLink,
-                            })}
-                            className="relative w-32 h-32 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-slate-200/60 dark:border-slate-755 cursor-pointer group/img shadow-2xs hover:scale-[1.02] hover:border-indigo-400/85 transition-all"
-                            title="Нажмите для увеличения"
-                          >
-                            {comment.imageGoogleDriveId ? (
-                              <GoogleDriveImage 
-                                driveId={comment.imageGoogleDriveId}
-                                googleToken={googleToken}
-                                alt="Comment upload"
-                                sz="w300"
-                                className="w-full h-full"
-                              />
-                            ) : (
-                              <img
-                                src={comment.imageUrl}
-                                alt="Comment upload"
-                                className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
-                                referrerPolicy="no-referrer"
-                              />
-                            )}
-                            <div className="absolute inset-0 bg-black/15 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                              <Eye className="w-4 h-4 text-white drop-shadow-sm" />
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Actions: delete comment */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity self-center shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteComment(comment.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition cursor-pointer"
-                        title="Удалить комментарий"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+            {/* Filter if there are comments */}
+            {(node.comments || []).some(c => c.resolved) && (
+              <div className="flex items-center gap-1 bg-[#EDEDEB] dark:bg-[#2C2C2C] p-0.5 rounded-md text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setCommentFilter('all')}
+                  className={`px-2 py-0.5 rounded transition ${
+                    commentFilter === 'all'
+                      ? 'bg-white dark:bg-[#383838] text-[#37352F] dark:text-[#ECECEC] font-medium shadow-2xs'
+                      : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F]'
+                  }`}
+                >
+                  Все
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCommentFilter('unresolved')}
+                  className={`px-2 py-0.5 rounded transition ${
+                    commentFilter === 'unresolved'
+                      ? 'bg-white dark:bg-[#383838] text-[#37352F] dark:text-[#ECECEC] font-medium shadow-2xs'
+                      : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F]'
+                  }`}
+                >
+                  Открытые
+                </button>
               </div>
             )}
+          </div>
+
+          {/* Comments List Scroll Panel */}
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            {(() => {
+              const allComments = node.comments || [];
+              const visibleComments = commentFilter === 'unresolved' 
+                ? allComments.filter(c => !c.resolved)
+                : allComments;
+
+              if (visibleComments.length === 0) {
+                return (
+                  <div className="flex flex-col items-center justify-center h-full py-16 text-center text-[#787774] dark:text-[#9B9A97] animate-fade-in">
+                    <div className="w-12 h-12 rounded-2xl bg-[#F7F6F3] dark:bg-[#252525] border border-[#EDEDEB] dark:border-[#2F2F2F] flex items-center justify-center mb-3">
+                      <MessageSquare className="w-6 h-6 text-[#9B9A97] dark:text-[#787774]" />
+                    </div>
+                    <p className="text-xs font-semibold text-[#37352F] dark:text-[#ECECEC] mb-1">
+                      {allComments.length === 0 ? 'Нет комментариев' : 'Все комментарии решены'}
+                    </p>
+                    <p className="text-[11px] leading-relaxed max-w-[260px] text-[#787774] dark:text-[#9B9A97]">
+                      {allComments.length === 0 
+                        ? 'Оставьте заметку, задайте вопрос или прикрепите изображение к этой задаче.'
+                        : 'Переключите фильтр на «Все», чтобы увидеть решенные комментарии.'}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-4">
+                  {visibleComments.map((comment) => {
+                    const isCurrentUser = comment.userId === (auth.currentUser?.uid || 'user');
+                    const avatarPalette = getNotionTagStyle(comment.userName || 'U');
+                    const isCopied = copiedCommentId === comment.id;
+
+                    return (
+                      <div 
+                        key={comment.id} 
+                        className={`group transition-all pb-4 border-b border-[#F2F1ED] dark:border-[#282828] last:border-b-0 ${
+                          comment.resolved ? 'opacity-60' : ''
+                        }`}
+                      >
+                        {/* Comment Header: Avatar, Name, Time, Actions */}
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {comment.userPhoto ? (
+                              <img
+                                src={comment.userPhoto}
+                                alt={comment.userName}
+                                className="w-6 h-6 rounded-full border border-[#EDEDEB] dark:border-[#2F2F2F] bg-[#F7F6F3] shrink-0 object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className={`w-6 h-6 rounded-full ${avatarPalette.bg} ${avatarPalette.text} font-semibold flex items-center justify-center text-[10px] shrink-0 select-none border border-black/5`}>
+                                {(comment.userName || 'U').slice(0, 2).toUpperCase()}
+                              </div>
+                            )}
+
+                            <span className="text-[13px] font-semibold text-[#37352F] dark:text-[#ECECEC] truncate">
+                              {comment.userName}
+                            </span>
+
+                            {isCurrentUser && (
+                              <span className="text-[10px] text-[#787774] dark:text-[#9B9A97] font-normal">
+                                (Вы)
+                              </span>
+                            )}
+
+                            <span className="text-[11px] text-[#9B9A97] dark:text-[#787774] shrink-0">
+                              {formatNotionCommentDate(comment.createdAt)}
+                            </span>
+
+                            {comment.resolved && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium bg-[#DBEDDB] dark:bg-[#1E3B29] text-[#1E7242] dark:text-[#8EE6A5] px-1.5 py-0.2 rounded-md">
+                                <Check className="w-2.5 h-2.5" /> Решено
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Notion Action Toolbar (hover visible) */}
+                          <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center gap-0.5 bg-[#FFFFFF] dark:bg-[#252525] border border-[#EDEDEB] dark:border-[#333333] shadow-2xs rounded-md px-1 py-0.5 shrink-0">
+                            {/* Quick Reactions */}
+                            {['👍', '❤️', '💡', '🔥'].map((emoji) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => handleToggleReaction(comment.id, emoji)}
+                                className="p-1 hover:bg-[#F7F6F3] dark:hover:bg-[#303030] rounded text-xs transition cursor-pointer"
+                                title={`Поставить ${emoji}`}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+
+                            <div className="w-[1px] h-3 bg-[#EDEDEB] dark:bg-[#333333] mx-0.5" />
+
+                            {/* Copy Text Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCommentText(comment)}
+                              className="p-1 hover:bg-[#F7F6F3] dark:hover:bg-[#303030] rounded text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#ECECEC] transition cursor-pointer"
+                              title="Копировать текст"
+                            >
+                              {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+
+                            {/* Resolve / Unresolve */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleResolveComment(comment.id)}
+                              className={`p-1 hover:bg-[#F7F6F3] dark:hover:bg-[#303030] rounded transition cursor-pointer ${
+                                comment.resolved 
+                                  ? 'text-emerald-600 dark:text-emerald-400' 
+                                  : 'text-[#787774] dark:text-[#9B9A97] hover:text-emerald-600'
+                              }`}
+                              title={comment.resolved ? 'Снять отметку «Решено»' : 'Отметить как решенное'}
+                            >
+                              <CheckCheck className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Delete Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteComment(comment.id)}
+                              className="p-1 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded text-[#787774] dark:text-[#9B9A97] hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer"
+                              title="Удалить комментарий"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Comment Body */}
+                        <div className="pl-8 text-[13px] leading-relaxed text-[#37352F] dark:text-[#D4D4D4] whitespace-pre-wrap selection:bg-[#CDE8FE] dark:selection:bg-[#1E3B5C]">
+                          {(() => {
+                            const urlRegex = /(https?:\/\/[^\s]+)/g;
+                            const parts = (comment.text || '').split(urlRegex);
+                            return parts.map((part, idx) => {
+                              if (part.match(urlRegex)) {
+                                return (
+                                  <a
+                                    key={idx}
+                                    href={part}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-indigo-600 dark:text-indigo-400 hover:underline underline-offset-2 break-all"
+                                  >
+                                    {part}
+                                  </a>
+                                );
+                              }
+                              return <span key={idx}>{part}</span>;
+                            });
+                          })()}
+                        </div>
+
+                        {/* Image Attachment (if any) */}
+                        {comment.imageUrl && (
+                          <div className="pl-8 mt-2">
+                            <div
+                              onClick={() => setLightboxImage({
+                                id: comment.id,
+                                name: 'Изображение из обсуждения',
+                                type: 'image/jpeg',
+                                size: 0,
+                                dataUrl: comment.imageUrl || '',
+                                googleDriveId: comment.imageGoogleDriveId,
+                                webViewLink: comment.imageWebViewLink,
+                              })}
+                              className="relative max-w-sm rounded-lg overflow-hidden border border-[#EDEDEB] dark:border-[#2F2F2F] bg-[#F7F6F3] dark:bg-[#202020] cursor-pointer group/img shadow-2xs hover:border-indigo-400 dark:hover:border-indigo-500 transition-all"
+                              title="Нажмите для увеличения"
+                            >
+                              {comment.imageGoogleDriveId ? (
+                                <GoogleDriveImage 
+                                  driveId={comment.imageGoogleDriveId}
+                                  googleToken={googleToken}
+                                  alt="Comment upload"
+                                  sz="w400"
+                                  className="w-full max-h-56 object-cover"
+                                />
+                              ) : (
+                                <img
+                                  src={comment.imageUrl}
+                                  alt="Comment upload"
+                                  className="w-full max-h-56 object-cover group-hover/img:scale-[1.02] transition-transform duration-300"
+                                  referrerPolicy="no-referrer"
+                                />
+                              )}
+                              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                                <Eye className="w-5 h-5 text-white drop-shadow" />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Reaction Badges Row */}
+                        {comment.reactions && Object.keys(comment.reactions).length > 0 && (
+                          <div className="pl-8 mt-2 flex flex-wrap items-center gap-1.5">
+                            {Object.entries(comment.reactions).map(([emoji, users]) => {
+                              const currentUid = auth.currentUser?.uid || 'anonymous';
+                              const hasReacted = users.includes(currentUid);
+                              return (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => handleToggleReaction(comment.id, emoji)}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition cursor-pointer border ${
+                                    hasReacted
+                                      ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 font-medium'
+                                      : 'bg-[#F7F6F3] dark:bg-[#252525] border-[#EDEDEB] dark:border-[#333333] text-[#37352F] dark:text-[#D4D4D4] hover:bg-[#EDEDEB] dark:hover:bg-[#303030]'
+                                  }`}
+                                  title={`Отреагировало: ${users.length}`}
+                                >
+                                  <span>{emoji}</span>
+                                  <span className="text-[11px] font-mono">{users.length}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             <div ref={chatEndRef} />
           </div>
 
-          {/* Composer / Form Area */}
-          <div className="p-3 border-t border-slate-150 dark:border-slate-800 bg-white dark:bg-slate-900/80 space-y-2">
-            
+          {/* Notion "Add a comment..." Composer Area */}
+          <div className="p-4 border-t border-[#EDEDEB] dark:border-[#2F2F2F] bg-[#FFFFFF] dark:bg-[#1E1E1E] shrink-0 space-y-2.5">
             {/* Image Preview inside composer if uploaded */}
             {commentImagePreview && (
-              <div className="relative inline-block border border-slate-200 dark:border-slate-700 rounded-xl p-1 bg-slate-50 dark:bg-slate-850 shrink-0">
-                <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800">
+              <div className="relative inline-block border border-[#EDEDEB] dark:border-[#2F2F2F] rounded-lg p-1 bg-[#F7F6F3] dark:bg-[#252525] shrink-0">
+                <div className="relative w-16 h-16 rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800">
                   <img
                     src={commentImagePreview}
                     alt="Upload thumbnail"
@@ -8152,7 +8484,7 @@ export default function TaskDetailsPanel({
                     setCommentImagePreview(null);
                     setUploadedCommentImageInfo(null);
                   }}
-                  className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-md hover:scale-105 transition duration-200"
+                  className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-md hover:scale-105 transition duration-200 cursor-pointer"
                   title="Удалить картинку"
                 >
                   <X className="w-3 h-3" />
@@ -8160,32 +8492,24 @@ export default function TaskDetailsPanel({
               </div>
             )}
 
-            <div className="flex items-end gap-2">
-              {/* Add image trigger */}
-              <button
-                type="button"
-                onClick={() => commentImageInputRef.current?.click()}
-                disabled={isUploadingCommentImage}
-                className="p-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-600 rounded-xl border border-slate-200/50 dark:border-slate-705/50 shadow-sm transition disabled:opacity-50 shrink-0 cursor-pointer h-10 w-10 flex items-center justify-center"
-                title="Прикрепить изображение"
-              >
-                {isUploadingCommentImage ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+            {/* Notion Composer Box */}
+            <div className="border border-[#E9E9E7] dark:border-[#333333] rounded-xl bg-[#FFFFFF] dark:bg-[#252525] focus-within:border-indigo-500 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/15 transition-all shadow-2xs p-2.5">
+              <div className="flex items-start gap-2.5">
+                {/* Current User Avatar */}
+                {auth.currentUser?.photoURL ? (
+                  <img
+                    src={auth.currentUser.photoURL}
+                    alt="User"
+                    className="w-6 h-6 rounded-full border border-[#EDEDEB] dark:border-[#333333] mt-0.5 object-cover shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
                 ) : (
-                  <Image className="w-4 h-4" />
+                  <div className="w-6 h-6 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-[10px] mt-0.5 shrink-0 select-none border border-indigo-200/50 dark:border-indigo-800/40">
+                    {(auth.currentUser?.displayName || auth.currentUser?.email || 'U').slice(0, 2).toUpperCase()}
+                  </div>
                 )}
-              </button>
 
-              <input
-                type="file"
-                ref={commentImageInputRef}
-                onChange={handleCommentImageSelected}
-                accept="image/*"
-                className="hidden"
-              />
-
-              {/* Text Input Row */}
-              <div className="flex-1 min-w-0 relative">
+                {/* Textarea */}
                 <textarea
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
@@ -8196,32 +8520,85 @@ export default function TaskDetailsPanel({
                     }
                   }}
                   onPaste={handleCommentAreaPaste}
-                  placeholder="Напишите комментарий... (Enter, Ctrl+V для вставки изображения)"
-                  className="w-full bg-slate-50 dark:bg-slate-850/60 border border-slate-200/85 dark:border-slate-700 text-xs rounded-xl py-2 pl-3 pr-8 focus:outline-none focus:ring-1 focus:ring-indigo-505/50 focus:border-indigo-500 dark:text-slate-200 resize-none max-h-20 min-h-[38px]"
-                  style={{ height: '38px' }}
+                  placeholder="Добавить комментарий... (Enter для отправки, Shift+Enter для переноса)"
+                  className="flex-1 bg-transparent text-[13px] text-[#37352F] dark:text-[#ECECEC] placeholder-[#9B9A97] dark:placeholder-[#787774] focus:outline-none resize-none min-h-[44px] max-h-36 leading-relaxed selection:bg-[#CDE8FE] dark:selection:bg-[#1E3B5C]"
+                  rows={2}
                 />
               </div>
 
-              {/* Send Button */}
-              <button
-                type="button"
-                onClick={handleSendComment}
-                disabled={isUploadingCommentImage || (!commentText.trim() && !uploadedCommentImageInfo?.imageUrl)}
-                className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 text-white disabled:text-slate-400 dark:disabled:text-slate-650 rounded-xl shadow-xs hover:shadow-md transition active:scale-95 disabled:active:scale-100 shrink-0 h-10 w-10 flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
-                title="Отправить"
-              >
-                <Send className="w-4 h-4" />
-              </button>
+              {/* Composer Toolbar Footer */}
+              <div className="mt-2 pt-2 border-t border-[#F2F1ED] dark:border-[#2F2F2F] flex items-center justify-between gap-2">
+                {/* Left tools: Attach file, quick emoji, cloud indicator */}
+                <div className="flex items-center gap-1.5 text-[#787774] dark:text-[#9B9A97]">
+                  <button
+                    type="button"
+                    onClick={() => commentImageInputRef.current?.click()}
+                    disabled={isUploadingCommentImage}
+                    className="p-1.5 hover:bg-[#F7F6F3] dark:hover:bg-[#303030] rounded-md text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#ECECEC] transition flex items-center gap-1 text-xs cursor-pointer disabled:opacity-50"
+                    title="Прикрепить изображение (или вставьте скриншот через Ctrl+V)"
+                  >
+                    {isUploadingCommentImage ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+                    ) : (
+                      <Paperclip className="w-3.5 h-3.5" />
+                    )}
+                    <span className="text-[11px] hidden sm:inline">Фото</span>
+                  </button>
+
+                  <input
+                    type="file"
+                    ref={commentImageInputRef}
+                    onChange={handleCommentImageSelected}
+                    accept="image/*"
+                    className="hidden"
+                  />
+
+                  {/* Quick emoji append buttons */}
+                  {['👍', '❤️', '💡'].map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => setCommentText(prev => prev + emoji)}
+                      className="p-1 hover:bg-[#F7F6F3] dark:hover:bg-[#303030] rounded text-xs transition cursor-pointer"
+                      title={`Вставить ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+
+                  {/* Cloud Drive Indicator */}
+                  {googleToken ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 ml-1 font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      Google Диск
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-500 ml-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                      Локально (&lt;1МБ)
+                    </span>
+                  )}
+                </div>
+
+                {/* Right tools: Shortcut tip & Send button */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-[#9B9A97] dark:text-[#787774] hidden md:inline">
+                    Enter ↵
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={handleSendComment}
+                    disabled={isUploadingCommentImage || (!commentText.trim() && !uploadedCommentImageInfo?.imageUrl)}
+                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-[#E3E2E0] dark:disabled:bg-[#2F2F2F] text-white disabled:text-[#9B9A97] dark:disabled:text-[#787774] rounded-md text-xs font-semibold shadow-2xs transition active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                    title="Отправить комментарий"
+                  >
+                    <Send className="w-3 h-3" />
+                    <span>Отправить</span>
+                  </button>
+                </div>
+              </div>
             </div>
-            {googleToken ? (
-              <p className="text-[9px] text-emerald-600 dark:text-emerald-400 pl-1 font-sans">
-                ✓ Картинки сохраняются на вашем Google Диске!
-              </p>
-            ) : (
-              <p className="text-[9px] text-amber-600 dark:text-amber-500 pl-1 font-sans">
-                До 1 МБ локально. Войдите через Google, чтобы хранить картинки в облаке на Google Диске!
-              </p>
-            )}
           </div>
         </div>
       )}

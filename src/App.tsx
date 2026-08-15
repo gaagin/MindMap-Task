@@ -70,6 +70,7 @@ import EisenhowerMatrixView from './components/EisenhowerMatrixView';
 import AnyDoView from './components/AnyDoView';
 import GeminiAiConsole from './components/GeminiAiConsole';
 import NotionSync from './components/NotionSync';
+import NotionDatabaseBar, { SortField, SortOrder } from './components/NotionDatabaseBar';
 
 // Import Google Sheets & Firebase Auth systems
 import { 
@@ -1407,6 +1408,40 @@ export default function App() {
   const [filterCategoryId, setFilterCategoryId] = useState<string | null>(null);
   const [kanbanGroupBy, setKanbanGroupBy] = useState<'status' | 'category' | 'priority' | 'container' | null>('status');
   const [kanbanContainerFilterId, setKanbanContainerFilterId] = useState<string | null>('all');
+
+  // Notion-style Sort and Properties state
+  const [sortField, setSortField] = useState<SortField>('none');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  const [visibleProperties, setVisibleProperties] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('notion_visible_properties');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      text: true,
+      status: true,
+      priority: true,
+      dueDate: true,
+      startDate: false,
+      tags: true,
+      assignee: true,
+      progress: true,
+      pomodoroTotalTime: false,
+      files: true,
+      notes: true,
+      budget: false,
+    };
+  });
+
+  const handleTogglePropertyVisibility = (propKey: string) => {
+    setVisibleProperties(prev => {
+      const next = { ...prev, [propKey]: prev[propKey] === false ? true : false };
+      try {
+        localStorage.setItem('notion_visible_properties', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   const [preFocusFilters, setPreFocusFilters] = useState<{
     filterStatus: string;
@@ -3797,7 +3832,7 @@ export default function App() {
     searchQuery.trim() !== "";
 
   const displayedNodesForViews = useMemo(() => {
-    return activeNodes.filter(node => {
+    const filtered = activeNodes.filter(node => {
       // If we have a focused container, we want to see only tasks belonging to this container (or the container itself)
       if (focusedContainerId) {
         if (node.id !== focusedContainerId) {
@@ -3874,6 +3909,64 @@ export default function App() {
       
       return !node.archived;
     });
+
+    if (sortField && sortField !== 'none') {
+      const priorityWeights: Record<string, number> = {
+        urgent: 4,
+        high: 3,
+        medium: 2,
+        low: 1,
+        none: 0,
+      };
+
+      return [...filtered].sort((a, b) => {
+        let valA: any;
+        let valB: any;
+
+        switch (sortField) {
+          case 'text':
+            valA = (a.text || '').toLowerCase();
+            valB = (b.text || '').toLowerCase();
+            break;
+          case 'dueDate':
+            valA = a.dueDate ? new Date(a.dueDate).getTime() : (sortOrder === 'asc' ? Infinity : -Infinity);
+            valB = b.dueDate ? new Date(b.dueDate).getTime() : (sortOrder === 'asc' ? Infinity : -Infinity);
+            break;
+          case 'startDate':
+            valA = a.startDate ? new Date(a.startDate).getTime() : (sortOrder === 'asc' ? Infinity : -Infinity);
+            valB = b.startDate ? new Date(b.startDate).getTime() : (sortOrder === 'asc' ? Infinity : -Infinity);
+            break;
+          case 'priority':
+            valA = priorityWeights[a.priority || 'none'] ?? 0;
+            valB = priorityWeights[b.priority || 'none'] ?? 0;
+            break;
+          case 'progress':
+            valA = a.progress ?? (a.completed ? 100 : 0);
+            valB = b.progress ?? (b.completed ? 100 : 0);
+            break;
+          case 'pomodoroTotalTime':
+            valA = a.pomodoroTotalTime || 0;
+            valB = b.pomodoroTotalTime || 0;
+            break;
+          case 'completed':
+            valA = a.completed ? 1 : 0;
+            valB = b.completed ? 1 : 0;
+            break;
+          case 'createdAt':
+            valA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            valB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            break;
+          default:
+            return 0;
+        }
+
+        if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+        if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
   }, [
     activeNodes, 
     filterStatus, 
@@ -3886,7 +3979,9 @@ export default function App() {
     viewMode, 
     focusedContainerId, 
     focusedTaskId,
-    isAnyFilterActive
+    isAnyFilterActive,
+    sortField,
+    sortOrder
   ]);
 
   // Single node or multi-node drag updating coordinates with simultaneous movement of all descendant nodes
@@ -6395,404 +6490,67 @@ export default function App() {
           </div>
         )}
         
-        {/* Workspace Top Action Bar Header */}
-        <header className={`${isViewFullScreen ? 'hidden' : 'hidden sm:flex'} h-16 border-b items-center justify-between px-4 sm:px-6 glass-panel z-35 transition-all duration-300 ${
-          (!currentUser || !googleToken)
-            ? 'border-rose-150/55 dark:border-rose-900/30'
-            : 'border-slate-150/40 dark:border-slate-800/30'
-        }`}>
-          <div className="flex items-center gap-3.5 min-w-0">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className={`p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 z-30 pointer-events-auto ${
-                sidebarOpen ? 'lg:hidden' : 'flex'
-              }`}
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            
-            <div 
-              className="min-w-0 cursor-pointer lg:cursor-default"
-              onClick={() => {
-                if (window.innerWidth < 1024) {
-                  setSidebarOpen(true);
-                }
-              }}
-            >
-              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-2">
-                {state.projects.find(p => p.id === state.activeProjectId)?.name || 'Карта задач'}
-                {(!currentUser || !googleToken) && (
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 shadow-xs animate-pulse whitespace-nowrap">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                    <span>Нужна авторизация!</span>
-                  </span>
-                )}
-                {focusedContainerId && (() => {
-                  const containerNode = activeNodes.find(n => n.id === focusedContainerId);
-                  return (
-                    <span className="inline-flex items-center gap-1.5 bg-amber-500/15 dark:bg-amber-550/20 border border-amber-200/50 dark:border-amber-900/40 px-2 py-0.5 rounded-full text-[10px] text-amber-700 dark:text-amber-400 font-bold shrink-0">
-                      <span>📦 {containerNode?.text || 'Без названия'}{containerNode?.savedFilters && ' ★'}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleGoBackOneFocusLevel();
-                        }}
-                        className="ml-1 px-1 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white text-[8px] font-extrabold uppercase transition-all cursor-pointer shadow-xs border-none"
-                        title={containerNode?.parentId ? "Назад на уровень выше" : "Выйти из режима фокусировки"}
-                      >
-                        {containerNode?.parentId ? "Назад" : "Выйти"}
-                      </button>
-                    </span>
-                  );
-                })()}
-                {focusedTaskId && (() => {
-                  const taskNode = activeNodes.find(n => n.id === focusedTaskId);
-                  const hasParent = taskNode && (
-                    taskNode.parentId ||
-                    activeNodes.some(c => (c.isContainer || c.isEquipment) &&
-                      Math.abs(taskNode.x - c.x) <= ((c.width || 520) / 2) &&
-                      Math.abs(taskNode.y - c.y) <= ((c.height || 400) / 2))
-                  ) || (focusStackRef.current && focusStackRef.current.length > 1);
-                  return (
-                    <span className="inline-flex items-center gap-1.5 bg-rose-500/15 dark:bg-rose-550/20 border border-rose-200/50 dark:border-rose-900/40 px-2 py-0.5 rounded-full text-[10px] text-rose-700 dark:text-rose-400 font-bold shrink-0">
-                      <span className="animate-pulse w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
-                      <span className="truncate max-w-[150px]">🎯 {taskNode?.text || 'Без названия'}{taskNode?.savedFilters && ' ★'}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleGoBackOneFocusLevel();
-                        }}
-                        className="ml-1 px-1 py-0.5 rounded bg-rose-500 hover:bg-rose-600 text-white text-[8px] font-extrabold uppercase transition-all cursor-pointer shadow-xs border-none"
-                        title={hasParent ? "Назад на один уровень выше" : "Выйти из режима фокуса"}
-                      >
-                        {hasParent ? "Назад" : "Выйти"}
-                      </button>
-                    </span>
-                  );
-                })()}
-              </h2>
-            </div>
-          </div>
-
-          {viewMode !== 'mobile-list' && (() => {
-            const actualTasks = activeNodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
-            return (
-              <div className="hidden sm:flex items-center gap-3.5 text-[11px] text-slate-500 dark:text-slate-400 font-sans select-none relative group z-30">
-                <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 rounded-2xl border border-slate-150 dark:border-slate-800/60 shadow-xs cursor-pointer hover:border-indigo-200 dark:hover:border-indigo-950 transition-all duration-200">
-                  {/* Symmetrical SVG Pie/Donut Chart */}
-                  <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
-                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 32 32">
-                      {/* Background total / pending circle */}
-                      <circle
-                        cx="16"
-                        cy="16"
-                        r="12"
-                        className="text-slate-200 dark:text-slate-800"
-                        strokeWidth="3.5"
-                        stroke="currentColor"
-                        fill="transparent"
-                      />
-                      {/* Completed tasks sector circle */}
-                      <circle
-                        cx="16"
-                        cy="16"
-                        r="12"
-                        className="text-emerald-500 dark:text-emerald-400 transition-all duration-500"
-                        strokeWidth="3.5"
-                        strokeDasharray={2 * Math.PI * 12}
-                        strokeDashoffset={2 * Math.PI * 12 * (1 - (actualTasks.length > 0 ? actualTasks.filter(n => n.completed).length / actualTasks.length : 0))}
-                        strokeLinecap="round"
-                        stroke="currentColor"
-                        fill="transparent"
-                      />
-                    </svg>
-                    <span className="absolute text-[8px] font-extrabold text-slate-700 dark:text-slate-300 font-mono">
-                      {actualTasks.length > 0 ? Math.round((actualTasks.filter(n => n.completed).length / actualTasks.length) * 100) : 0}%
-                    </span>
-                  </div>
-
-                  {/* Stats Texts */}
-                  <div className="flex flex-col text-[10px] leading-tight font-serif">
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-400 dark:text-slate-500">Задач:</span>
-                      <span className="font-extrabold text-slate-700 dark:text-slate-300 font-mono">{actualTasks.length}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-400 dark:text-slate-500">Выполнено:</span>
-                      <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">{actualTasks.filter(n => n.completed).length}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Elegant Tooltip Popover on Hover */}
-                <div className="absolute top-12 left-0 z-50 hidden group-hover:block bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-850 p-3 rounded-xl shadow-2xl min-w-[180px] text-xs pointer-events-none select-none">
-                  <div className="font-bold text-slate-800 dark:text-slate-200 mb-1.5 border-b pb-1 border-slate-100 dark:border-slate-800">
-                    Статистика прогресса
-                  </div>
-                  <div className="space-y-1 font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                    <div className="flex justify-between">
-                      <span>Всего задач:</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-200">{actualTasks.length}</span>
-                    </div>
-                    <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-                      <span>Выполнено:</span>
-                      <span className="font-bold">{actualTasks.filter(n => n.completed).length} ({actualTasks.length > 0 ? Math.round((actualTasks.filter(n => n.completed).length / actualTasks.length) * 100) : 0}%)</span>
-                    </div>
-                    <div className="flex justify-between text-amber-500 dark:text-amber-400">
-                      <span>В процессе:</span>
-                      <span className="font-bold">{actualTasks.length - actualTasks.filter(n => n.completed).length} ({actualTasks.length > 0 ? Math.round(((actualTasks.length - actualTasks.filter(n => n.completed).length) / actualTasks.length) * 100) : 0}%)</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Center search bar & operations */}
-          <div className="hidden sm:flex items-center gap-3">
-            
-            {/* Global running Pomodoro indicator widget */}
-            {globalPomo && globalPomo.isRunning && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedNodeId(globalPomo.nodeId);
-                  setIsDrawerOpen(true);
-                }}
-                className="hidden md:flex items-center gap-2 px-3 py-1.5 border border-rose-200 bg-rose-50/50 dark:border-rose-900/40 dark:bg-rose-950/25 text-rose-700 dark:text-rose-400 rounded-xl text-xs font-bold cursor-pointer transition-all duration-250 hover:scale-[1.03] select-none shadow-xs"
-                title={`Активная сессия Pomodoro для задачи "${globalPomo.nodeText}". Нажмите для подробностей.`}
-              >
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-rose-450"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                </span>
-                <span className="text-[11px] font-medium max-w-[130px] truncate">
-                  🎯 {globalPomo.nodeText}
-                </span>
-                <span className="font-mono text-xs font-black tracking-wider leading-none">
-                  {formatGlobalPomoTime(globalPomo.timeLeft)}
-                </span>
-              </button>
-            )}
-            
-            {/* Elegant micro search input */}
-            <div className="relative flex items-center gap-1 sm:gap-1.5">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Поиск..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-24 sm:w-40 md:w-56 focus:w-36 sm:focus:w-48 md:focus:w-56 transition-all duration-200 leading-none py-1.5 pl-7 sm:pl-8 pr-12 sm:pr-18 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
-                />
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 sm:left-2.5 top-2" />
-                
-                {/* Clear button & Micro Counter Indicator */}
-                {searchQuery.trim().length > 0 && (
-                  <div className="absolute right-1.5 sm:right-2 top-1.5 flex items-center gap-1">
-                    <span className="text-[10px] text-slate-400/80 font-mono font-medium select-none">
-                      {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery("")}
-                      className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                      title="Очистить поиск"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Prev / Next Match buttons */}
-              {searchedIds.length > 1 && (
-                <div className="flex items-center border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 rounded-lg overflow-hidden divide-x divide-indigo-200 dark:divide-indigo-900 shadow-xs shrink-0">
-                  <button
-                    type="button"
-                    onClick={handlePrevSearchMatch}
-                    title="Перейти к предыдущей найденной задаче"
-                    className="flex items-center justify-center p-1 sm:px-1.5 hover:bg-indigo-150 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 cursor-pointer transition-all"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleNextSearchMatch}
-                    title="Перейти к следующей найденной задаче"
-                    className="flex items-center justify-center p-1 sm:px-1.5 hover:bg-indigo-150 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 cursor-pointer transition-all"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Advanced Filters Button */}
-            <button
-              onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
-              className={`p-1.5 select-none hover:scale-[1.02] border rounded-lg flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-all duration-200 ${
-                isAnyFilterActive 
-                  ? 'border-indigo-500 dark:border-indigo-400 ring-2 ring-indigo-505/20 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400' 
-                  : isFilterPanelOpen
-                    ? 'border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-850 text-slate-800 dark:text-slate-100'
-                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100/70'
-              }`}
-              title="Фильтрация по параметрам"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Фильтры</span>
-              {isAnyFilterActive && (
-                <span className="bg-indigo-600 text-white dark:bg-indigo-500 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold">
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
-
-            {/* Symmetrical Copy/Duplicate Project Tasks Button */}
-            {state.activeProjectId && (
-              <button
-                onClick={() => {
-                  setCopySourceNodeIds([]); // Empty array indicates copying ALL elements of active project
-                  setIsCopyModalOpen(true);
-                }}
-                className="p-1.5 hover:scale-[1.02] border border-slate-200 dark:border-slate-850 bg-slate-50 dark:bg-slate-800 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 hover:bg-slate-100/70 rounded-lg flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-all duration-200 shrink-0"
-                title="Копировать / дублировать задачи этого проекта"
-              >
-                <Copy className="w-3.5 h-3.5 text-indigo-500" />
-                <span className="hidden lg:inline">Копировать задачи</span>
-              </button>
-            )}
-
-            {/* Split Screen Mode Desktop Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setIsSplitScreen(!isSplitScreen)}
-              className={`p-1.5 hover:scale-[1.02] border rounded-lg flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-all duration-200 shrink-0 ${
-                isSplitScreen
-                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-extrabold shadow-xs ring-2 ring-indigo-500/20'
-                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 hover:bg-slate-100/70'
-              }`}
-              title={isSplitScreen ? "Закрыть раздельный экран (1 экран)" : "Разделить экран на два вида (Раздельный режим)"}
-            >
-              <Columns className="w-3.5 h-3.5 text-indigo-500" />
-              <span className="hidden xl:inline">{isSplitScreen ? '1 Экран' : '2 Экрана'}</span>
-            </button>
-
-            {/* Micro search results list box if search query is set */}
-            {searchQuery.trim().length > 0 && (
-              <div className="absolute top-15 right-2 sm:right-24 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl p-2 w-[calc(100vw-2rem)] sm:w-72 max-h-56 overflow-y-auto z-50">
-                <p className="text-[10px] font-bold text-slate-400 px-2 py-1 uppercase tracking-widest">
-                  Найдено результатов ({searchedIds.length})
-                </p>
-                {searchedIds.length > 0 ? (
-                  <div className="space-y-0.5 mt-1">
-                    {activeNodes
-                      .filter(n => searchedIds.includes(n.id))
-                      .map(n => (
-                        <div
-                          key={n.id}
-                          className="w-full text-left py-1.5 px-2 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-lg text-xs font-medium text-slate-705 dark:text-slate-300 flex items-center justify-between gap-1 group/search-item"
-                        >
-                          <button
-                            onClick={() => handleSelectSearchedNode(n.id)}
-                            className="flex-1 text-left truncate cursor-pointer"
-                          >
-                            <span className="truncate pr-1 block font-semibold">{n.text}</span>
-                            <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400 flex-wrap">
-                              {n.equipmentModel && <span className="text-blue-600 dark:text-blue-400 font-sans font-bold">⚙️ {n.equipmentModel}</span>}
-                              {n.equipmentBarcode && <span>Barkod: {n.equipmentBarcode}</span>}
-                              {n.equipmentStockCode && <span>Stok: {n.equipmentStockCode}</span>}
-                              <span>#{n.priority || 'none'}</span>
-                              {n.archived && (
-                                <span className="bg-amber-100 dark:bg-amber-950/45 text-amber-705 dark:text-amber-400 px-1 rounded-sm font-black text-[8.5px]">📦 АРХИВ</span>
-                              )}
-                            </div>
-                          </button>
-                          
-                          {n.archived && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleUpdateNode({
-                                  ...n,
-                                  archived: false
-                                });
-                              }}
-                              className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-900 border border-amber-200 dark:border-amber-900 text-[9px] text-amber-700 dark:text-amber-400 font-bold transition-all flex items-center gap-0.5 cursor-pointer shrink-0"
-                              title="Вывести из архива"
-                            >
-                              <ArchiveRestore className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
-                              <span className="hidden sm:inline">Вывести</span>
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-4 text-xs text-slate-400 italic">Ничего не найдено</div>
-                )}
-              </div>
-            )}
-
-            {/* Undo Action Trigger if active project history holds logs */}
-            {state.activeProjectId && (undoStack[state.activeProjectId] || []).length > 0 && (
-              <button
-                onClick={handleUndo}
-                title="Отменить последнее ветвление или удаление (Ctrl+Z)"
-                className="p-1.5 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center gap-1 text-xs cursor-pointer focus:outline-none"
-              >
-                <Undo2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                <span className="inline text-[11px] font-bold">Отмена</span>
-              </button>
-            )}
-
-            {/* Symmetrical Sync and Backup Trigger Button */}
-            <button
-              id="milli-sync-dashboard-btn"
-              type="button"
-              onClick={() => setIsSyncMenuOpen(true)}
-              className={`flex items-center gap-1.5 py-1.5 px-3 border rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:scale-[1.01] shrink-0 ${
-                isSyncingSheets || syncStatus.firebase === 'syncing'
-                  ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
-                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
-              }`}
-              title="Открыть панель резервного копирования и синхронизации"
-            >
-              <Database className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-              <span className="hidden lg:inline">Синхронизация</span>
-              {hasSyncOrAuthError ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
-              ) : currentUser ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-              )}
-            </button>
-
-            {/* Quick Symmetrical Sheets Sync Button (Icon Only, No Words) */}
-            <button
-              id="milli-quick-sheets-sync-btn"
-              type="button"
-              onClick={handleQuickSheetsSync}
-              className={`p-1.5 border rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.05] shrink-0 ${
-                isSyncingSheets
-                  ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse animate-duration-1000'
-                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-305'
-              }`}
-              title={
-                googleToken 
-                  ? "Быстрая синхронизация с Google Sheets" 
-                  : "Войти и синхронизировать с Google Sheets"
+        {/* Universal Notion Database Bar & Controls Header */}
+        {!isViewFullScreen && (
+          <NotionDatabaseBar
+            viewMode={viewMode}
+            onViewModeChange={(newMode) => setViewMode(newMode)}
+            projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Карта задач'}
+            projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '📁'}
+            onUpdateProjectName={(name) => {
+              if (state.activeProjectId) {
+                handleRenameProject(state.activeProjectId, name);
               }
-            >
-              <FileSpreadsheet className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-            </button>
-
-
-          </div>
-        </header>
+            }}
+            filterStatus={filterStatus}
+            onFilterStatusChange={setFilterStatus}
+            filterPriority={filterPriority}
+            onFilterPriorityChange={setFilterPriority}
+            filterTag={filterTag}
+            onFilterTagChange={setFilterTag}
+            filterDueDate={filterDueDate}
+            onFilterDueDateChange={setFilterDueDate}
+            filterAttachments={filterAttachments}
+            onFilterAttachmentsChange={setFilterAttachments}
+            filterNotes={filterNotes}
+            onFilterNotesChange={setFilterNotes}
+            sortField={sortField}
+            onSortFieldChange={setSortField}
+            sortOrder={sortOrder}
+            onSortOrderChange={setSortOrder}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            searchedCount={searchedIds.length}
+            currentSearchIndex={currentSearchIndex}
+            onNextSearchMatch={handleNextSearchMatch}
+            onPrevSearchMatch={handlePrevSearchMatch}
+            groupBy={kanbanGroupBy || 'none'}
+            onGroupByChange={(g) => setKanbanGroupBy(g === 'none' ? null : g)}
+            onCreateTask={(text, prio, tags, due) => {
+              handleCreateMobileTask(text, tags || [], prio || 'none', due);
+            }}
+            onOpenSyncModal={() => setIsSyncMenuOpen(true)}
+            onOpenAiConsole={() => setAiConsoleOpen(true)}
+            onOpenSidebar={() => setSidebarOpen(true)}
+            isSplitScreen={isSplitScreen}
+            onToggleSplitScreen={() => setIsSplitScreen(!isSplitScreen)}
+            focusedTaskId={focusedTaskId}
+            focusedContainerId={focusedContainerId}
+            focusedNode={focusedNode}
+            onGoBackOneFocusLevel={handleGoBackOneFocusLevel}
+            onExitFocus={() => {
+              setFocusedContainerId(null);
+              setFocusedTaskId(null);
+              focusStackRef.current = [];
+            }}
+            onToggleDefaultView={handleToggleDefaultView}
+            tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
+            isSyncing={isSyncingSheets || syncStatus.firebase === 'syncing'}
+            hasSyncError={hasSyncOrAuthError}
+            visibleProperties={visibleProperties}
+            onTogglePropertyVisibility={handleTogglePropertyVisibility}
+          />
+        )}
 
         {/* Floating search panel for mobile when toggled */}
         {isMobileSearchOpen && (
