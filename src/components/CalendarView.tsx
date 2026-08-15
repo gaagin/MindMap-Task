@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -7,25 +7,22 @@ import {
   Circle, 
   CheckCircle2, 
   Loader2, 
-  Calendar, 
-  AlertCircle,
+  Calendar as CalendarIcon, 
   Clock,
   Sparkles,
   ArrowRight,
   Search,
-  Link as LinkIcon,
-  Filter,
-  PieChart,
-  CreditCard,
-  Mail,
-  ListTodo,
-  TrendingUp,
-  PlusCircle,
+  SlidersHorizontal,
+  Table as TableIcon,
+  Kanban as KanbanIcon,
+  GanttChart,
   Maximize2,
-  Minimize2
+  Minimize2,
+  X,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import { TaskNode, TagCategory, Priority } from '../types';
-import { getTaskExternalLinks } from '../utils';
+import { TaskNode, TagCategory, Priority, ViewMode } from '../types';
 
 interface CalendarViewProps {
   nodes: TaskNode[];
@@ -37,9 +34,12 @@ interface CalendarViewProps {
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
   onCreateTask?: (text: string, initialTags: string[], dueDate?: string, dueTime?: string) => void;
-  setViewMode?: (mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower') => void;
+  setViewMode?: (mode: ViewMode) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
   onFocusedTaskIdChange?: (id: string | null) => void;
+  projectName?: string;
+  projectIcon?: string;
+  onUpdateProjectName?: (name: string) => void;
 }
 
 const MONTH_NAMES_RU = [
@@ -47,7 +47,40 @@ const MONTH_NAMES_RU = [
   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
 ];
 
-const WEEKDAYS_RU = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const MONTH_NAMES_GENITIVE_RU = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+];
+
+const WEEKDAYS_SHORT_RU = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'];
+const WEEKDAYS_FULL_RU = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+
+// Notion page icon resolver
+function getTaskPageIcon(task: TaskNode): string {
+  if (task.icon) return task.icon;
+  const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u;
+  const match = task.text.match(emojiRegex);
+  if (match) return match[0];
+  
+  if (task.isContainer) return '📁';
+  const lower = task.text.toLowerCase();
+  if (lower.includes('видео') || lower.includes('video') || lower.includes('съемк')) return '🎬';
+  if (lower.includes('фото') || lower.includes('дизайн') || lower.includes('design')) return '🖼️';
+  if (lower.includes('текст') || lower.includes('статья') || lower.includes('пост') || lower.includes('doc')) return '📝';
+  if (lower.includes('звонок') || lower.includes('встреч') || lower.includes('meet') || lower.includes('call') || lower.includes('созвон')) return '📞';
+  if (lower.includes('отчет') || lower.includes('анализ') || lower.includes('report')) return '📊';
+  if (lower.includes('сайт') || lower.includes('web') || lower.includes('landing')) return '🌐';
+  if (lower.includes('план') || lower.includes('plan') || lower.includes('спринт')) return '📌';
+  if (task.priority === 'urgent') return '⚡';
+  return '📄';
+}
+
+function cleanTaskTitle(text: string): string {
+  const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation})\s*/u;
+  return text.replace(emojiRegex, '');
+}
+
+const HOUR_HEIGHT = 60; // 60px per hour -> 1px = 1 minute
 
 export default function CalendarView({
   nodes,
@@ -61,73 +94,82 @@ export default function CalendarView({
   onCreateTask,
   setViewMode,
   onFullScreenChange,
-  onFocusedTaskIdChange
+  onFocusedTaskIdChange,
+  projectName = 'Календарь проекта',
+  projectIcon = '📅',
+  onUpdateProjectName
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [isFullScreen, setIsFullScreen] = useState(false);
-
-  useEffect(() => {
-    if (onFullScreenChange) {
-      onFullScreenChange(isFullScreen);
-    }
-  }, [isFullScreen, onFullScreenChange]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullScreen) {
-        setIsFullScreen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isFullScreen]);
-  
-  const formatTaskTime = (task: TaskNode) => {
-    if (task.startTime && task.dueTime && task.startTime !== task.dueTime) {
-      return `${task.startTime} - ${task.dueTime}`;
-    }
-    return task.startTime || task.dueTime || '';
-  };
-
-  const getPillStyles = (task: TaskNode) => {
-    switch (task.priority) {
-      case 'urgent':
-        return 'bg-[#FEF2F2] hover:bg-[#FEE2E2] dark:bg-rose-950/30 text-[#991B1B] dark:text-rose-300 border-l-[3.5px] border-[#EF4444]';
-      case 'high':
-      case 'medium':
-        return 'bg-[#FFF7ED] hover:bg-[#FFEDD5] dark:bg-amber-950/30 text-[#C2410C] dark:text-amber-350 border-l-[3.5px] border-[#F97316]';
-      case 'low':
-      case 'none':
-      default:
-        return 'bg-[#E6FDF5] hover:bg-[#D1FAE5] dark:bg-emerald-950/25 text-[#047857] dark:text-emerald-300 border-l-[3.5px] border-[#10B981]';
-    }
-  };
-
-  const getTaskIcon = (task: TaskNode) => {
-    const text = task.text.toLowerCase();
-    if (text.includes('выход') || text.includes('отпуск') || text.includes('weekend') || text.includes('праздн')) {
-      return '🌟 ';
-    }
-    if (text.includes('aygün') || text.includes('lena') || text.includes('звонок') || text.includes('notify') || text.includes('будиль') || text.includes('iclas') || text.includes('icaze') || text.includes('rapor')) {
-      return '⏰ ';
-    }
-    if (text.includes('медитац') || text.includes('йога') || text.includes('спорт') || text.includes('бег')) {
-      return '🧘 ';
-    }
-    if (text.includes('книг') || text.includes('учеб') || text.includes('изуч') || text.includes('diary')) {
-      return '📝 ';
-    }
-    return '';
-  };
-  const [calendarSubMode, setCalendarSubMode] = useState<'month' | 'week' | 'day'>('month');
-  const [layoutType, setLayoutType] = useState<'grid' | 'list'>('grid');
-  const [showFilter, setShowFilter] = useState(false);
+  const [calendarSubMode, setCalendarSubMode] = useState<'month' | 'week' | 'day'>('week');
   const [calendarSearchQuery, setCalendarSearchQuery] = useState('');
-  
-  const [activeDayAddInput, setActiveDayAddInput] = useState<string | null>(null); // ISO string 'YYYY-MM-DD'
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterTag, setFilterTag] = useState<string>('all');
 
+  // Real-time live clock for current time line indicator
+  const [nowDate, setNowDate] = useState(() => new Date());
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowDate(new Date());
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const nowMinutes = nowDate.getHours() * 60 + nowDate.getMinutes();
+  const realTodayStr = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}-${String(nowDate.getDate()).padStart(2, '0')}`;
+
+  // Title editing state
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState(projectName);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTitleInput(projectName);
+  }, [projectName]);
+
+  const handleTitleSubmit = () => {
+    setIsEditingTitle(false);
+    if (titleInput.trim() && onUpdateProjectName && titleInput.trim() !== projectName) {
+      onUpdateProjectName(titleInput.trim());
+    }
+  };
+
+  // Quick Modal New Task
+  const [isQuickCreateModalOpen, setIsQuickCreateModalOpen] = useState(false);
+  const [quickModalText, setQuickModalText] = useState('');
+  const [quickModalDate, setQuickModalDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [quickModalStartTime, setQuickModalStartTime] = useState('');
+  const [quickModalDueTime, setQuickModalDueTime] = useState('');
+  const [quickModalPriority, setQuickModalPriority] = useState<Priority>('medium');
+
+  // All-day section collapsible state
+  const [isAllDayExpanded, setIsAllDayExpanded] = useState(true);
+
+  // Unscheduled tasks sidebar state
+  const [isUnscheduledExpanded, setIsUnscheduledExpanded] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('notion_calendar_sidebar_expanded');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return true;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('notion_calendar_sidebar_expanded', String(isUnscheduledExpanded));
+    } catch {}
+  }, [isUnscheduledExpanded]);
+
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
+
+  // Drag and drop states
+  const [draggedOverDate, setDraggedOverDate] = useState<string | null>(null);
+  const [draggedOverUnscheduled, setDraggedOverUnscheduled] = useState(false);
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+
+  // Time Resizing states for hourly grid
   const [resizingTask, setResizingTask] = useState<{
     taskId: string;
     type: 'top' | 'bottom';
@@ -144,7 +186,71 @@ export default function CalendarView({
 
   const [hoveringResizeHandle, setHoveringResizeHandle] = useState(false);
 
-  const HOUR_HEIGHT = 60;
+  // Drag-to-create time slot selection state
+  const [slotSelection, setSlotSelection] = useState<{
+    dateStr: string;
+    startMin: number;
+    currentMin: number;
+    isCreating: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (onFullScreenChange) {
+      onFullScreenChange(isFullScreen);
+    }
+  }, [isFullScreen, onFullScreenChange]);
+
+  // Keyboard navigation (Notion Calendar shortcuts: T=Today, W=Week, D=Day, M=Month, N/C=New)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        if (isFullScreen) setIsFullScreen(false);
+        if (isQuickCreateModalOpen) setIsQuickCreateModalOpen(false);
+        if (slotSelection) setSlotSelection(null);
+      } else if (e.key.toLowerCase() === 't') {
+        setCurrentDate(new Date());
+      } else if (e.key.toLowerCase() === 'w') {
+        setCalendarSubMode('week');
+      } else if (e.key.toLowerCase() === 'd') {
+        setCalendarSubMode('day');
+      } else if (e.key.toLowerCase() === 'm') {
+        setCalendarSubMode('month');
+      } else if (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        setQuickModalDate(currentDateStr);
+        setQuickModalStartTime('');
+        setQuickModalDueTime('');
+        setIsQuickCreateModalOpen(true);
+      } else if (e.key === 'ArrowLeft') {
+        handlePrev();
+      } else if (e.key === 'ArrowRight') {
+        handleNext();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullScreen, isQuickCreateModalOpen, slotSelection, calendarSubMode, currentDate]);
+
+  const formatTaskTime = (task: TaskNode) => {
+    if (task.startTime && task.dueTime && task.startTime !== task.dueTime) {
+      return `${task.startTime} – ${task.dueTime}`;
+    }
+    return task.startTime || task.dueTime || '';
+  };
+
+  const getTaskDurationString = (startMin: number, endMin: number): string => {
+    const diff = Math.max(15, endMin - startMin);
+    const hours = Math.floor(diff / 60);
+    const mins = diff % 60;
+    if (hours > 0 && mins > 0) return `${hours} ч ${mins} мин`;
+    if (hours > 0) return `${hours} ч`;
+    return `${mins} мин`;
+  };
 
   const timeToMinutes = (timeStr: string): number => {
     if (!timeStr) return 0;
@@ -157,8 +263,9 @@ export default function CalendarView({
   };
 
   const minutesToTime = (mins: number): string => {
-    const h = Math.floor(mins / 60) % 24;
-    const m = mins % 60;
+    const clamped = Math.max(0, Math.min(1439, mins));
+    const h = Math.floor(clamped / 60);
+    const m = clamped % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
 
@@ -172,6 +279,7 @@ export default function CalendarView({
     width?: string;
   }
 
+  // Calculate overlapping columns for Notion Calendar timeline layout
   const computeBlocksForTasks = (timedTasks: TaskNode[]): TimedTaskBlock[] => {
     const blocks: TimedTaskBlock[] = timedTasks.map(task => {
       if (resizeOverride && resizeOverride.taskId === task.id) {
@@ -179,53 +287,30 @@ export default function CalendarView({
         const endMin = resizeOverride.endMin;
         const top = (startMin / 60) * HOUR_HEIGHT;
         const height = ((endMin - startMin) / 60) * HOUR_HEIGHT;
-        return {
-          task,
-          top,
-          height,
-          startMin,
-          endMin
-        };
+        return { task, top, height, startMin, endMin };
       }
 
       const startStr = task.startTime || task.dueTime || "09:00";
       let endStr = task.dueTime || task.startTime || "10:00";
       
-      if (task.startTime && !task.dueTime) {
-        const startMin = timeToMinutes(task.startTime);
-        endStr = minutesToTime(startMin + 60);
-      }
-      if (task.dueTime && !task.startTime) {
-        const startMin = timeToMinutes(task.dueTime);
-        const endMin = startMin + 60;
-        return {
-          task,
-          top: (startMin / 60) * HOUR_HEIGHT,
-          height: HOUR_HEIGHT,
-          startMin,
-          endMin
-        };
-      }
-      
       let startMin = timeToMinutes(startStr);
       let endMin = timeToMinutes(endStr);
       
-      if (endMin <= startMin) {
+      if (task.startTime && !task.dueTime) {
         endMin = startMin + 60;
+      } else if (task.dueTime && !task.startTime) {
+        startMin = Math.max(0, endMin - 60);
+      } else if (endMin <= startMin) {
+        endMin = startMin + 45;
       }
       
       const top = (startMin / 60) * HOUR_HEIGHT;
-      const height = ((endMin - startMin) / 60) * HOUR_HEIGHT;
+      const height = Math.max(24, ((endMin - startMin) / 60) * HOUR_HEIGHT);
       
-      return {
-        task,
-        top,
-        height,
-        startMin,
-        endMin
-      };
+      return { task, top, height, startMin, endMin };
     });
 
+    // Group overlapping tasks
     const groups: TimedTaskBlock[][] = [];
     blocks.forEach(block => {
       let placed = false;
@@ -244,9 +329,9 @@ export default function CalendarView({
       }
     });
 
+    // Assign column indices and widths
     groups.forEach(group => {
       group.sort((a, b) => a.startMin - b.startMin);
-      
       const columns: TimedTaskBlock[][] = [];
       group.forEach(block => {
         let colIdx = 0;
@@ -268,27 +353,30 @@ export default function CalendarView({
       const totalCols = columns.length;
       group.forEach(block => {
         const colIdx = (block as any).colIdx;
-        block.width = `${100 / totalCols}%`;
-        block.left = `${(colIdx * 100) / totalCols}%`;
+        block.width = `calc(${100 / totalCols}% - 3px)`;
+        block.left = `calc(${(colIdx * 100) / totalCols}% + 1.5px)`;
       });
     });
 
     return blocks;
   };
 
+  // Scroll to current hour (or 08:00) on initial render or mode change
   useEffect(() => {
-    if (layoutType === 'grid') {
-      const dailyScroll = document.getElementById('daily-time-blocking-scroll');
-      if (dailyScroll) {
-        dailyScroll.scrollTop = 7 * HOUR_HEIGHT; // Scroll to 07:00
-      }
-      const weeklyScroll = document.getElementById('weekly-time-blocking-scroll');
-      if (weeklyScroll) {
-        weeklyScroll.scrollTop = 7 * HOUR_HEIGHT; // Scroll to 07:00
-      }
+    const scrollToHour = Math.max(6, nowDate.getHours() - 1);
+    const scrollPos = scrollToHour * HOUR_HEIGHT;
+    
+    const weeklyScroll = document.getElementById('notion-calendar-week-scroll');
+    if (weeklyScroll) {
+      weeklyScroll.scrollTop = scrollPos;
     }
-  }, [calendarSubMode, layoutType]);
+    const dailyScroll = document.getElementById('notion-calendar-day-scroll');
+    if (dailyScroll) {
+      dailyScroll.scrollTop = scrollPos;
+    }
+  }, [calendarSubMode]);
 
+  // Resize handler for time blocks
   const handleResizeStart = (
     e: React.MouseEvent | React.TouchEvent,
     taskId: string,
@@ -298,9 +386,7 @@ export default function CalendarView({
   ) => {
     e.stopPropagation();
     e.preventDefault();
-
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
     setResizingTask({
       taskId,
       type,
@@ -308,7 +394,6 @@ export default function CalendarView({
       initialStartMin: startMin,
       initialEndMin: endMin
     });
-
     setResizeOverride({
       taskId,
       startMin,
@@ -320,14 +405,12 @@ export default function CalendarView({
     if (!resizingTask) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const clientY = e.clientY;
-      updateResize(clientY);
+      updateResize(e.clientY);
     };
 
     const handleTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 0) return;
-      const clientY = e.touches[0].clientY;
-      updateResize(clientY);
+      updateResize(e.touches[0].clientY);
     };
 
     const updateResize = (clientY: number) => {
@@ -353,14 +436,6 @@ export default function CalendarView({
       }
     };
 
-    const handleMouseUp = () => {
-      finishResize();
-    };
-
-    const handleTouchEnd = () => {
-      finishResize();
-    };
-
     const finishResize = () => {
       if (resizeOverride) {
         const task = nodes.find(n => n.id === resizeOverride.taskId);
@@ -380,215 +455,120 @@ export default function CalendarView({
     };
 
     window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mouseup', finishResize);
     window.addEventListener('touchmove', handleTouchMove, { passive: true });
-    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchend', finishResize);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mouseup', finishResize);
       window.removeEventListener('touchmove', handleTouchMove);
-      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchend', finishResize);
     };
   }, [resizingTask, resizeOverride, nodes, onUpdateNode]);
 
-  const [newDayTaskText, setNewDayTaskText] = useState('');
-  const [activeHourAddInput, setActiveHourAddInput] = useState<string | null>(null); // e.g. '09:00'
-  const [newHourTaskText, setNewHourTaskText] = useState('');
-  const [isUnscheduledExpandedMobile, setIsUnscheduledExpandedMobile] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('task_mindmap_calendar_unscheduled_expanded');
-      if (saved !== null) return saved === 'true';
-    } catch {}
-    return true;
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('task_mindmap_calendar_unscheduled_expanded', String(isUnscheduledExpandedMobile));
-    } catch {}
-  }, [isUnscheduledExpandedMobile]);
-
-  const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
-
-  // Drag and drop states for moving tasks between calendar days
-  const [draggedOverDate, setDraggedOverDate] = useState<string | null>(null);
-  const [draggedOverUnscheduled, setDraggedOverUnscheduled] = useState(false);
-  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
-  const touchStartPos = React.useRef<{ x: number; y: number; dateString: string | null } | null>(null);
-  const touchHasMoved = React.useRef<boolean>(false);
-
-  // Auto-scrolling when dragging task near the edges of scrollable viewports
-  useEffect(() => {
-    if (!draggingTaskId) return;
-
-    let animationFrameId: number | null = null;
-    let lastClientX = 0;
-    let lastClientY = 0;
-    let currentHoveredDate: string | null = null;
-    let currentHoveredUnscheduled = false;
-
-    const handleDragOver = (e: DragEvent) => {
-      lastClientX = e.clientX;
-      lastClientY = e.clientY;
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 0) return;
-      const touch = e.touches[0];
-      lastClientX = touch.clientX;
-      lastClientY = touch.clientY;
-
-      if (touchStartPos.current) {
-        const dx = touch.clientX - touchStartPos.current.x;
-        const dy = touch.clientY - touchStartPos.current.y;
-        if (Math.hypot(dx, dy) > 8) {
-          touchHasMoved.current = true;
-        }
-      }
-
-      const targetElem = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (targetElem) {
-        // 1. Is it dragged over the unscheduled list?
-        const isUnscheduledZone = targetElem.closest('[data-unscheduled-drop-zone="true"]');
-        if (isUnscheduledZone) {
-          if (currentHoveredDate !== null) {
-            currentHoveredDate = null;
-            setDraggedOverDate(null);
-          }
-          if (!currentHoveredUnscheduled) {
-            currentHoveredUnscheduled = true;
-            setDraggedOverUnscheduled(true);
-          }
-        } else {
-          if (currentHoveredUnscheduled) {
-            currentHoveredUnscheduled = false;
-            setDraggedOverUnscheduled(false);
-          }
-
-          // 2. Is it dragged over a calendar day slot?
-          const dayCard = targetElem.closest('[data-date]');
-          const targetDate = dayCard ? dayCard.getAttribute('data-date') : null;
-          if (targetDate !== currentHoveredDate) {
-            currentHoveredDate = targetDate;
-            setDraggedOverDate(targetDate);
-          }
-        }
-      } else {
-        if (currentHoveredDate !== null) {
-          currentHoveredDate = null;
-          setDraggedOverDate(null);
-        }
-        if (currentHoveredUnscheduled) {
-          currentHoveredUnscheduled = false;
-          setDraggedOverUnscheduled(false);
-        }
-      }
-
-      // Restrict document default rubber-band scrolling on touch devices while elements are actively being dragged
-      if (e.cancelable) {
-        e.preventDefault();
-      }
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      const targetId = draggingTaskId;
-      const startInfo = touchStartPos.current;
-      const hasMoved = touchHasMoved.current;
-
-      setDraggingTaskId(null);
-      setDraggedOverDate(null);
-      setDraggedOverUnscheduled(false);
-      touchStartPos.current = null;
-      touchHasMoved.current = false;
-
-      if (targetId) {
-        if (!hasMoved) {
-          // If touch didn't move much, treat it as a standard click (select the task)
-          onSelectNode(targetId, e);
-          return;
-        }
-
-        if (currentHoveredUnscheduled) {
-          handleTaskDrop(targetId, null);
-        } else {
-          // Default to start date if dropped off-screen/off-grid to prevent accidental unscheduling
-          const targetDate = currentHoveredDate !== null ? currentHoveredDate : (startInfo ? startInfo.dateString : null);
-          handleTaskDrop(targetId, targetDate);
-        }
-      }
-    };
-
-    const autoScroll = () => {
-      const scrollThreshold = 95; // px from the edge of the container to trigger scrolling
-      const maxScrollSpeed = 16;  // maximum pixels to scroll per frame
-
-      // 1. Horizontal scroll container
-      const horizContainer = document.getElementById('calendar-horizontal-scroll-container');
-      if (horizContainer) {
-        const rect = horizContainer.getBoundingClientRect();
-        const relativeX = lastClientX - rect.left;
-        
-        if (relativeX >= 0 && relativeX <= rect.width) {
-          if (relativeX < scrollThreshold) {
-            const speed = Math.ceil((1 - relativeX / scrollThreshold) * maxScrollSpeed);
-            horizContainer.scrollLeft -= speed;
-          } else if (rect.width - relativeX < scrollThreshold) {
-            const speed = Math.ceil((1 - (rect.width - relativeX) / scrollThreshold) * maxScrollSpeed);
-            horizContainer.scrollLeft += speed;
-          }
-        }
-      }
-
-      // 2. Vertical scroll containers
-      const scrollVertical = (containerId: string) => {
-        const vertContainer = document.getElementById(containerId);
-        if (vertContainer) {
-          const rect = vertContainer.getBoundingClientRect();
-          if (lastClientX >= rect.left && lastClientX <= rect.right) {
-            const relativeY = lastClientY - rect.top;
-            if (relativeY >= 0 && relativeY <= rect.height) {
-              if (relativeY < scrollThreshold) {
-                const speed = Math.ceil((1 - relativeY / scrollThreshold) * maxScrollSpeed);
-                vertContainer.scrollTop -= speed;
-              } else if (rect.height - relativeY < scrollThreshold) {
-                const speed = Math.ceil((1 - (rect.height - relativeY) / scrollThreshold) * maxScrollSpeed);
-                vertContainer.scrollTop += speed;
-              }
-            }
-          }
-        }
+  // Notion Calendar Event Card Styling based on priority & completion
+  const getNotionCardStyles = (task: TaskNode) => {
+    if (task.completed) {
+      return {
+        card: 'bg-[#F2F2F0] dark:bg-[#262626] text-[#787774] dark:text-[#888888] border border-[#E3E2E0] dark:border-[#383838] opacity-75',
+        accentBar: 'bg-[#9B9A97] dark:bg-[#666666]',
+        tagBg: 'bg-[#E3E2E0] dark:bg-[#333333] text-[#787774] dark:text-[#9B9A97]'
       };
+    }
+    switch (task.priority) {
+      case 'urgent':
+        return {
+          card: 'bg-[#FDF2F0] text-[#B83227] dark:bg-[#3D1E1B] dark:text-[#FF8D80] border border-[#F9CDC7] dark:border-[#5C2B26] hover:brightness-97 dark:hover:brightness-110',
+          accentBar: 'bg-[#EB5757] dark:bg-[#FF6B5B]',
+          tagBg: 'bg-[#F9CDC7] dark:bg-[#5C2B26] text-[#B83227] dark:text-[#FF8D80]'
+        };
+      case 'high':
+        return {
+          card: 'bg-[#FFF7EC] text-[#C26500] dark:bg-[#3D2813] dark:text-[#FFB566] border border-[#FEE3BF] dark:border-[#5E3C1B] hover:brightness-97 dark:hover:brightness-110',
+          accentBar: 'bg-[#F2994A] dark:bg-[#FFA347]',
+          tagBg: 'bg-[#FEE3BF] dark:bg-[#5E3C1B] text-[#C26500] dark:text-[#FFB566]'
+        };
+      case 'medium':
+        return {
+          card: 'bg-[#F5F8FF] text-[#1E56B3] dark:bg-[#14233C] dark:text-[#8CB8FF] border border-[#D5E3FC] dark:border-[#1E3A66] hover:brightness-97 dark:hover:brightness-110',
+          accentBar: 'bg-[#2F80ED] dark:bg-[#4794FF]',
+          tagBg: 'bg-[#D5E3FC] dark:bg-[#1E3A66] text-[#1E56B3] dark:text-[#8CB8FF]'
+        };
+      case 'low':
+        return {
+          card: 'bg-[#F2FAF4] text-[#1E743A] dark:bg-[#132A1C] dark:text-[#86D49F] border border-[#CEEAD6] dark:border-[#1F452C] hover:brightness-97 dark:hover:brightness-110',
+          accentBar: 'bg-[#27AE60] dark:bg-[#2ECC71]',
+          tagBg: 'bg-[#CEEAD6] dark:bg-[#1F452C] text-[#1E743A] dark:text-[#86D49F]'
+        };
+      case 'none':
+      default:
+        return {
+          card: 'bg-[#F7F7F5] text-[#37352F] dark:bg-[#262626] dark:text-[#E0E0E0] border border-[#E6E6E4] dark:border-[#383838] hover:bg-[#EFEFED] dark:hover:bg-[#2D2D2D]',
+          accentBar: 'bg-[#2383E2] dark:bg-[#3D94E8]',
+          tagBg: 'bg-[#EAEAE8] dark:bg-[#333333] text-[#555] dark:text-[#AAA]'
+        };
+    }
+  };
 
-      if (calendarSubMode === 'month') {
-        scrollVertical('calendar-horizontal-scroll-container');
-      } else if (calendarSubMode === 'week') {
-        scrollVertical('calendar-week-scroll-container');
-      } else if (calendarSubMode === 'day') {
-        scrollVertical('calendar-day-scroll-container');
+  const getPriorityBadgeColor = (p?: Priority) => {
+    switch (p) {
+      case 'urgent': return 'bg-[#FDF2F0] text-[#B83227] dark:bg-[#3D1E1B] dark:text-[#FF8D80]';
+      case 'high': return 'bg-[#FFF7EC] text-[#C26500] dark:bg-[#3D2813] dark:text-[#FFB566]';
+      case 'medium': return 'bg-[#F5F8FF] text-[#1E56B3] dark:bg-[#14233C] dark:text-[#8CB8FF]';
+      case 'low': return 'bg-[#F2FAF4] text-[#1E743A] dark:bg-[#132A1C] dark:text-[#86D49F]';
+      default: return 'bg-[#F1F1EF] text-[#787774] dark:bg-[#262626] dark:text-[#9B9A97]';
+    }
+  };
+
+  // Node filtering
+  const projectTasks = useMemo(() => {
+    const seenMirrorGroupIds = new Set<string>();
+    return nodes.filter(n => {
+      if (n.isContainer || n.isWorkflowRectangle || n.archived || n.isNotTask) {
+        return false;
       }
-
-      animationFrameId = requestAnimationFrame(autoScroll);
-    };
-
-    window.addEventListener('dragover', handleDragOver);
-    window.addEventListener('touchmove', handleTouchMove, { passive: false });
-    window.addEventListener('touchend', handleTouchEnd);
-    window.addEventListener('touchcancel', handleTouchEnd);
-    
-    animationFrameId = requestAnimationFrame(autoScroll);
-
-    return () => {
-      window.removeEventListener('dragover', handleDragOver);
-      window.removeEventListener('touchmove', handleTouchMove);
-      window.removeEventListener('touchend', handleTouchEnd);
-      window.removeEventListener('touchcancel', handleTouchEnd);
-      if (animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId);
+      if (n.mirrorGroupId) {
+        if (seenMirrorGroupIds.has(n.mirrorGroupId)) return false;
+        seenMirrorGroupIds.add(n.mirrorGroupId);
       }
-    };
-  }, [draggingTaskId, calendarSubMode]);
+      return true;
+    });
+  }, [nodes]);
 
+  const matchesFilters = (n: TaskNode): boolean => {
+    if (calendarSearchQuery.trim()) {
+      const q = calendarSearchQuery.toLowerCase();
+      const textMatches = n.text?.toLowerCase().includes(q);
+      const tagMatches = n.tags?.some(t => t.toLowerCase().includes(q)) || false;
+      const notesMatches = n.notes?.toLowerCase().includes(q) || false;
+      if (!textMatches && !tagMatches && !notesMatches) return false;
+    }
+    if (filterPriority !== 'all' && n.priority !== filterPriority) return false;
+    if (filterStatus === 'completed' && !n.completed) return false;
+    if (filterStatus === 'active' && n.completed) return false;
+    if (filterTag !== 'all' && (!n.tags || !n.tags.includes(filterTag))) return false;
+    return true;
+  };
+
+  const scheduledTasks = useMemo(() => {
+    const rawScheduled = projectTasks.filter(n => n.dueDate && matchesFilters(n));
+    return rawScheduled.filter(parent => {
+      const hasSubtaskOnSameDate = rawScheduled.some(sub => 
+        sub.parentId === parent.id && sub.dueDate === parent.dueDate
+      );
+      return !hasSubtaskOnSameDate;
+    });
+  }, [projectTasks, calendarSearchQuery, filterPriority, filterStatus, filterTag]);
+
+  const rawUnscheduledTasks = projectTasks.filter(n => !n.dueDate);
+  const unscheduledTasks = sidebarSearchQuery
+    ? rawUnscheduledTasks.filter(t => t.text.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))
+    : rawUnscheduledTasks;
+
+  const isAnyFilterActive = filterPriority !== 'all' || filterStatus !== 'all' || filterTag !== 'all';
+
+  // Drag and drop handlers
   const handleTaskDrop = (taskId: string, targetDate: string | null) => {
     setDraggedOverDate(null);
     setDraggedOverUnscheduled(false);
@@ -622,85 +602,19 @@ export default function CalendarView({
     };
   };
 
-  const handleTaskDropToHour = (taskId: string, targetDate: string, targetHour: string | null) => {
-    setDraggedOverDate(null);
-    setDraggedOverUnscheduled(false);
-    setDraggingTaskId(null);
-    if (!taskId) return;
-    const task = nodes.find(n => n.id === taskId);
-    if (task) {
-      if (targetHour) {
-        const startMin = timeToMinutes(targetHour);
-        const { startTime, dueTime } = getUpdatedTimesForDrop(task, startMin);
-        onUpdateNode({
-          ...task,
-          dueDate: targetDate,
-          startTime,
-          dueTime
-        });
-      } else {
-        onUpdateNode({
-          ...task,
-          dueDate: targetDate,
-          dueTime: undefined,
-          startTime: undefined
-        });
-      }
-    }
-  };
-
+  // Date navigation helpers
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
-  // Helper date conversions
   const getDaysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
   const getFirstDayOfMonth = (y: number, m: number) => {
-    const rawDay = new Date(y, m, 1).getDay(); // 0 is Sunday
-    return (rawDay + 6) % 7; // Convert to Monday-first (0 = Monday, 6 = Sunday)
+    const rawDay = new Date(y, m, 1).getDay();
+    return (rawDay + 6) % 7; // Monday-first
   };
 
   const daysInCurrentMonth = getDaysInMonth(year, month);
   const daysInPrevMonth = getDaysInMonth(year, month - 1);
   const startingDayOfWeek = getFirstDayOfMonth(year, month);
-
-  // Filter nodes for the current active project, avoiding duplicated mirrored tasks
-  const projectTasks = useMemo(() => {
-    const seenMirrorGroupIds = new Set<string>();
-    return nodes.filter(n => {
-      if (n.isContainer || n.isWorkflowRectangle) {
-        return false;
-      }
-      if (n.mirrorGroupId) {
-        if (seenMirrorGroupIds.has(n.mirrorGroupId)) {
-          return false;
-        }
-        seenMirrorGroupIds.add(n.mirrorGroupId);
-      }
-      return true;
-    });
-  }, [nodes]);
-
-  // Divide into scheduled and unscheduled
-  const scheduledTasks = useMemo(() => {
-    const rawScheduled = projectTasks.filter(n => n.dueDate);
-    return rawScheduled.filter(parent => {
-      const hasSubtaskOnSameDate = rawScheduled.some(sub => 
-        sub.parentId === parent.id && sub.dueDate === parent.dueDate
-      );
-      return !hasSubtaskOnSameDate;
-    });
-  }, [projectTasks]);
-  const rawUnscheduledTasks = projectTasks.filter(n => !n.dueDate);
-  const unscheduledTasks = sidebarSearchQuery
-    ? rawUnscheduledTasks.filter(t => t.text.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))
-    : rawUnscheduledTasks;
-
-  // Time slots for Day View
-  const HOURS = [
-    '07:05', '08:00', '09:00', '10:00', '11:00', '12:00',
-    '13:00', '14:00', '15:00', '16:00', '17:00', '18:00',
-    '19:00', '20:00', '21:00', '22:00'
-  ].map(h => h.replace('07:05', '07:00')); // ensure accurate 07:00 key but distinct for code verification
 
   const prevMonth = () => {
     setCurrentDate(prev => {
@@ -766,15 +680,14 @@ export default function CalendarView({
     setCurrentDate(new Date());
   };
 
-  // Build the array of days representing the monthly calendar grid view (typically 35 or 42 slots)
+  // Month grid slot generator (42 cells)
   const calendarSlots: {
     dayNumber: number;
-    monthOffset: -1 | 0 | 1; // -1: prev month, 0: current month, 1: next month
-    dateString: string; // YYYY-MM-DD
+    monthOffset: -1 | 0 | 1;
+    dateString: string;
     isToday: boolean;
   }[] = [];
 
-  // 1. Fill previous month padding days
   for (let i = startingDayOfWeek - 1; i >= 0; i--) {
     const dayVal = daysInPrevMonth - i;
     const prevMonthIdx = month === 0 ? 11 : month - 1;
@@ -788,10 +701,6 @@ export default function CalendarView({
     });
   }
 
-  // 2. Fill current month days
-  const realToday = new Date();
-  const realTodayStr = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}-${String(realToday.getDate()).padStart(2, '0')}`;
-
   for (let d = 1; d <= daysInCurrentMonth; d++) {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     calendarSlots.push({
@@ -802,8 +711,7 @@ export default function CalendarView({
     });
   }
 
-  // 3. Fill next month padding days
-  const remainingSlots = 42 - calendarSlots.length; // Ensure 6 full rows
+  const remainingSlots = 42 - calendarSlots.length;
   for (let d = 1; d <= remainingSlots; d++) {
     const nextMonthIdx = month === 11 ? 0 : month + 1;
     const nextYearIdx = month === 11 ? year + 1 : year;
@@ -816,10 +724,10 @@ export default function CalendarView({
     });
   }
 
-  // Find Monday of the current week for weekly slots
+  // Week slots generator (Monday - Sunday)
   const startOfWeek = (() => {
     const d = new Date(currentDate);
-    const dayValue = d.getDay(); // 0 Sunday, 1 Monday, etc.
+    const dayValue = d.getDay();
     const diff = d.getDate() - dayValue + (dayValue === 0 ? -6 : 1);
     return new Date(d.getFullYear(), d.getMonth(), diff);
   })();
@@ -833,53 +741,43 @@ export default function CalendarView({
       dateString: dateStr,
       dayNumber: d.getDate(),
       isToday: dateStr === realTodayStr,
-      dayName: WEEKDAYS_RU[i]
+      dayName: WEEKDAYS_SHORT_RU[i],
+      dayNameFull: WEEKDAYS_FULL_RU[i]
     };
   });
 
   const currentDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
 
-  const getPriorityColor = (p: Priority) => {
-    switch (p) {
-      case 'urgent': return 'bg-[#FEF2F2] border-[#FEE2E2] text-[#991B1B] dark:bg-rose-950/30 dark:border-rose-900/45 dark:text-rose-450';
-      case 'high': return 'bg-[#FFF7ED] border-[#FFEDD5] text-[#C2410C] dark:bg-amber-950/30 dark:border-amber-900/40 dark:text-amber-450';
-      case 'medium': return 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900/45 dark:text-indigo-400';
-      case 'low': return 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800/60 dark:border-slate-800 dark:text-slate-300';
-      default: return 'bg-slate-50 border-slate-205 text-slate-600 dark:bg-slate-800/60 dark:border-slate-800 dark:text-slate-300';
-    }
-  };
+  const HOURS_24 = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
-  const handleAddDayTaskSubmit = (dateStr: string, timeStr?: string) => {
-    const taskText = timeStr ? newHourTaskText.trim() : newDayTaskText.trim();
-    if (!taskText) return;
+  const handleQuickModalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickModalText.trim()) return;
     if (onCreateTask) {
-      onCreateTask(taskText, [], dateStr, timeStr);
+      onCreateTask(quickModalText.trim(), [], quickModalDate || undefined, quickModalDueTime || quickModalStartTime || undefined);
     } else {
       const fallbackNode: TaskNode = {
         id: 'node-' + Math.random().toString(36).substring(2, 9),
         projectId: activeProjectId,
-        text: taskText,
+        text: quickModalText.trim(),
         x: 0,
         y: 0,
         parentId: null,
-        priority: 'none',
+        priority: quickModalPriority,
         tags: [],
         notes: '',
         completed: false,
         files: [],
-        dueDate: dateStr,
-        dueTime: timeStr
+        dueDate: quickModalDate || undefined,
+        startTime: quickModalStartTime || undefined,
+        dueTime: quickModalDueTime || undefined
       };
       onUpdateNode(fallbackNode);
     }
-
-    if (timeStr) {
-      setNewHourTaskText('');
-      setActiveHourAddInput(null);
-    } else {
-      setNewDayTaskText('');
-      setActiveDayAddInput(null);
-    }
+    setQuickModalText('');
+    setQuickModalStartTime('');
+    setQuickModalDueTime('');
+    setIsQuickCreateModalOpen(false);
   };
 
   const getHeaderTitle = () => {
@@ -888,1294 +786,572 @@ export default function CalendarView({
     } else if (calendarSubMode === 'week') {
       const mon = weeklySlots[0].date;
       const sun = weeklySlots[6].date;
-      const monStr = `${mon.getDate()} ${MONTH_NAMES_RU[mon.getMonth()].substring(0, 3).toLowerCase()}`;
-      const sunStr = `${sun.getDate()} ${MONTH_NAMES_RU[sun.getMonth()].substring(0, 3).toLowerCase()}`;
-      return `Неделя: ${monStr} — ${sunStr} ${year}`;
+      if (mon.getMonth() === sun.getMonth()) {
+        return `${mon.getDate()} – ${sun.getDate()} ${MONTH_NAMES_GENITIVE_RU[mon.getMonth()]} ${year}`;
+      } else {
+        return `${mon.getDate()} ${MONTH_NAMES_GENITIVE_RU[mon.getMonth()].substring(0, 3)} – ${sun.getDate()} ${MONTH_NAMES_GENITIVE_RU[sun.getMonth()].substring(0, 3)} ${year}`;
+      }
     } else {
-      const dayOfWeekName = [
-        'Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'
-      ];
-      return `${currentDate.getDate()} ${MONTH_NAMES_RU[currentDate.getMonth()]} ${year}, ${dayOfWeekName[currentDate.getDay()]}`;
+      const dayIndex = (currentDate.getDay() + 6) % 7;
+      return `${currentDate.getDate()} ${MONTH_NAMES_GENITIVE_RU[currentDate.getMonth()]} ${year}, ${WEEKDAYS_FULL_RU[dayIndex]}`;
     }
   };
 
   return (
     <div 
       id="calendar-workspace-view" 
-      className={`relative bg-[#F8FAFC] dark:bg-slate-950 overflow-hidden font-sans flex flex-col lg:flex-row shadow-inner transition-all duration-200 ${
-        isFullScreen 
-          ? 'fixed inset-0 z-[150] w-screen h-screen' 
-          : 'w-full h-full'
+      className={`relative w-full h-full flex flex-col bg-white dark:bg-[#191919] text-[#37352F] dark:text-[#E0E0E0] overflow-hidden select-none font-sans ${
+        isFullScreen ? 'fixed inset-0 z-[150] w-screen h-screen' : ''
       }`}
     >
-      {/* Calendar Grid Section */}
-      <div className="flex-1 flex flex-col p-1.5 sm:p-2 overflow-hidden min-w-0">
+      {/* 1. NOTION TOP HEADER (BANNER + TITLE + VIEW TABS) */}
+      <div className="shrink-0 px-5 pt-3.5 pb-2 border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-white dark:bg-[#191919]">
         
-        {/* The beautiful thick bordered custom container card */}
-        <div className="flex-1 bg-white dark:bg-slate-900 border-[2px] sm:border-[2.5px] border-[#1E293B] dark:border-slate-800 rounded-[16px] sm:rounded-[20px] p-2 sm:p-3 shadow-sm flex flex-col h-full overflow-hidden">
-          
-          {/* Calendar Navigation and Title Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 mb-1.5 shrink-0 bg-transparent">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg border-[1.5px] border-[#1E293B] bg-indigo-50/35 text-[#1E293B] dark:border-slate-700 dark:bg-indigo-950/20 dark:text-slate-350 flex items-center justify-center shrink-0">
-                <Calendar className="w-4 h-4" />
-              </div>
-              <div className="flex flex-col justify-center">
-                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                  <h2 className="text-sm sm:text-base font-black text-[#1E293B] dark:text-slate-100 uppercase tracking-tight leading-none font-sans">
-                    {getHeaderTitle()}
-                  </h2>
-                  <span className="text-[10px] bg-indigo-50/35 dark:bg-indigo-950/20 text-[#1E293B] dark:text-slate-300 font-bold px-1.5 py-0.5 rounded-md border border-slate-200/50 dark:border-slate-755 leading-none shrink-0">
-                    Событий: <span className="text-[#4F46E5] dark:text-indigo-400 font-extrabold">{scheduledTasks.length}</span>
-                  </span>
-                </div>
-              </div>
+        {/* Project Icon & Title */}
+        <div className="flex items-center justify-between gap-3 mb-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {/* Notion Page Icon */}
+            <div className="w-8 h-8 rounded-lg bg-[#F7F7F5] dark:bg-[#252525] border border-[#EDEDEB] dark:border-[#333] flex items-center justify-center text-lg shrink-0 cursor-pointer shadow-3xs">
+              {projectIcon || '📅'}
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5 justify-end">
-              {/* Switch tabs */}
-              <div className="flex bg-slate-100/95 dark:bg-slate-800/80 rounded-lg p-0.5 border border-slate-200/60 dark:border-slate-705 shrink-0 select-none">
-                <button
-                  type="button"
-                  onClick={() => setCalendarSubMode('month')}
-                  className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-all cursor-pointer ${
-                    calendarSubMode === 'month'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-3xs border border-slate-200/30'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                >
-                  Месяц
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCalendarSubMode('week')}
-                  className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-all cursor-pointer ${
-                    calendarSubMode === 'week'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-3xs border border-slate-200/30'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                >
-                  Неделя
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCalendarSubMode('day')}
-                  className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-all cursor-pointer ${
-                    calendarSubMode === 'day'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-3xs border border-slate-200/30'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                >
-                  День
-                </button>
-              </div>
-
-              {/* Switch layout type for Day/Week modes */}
-              {(calendarSubMode === 'day' || calendarSubMode === 'week') && (
-                <div className="flex bg-slate-100/95 dark:bg-slate-800/80 rounded-lg p-0.5 border border-slate-200/60 dark:border-slate-705 shrink-0 select-none animate-fade-in">
-                  <button
-                    type="button"
-                    onClick={() => setLayoutType('grid')}
-                    className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-all cursor-pointer ${
-                      layoutType === 'grid'
-                        ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-3xs border border-slate-200/30'
-                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
+            {/* Notion Editable Title */}
+            <div className="min-w-0 flex-1">
+              {isEditingTitle ? (
+                <input
+                  ref={titleInputRef}
+                  type="text"
+                  value={titleInput}
+                  onChange={(e) => setTitleInput(e.target.value)}
+                  onBlur={handleTitleSubmit}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleTitleSubmit();
+                    if (e.key === 'Escape') setIsEditingTitle(false);
+                  }}
+                  className="text-lg sm:text-xl font-bold text-[#111] dark:text-[#FFF] bg-transparent border-b border-[#2383E2] outline-none px-0 py-0 w-full"
+                  autoFocus
+                />
+              ) : (
+                <div className="flex items-center gap-2">
+                  <h1 
+                    onClick={() => setIsEditingTitle(true)}
+                    className="text-lg sm:text-xl font-bold tracking-tight text-[#111] dark:text-[#FFF] truncate cursor-pointer hover:bg-[#F0F0EE] dark:hover:bg-[#252525] px-1 py-0.5 -ml-1 rounded transition-colors"
+                    title="Нажмите, чтобы переименовать"
                   >
-                    Блочный вид
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLayoutType('list')}
-                    className={`px-2 py-0.5 text-[10px] font-black rounded-md transition-all cursor-pointer ${
-                      layoutType === 'list'
-                        ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-3xs border border-slate-200/30'
-                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
-                  >
-                    Список
-                  </button>
+                    {projectName || 'Календарь'}
+                  </h1>
+                  <span className="text-[11px] font-normal text-[#9B9A97] dark:text-[#787774] px-1.5 py-0.5 rounded bg-[#F7F7F5] dark:bg-[#252525] border border-[#EDEDEB] dark:border-[#333]">
+                    {scheduledTasks.length} {scheduledTasks.length === 1 ? 'задача' : 'задач'}
+                  </span>
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={setToday}
-                className="px-2 py-0.5 bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-200/90 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-100 border border-slate-200 dark:border-slate-700 text-[10px] font-black rounded-lg transition-all cursor-pointer shadow-3xs active:scale-[0.98]"
-              >
-                Сегодня
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowFilter(!showFilter)}
-                className={`px-2 py-0.5 text-[10px] font-black rounded-lg transition-all cursor-pointer flex items-center gap-1 border ${
-                  showFilter 
-                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-850 dark:text-indigo-405' 
-                    : 'bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-200/90 dark:hover:bg-slate-700 text-slate-705 dark:text-slate-100 border-slate-200 dark:border-slate-700'
-                }`}
-              >
-                <Filter className="w-3 h-3 text-current" />
-                фильтр
-              </button>
-
-              <div className="flex items-center bg-slate-100/90 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 rounded-lg p-0.5">
-                <button
-                  type="button"
-                  onClick={handlePrev}
-                  className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 rounded-md transition-all cursor-pointer"
-                  title="Назад"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  className="p-1 hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-350 rounded-md transition-all cursor-pointer"
-                  title="Вперед"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Full Screen Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setIsFullScreen(!isFullScreen)}
-                className={`px-2 py-1 text-[10px] font-black rounded-lg transition-all cursor-pointer flex items-center gap-1 border shrink-0 ${
-                  isFullScreen 
-                    ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-850 dark:text-amber-400' 
-                    : 'bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-200/90 dark:hover:bg-slate-700 text-[#1E293B] dark:text-slate-100 border-slate-200/60 dark:border-slate-700'
-                }`}
-                title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
-              >
-                {isFullScreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline-block font-bold">{isFullScreen ? 'Свернуть' : 'На весь экран'}</span>
-              </button>
             </div>
           </div>
 
-          {/* Separator */}
-          <div className="border-b-[1.5px] border-slate-200 dark:border-slate-850 mb-1.5 shrink-0" />
-
-          {/* Dynamic Search / Filtering Input when showFilter is active */}
-          {showFilter && (
-            <div className="w-full max-w-md mx-auto mb-2 animate-fade-in px-2 shrink-0">
+          {/* Right Top Action Controls (Search, Fullscreen, New Task Button) */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Search Input in Notion style */}
+            <div className="relative flex items-center">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 text-[#9B9A97] pointer-events-none" />
               <input
                 type="text"
-                placeholder="Поиск по задачам..."
+                placeholder="Поиск..."
                 value={calendarSearchQuery}
                 onChange={(e) => setCalendarSearchQuery(e.target.value)}
-                className="w-full text-xs p-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-gray-100 rounded-lg border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-slate-400 font-medium font-sans shadow-3xs"
+                className="w-24 sm:w-36 focus:w-44 transition-all pl-8 pr-6 py-1 text-[12px] rounded-md bg-[#F7F7F5] dark:bg-[#252525] border border-transparent focus:border-[#2383E2] focus:bg-white dark:focus:bg-[#1E1E1E] text-[#37352F] dark:text-[#FFF] outline-none placeholder-[#9B9A97]"
               />
+              {calendarSearchQuery && (
+                <button
+                  onClick={() => setCalendarSearchQuery('')}
+                  className="absolute right-2 text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] text-xs"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Fullscreen Button */}
+            <button
+              type="button"
+              onClick={() => setIsFullScreen(!isFullScreen)}
+              className={`p-1.5 rounded-md text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] transition-colors cursor-pointer ${
+                isFullScreen ? 'bg-[#EFEFED] dark:bg-[#2A2A2A] text-[#2383E2]' : ''
+              }`}
+              title={isFullScreen ? "Свернуть (Esc)" : "На весь экран"}
+            >
+              {isFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+
+            {/* Primary Notion Blue New Task Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setQuickModalDate(currentDateStr);
+                setQuickModalStartTime('');
+                setQuickModalDueTime('');
+                setIsQuickCreateModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 bg-[#2383E2] hover:bg-[#1D74C6] text-white px-2.5 py-1 rounded-md text-[12.5px] font-medium transition-colors shadow-3xs cursor-pointer active:scale-98"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span className="hidden sm:inline">Новая</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Notion Database Views Tab Switcher Bar */}
+        <div className="flex items-center justify-between gap-3 text-xs overflow-x-auto custom-scrollbar pt-0.5">
+          <div className="flex items-center gap-1 shrink-0">
+            {setViewMode && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('table')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
+                >
+                  <TableIcon className="w-3.5 h-3.5" />
+                  <span>Таблица</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewMode('kanban')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
+                >
+                  <KanbanIcon className="w-3.5 h-3.5" />
+                  <span>Доска</span>
+                </button>
+
+                {/* Active Calendar View Tab */}
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium text-[#37352F] dark:text-[#FFF] bg-[#EFEFED] dark:bg-[#2A2A2A] transition-colors cursor-pointer shadow-3xs"
+                >
+                  <CalendarIcon className="w-3.5 h-3.5 text-[#2383E2]" />
+                  <span>Календарь</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewMode('gantt')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
+                >
+                  <GanttChart className="w-3.5 h-3.5" />
+                  <span>График</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewMode('canvas')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Холст</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Right Action Icons Toolbar (Filter toggle) */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[12px] transition-colors cursor-pointer ${
+                isAnyFilterActive || isFilterOpen
+                  ? 'bg-[#2383E2]/10 text-[#2383E2] font-medium'
+                  : 'text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'
+              }`}
+              title="Фильтрация"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Фильтр</span>
+              {isAnyFilterActive && (
+                <span className="w-1.5 h-1.5 rounded-full bg-[#2383E2]" />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Notion Filter Popover Bar */}
+      {isFilterOpen && (
+        <div className="shrink-0 px-5 py-2 border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-[#F7F7F5] dark:bg-[#202020] flex items-center gap-3 text-xs flex-wrap animate-fadeIn">
+          <div className="flex items-center gap-1 text-[#787774] dark:text-[#9B9A97]">
+            <span>Фильтры:</span>
+          </div>
+
+          {/* Priority filter */}
+          <div className="flex items-center gap-1">
+            <span className="text-[#9B9A97]">Приоритет:</span>
+            <select
+              value={filterPriority}
+              onChange={(e) => setFilterPriority(e.target.value)}
+              className="bg-white dark:bg-[#2A2A2A] border border-[#E3E2E0] dark:border-[#333] rounded px-1.5 py-0.5 text-xs text-[#37352F] dark:text-[#D4D4D4] outline-none"
+            >
+              <option value="all">Все</option>
+              <option value="urgent">⚡ Urgent</option>
+              <option value="high">🔥 High</option>
+              <option value="medium">⏳ Medium</option>
+              <option value="low">💤 Low</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+
+          {/* Status filter */}
+          <div className="flex items-center gap-1">
+            <span className="text-[#9B9A97]">Статус:</span>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="bg-white dark:bg-[#2A2A2A] border border-[#E3E2E0] dark:border-[#333] rounded px-1.5 py-0.5 text-xs text-[#37352F] dark:text-[#D4D4D4] outline-none"
+            >
+              <option value="all">Все</option>
+              <option value="active">В работе</option>
+              <option value="completed">Выполненные</option>
+            </select>
+          </div>
+
+          {/* Tag filter */}
+          {tagCategories && tagCategories.length > 0 && (
+            <div className="flex items-center gap-1">
+              <span className="text-[#9B9A97]">Тег:</span>
+              <select
+                value={filterTag}
+                onChange={(e) => setFilterTag(e.target.value)}
+                className="bg-white dark:bg-[#2A2A2A] border border-[#E3E2E0] dark:border-[#333] rounded px-1.5 py-0.5 text-xs text-[#37352F] dark:text-[#D4D4D4] outline-none"
+              >
+                <option value="all">Все теги</option>
+                {tagCategories.map(cat => (
+                  <option key={cat.id} value={cat.name}>#{cat.name}</option>
+                ))}
+              </select>
             </div>
           )}
 
-          {/* Scrollable Container Window */}
-          <div id="calendar-horizontal-scroll-container" className="flex-1 overflow-auto custom-scrollbar pb-1">
-            <div className={`${calendarSubMode === 'day' ? 'w-full' : 'min-w-[850px] lg:min-w-full'} h-full flex flex-col`}>
+          {isAnyFilterActive && (
+            <button
+              onClick={() => {
+                setFilterPriority('all');
+                setFilterStatus('all');
+                setFilterTag('all');
+              }}
+              className="text-[11px] text-[#2383E2] hover:underline ml-auto"
+            >
+              Сбросить фильтры
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 2. NOTION CALENDAR HEADER & TIME PERIOD CONTROL */}
+      <div className="shrink-0 px-5 py-2.5 bg-white dark:bg-[#191919] flex items-center justify-between gap-3 border-b border-[#EDEDEB] dark:border-[#2D2D2D] flex-wrap">
+        
+        {/* Left: Navigation arrows, Today button & Formatted Title */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={handlePrev}
+              className="p-1 hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#FFF] rounded transition-colors cursor-pointer"
+              title="Назад (←)"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleNext}
+              className="p-1 hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#FFF] rounded transition-colors cursor-pointer"
+              title="Вперед (→)"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Today Button with Notion styling */}
+          <button
+            type="button"
+            onClick={setToday}
+            className="px-2.5 py-1 text-xs font-medium text-[#37352F] dark:text-[#D4D4D4] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] rounded-md border border-[#EDEDEB] dark:border-[#333] transition-colors cursor-pointer flex items-center gap-1 shadow-3xs"
+            title="Перейти к сегодняшнему дню (T)"
+          >
+            <span>Сегодня</span>
+            <span className="text-[10px] text-[#9B9A97] font-mono ml-0.5">T</span>
+          </button>
+
+          {/* Formatted Period Heading */}
+          <h2 className="text-base sm:text-lg font-semibold text-[#111] dark:text-[#FFF] tracking-tight ml-1">
+            {getHeaderTitle()}
+          </h2>
+        </div>
+
+        {/* Right: Sub-mode Switchers (Day [D] | Week [W] | Month [M]) */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-[#F7F7F5] dark:bg-[#252525] p-0.5 rounded-lg border border-[#EDEDEB] dark:border-[#333] text-xs">
+            <button
+              type="button"
+              onClick={() => setCalendarSubMode('day')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                calendarSubMode === 'day'
+                  ? 'bg-white dark:bg-[#333] text-[#111] dark:text-[#FFF] shadow-3xs font-medium'
+                  : 'text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97]'
+              }`}
+              title="Вид на 1 день (D)"
+            >
+              <span>День</span>
+              <span className="text-[9px] text-[#9B9A97] font-mono">D</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalendarSubMode('week')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                calendarSubMode === 'week'
+                  ? 'bg-white dark:bg-[#333] text-[#111] dark:text-[#FFF] shadow-3xs font-medium'
+                  : 'text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97]'
+              }`}
+              title="Вид на неделю (W)"
+            >
+              <span>Неделя</span>
+              <span className="text-[9px] text-[#9B9A97] font-mono">W</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalendarSubMode('month')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                calendarSubMode === 'month'
+                  ? 'bg-white dark:bg-[#333] text-[#111] dark:text-[#FFF] shadow-3xs font-medium'
+                  : 'text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97]'
+              }`}
+              title="Вид на месяц (M)"
+            >
+              <span>Месяц</span>
+              <span className="text-[9px] text-[#9B9A97] font-mono">M</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. MAIN WORKSPACE BODY (NOTION CALENDAR TIMELINE + SIDEBAR) */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0 bg-white dark:bg-[#191919]">
+        
+        {/* ============================================================ */}
+        {/* A. WEEKLY VIEW (AUTHENTIC NOTION CALENDAR) */}
+        {/* ============================================================ */}
+        {calendarSubMode === 'week' && (
+          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-white dark:bg-[#191919]">
+            
+            {/* Weekdays Sticky Header + All-Day Section */}
+            <div className="shrink-0 flex flex-col border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-white dark:bg-[#191919] z-20">
               
-              {/* Active Sub Tab Controller */}
-              <>
+              {/* Day Header Row */}
+              <div className="flex items-stretch border-b border-[#EDEDEB] dark:border-[#2D2D2D]">
+                {/* Time Gutter Header (Time Zone indicator) */}
+                <div className="w-14 sm:w-16 shrink-0 border-r border-[#EDEDEB] dark:border-[#2D2D2D] flex items-center justify-center p-2 text-[10px] font-mono text-[#9B9A97]">
+                  24h
+                </div>
 
-                {/* 1. Monthly Grid Mode */}
-                {calendarSubMode === 'month' && (
-                  <div className="flex-1 flex flex-col min-h-[720px] lg:min-h-[840px] relative">
-                    {/* Integrated weekday headers inside slots themselves, forming hmbee design */}
-                    <div className="grid grid-cols-7 border-t border-l border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs h-full flex-1">
-                      {calendarSlots.map((slot, sIdx) => {
-                        const dayTasks = scheduledTasks.filter(task => {
-                          if (task.dueDate !== slot.dateString) return false;
-                          if (calendarSearchQuery) {
-                            return task.text.toLowerCase().includes(calendarSearchQuery.toLowerCase());
-                          }
-                          return true;
-                        });
-                        const isInactiveMonth = slot.monthOffset !== 0;
-                        const isDragOver = draggedOverDate === slot.dateString;
-                        
-                        // First row appends week labels natively like "25, Пн"
-                        // Consecutive rows render only numbers like "1", "2"
-                          const cellHeaderLabel = sIdx < 7 
-                            ? `${slot.dayNumber}, ${WEEKDAYS_RU[sIdx]}`
-                            : `${slot.dayNumber}`;
+                {/* 7 Day Header Columns */}
+                <div className="flex-1 grid grid-cols-7 min-w-[700px]">
+                  {weeklySlots.map((slot) => {
+                    const isToday = slot.isToday;
+                    return (
+                      <div 
+                        key={slot.dateString}
+                        onClick={() => {
+                          setCurrentDate(slot.date);
+                          setCalendarSubMode('day');
+                        }}
+                        className={`py-2 px-2 border-r border-[#EDEDEB] dark:border-[#2D2D2D] last:border-r-0 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors group ${
+                          isToday ? 'bg-[#2383E2]/5 dark:bg-[#2383E2]/10' : 'hover:bg-[#F7F7F5] dark:hover:bg-[#202020]'
+                        }`}
+                        title="Нажмите, чтобы открыть дневной вид"
+                      >
+                        <span className={`text-[11px] font-medium uppercase tracking-wider ${
+                          isToday ? 'text-[#2383E2] font-semibold' : 'text-[#787774] dark:text-[#9B9A97]'
+                        }`}>
+                          {slot.dayName}
+                        </span>
 
-                          return (
-                            <div
-                              key={`${slot.dateString}-${sIdx}`}
-                              data-date={slot.dateString}
-                              onDragOver={(e) => e.preventDefault()}
-                              onDragEnter={() => setDraggedOverDate(slot.dateString)}
-                              onDragLeave={() => {
-                                if (draggedOverDate === slot.dateString) {
-                                  setDraggedOverDate(null);
-                                }
-                              }}
-                              onDrop={(e) => {
-                                const taskId = e.dataTransfer.getData('text/plain');
-                                handleTaskDrop(taskId, slot.dateString);
-                              }}
-                              onClick={(e) => {
-                                const target = e.target as HTMLElement;
-                                if (target.closest('[draggable="true"]') || target.closest('button') || target.closest('.task-item')) {
-                                  return;
-                                }
-                                setActiveDayAddInput(slot.dateString);
-                                setNewDayTaskText('');
-                              }}
-                              className={`flex flex-col p-1.5 select-none min-h-[120px] sm:min-h-[140px] md:min-h-[160px] lg:min-h-[180px] h-full flex-1 hover:bg-slate-50/50 dark:hover:bg-slate-850/30 border-b border-r border-[#1E293B] dark:border-slate-800 transition-all cursor-pointer relative ${
-                                isInactiveMonth ? 'bg-slate-50/30 opacity-40 text-slate-400 dark:bg-slate-900/10' : 'bg-white dark:bg-slate-900'
-                              } ${
-                                slot.isToday ? 'bg-blue-50/15 dark:bg-blue-955/20 border-b-2 border-indigo-505' : ''
-                              } ${
-                                isDragOver ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''
-                              }`}
-                            >
-                              {/* Cell Header with Label & plus logo */}
-                              <div className="flex justify-between items-center mb-1 shrink-0 select-none">
-                                <span className={`text-[10px] sm:text-[10.5px] font-extrabold ${
-                                  slot.isToday
-                                    ? 'text-blue-600 dark:text-blue-400 underline decoration-2'
-                                    : isInactiveMonth
-                                    ? 'text-slate-300 dark:text-slate-650'
-                                    : 'text-slate-700 dark:text-slate-300'
-                                }`}>
-                                  {cellHeaderLabel}
-                                </span>
-                                
-                                <span className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-indigo-600 rounded text-[9px] font-bold">
-                                  +
-                                </span>
-                              </div>
-
-                              {/* Cell Content Space */}
-                              <div className="flex-1 flex flex-col gap-0.5 overflow-y-auto max-h-[120px] sm:max-h-[150px] md:max-h-[180px] lg:max-h-[200px] custom-scrollbar pointer-events-auto">
-                                {dayTasks.map(task => {
-                                  return (
-                                    <div
-                                      key={task.id}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onSelectNode(task.id, e);
-                                      }}
-                                      onDoubleClick={(e) => {
-                                        e.stopPropagation();
-                                        if (onFocusedTaskIdChange) {
-                                          onFocusedTaskIdChange(task.id);
-                                        }
-                                        if (window.innerWidth < 1024) {
-                                          onSelectNode(null);
-                                        }
-                                      }}
-                                      draggable={true}
-                                      onDragStart={(e) => {
-                                        e.stopPropagation();
-                                        e.dataTransfer.setData('text/plain', task.id);
-                                        setDraggingTaskId(task.id);
-                                      }}
-                                      onDragEnd={(e) => {
-                                        e.stopPropagation();
-                                        setDraggingTaskId(null);
-                                      }}
-                                      onTouchStart={(e) => {
-                                        e.stopPropagation();
-                                        const touch = e.touches[0];
-                                        touchStartPos.current = { x: touch.clientX, y: touch.clientY, dateString: slot.dateString };
-                                        touchHasMoved.current = false;
-                                        setDraggingTaskId(task.id);
-                                      }}
-                                      className={`task-item text-[9.5px] rounded px-1.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all truncate leading-tight flex items-center gap-1 cursor-grab active:cursor-grabbing select-none pointer-events-auto shrink-0 ${
-                                        task.completed ? 'opacity-40 line-through text-slate-400' : 'text-slate-800 dark:text-slate-100'
-                                      } ${
-                                        draggingTaskId === task.id ? 'opacity-30 border-dashed border-indigo-350' : ''
-                                      }`}
-                                      title={task.text}
-                                    >
-                                      <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
-                                        task.priority === 'urgent' ? 'bg-rose-500' :
-                                        task.priority === 'high' ? 'bg-amber-500' :
-                                        task.priority === 'medium' ? 'bg-indigo-500' : 'bg-slate-400'
-                                      }`}></span>
-                                      <span className="truncate text-[10px] font-semibold">{task.text}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-
-                              {/* Active Day Add Overlay */}
-                              {activeDayAddInput === slot.dateString && (
-                                <div 
-                                  className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 p-1 flex flex-col justify-between z-10 rounded-lg border border-indigo-500 animate-fade-in"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <input
-                                    type="text"
-                                    autoFocus
-                                    placeholder="Новая задача..."
-                                    value={newDayTaskText}
-                                    onChange={(e) => setNewDayTaskText(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') handleAddDayTaskSubmit(slot.dateString);
-                                      if (e.key === 'Escape') setActiveDayAddInput(null);
-                                    }}
-                                    className="w-full text-[10px] p-1 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded border border-slate-200 outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
-                                  />
-                                  <div className="flex gap-1 justify-end">
-                                    <button
-                                      type="button"
-                                      onClick={() => setActiveDayAddInput(null)}
-                                      className="px-1.5 py-0.5 bg-slate-250 hover:bg-slate-300 rounded text-[9px] font-bold text-slate-600 cursor-pointer"
-                                    >
-                                      отмена
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleAddDayTaskSubmit(slot.dateString)}
-                                      className="px-1.5 py-0.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded text-[9px] font-bold cursor-pointer"
-                                    >
-                                      ок
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </>
-
-              {/* 2. Weekly Layout Mode */}
-              {calendarSubMode === 'week' && (
-                layoutType === 'list' ? (
-                  <div id="calendar-week-scroll-container" className="flex-1 grid grid-cols-7 gap-3 h-full overflow-y-auto pr-1 custom-scrollbar">
-                    {weeklySlots.map((slot) => {
-                      const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
-                      const isDragOver = draggedOverDate === slot.dateString;
-
-                      return (
-                        <div
-                          key={slot.dateString}
-                          onDragOver={(e) => e.preventDefault()}
-                          onDragEnter={() => setDraggedOverDate(slot.dateString)}
-                          onDragLeave={() => {
-                            if (draggedOverDate === slot.dateString) {
-                              setDraggedOverDate(null);
-                            }
-                          }}
-                          onDrop={(e) => {
-                            const taskId = e.dataTransfer.getData('text/plain');
-                            handleTaskDrop(taskId, slot.dateString);
-                          }}
-                          onClick={(e) => {
-                            const target = e.target as HTMLElement;
-                            if (target.closest('[draggable="true"]') || target.closest('button') || target.closest('.task-item')) {
-                              return;
-                            }
-                            setActiveDayAddInput(slot.dateString);
-                            setNewDayTaskText('');
-                          }}
-                          className={`min-h-[440px] border rounded-2xl p-3 flex flex-col justify-start transition-all duration-200 group relative bg-white dark:bg-slate-900 cursor-pointer ${
-                            slot.isToday 
-                              ? 'border-indigo-400 ring-2 ring-indigo-500/10' 
-                              : 'border-slate-150 dark:border-slate-800'
-                          } ${
-                            isDragOver ? 'ring-2 ring-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/20 border-indigo-505 scale-[1.01]' : ''
-                          }`}
-                        >
-                          {/* Day Header */}
-                          <div className="flex items-center justify-between mb-3 shrink-0 select-none pb-2 border-b border-slate-100 dark:border-slate-800">
-                            <div className="flex flex-col">
-                              <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-505 tracking-wider">
-                                {slot.dayName}
-                              </span>
-                              <span className={`text-base font-extrabold ${
-                                slot.isToday ? 'text-indigo-650 dark:text-indigo-400' : 'text-slate-705 dark:text-slate-205'
-                              }`}>
-                                {slot.dayNumber}
-                              </span>
-                            </div>
-
-                            {/* Inline plus button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveDayAddInput(activeDayAddInput === slot.dateString ? null : slot.dateString);
-                                setNewDayTaskText('');
-                              }}
-                              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 rounded-md transition-all cursor-pointer"
-                              title="Создать задачу"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
-                          </div>
-
-                          {/* Day Tasks List */}
-                          <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
-                            {dayTasks.map(task => (
-                              <div
-                                key={task.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onSelectNode(task.id, e);
-                                }}
-                                onDoubleClick={(e) => {
-                                  e.stopPropagation();
-                                  if (onFocusedTaskIdChange) {
-                                    onFocusedTaskIdChange(task.id);
-                                  }
-                                  if (window.innerWidth < 1024) {
-                                    onSelectNode(null);
-                                  }
-                                }}
-                                draggable={true}
-                                onDragStart={(e) => {
-                                  e.stopPropagation();
-                                  e.dataTransfer.setData('text/plain', task.id);
-                                  setDraggingTaskId(task.id);
-                                }}
-                                onDragEnd={(e) => {
-                                  e.stopPropagation();
-                                  setDraggingTaskId(null);
-                                }}
-                                className={`task-item group/task border text-[11px] leading-snug p-2 rounded-xl flex items-start gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative ${getPriorityColor(task.priority)} ${
-                                  draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-350' : ''
-                                }`}
-                              >
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onUpdateNode({
-                                      ...task,
-                                      completed: !task.completed
-                                    });
-                                  }}
-                                  className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform duration-100 shrink-0 ${
-                                    task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
-                                  }`}
-                                >
-                                  {task.completed ? (
-                                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                  ) : activePomodoroNodeId === task.id ? (
-                                    <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                                      <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                                      <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                                    </span>
-                                  ) : (
-                                    <Circle className="w-3.5 h-3.5 shrink-0" />
-                                  )}
-                                </button>
-                                <div className="flex-1 flex flex-col min-w-0">
-                                  <span className={`truncate font-semibold ${task.completed ? 'line-through opacity-55' : 'text-slate-850 dark:text-slate-100'}`}>
-                                    {task.text}
-                                  </span>
-                                  {(task.startTime || task.dueTime) && (
-                                    <div className="flex items-center gap-1 text-[9px] text-indigo-650 dark:text-indigo-400 mt-0.5 font-bold font-mono">
-                                      <span>🕒 {formatTaskTime(task)}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-
-                            {/* Inline custom task input */}
-                            {activeDayAddInput === slot.dateString && (
-                              <div 
-                                className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/50"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="text"
-                                  autoFocus
-                                  placeholder="Новая задача..."
-                                  value={newDayTaskText}
-                                  onChange={(e) => setNewDayTaskText(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    e.stopPropagation();
-                                    if (e.key === 'Enter') handleAddDayTaskSubmit(slot.dateString);
-                                    if (e.key === 'Escape') setActiveDayAddInput(null);
-                                  }}
-                                  className="w-full text-xs p-1.5 bg-white dark:bg-slate-900 text-slate-850 dark:text-slate-100 rounded-lg border border-slate-205 focus:outline-none focus:border-indigo-500"
-                                />
-                                <div className="flex gap-1 mt-1.5 justify-end">
-                                  <button
-                                    onClick={() => setActiveDayAddInput(null)}
-                                    className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 px-2 py-0.5 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
-                                  >
-                                    Отмена
-                                  </button>
-                                  <button
-                                    onClick={() => handleAddDayTaskSubmit(slot.dateString)}
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer"
-                                  >
-                                    Да
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                        {/* Notion Calendar Date Circle */}
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
+                          isToday 
+                            ? 'bg-[#2383E2] text-white shadow-2xs' 
+                            : 'text-[#111] dark:text-[#FFF] group-hover:bg-[#EDEDEB] dark:group-hover:bg-[#333]'
+                        }`}>
+                          {slot.dayNumber}
                         </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div id="weekly-time-blocking-scroll" className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-805 p-4 shadow-xs font-sans">
-                    {/* Sticky Day Headers */}
-                    <div className="flex border-b border-slate-200 dark:border-slate-800 pb-2 mb-1 shrink-0 select-none">
-                      <div className="w-12 shrink-0"></div>
-                      <div className="flex-1 grid grid-cols-7 gap-1">
-                        {weeklySlots.map((slot) => (
-                          <div key={slot.dateString} className="flex flex-col items-center py-1">
-                            <span className="text-[9px] uppercase font-bold text-slate-400 dark:text-slate-550 tracking-wider">
-                              {slot.dayName}
-                            </span>
-                            <span className={`text-xs font-extrabold flex items-center justify-center w-6 h-6 rounded-full ${
-                              slot.isToday 
-                                ? 'bg-indigo-600 text-white shadow-3xs' 
-                                : 'text-slate-700 dark:text-slate-200'
-                            }`}>
-                              {slot.dayNumber}
-                            </span>
-                          </div>
-                        ))}
                       </div>
-                    </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-                    {/* Scrollable area */}
-                    <div className="flex-1 overflow-y-auto relative custom-scrollbar flex min-h-0" style={{ height: '480px' }}>
-                      {/* Hour markers background and labels */}
-                      <div className="w-12 h-[1440px] shrink-0 flex flex-col relative select-none">
-                        {Array.from({ length: 24 }).map((_, h) => (
-                          <div key={h} className="h-[60px] shrink-0 border-b border-slate-100/35 dark:border-slate-800/25 flex justify-end pr-2 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-semibold pt-1">
-                            {String(h).padStart(2, '0')}:00
-                          </div>
-                        ))}
-                      </div>
+              {/* Pinned All-Day Tasks Row ("Весь день") */}
+              <div className="flex items-stretch min-h-[36px] bg-[#FAF9F7] dark:bg-[#1B1B1B]">
+                {/* All-Day Label */}
+                <div 
+                  onClick={() => setIsAllDayExpanded(!isAllDayExpanded)}
+                  className="w-14 sm:w-16 shrink-0 border-r border-[#EDEDEB] dark:border-[#2D2D2D] flex items-center justify-between px-2 text-[10px] text-[#787774] dark:text-[#9B9A97] cursor-pointer hover:bg-[#EFEFED] dark:hover:bg-[#252525] transition-colors select-none"
+                  title="Свернуть / развернуть задачи на весь день"
+                >
+                  <span className="font-medium truncate">Весь день</span>
+                  {isAllDayExpanded ? <ChevronUp className="w-2.5 h-2.5 opacity-60" /> : <ChevronDown className="w-2.5 h-2.5 opacity-60" />}
+                </div>
 
-                      {/* 7 columns for days */}
-                      <div className="flex-1 grid grid-cols-7 gap-1 relative border-l border-slate-150 dark:border-slate-800">
-                        {weeklySlots.map((slot) => {
-                          const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
-                          const timedTasks = dayTasks.filter(task => task.startTime || task.dueTime);
-                          const timedBlocks = computeBlocksForTasks(timedTasks);
-                          const isDragOver = draggedOverDate === slot.dateString;
+                {/* 7 Columns for All-day tasks */}
+                <div className="flex-1 grid grid-cols-7 min-w-[700px]">
+                  {weeklySlots.map((slot) => {
+                    const allDayTasks = scheduledTasks.filter(t => t.dueDate === slot.dateString && !t.startTime && !t.dueTime);
+                    const isDragOver = draggedOverDate === `allday-${slot.dateString}`;
 
-                          return (
-                            <div
-                              key={slot.dateString}
-                              onDragOver={(e) => e.preventDefault()}
-                              onDragEnter={() => setDraggedOverDate(slot.dateString)}
-                              onDragLeave={() => {
-                                if (draggedOverDate === slot.dateString) {
-                                  setDraggedOverDate(null);
-                                }
-                              }}
-                              onDrop={(e) => {
-                                const taskId = e.dataTransfer.getData('text/plain');
-                                if (taskId) {
-                                  const rect = e.currentTarget.getBoundingClientRect();
-                                  const dropY = e.clientY - rect.top;
-                                  const totalMinutes = Math.max(0, Math.min(1439, Math.floor(dropY)));
-                                  const snappedMinutes = Math.round(totalMinutes / 15) * 15;
-                                  
-                                  const taskToDrop = scheduledTasks.find(t => t.id === taskId);
-                                  if (taskToDrop) {
-                                    const { startTime, dueTime } = getUpdatedTimesForDrop(taskToDrop, snappedMinutes);
-                                    onUpdateNode({
-                                      ...taskToDrop,
-                                      dueDate: slot.dateString,
-                                      startTime,
-                                      dueTime
-                                    });
-                                  }
-                                }
-                                setDraggedOverDate(null);
-                              }}
-                              onClick={(e) => {
-                                const target = e.target as HTMLElement;
-                                if (target.closest('[draggable="true"]') || target.closest('button')) {
-                                  return;
-                                }
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                const clickY = e.clientY - rect.top;
-                                const totalMinutes = Math.max(0, Math.min(1439, Math.floor(clickY)));
-                                const snappedMinutes = Math.round(totalMinutes / 15) * 15;
-                                const hourVal = Math.floor(snappedMinutes / 60);
-                                const minVal = snappedMinutes % 60;
-                                const timeStr = `${String(hourVal).padStart(2, '0')}:${String(minVal).padStart(2, '0')}`;
-                                setActiveHourAddInput(`${slot.dateString}-${timeStr}`);
-                                setNewHourTaskText('');
-                              }}
-                              className={`h-[1440px] relative border-r border-slate-100 dark:border-slate-800 transition-colors duration-150 cursor-pointer ${
-                                slot.isToday ? 'bg-indigo-50/5 dark:bg-indigo-950/5' : ''
-                              } ${
-                                isDragOver ? 'bg-indigo-50/25 dark:bg-indigo-950/15' : ''
-                              }`}
-                            >
-                              {/* Horizontal hour helper lines */}
-                              {Array.from({ length: 24 }).map((_, h) => (
-                                <div key={h} className="absolute left-0 right-0 border-b border-slate-100/70 dark:border-slate-800/30" style={{ top: `${h * 60}px`, height: '60px' }}></div>
-                              ))}
+                    return (
+                      <div
+                        key={slot.dateString}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDragEnter={() => setDraggedOverDate(`allday-${slot.dateString}`)}
+                        onDragLeave={() => {
+                          if (draggedOverDate === `allday-${slot.dateString}`) setDraggedOverDate(null);
+                        }}
+                        onDrop={(e) => {
+                          e.stopPropagation();
+                          const taskId = e.dataTransfer.getData('text/plain');
+                          if (taskId) {
+                            const task = nodes.find(n => n.id === taskId);
+                            if (task) {
+                              onUpdateNode({
+                                ...task,
+                                dueDate: slot.dateString,
+                                startTime: undefined,
+                                dueTime: undefined
+                              });
+                            }
+                          }
+                          setDraggedOverDate(null);
+                        }}
+                        className={`p-1 border-r border-[#EDEDEB] dark:border-[#2D2D2D] last:border-r-0 flex flex-col gap-1 min-h-[36px] transition-colors relative group ${
+                          isDragOver ? 'bg-[#2383E2]/15 dark:bg-[#2383E2]/25' : ''
+                        }`}
+                      >
+                        {isAllDayExpanded && (
+                          <div className="flex flex-col gap-1">
+                            {allDayTasks.map(task => {
+                              const cardStyles = getNotionCardStyles(task);
+                              const isTaskSelected = task.id === selectedNodeId;
 
-                              {/* Timed task blocks */}
-                              {timedBlocks.map(({ task, top, height, left, width, startMin, endMin }) => (
+                              return (
                                 <div
                                   key={task.id}
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.setData('text/plain', task.id);
+                                    setDraggingTaskId(task.id);
+                                  }}
+                                  onDragEnd={() => setDraggingTaskId(null)}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     onSelectNode(task.id, e);
                                   }}
                                   onDoubleClick={(e) => {
                                     e.stopPropagation();
-                                    if (onFocusedTaskIdChange) {
-                                      onFocusedTaskIdChange(task.id);
-                                    }
-                                    if (window.innerWidth < 1024) {
-                                      onSelectNode(null);
-                                    }
+                                    if (onFocusedTaskIdChange) onFocusedTaskIdChange(task.id);
                                   }}
-                                  draggable={!hoveringResizeHandle && resizingTask?.taskId !== task.id}
-                                  onDragStart={(e) => {
-                                    e.stopPropagation();
-                                    e.dataTransfer.setData('text/plain', task.id);
-                                    setDraggingTaskId(task.id);
-                                  }}
-                                  onDragEnd={(e) => {
-                                    e.stopPropagation();
-                                    setDraggingTaskId(null);
-                                  }}
-                                  className={`absolute rounded-xl p-1.5 border text-[10px] leading-tight cursor-grab active:cursor-grabbing transition-all hover:brightness-95 hover:shadow-xs group/task flex flex-col justify-between overflow-hidden shadow-3xs ${getPillStyles(task)} ${
-                                    draggingTaskId === task.id ? 'opacity-30 border-dashed border-indigo-300' : ''
+                                  className={`px-1.5 py-0.5 rounded text-[11px] leading-tight flex items-center gap-1.5 transition-all shadow-3xs cursor-grab active:cursor-grabbing border ${cardStyles.card} ${
+                                    isTaskSelected ? 'ring-1.5 ring-[#2383E2]' : ''
                                   }`}
-                                  style={{
-                                    top: `${top}px`,
-                                    height: `${Math.max(26, height)}px`,
-                                    left: left || '0%',
-                                    width: width || '100%',
-                                    zIndex: 10
-                                  }}
-                                  title={`${task.text} (${formatTaskTime(task)})`}
-                                >
-                                  {/* Top Resize Handle */}
-                                  <div
-                                    onMouseDown={(e) => handleResizeStart(e, task.id, 'top', startMin, endMin)}
-                                    onTouchStart={(e) => handleResizeStart(e, task.id, 'top', startMin, endMin)}
-                                    onMouseEnter={() => setHoveringResizeHandle(true)}
-                                    onMouseLeave={() => setHoveringResizeHandle(false)}
-                                    className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-30 flex items-center justify-center group/resize-top"
-                                  >
-                                    <div className="w-8 h-[2px] bg-slate-400/20 group-hover/task:bg-slate-400/60 dark:group-hover/task:bg-slate-600/60 rounded-full transition-all"></div>
-                                  </div>
-
-                                  {/* Bottom Resize Handle */}
-                                  <div
-                                    onMouseDown={(e) => handleResizeStart(e, task.id, 'bottom', startMin, endMin)}
-                                    onTouchStart={(e) => handleResizeStart(e, task.id, 'bottom', startMin, endMin)}
-                                    onMouseEnter={() => setHoveringResizeHandle(true)}
-                                    onMouseLeave={() => setHoveringResizeHandle(false)}
-                                    className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-30 flex items-center justify-center group/resize-bottom"
-                                  >
-                                    <div className="w-8 h-[2px] bg-slate-400/20 group-hover/task:bg-slate-400/60 dark:group-hover/task:bg-slate-600/60 rounded-full transition-all"></div>
-                                  </div>
-
-                                  <div className="flex flex-col min-w-0 flex-1 pt-1">
-                                    <div className="flex items-start gap-1 font-semibold truncate leading-tight">
-                                      <span>{getTaskIcon(task)}</span>
-                                      <span className={task.completed ? 'line-through opacity-55' : ''}>{task.text}</span>
-                                    </div>
-                                    {height >= 40 && (
-                                      <span className="text-[8px] font-mono font-bold mt-0.5 opacity-80">
-                                        {formatTaskTime(task)}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="flex items-center justify-between mt-1 shrink-0">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onUpdateNode({
-                                          ...task,
-                                          completed: !task.completed
-                                        });
-                                      }}
-                                      className="text-slate-400 hover:text-indigo-650 transition-colors p-0.5 rounded"
-                                    >
-                                      {task.completed ? (
-                                        <CheckCircle2 className="w-3 h-3 text-indigo-500" />
-                                      ) : (
-                                        <Circle className="w-3 h-3" />
-                                      )}
-                                    </button>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onUpdateNode({
-                                          ...task,
-                                          startTime: undefined,
-                                          dueTime: undefined
-                                        });
-                                      }}
-                                      className="opacity-0 group-hover/task:opacity-100 hover:text-rose-500 text-[8px] px-1 bg-white/40 dark:bg-slate-800/40 rounded transition-opacity"
-                                      title="Убрать время"
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-
-                              {/* Inline add input overlay */}
-                              {activeHourAddInput && activeHourAddInput.startsWith(`${slot.dateString}-`) && (
-                                <div
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="absolute bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/50 rounded-xl p-2 shadow-lg z-20 w-[120px]"
-                                  style={{
-                                    top: `${Math.max(10, Math.min(1300, parseInt(activeHourAddInput.split('-')[3].split(':')[0], 10) * 60))}px`,
-                                    left: '50%',
-                                    transform: 'translateX(-50%)'
-                                  }}
-                                >
-                                  <input
-                                    type="text"
-                                    autoFocus
-                                    placeholder="Задача..."
-                                    value={newHourTaskText}
-                                    onChange={(e) => setNewHourTaskText(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        const hourStr = activeHourAddInput.split('-')[3];
-                                        handleAddDayTaskSubmit(slot.dateString, hourStr);
-                                        setActiveHourAddInput(null);
-                                      }
-                                      if (e.key === 'Escape') setActiveHourAddInput(null);
-                                    }}
-                                    className="w-full text-[10px] p-1 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded border border-slate-200 outline-none focus:border-indigo-500 font-medium"
-                                  />
-                                  <div className="flex gap-1 mt-1.5 justify-end">
-                                    <button
-                                      onClick={() => setActiveHourAddInput(null)}
-                                      className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-[8px] px-1 py-0.5 rounded font-bold"
-                                    >
-                                      Отмена
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        const hourStr = activeHourAddInput.split('-')[3];
-                                        handleAddDayTaskSubmit(slot.dateString, hourStr);
-                                        setActiveHourAddInput(null);
-                                      }}
-                                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-[8px] px-1 py-0.5 rounded font-bold"
-                                    >
-                                      Ок
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )
-              )}
-
-              {/* 3. Daily Hourly Layout Mode */}
-              {calendarSubMode === 'day' && (
-                layoutType === 'list' ? (
-                  <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-805 p-4 shadow-xs font-sans">
-                    {/* All day tasks card - Click to add */}
-                    <div 
-                      onClick={() => {
-                        setActiveDayAddInput(currentDateStr);
-                        setNewDayTaskText('');
-                      }}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
-                      onDragLeave={() => {
-                        if (draggedOverDate === `allday-${currentDateStr}`) {
-                          setDraggedOverDate(null);
-                        }
-                      }}
-                      onDrop={(e) => {
-                        e.stopPropagation();
-                        const taskId = e.dataTransfer.getData('text/plain');
-                        if (taskId) {
-                          handleTaskDropToHour(taskId, currentDateStr, null);
-                        }
-                      }}
-                      className={`mb-4 p-4 rounded-2xl border transition-all group/allday cursor-pointer ${
-                        draggedOverDate === `allday-${currentDateStr}`
-                          ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20'
-                          : 'border-slate-100 dark:border-slate-800 bg-slate-50/45 dark:bg-slate-950/20 hover:border-indigo-300 dark:hover:border-indigo-900 hover:bg-indigo-50/5 dark:hover:bg-indigo-950/5'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold text-slate-550 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                          <span>📌</span> Задача на весь день
-                        </span>
-                        <span className="text-[11px] text-slate-400 group-hover/allday:text-indigo-650 dark:group-hover/allday:text-indigo-400 font-bold transition-all">
-                          Кликните, чтобы добавить
-                        </span>
-                      </div>
-
-                      {/* Inline list of all-day tasks */}
-                      {(() => {
-                        const allDayTasks = scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.dueTime);
-                        if (allDayTasks.length > 0) {
-                          return (
-                            <div className="flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
-                              {allDayTasks.map(task => (
-                                <div
-                                  key={task.id}
-                                  onClick={(e) => {
-                                      e.stopPropagation();
-                                      onSelectNode(task.id, e);
-                                  }}
-                                  draggable={true}
-                                  onDragStart={(e) => {
-                                    e.stopPropagation();
-                                    e.dataTransfer.setData('text/plain', task.id);
-                                    setDraggingTaskId(task.id);
-                                  }}
-                                  onDragEnd={(e) => {
-                                    e.stopPropagation();
-                                    setDraggingTaskId(null);
-                                  }}
-                                  className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative cursor-grab active:cursor-grabbing ${getPriorityColor(task.priority)} ${
-                                    draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                                  }`}
+                                  title={task.text}
                                 >
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      onUpdateNode({
-                                        ...task,
-                                        completed: !task.completed
-                                      });
+                                      onUpdateNode({ ...task, completed: !task.completed });
                                     }}
-                                    className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0 ${
-                                      task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
-                                    }`}
+                                    className="shrink-0 hover:opacity-80"
                                   >
                                     {task.completed ? (
-                                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                    ) : activePomodoroNodeId === task.id ? (
-                                      <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                                        <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                                        <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                                      </span>
+                                      <CheckCircle2 className="w-3 h-3 text-[#27AE60]" />
                                     ) : (
-                                      <Circle className="w-3.5 h-3.5 shrink-0" />
+                                      <Circle className="w-3 h-3 text-[#9B9A97]" />
                                     )}
                                   </button>
-                                  <div className="flex flex-col min-w-0 font-sans">
-                                    <span className={`font-semibold truncate max-w-[150px] ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-205'}`}>
-                                      {task.text}
-                                    </span>
-                                    <span className="text-[8px] font-bold text-indigo-600 dark:text-indigo-400 font-mono mt-0.5 flex items-center gap-0.5">
-                                      📅 {task.dueDate ? task.dueDate.split('-').reverse().join('.') : ''}
-                                    </span>
-                                  </div>
+                                  <span className="text-[10px] shrink-0">{getTaskPageIcon(task)}</span>
+                                  <span className={`truncate flex-1 font-normal ${task.completed ? 'line-through opacity-55' : ''}`}>
+                                    {cleanTaskTitle(task.text)}
+                                  </span>
                                 </div>
-                              ))}
-                            </div>
-                          );
-                        }
-                        return null;
-                      })()}
+                              );
+                            })}
+                          </div>
+                        )}
 
-                      {/* Inline add for All Day tasks */}
-                      {activeDayAddInput === currentDateStr && (
-                        <div 
-                          onClick={(e) => e.stopPropagation()}
-                          className="mt-2.5 max-w-sm p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md"
+                        {/* Quick Add all-day task on hover */}
+                        <button
+                          onClick={() => {
+                            setQuickModalDate(slot.dateString);
+                            setQuickModalStartTime('');
+                            setQuickModalDueTime('');
+                            setIsQuickCreateModalOpen(true);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 text-[10px] text-[#2383E2] hover:bg-[#2383E2]/10 py-0.5 px-1 rounded flex items-center justify-center transition-opacity"
+                          title="Добавить задачу на весь день"
                         >
-                          <input
-                            type="text"
-                            autoFocus
-                            placeholder="Какую задачу запланировать на этот день?"
-                            value={newDayTaskText}
-                            onChange={(e) => setNewDayTaskText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr);
-                              if (e.key === 'Escape') setActiveDayAddInput(null);
-                            }}
-                            className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
-                          />
-                          <div className="flex gap-1.5 mt-2 justify-end">
-                            <button
-                              onClick={() => setActiveDayAddInput(null)}
-                              className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
-                            >
-                              Отмена
-                            </button>
-                            <button
-                              onClick={() => handleAddDayTaskSubmit(currentDateStr)}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
-                            >
-                              Добавить
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
-                    {/* Scrollable Hourly Timeline list */}
-                    <div id="calendar-day-scroll-container" className="flex-1 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar animate-fade-in">
-                      {HOURS.map((hour) => {
-                        const isDragOver = draggedOverDate === `hour-${hour}`;
-
-                        return (
-                          <div 
-                            key={hour}
-                            onClick={(e) => {
-                              const target = e.target as HTMLElement;
-                              if (target.closest('[draggable="true"]') || target.closest('button') || target.closest('.task-item')) {
-                                return;
-                              }
-                              setActiveHourAddInput(hour);
-                              setNewHourTaskText('');
-                            }}
-                            onDragOver={(e) => e.preventDefault()}
-                            onDragEnter={() => setDraggedOverDate(`hour-${hour}`)}
-                            onDragLeave={() => {
-                              if (draggedOverDate === `hour-${hour}`) {
-                                setDraggedOverDate(null);
-                              }
-                            }}
-                            onDrop={(e) => {
-                              const taskId = e.dataTransfer.getData('text/plain');
-                              if (taskId) {
-                                handleTaskDropToHour(taskId, currentDateStr, hour);
-                              }
-                            }}
-                            className={`flex items-stretch border-b border-dashed border-slate-100 dark:border-slate-800 min-h-[58px] transition-all duration-150 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/20 group/row ${
-                              isDragOver ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''
-                            }`}
-                          >
-                            {/* Hour column */}
-                            <div className="w-16 flex items-center justify-center shrink-0 border-r border-slate-100 dark:border-slate-800 pr-3 text-right">
-                              <span className="font-mono text-xs font-bold text-slate-400 dark:text-slate-500">
-                                {hour}
-                              </span>
-                            </div>
-
-                            {/* Content area */}
-                            <div className="flex-1 flex flex-wrap gap-2 items-center px-4 py-1.5 relative">
-                              {/* Render hour tasks or inline box */}
-                              {(() => {
-                                const hourTasks = scheduledTasks.filter(task => {
-                                  if (task.dueDate !== currentDateStr) return false;
-                                  const timeStr = task.dueTime || task.startTime;
-                                  if (!timeStr) return false;
-                                  
-                                  const parts = timeStr.split(':');
-                                  if (parts.length === 0) return false;
-                                  const taskHourVal = parseInt(parts[0], 10);
-                                  if (isNaN(taskHourVal)) return false;
-                                  
-                                  const rowHourVal = parseInt(hour.split(':')[0], 10);
-                                  if (isNaN(rowHourVal)) return false;
-
-                                  if (rowHourVal === 7) {
-                                    return taskHourVal <= 7;
-                                  }
-                                  if (rowHourVal === 22) {
-                                    return taskHourVal >= 22;
-                                  }
-                                  return taskHourVal === rowHourVal;
-                                });
-                                if (hourTasks.length > 0) {
-                                  return (
-                                    <div className="flex flex-wrap gap-2 items-center flex-1" onClick={(e) => e.stopPropagation()}>
-                                      {hourTasks.map(task => (
-                                        <div
-                                          key={task.id}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onSelectNode(task.id, e);
-                                          }}
-                                          draggable={true}
-                                          onDragStart={(e) => {
-                                            e.stopPropagation();
-                                            e.dataTransfer.setData('text/plain', task.id);
-                                            setDraggingTaskId(task.id);
-                                          }}
-                                          onDragEnd={(e) => {
-                                            e.stopPropagation();
-                                            setDraggingTaskId(null);
-                                          }}
-                                          className={`group/task border text-[11px] leading-snug py-1.5 px-2.5 rounded-xl flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.015] active:scale-98 relative shadow-xs shrink-0 max-w-[240px] ${getPriorityColor(task.priority)} ${
-                                            draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                                          }`}
-                                        >
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              onUpdateNode({
-                                                ...task,
-                                                completed: !task.completed
-                                              });
-                                            }}
-                                            className="text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0"
-                                          >
-                                            {task.completed ? (
-                                              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                            ) : activePomodoroNodeId === task.id ? (
-                                              <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                                                <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                                                <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                                              </span>
-                                            ) : (
-                                              <Circle className="w-3.5 h-3.5 shrink-0" />
-                                            )}
-                                          </button>
-                                          <div className="flex flex-col min-w-0 flex-1">
-                                            <span className={`font-semibold truncate ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-100'}`}>
-                                              {task.text}
-                                            </span>
-                                            <span className="text-[8.5px] font-bold text-indigo-600 dark:text-indigo-400 font-mono mt-0.5 flex items-center gap-1">
-                                              <span>🕒 {task.dueTime || task.startTime}</span>
-                                              {task.dueDate && <span className="text-slate-400">({task.dueDate.split('-').reverse().slice(0, 2).join('.')})</span>}
-                                            </span>
-                                          </div>
-                                          {/* Quick cross to remove hour */}
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              onUpdateNode({
-                                                ...task,
-                                                dueTime: undefined,
-                                                startTime: undefined
-                                              });
-                                            }}
-                                            className="opacity-0 group-hover/task:opacity-100 ml-1 hover:text-rose-500 text-[10px] font-bold bg-slate-100/40 dark:bg-slate-800/20 px-1 rounded cursor-pointer"
-                                            title="Убрать время"
-                                          >
-                                            ✕
-                                          </button>
-                                        </div>
-                                      ))}
-                                      {/* Plus icon to add another task */}
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setActiveHourAddInput(hour);
-                                          setNewHourTaskText('');
-                                        }}
-                                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded transition-all cursor-pointer"
-                                        title="Добавить еще задачу"
-                                      >
-                                        <Plus className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                  );
-                                }
-
-                                if (activeHourAddInput === hour) {
-                                  return (
-                                    <div 
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="p-1 px-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-indigo-200 dark:border-indigo-900/45 flex items-center gap-2 max-w-sm flex-1"
-                                    >
-                                      <input
-                                        type="text"
-                                        autoFocus
-                                        placeholder={`Задача на ${hour}...`}
-                                        value={newHourTaskText}
-                                        onChange={(e) => setNewHourTaskText(e.target.value)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr, hour);
-                                          if (e.key === 'Escape') setActiveHourAddInput(null);
-                                        }}
-                                        className="flex-1 text-xs px-2 py-0.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
-                                      />
-                                      <button
-                                        onClick={() => handleAddDayTaskSubmit(currentDateStr, hour)}
-                                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-2 py-0.5 text-[10px] font-bold cursor-pointer"
-                                      >
-                                        Ок
-                                      </button>
-                                      <button
-                                        onClick={() => setActiveHourAddInput(null)}
-                                        className="text-slate-400 hover:text-slate-600 text-[10px]"
-                                      >
-                                        Отмена
-                                      </button>
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <div className="text-[11px] text-slate-300 dark:text-slate-700 italic group-hover/row:text-indigo-400 transition-colors">
-                                    Кликните, чтобы добавить задачу на {hour}
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-805 p-4 shadow-xs font-sans">
-                    {/* All day tasks card */}
+            {/* 24-Hour Vertical Scrollable Timeline Grid */}
+            <div 
+              id="notion-calendar-week-scroll" 
+              className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar relative bg-white dark:bg-[#191919]"
+            >
+              <div className="flex relative h-[1440px] min-w-[760px]">
+                
+                {/* Time Gutter Column (00:00 - 23:00) */}
+                <div className="w-14 sm:w-16 shrink-0 border-r border-[#EDEDEB] dark:border-[#2D2D2D] bg-[#FAFAF9]/60 dark:bg-[#1C1C1C]/60 select-none z-10 sticky left-0">
+                  {HOURS_24.map((hour, h) => (
                     <div 
-                      onClick={() => {
-                        setActiveDayAddInput(currentDateStr);
-                        setNewDayTaskText('');
-                      }}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
-                      onDragLeave={() => {
-                        if (draggedOverDate === `allday-${currentDateStr}`) {
-                          setDraggedOverDate(null);
-                        }
-                      }}
-                      onDrop={(e) => {
-                        e.stopPropagation();
-                        const taskId = e.dataTransfer.getData('text/plain');
-                        if (taskId) {
-                          handleTaskDropToHour(taskId, currentDateStr, null);
-                        }
-                      }}
-                      className={`mb-4 p-4 rounded-2xl border transition-all group/allday cursor-pointer ${
-                        draggedOverDate === `allday-${currentDateStr}`
-                          ? 'bg-indigo-55/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20'
-                          : 'border-slate-100 dark:border-slate-800 bg-slate-50/45 dark:bg-slate-950/20 hover:border-indigo-300 dark:hover:border-indigo-900 hover:bg-indigo-50/5 dark:hover:bg-indigo-950/5'
-                      }`}
+                      key={hour} 
+                      className="h-[60px] relative text-right pr-2 text-[10px] font-mono text-[#9B9A97] dark:text-[#777]"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold text-slate-550 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                          <span>📌</span> Задача на весь день
-                        </span>
-                        <span className="text-[11px] text-slate-400 group-hover/allday:text-indigo-650 dark:group-hover/allday:text-indigo-400 font-bold transition-all">
-                          Кликните, чтобы добавить
-                        </span>
-                      </div>
-
-                      {/* Inline list of all-day tasks */}
-                      {(() => {
-                        const allDayTasks = scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.dueTime);
-                        if (allDayTasks.length > 0) {
-                          return (
-                            <div className="flex flex-wrap gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
-                              {allDayTasks.map(task => (
-                                <div
-                                  key={task.id}
-                                  onClick={(e) => {
-                                      e.stopPropagation();
-                                      onSelectNode(task.id, e);
-                                  }}
-                                  draggable={true}
-                                  onDragStart={(e) => {
-                                    e.stopPropagation();
-                                    e.dataTransfer.setData('text/plain', task.id);
-                                    setDraggingTaskId(task.id);
-                                  }}
-                                  onDragEnd={(e) => {
-                                    e.stopPropagation();
-                                    setDraggingTaskId(null);
-                                  }}
-                                  className={`group/alldaytask border text-[11px] leading-none py-1.5 px-3 rounded-xl flex items-center gap-2 transition-all hover:scale-[1.015] active:scale-98 relative cursor-grab active:cursor-grabbing ${getPriorityColor(task.priority)} ${
-                                    draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-300' : ''
-                                  }`}
-                                >
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onUpdateNode({
-                                        ...task,
-                                        completed: !task.completed
-                                      });
-                                    }}
-                                    className={`text-slate-400 hover:text-indigo-650 p-0.5 rounded transition-transform shrink-0 ${
-                                      task.completed ? 'text-indigo-600 dark:text-indigo-400' : ''
-                                    }`}
-                                  >
-                                    {task.completed ? (
-                                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                    ) : activePomodoroNodeId === task.id ? (
-                                      <span className="relative flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                                        <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75"></span>
-                                        <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
-                                      </span>
-                                    ) : (
-                                      <Circle className="w-3.5 h-3.5 shrink-0" />
-                                    )}
-                                  </button>
-                                  <div className="flex flex-col min-w-0">
-                                    <span className={`font-semibold truncate max-w-[150px] ${task.completed ? 'line-through opacity-55' : 'text-slate-800 dark:text-slate-205'}`}>
-                                      {task.text}
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        }
-                        return null;
-                      })()}
-
-                      {/* Inline add for All Day tasks */}
-                      {activeDayAddInput === currentDateStr && (
-                        <div 
-                          onClick={(e) => e.stopPropagation()}
-                          className="mt-2.5 max-w-sm p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-md"
-                        >
-                          <input
-                            type="text"
-                            autoFocus
-                            placeholder="Какую задачу запланировать на этот день?"
-                            value={newDayTaskText}
-                            onChange={(e) => setNewDayTaskText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleAddDayTaskSubmit(currentDateStr);
-                              if (e.key === 'Escape') setActiveDayAddInput(null);
-                            }}
-                            className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
-                          />
-                          <div className="flex gap-1.5 mt-2 justify-end">
-                            <button
-                              onClick={() => setActiveDayAddInput(null)}
-                              className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
-                            >
-                              Отмена
-                            </button>
-                            <button
-                              onClick={() => handleAddDayTaskSubmit(currentDateStr)}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-0.5 rounded-lg text-[10px] font-bold"
-                            >
-                              Добавить
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                      <span className="relative -top-2 bg-white dark:bg-[#191919] px-0.5 rounded">
+                        {hour}
+                      </span>
                     </div>
+                  ))}
 
-                    {/* Scrollable Time blocking timeline */}
-                    <div id="daily-time-blocking-scroll" className="flex-1 overflow-y-auto relative custom-scrollbar flex min-h-0" style={{ minHeight: '300px' }}>
-                      {/* Hour indicators labels */}
-                      <div className="w-16 h-[1440px] shrink-0 flex flex-col relative select-none pr-3">
-                        {Array.from({ length: 24 }).map((_, h) => (
-                          <div key={h} className="h-[60px] shrink-0 border-b border-slate-100/35 dark:border-slate-800/25 flex justify-end text-[10px] text-slate-400 dark:text-slate-500 font-mono font-semibold pt-1">
-                            {String(h).padStart(2, '0')}:00
-                          </div>
-                        ))}
-                      </div>
+                  {/* Real-time Indicator Badge in Gutter for Today */}
+                  {weeklySlots.some(s => s.isToday) && (
+                    <div 
+                      className="absolute right-0 translate-x-1/2 -translate-y-1/2 bg-[#EB5757] text-white text-[9px] font-mono px-1 py-0.5 rounded shadow-sm z-30 pointer-events-none flex items-center"
+                      style={{ top: `${nowMinutes}px` }}
+                    >
+                      {String(nowDate.getHours()).padStart(2, '0')}:{String(nowDate.getMinutes()).padStart(2, '0')}
+                    </div>
+                  )}
+                </div>
 
-                      {/* Content column with time blocks */}
-                      <div 
+                {/* 7 Columns for Days */}
+                <div className="flex-1 grid grid-cols-7 relative">
+                  {weeklySlots.map((slot) => {
+                    const isToday = slot.isToday;
+                    const dayTasks = scheduledTasks.filter(t => t.dueDate === slot.dateString);
+                    const timedTasks = dayTasks.filter(t => t.startTime || t.dueTime);
+                    const timedBlocks = computeBlocksForTasks(timedTasks);
+                    const isDragOver = draggedOverDate === slot.dateString;
+
+                    return (
+                      <div
+                        key={slot.dateString}
+                        data-slot-date={slot.dateString}
                         onDragOver={(e) => e.preventDefault()}
-                        onDragEnter={() => setDraggedOverDate(currentDateStr)}
+                        onDragEnter={() => setDraggedOverDate(slot.dateString)}
                         onDragLeave={() => {
-                          if (draggedOverDate === currentDateStr) {
-                            setDraggedOverDate(null);
-                          }
+                          if (draggedOverDate === slot.dateString) setDraggedOverDate(null);
                         }}
                         onDrop={(e) => {
                           const taskId = e.dataTransfer.getData('text/plain');
@@ -2184,13 +1360,12 @@ export default function CalendarView({
                             const dropY = e.clientY - rect.top;
                             const totalMinutes = Math.max(0, Math.min(1439, Math.floor(dropY)));
                             const snappedMinutes = Math.round(totalMinutes / 15) * 15;
-                            
-                            const taskToDrop = scheduledTasks.find(t => t.id === taskId);
+                            const taskToDrop = nodes.find(t => t.id === taskId);
                             if (taskToDrop) {
                               const { startTime, dueTime } = getUpdatedTimesForDrop(taskToDrop, snappedMinutes);
                               onUpdateNode({
                                 ...taskToDrop,
-                                dueDate: currentDateStr,
+                                dueDate: slot.dateString,
                                 startTime,
                                 dueTime
                               });
@@ -2200,390 +1375,933 @@ export default function CalendarView({
                         }}
                         onClick={(e) => {
                           const target = e.target as HTMLElement;
-                          if (target.closest('[draggable="true"]') || target.closest('button')) {
-                            return;
-                          }
+                          if (target.closest('[draggable="true"]') || target.closest('button')) return;
                           const rect = e.currentTarget.getBoundingClientRect();
                           const clickY = e.clientY - rect.top;
                           const totalMinutes = Math.max(0, Math.min(1439, Math.floor(clickY)));
                           const snappedMinutes = Math.round(totalMinutes / 15) * 15;
-                          const hourVal = Math.floor(snappedMinutes / 60);
-                          const minVal = snappedMinutes % 60;
-                          const timeStr = `${String(hourVal).padStart(2, '0')}:${String(minVal).padStart(2, '0')}`;
-                          setActiveHourAddInput(timeStr);
-                          setNewHourTaskText('');
+                          const startTimeStr = minutesToTime(snappedMinutes);
+                          const dueTimeStr = minutesToTime(Math.min(1439, snappedMinutes + 60));
+                          
+                          setQuickModalDate(slot.dateString);
+                          setQuickModalStartTime(startTimeStr);
+                          setQuickModalDueTime(dueTimeStr);
+                          setIsQuickCreateModalOpen(true);
                         }}
-                        className={`flex-1 h-[1440px] relative border-l border-slate-150 dark:border-slate-800 transition-colors cursor-pointer ${
-                          draggedOverDate === currentDateStr ? 'bg-indigo-50/15 dark:bg-indigo-950/10' : ''
-                        }`}
+                        className={`h-[1440px] relative border-r border-[#EDEDEB] dark:border-[#2D2D2D] last:border-r-0 transition-colors cursor-pointer group ${
+                          isToday ? 'bg-[#2383E2]/[0.02] dark:bg-[#2383E2]/[0.04]' : 'bg-white dark:bg-[#191919]'
+                        } ${isDragOver ? 'bg-[#2383E2]/10 dark:bg-[#2383E2]/20' : ''}`}
                       >
-                        {/* Horizontal guide lines */}
+                        {/* Horizontal Gridlines: Solid for Full Hour, Dotted for Half Hour */}
                         {Array.from({ length: 24 }).map((_, h) => (
-                          <div key={h} className="absolute left-0 right-0 border-b border-slate-100/70 dark:border-slate-800/30" style={{ top: `${h * 60}px`, height: '60px' }}></div>
+                          <React.Fragment key={h}>
+                            {/* Full Hour line */}
+                            <div 
+                              className="absolute left-0 right-0 border-b border-[#EDEDEB] dark:border-[#2D2D2D] pointer-events-none" 
+                              style={{ top: `${h * HOUR_HEIGHT}px`, height: '0px' }} 
+                            />
+                            {/* Half Hour line */}
+                            <div 
+                              className="absolute left-0 right-0 border-b border-dashed border-[#EDEDEB]/50 dark:border-[#2D2D2D]/50 pointer-events-none" 
+                              style={{ top: `${h * HOUR_HEIGHT + 30}px`, height: '0px' }} 
+                            />
+                          </React.Fragment>
                         ))}
 
-                        {/* Rendering blocks */}
-                        {(() => {
-                          const dayTimedTasks = scheduledTasks.filter(task => task.dueDate === currentDateStr && (task.startTime || task.dueTime));
-                          const timedBlocks = computeBlocksForTasks(dayTimedTasks);
+                        {/* Real-time Indicator Line across today column */}
+                        {isToday && (
+                          <div 
+                            className="absolute left-0 right-0 z-20 pointer-events-none flex items-center"
+                            style={{ top: `${nowMinutes}px` }}
+                          >
+                            <div className="w-2.5 h-2.5 rounded-full bg-[#EB5757] -ml-1.5 ring-2 ring-white dark:ring-[#191919] shadow-sm" />
+                            <div className="flex-1 h-[2px] bg-[#EB5757] shadow-2xs" />
+                          </div>
+                        )}
 
-                          return timedBlocks.map(({ task, top, height, left, width, startMin, endMin }) => (
+                        {/* Timed Event Blocks */}
+                        {timedBlocks.map(({ task, top, height, left, width, startMin, endMin }) => {
+                          const cardStyles = getNotionCardStyles(task);
+                          const isTaskSelected = task.id === selectedNodeId;
+                          const isCurrentlyResizing = resizingTask?.taskId === task.id;
+
+                          return (
                             <div
                               key={task.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onSelectNode(task.id, e);
-                              }}
-                              draggable={!hoveringResizeHandle && resizingTask?.taskId !== task.id}
+                              draggable={!hoveringResizeHandle && !isCurrentlyResizing}
                               onDragStart={(e) => {
                                 e.stopPropagation();
                                 e.dataTransfer.setData('text/plain', task.id);
                                 setDraggingTaskId(task.id);
                               }}
-                              onDragEnd={(e) => {
+                              onDragEnd={() => setDraggingTaskId(null)}
+                              onClick={(e) => {
                                 e.stopPropagation();
-                                setDraggingTaskId(null);
+                                onSelectNode(task.id, e);
                               }}
-                              className={`absolute rounded-2xl p-3 border text-xs leading-snug cursor-grab active:cursor-grabbing transition-all hover:brightness-95 hover:shadow-xs group/task flex flex-col justify-between overflow-hidden shadow-2xs ${getPillStyles(task)} ${
-                                draggingTaskId === task.id ? 'opacity-30 border-dashed border-indigo-300' : ''
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                if (onFocusedTaskIdChange) onFocusedTaskIdChange(task.id);
+                              }}
+                              className={`absolute rounded-md p-1.5 text-xs flex flex-col justify-between overflow-hidden shadow-2xs cursor-grab active:cursor-grabbing border transition-all ${
+                                cardStyles.card
+                              } ${isTaskSelected ? 'ring-2 ring-[#2383E2] z-30' : 'z-10'} ${
+                                draggingTaskId === task.id ? 'opacity-30 border-dashed' : ''
                               }`}
                               style={{
                                 top: `${top}px`,
-                                height: `${Math.max(34, height)}px`,
-                                left: left || '0%',
-                                width: width || '100%',
-                                zIndex: 10
+                                height: `${Math.max(26, height)}px`,
+                                left: left || '1.5px',
+                                width: width || 'calc(100% - 3px)',
                               }}
                               title={`${task.text} (${formatTaskTime(task)})`}
                             >
-                              {/* Top Resize Handle */}
+                              {/* Left Notion Accent Stripe */}
+                              <div className={`absolute top-0 bottom-0 left-0 w-[3.5px] ${cardStyles.accentBar}`} />
+
+                              {/* Top resize handle */}
                               <div
                                 onMouseDown={(e) => handleResizeStart(e, task.id, 'top', startMin, endMin)}
                                 onTouchStart={(e) => handleResizeStart(e, task.id, 'top', startMin, endMin)}
                                 onMouseEnter={() => setHoveringResizeHandle(true)}
                                 onMouseLeave={() => setHoveringResizeHandle(false)}
-                                className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-30 flex items-center justify-center group/resize-top"
-                              >
-                                <div className="w-10 h-[2.5px] bg-slate-400/20 group-hover/task:bg-slate-400/60 dark:group-hover/task:bg-slate-600/60 rounded-full transition-all"></div>
-                              </div>
+                                className="absolute top-0 left-0 right-0 h-2.5 cursor-ns-resize z-30 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                              />
 
-                              {/* Bottom Resize Handle */}
+                              {/* Bottom resize handle */}
                               <div
                                 onMouseDown={(e) => handleResizeStart(e, task.id, 'bottom', startMin, endMin)}
                                 onTouchStart={(e) => handleResizeStart(e, task.id, 'bottom', startMin, endMin)}
                                 onMouseEnter={() => setHoveringResizeHandle(true)}
                                 onMouseLeave={() => setHoveringResizeHandle(false)}
-                                className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-30 flex items-center justify-center group/resize-bottom"
-                              >
-                                <div className="w-10 h-[2.5px] bg-slate-400/20 group-hover/task:bg-slate-400/60 dark:group-hover/task:bg-slate-600/60 rounded-full transition-all"></div>
-                              </div>
+                                className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize z-30 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                              />
 
-                              <div className="flex flex-col min-w-0 flex-1 pt-1">
-                                <div className="flex items-center gap-1.5 font-bold truncate text-slate-850 dark:text-slate-100">
-                                  <span className="text-sm shrink-0">{getTaskIcon(task)}</span>
-                                  <span className={task.completed ? 'line-through opacity-55' : ''}>{task.text}</span>
-                                </div>
-                                {height >= 45 && (
-                                  <span className="text-[10px] font-mono font-bold mt-1 text-indigo-650 dark:text-indigo-350">
-                                    🕒 {formatTaskTime(task)}
+                              {/* Card Content */}
+                              <div className="pl-1.5 flex flex-col gap-0.5 min-w-0">
+                                <div className="flex items-start gap-1 font-medium leading-tight">
+                                  <span className="text-[11px] shrink-0">{getTaskPageIcon(task)}</span>
+                                  <span className={`truncate text-[11.5px] ${task.completed ? 'line-through opacity-60' : ''}`}>
+                                    {cleanTaskTitle(task.text)}
                                   </span>
+                                </div>
+
+                                {height >= 38 && (
+                                  <div className="flex items-center gap-1.5 text-[9.5px] font-mono opacity-80 pl-0.5">
+                                    <span>{formatTaskTime(task)}</span>
+                                    {height >= 56 && (
+                                      <span className="opacity-65">({getTaskDurationString(startMin, endMin)})</span>
+                                    )}
+                                  </div>
                                 )}
                               </div>
 
-                              <div className="flex items-center justify-between mt-2 shrink-0">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onUpdateNode({
-                                      ...task,
-                                      completed: !task.completed
-                                    });
-                                  }}
-                                  className="text-slate-400 hover:text-indigo-650 transition-colors p-1 bg-white/50 dark:bg-slate-800/30 rounded-lg"
-                                >
-                                  {task.completed ? (
-                                    <CheckCircle2 className="w-4 h-4 text-indigo-500" />
-                                  ) : (
-                                    <Circle className="w-4 h-4" />
-                                  )}
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onUpdateNode({
-                                      ...task,
-                                      startTime: undefined,
-                                      dueTime: undefined
-                                    });
-                                  }}
-                                  className="opacity-0 group-hover/task:opacity-100 hover:text-rose-500 text-[10px] font-extrabold px-2 py-0.5 bg-white/60 dark:bg-slate-800/50 rounded-lg transition-opacity"
-                                  title="Убрать время"
-                                >
-                                  ✕
-                                </button>
-                              </div>
+                              {/* Live Resizing Tooltip */}
+                              {isCurrentlyResizing && (
+                                <div className="absolute top-1 right-1 bg-black/80 text-white text-[9px] font-mono px-1.5 py-0.5 rounded shadow z-40">
+                                  {minutesToTime(startMin)} – {minutesToTime(endMin)}
+                                </div>
+                              )}
                             </div>
-                          ));
-                        })()}
-
-                        {/* Quick create prompt overlay */}
-                        {activeHourAddInput && !activeHourAddInput.includes('-') && (
-                          <div
-                            onClick={(e) => e.stopPropagation()}
-                            className="absolute bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl p-3 shadow-xl z-20 w-[180px] sm:w-[220px]"
-                            style={{
-                              top: `${Math.max(10, Math.min(1300, parseInt(activeHourAddInput.split(':')[0], 10) * 60))}px`,
-                              left: '50%',
-                              transform: 'translateX(-50%)'
-                            }}
-                          >
-                            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block mb-1">Добавить на {activeHourAddInput}</span>
-                            <input
-                              type="text"
-                              autoFocus
-                              placeholder="Название задачи..."
-                              value={newHourTaskText}
-                              onChange={(e) => setNewHourTaskText(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleAddDayTaskSubmit(currentDateStr, activeHourAddInput);
-                                  setActiveHourAddInput(null);
-                                }
-                                if (e.key === 'Escape') setActiveHourAddInput(null);
-                              }}
-                              className="w-full text-xs p-1.5 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 outline-none focus:border-indigo-500 font-medium"
-                            />
-                            <div className="flex gap-1.5 mt-2 justify-end">
-                              <button
-                                onClick={() => setActiveHourAddInput(null)}
-                                className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold"
-                              >
-                                Отмена
-                              </button>
-                              <button
-                                onClick={() => {
-                                  handleAddDayTaskSubmit(currentDateStr, activeHourAddInput);
-                                  setActiveHourAddInput(null);
-                                }}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] px-2.5 py-1 rounded-lg font-bold"
-                              >
-                                Ок
-                              </button>
-                            </div>
-                          </div>
-                        )}
+                          );
+                        })}
                       </div>
-                    </div>
-                  </div>
-                )
-              )}
-
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* B. DAILY VIEW (AUTHENTIC NOTION CALENDAR SINGLE DAY) */}
+        {/* ============================================================ */}
+        {calendarSubMode === 'day' && (
+          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-white dark:bg-[#191919]">
+            
+            {/* Day Header Bar with quick navigation pills */}
+            <div className="shrink-0 flex flex-col border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-white dark:bg-[#191919] z-20 px-6 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {/* Today Circle or Day Number */}
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-base font-bold shadow-2xs ${
+                    currentDateStr === realTodayStr
+                      ? 'bg-[#2383E2] text-white'
+                      : 'bg-[#EDEDEB] dark:bg-[#2D2D2D] text-[#111] dark:text-[#FFF]'
+                  }`}>
+                    {currentDate.getDate()}
+                  </div>
+
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-[#111] dark:text-[#FFF] tracking-tight">
+                      {WEEKDAYS_FULL_RU[(currentDate.getDay() + 6) % 7]}
+                    </h3>
+                    <p className="text-xs text-[#787774] dark:text-[#9B9A97]">
+                      {currentDate.getDate()} {MONTH_NAMES_GENITIVE_RU[currentDate.getMonth()]} {year}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Day switcher pills */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={prevDay}
+                    className="px-2.5 py-1 text-xs rounded-md border border-[#EDEDEB] dark:border-[#333] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] text-[#787774] dark:text-[#9B9A97] transition-colors"
+                  >
+                    Вчера
+                  </button>
+                  <button
+                    onClick={setToday}
+                    className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+                      currentDateStr === realTodayStr
+                        ? 'bg-[#2383E2] text-white border-[#2383E2]'
+                        : 'border-[#EDEDEB] dark:border-[#333] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] text-[#37352F] dark:text-[#FFF]'
+                    }`}
+                  >
+                    Сегодня
+                  </button>
+                  <button
+                    onClick={nextDay}
+                    className="px-2.5 py-1 text-xs rounded-md border border-[#EDEDEB] dark:border-[#333] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] text-[#787774] dark:text-[#9B9A97] transition-colors"
+                  >
+                    Завтра
+                  </button>
+                </div>
+              </div>
+
+              {/* All-Day Tasks Row for Day View */}
+              <div 
+                onDragOver={(e) => e.preventDefault()}
+                onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
+                onDragLeave={() => {
+                  if (draggedOverDate === `allday-${currentDateStr}`) setDraggedOverDate(null);
+                }}
+                onDrop={(e) => {
+                  e.stopPropagation();
+                  const taskId = e.dataTransfer.getData('text/plain');
+                  if (taskId) {
+                    const task = nodes.find(n => n.id === taskId);
+                    if (task) {
+                      onUpdateNode({
+                        ...task,
+                        dueDate: currentDateStr,
+                        startTime: undefined,
+                        dueTime: undefined
+                      });
+                    }
+                  }
+                  setDraggedOverDate(null);
+                }}
+                className={`mt-3 p-2 rounded-lg border transition-all ${
+                  draggedOverDate === `allday-${currentDateStr}`
+                    ? 'bg-[#2383E2]/15 border-[#2383E2]'
+                    : 'bg-[#FAFAF9] dark:bg-[#202020] border-[#EDEDEB] dark:border-[#2D2D2D]'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-semibold text-[#787774] dark:text-[#9B9A97] uppercase tracking-wider flex items-center gap-1.5">
+                    <span>📌</span> Задачи на весь день
+                  </span>
+                  <button
+                    onClick={() => {
+                      setQuickModalDate(currentDateStr);
+                      setQuickModalStartTime('');
+                      setQuickModalDueTime('');
+                      setIsQuickCreateModalOpen(true);
+                    }}
+                    className="text-xs text-[#2383E2] hover:underline font-medium"
+                  >
+                    + Добавить
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.startTime && !t.dueTime).map(task => {
+                    const cardStyles = getNotionCardStyles(task);
+                    return (
+                      <div
+                        key={task.id}
+                        draggable
+                        onDragStart={(e) => {
+                          e.stopPropagation();
+                          e.dataTransfer.setData('text/plain', task.id);
+                          setDraggingTaskId(task.id);
+                        }}
+                        onDragEnd={() => setDraggingTaskId(null)}
+                        onClick={(e) => onSelectNode(task.id, e)}
+                        className={`px-2 py-1 rounded-md text-xs flex items-center gap-1.5 shadow-3xs cursor-grab active:cursor-grabbing border ${cardStyles.card}`}
+                      >
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUpdateNode({ ...task, completed: !task.completed });
+                          }}
+                        >
+                          {task.completed ? <CheckCircle2 className="w-3 h-3 text-[#27AE60]" /> : <Circle className="w-3 h-3 text-[#9B9A97]" />}
+                        </button>
+                        <span>{getTaskPageIcon(task)}</span>
+                        <span className={task.completed ? 'line-through opacity-55' : ''}>{cleanTaskTitle(task.text)}</span>
+                      </div>
+                    );
+                  })}
+                  {scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.startTime && !t.dueTime).length === 0 && (
+                    <span className="text-xs text-[#9B9A97] py-0.5">Нет задач на весь день</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Day 24-Hour Scrollable Grid */}
+            <div 
+              id="notion-calendar-day-scroll" 
+              className="flex-1 overflow-y-auto custom-scrollbar relative bg-white dark:bg-[#191919]"
+            >
+              <div className="flex relative h-[1440px] max-w-4xl mx-auto w-full">
+                
+                {/* Time Gutter Column */}
+                <div className="w-16 sm:w-20 shrink-0 border-r border-[#EDEDEB] dark:border-[#2D2D2D] bg-[#FAFAF9]/60 dark:bg-[#1C1C1C]/60 select-none z-10 sticky left-0">
+                  {HOURS_24.map((hour) => (
+                    <div key={hour} className="h-[60px] relative text-right pr-3 text-[11px] font-mono text-[#9B9A97] dark:text-[#777]">
+                      <span className="relative -top-2.5 bg-white dark:bg-[#191919] px-0.5 rounded">
+                        {hour}
+                      </span>
+                    </div>
+                  ))}
+
+                  {/* Live Now Indicator for today in Day View */}
+                  {currentDateStr === realTodayStr && (
+                    <div 
+                      className="absolute right-0 translate-x-1/2 -translate-y-1/2 bg-[#EB5757] text-white text-[10px] font-mono px-1.5 py-0.5 rounded shadow-sm z-30 pointer-events-none flex items-center"
+                      style={{ top: `${nowMinutes}px` }}
+                    >
+                      {String(nowDate.getHours()).padStart(2, '0')}:{String(nowDate.getMinutes()).padStart(2, '0')}
+                    </div>
+                  )}
+                </div>
+
+                {/* Day Canvas Column */}
+                {(() => {
+                  const dayTasks = scheduledTasks.filter(t => t.dueDate === currentDateStr);
+                  const timedTasks = dayTasks.filter(t => t.startTime || t.dueTime);
+                  const timedBlocks = computeBlocksForTasks(timedTasks);
+                  const isDragOver = draggedOverDate === currentDateStr;
+                  const isToday = currentDateStr === realTodayStr;
+
+                  return (
+                    <div
+                      onDragOver={(e) => e.preventDefault()}
+                      onDragEnter={() => setDraggedOverDate(currentDateStr)}
+                      onDragLeave={() => {
+                        if (draggedOverDate === currentDateStr) setDraggedOverDate(null);
+                      }}
+                      onDrop={(e) => {
+                        const taskId = e.dataTransfer.getData('text/plain');
+                        if (taskId) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const dropY = e.clientY - rect.top;
+                          const totalMinutes = Math.max(0, Math.min(1439, Math.floor(dropY)));
+                          const snappedMinutes = Math.round(totalMinutes / 15) * 15;
+                          const taskToDrop = nodes.find(t => t.id === taskId);
+                          if (taskToDrop) {
+                            const { startTime, dueTime } = getUpdatedTimesForDrop(taskToDrop, snappedMinutes);
+                            onUpdateNode({
+                              ...taskToDrop,
+                              dueDate: currentDateStr,
+                              startTime,
+                              dueTime
+                            });
+                          }
+                        }
+                        setDraggedOverDate(null);
+                      }}
+                      onClick={(e) => {
+                        const target = e.target as HTMLElement;
+                        if (target.closest('[draggable="true"]') || target.closest('button')) return;
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const clickY = e.clientY - rect.top;
+                        const totalMinutes = Math.max(0, Math.min(1439, Math.floor(clickY)));
+                        const snappedMinutes = Math.round(totalMinutes / 15) * 15;
+                        const startTimeStr = minutesToTime(snappedMinutes);
+                        const dueTimeStr = minutesToTime(Math.min(1439, snappedMinutes + 60));
+                        
+                        setQuickModalDate(currentDateStr);
+                        setQuickModalStartTime(startTimeStr);
+                        setQuickModalDueTime(dueTimeStr);
+                        setIsQuickCreateModalOpen(true);
+                      }}
+                      className={`flex-1 h-[1440px] relative border-r border-[#EDEDEB] dark:border-[#2D2D2D] transition-colors cursor-pointer group ${
+                        isToday ? 'bg-[#2383E2]/[0.02] dark:bg-[#2383E2]/[0.04]' : 'bg-white dark:bg-[#191919]'
+                      } ${isDragOver ? 'bg-[#2383E2]/10 dark:bg-[#2383E2]/20' : ''}`}
+                    >
+                      {/* Gridlines */}
+                      {Array.from({ length: 24 }).map((_, h) => (
+                        <React.Fragment key={h}>
+                          <div 
+                            className="absolute left-0 right-0 border-b border-[#EDEDEB] dark:border-[#2D2D2D] pointer-events-none" 
+                            style={{ top: `${h * HOUR_HEIGHT}px`, height: '0px' }} 
+                          />
+                          <div 
+                            className="absolute left-0 right-0 border-b border-dashed border-[#EDEDEB]/50 dark:border-[#2D2D2D]/50 pointer-events-none" 
+                            style={{ top: `${h * HOUR_HEIGHT + 30}px`, height: '0px' }} 
+                          />
+                        </React.Fragment>
+                      ))}
+
+                      {/* Real-time Indicator Line in Day View */}
+                      {isToday && (
+                        <div 
+                          className="absolute left-0 right-0 z-20 pointer-events-none flex items-center"
+                          style={{ top: `${nowMinutes}px` }}
+                        >
+                          <div className="w-3 h-3 rounded-full bg-[#EB5757] -ml-1.5 ring-2 ring-white dark:ring-[#191919] shadow-sm" />
+                          <div className="flex-1 h-[2px] bg-[#EB5757] shadow-2xs" />
+                        </div>
+                      )}
+
+                      {/* Timed Task Blocks */}
+                      {timedBlocks.map(({ task, top, height, left, width, startMin, endMin }) => {
+                        const cardStyles = getNotionCardStyles(task);
+                        const isTaskSelected = task.id === selectedNodeId;
+                        const isCurrentlyResizing = resizingTask?.taskId === task.id;
+
+                        return (
+                          <div
+                            key={task.id}
+                            draggable={!hoveringResizeHandle && !isCurrentlyResizing}
+                            onDragStart={(e) => {
+                              e.stopPropagation();
+                              e.dataTransfer.setData('text/plain', task.id);
+                              setDraggingTaskId(task.id);
+                            }}
+                            onDragEnd={() => setDraggingTaskId(null)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectNode(task.id, e);
+                            }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              if (onFocusedTaskIdChange) onFocusedTaskIdChange(task.id);
+                            }}
+                            className={`absolute rounded-lg p-2.5 text-xs flex flex-col justify-between overflow-hidden shadow-2xs cursor-grab active:cursor-grabbing border transition-all ${
+                              cardStyles.card
+                            } ${isTaskSelected ? 'ring-2 ring-[#2383E2] z-30' : 'z-10'} ${
+                              draggingTaskId === task.id ? 'opacity-30 border-dashed' : ''
+                            }`}
+                            style={{
+                              top: `${top}px`,
+                              height: `${Math.max(32, height)}px`,
+                              left: left || '4px',
+                              width: width || 'calc(100% - 8px)',
+                            }}
+                            title={`${task.text} (${formatTaskTime(task)})`}
+                          >
+                            <div className={`absolute top-0 bottom-0 left-0 w-[4px] ${cardStyles.accentBar}`} />
+
+                            {/* Resize Handles */}
+                            <div
+                              onMouseDown={(e) => handleResizeStart(e, task.id, 'top', startMin, endMin)}
+                              onTouchStart={(e) => handleResizeStart(e, task.id, 'top', startMin, endMin)}
+                              onMouseEnter={() => setHoveringResizeHandle(true)}
+                              onMouseLeave={() => setHoveringResizeHandle(false)}
+                              className="absolute top-0 left-0 right-0 h-3 cursor-ns-resize z-30 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                            />
+                            <div
+                              onMouseDown={(e) => handleResizeStart(e, task.id, 'bottom', startMin, endMin)}
+                              onTouchStart={(e) => handleResizeStart(e, task.id, 'bottom', startMin, endMin)}
+                              onMouseEnter={() => setHoveringResizeHandle(true)}
+                              onMouseLeave={() => setHoveringResizeHandle(false)}
+                              className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize z-30 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                            />
+
+                            <div className="pl-2 flex flex-col gap-1 min-w-0">
+                              <div className="flex items-center gap-1.5 font-medium">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onUpdateNode({ ...task, completed: !task.completed });
+                                  }}
+                                >
+                                  {task.completed ? <CheckCircle2 className="w-3.5 h-3.5 text-[#27AE60]" /> : <Circle className="w-3.5 h-3.5 text-[#9B9A97]" />}
+                                </button>
+                                <span className="text-sm shrink-0">{getTaskPageIcon(task)}</span>
+                                <span className={`truncate text-[13px] ${task.completed ? 'line-through opacity-60' : ''}`}>
+                                  {cleanTaskTitle(task.text)}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2 text-[10.5px] font-mono opacity-85 pl-5">
+                                <span>{formatTaskTime(task)}</span>
+                                <span className="opacity-60">•</span>
+                                <span className="opacity-75">{getTaskDurationString(startMin, endMin)}</span>
+                              </div>
+                            </div>
+
+                            {isCurrentlyResizing && (
+                              <div className="absolute top-1.5 right-1.5 bg-black/80 text-white text-[10px] font-mono px-2 py-0.5 rounded shadow z-40">
+                                {minutesToTime(startMin)} – {minutesToTime(endMin)} ({getTaskDurationString(startMin, endMin)})
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* C. MONTH VIEW */}
+        {/* ============================================================ */}
+        {calendarSubMode === 'month' && (
+          <div className="flex-1 flex flex-col min-w-[760px] h-full overflow-auto custom-scrollbar">
+            {/* Weekdays Header Row */}
+            <div className="grid grid-cols-7 border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-[#FAFAF9] dark:bg-[#1E1E1E] text-xs font-medium text-[#787774] dark:text-[#9B9A97] select-none sticky top-0 z-20">
+              {WEEKDAYS_SHORT_RU.map((day, idx) => (
+                <div key={day} className="py-2 px-3 border-r border-[#EDEDEB] dark:border-[#2D2D2D] last:border-r-0 flex items-center justify-between">
+                  <span>{day}</span>
+                  <span className="text-[10px] text-[#9B9A97] hidden sm:inline">{WEEKDAYS_FULL_RU[idx]}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* 42 Monthly Grid Cells */}
+            <div className="grid grid-cols-7 flex-1 auto-rows-fr border-b border-[#EDEDEB] dark:border-[#2D2D2D]">
+              {calendarSlots.map((slot, sIdx) => {
+                const dayTasks = scheduledTasks.filter(task => task.dueDate === slot.dateString);
+                const isInactiveMonth = slot.monthOffset !== 0;
+                const isDragOver = draggedOverDate === slot.dateString;
+
+                return (
+                  <div
+                    key={`${slot.dateString}-${sIdx}`}
+                    data-date={slot.dateString}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDragEnter={() => setDraggedOverDate(slot.dateString)}
+                    onDragLeave={() => {
+                      if (draggedOverDate === slot.dateString) setDraggedOverDate(null);
+                    }}
+                    onDrop={(e) => {
+                      const taskId = e.dataTransfer.getData('text/plain');
+                      handleTaskDrop(taskId, slot.dateString);
+                    }}
+                    onClick={(e) => {
+                      const target = e.target as HTMLElement;
+                      if (target.closest('[draggable="true"]') || target.closest('button')) return;
+                      setQuickModalDate(slot.dateString);
+                      setQuickModalStartTime('');
+                      setQuickModalDueTime('');
+                      setIsQuickCreateModalOpen(true);
+                    }}
+                    className={`min-h-[110px] sm:min-h-[130px] p-1.5 border-b border-r border-[#EDEDEB] dark:border-[#2D2D2D] last:border-r-0 flex flex-col justify-between transition-colors group relative cursor-pointer ${
+                      isInactiveMonth 
+                        ? 'bg-[#FBFBFA] dark:bg-[#161616]' 
+                        : 'bg-white dark:bg-[#191919]'
+                    } ${
+                      isDragOver ? 'bg-[#2383E2]/10 dark:bg-[#2383E2]/20' : ''
+                    } hover:bg-[#F7F7F5] dark:hover:bg-[#202020]`}
+                  >
+                    {/* Cell Top Header */}
+                    <div className="flex items-center justify-between mb-1 select-none">
+                      {slot.isToday ? (
+                        <span className="w-5 h-5 rounded-full bg-[#2383E2] text-white flex items-center justify-center font-semibold text-[11px] shadow-3xs">
+                          {slot.dayNumber}
+                        </span>
+                      ) : (
+                        <span className={`text-[12px] font-normal px-1 rounded ${
+                          isInactiveMonth ? 'text-[#B8B7B5] dark:text-[#555]' : 'text-[#37352F] dark:text-[#D4D4D4]'
+                        }`}>
+                          {slot.dayNumber}
+                        </span>
+                      )}
+
+                      {/* Quick '+' button on hover */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setQuickModalDate(slot.dateString);
+                          setQuickModalStartTime('');
+                          setQuickModalDueTime('');
+                          setIsQuickCreateModalOpen(true);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[#787774] hover:text-[#37352F] hover:bg-[#EAEAE8] dark:hover:bg-[#2E2E2E] transition-all cursor-pointer"
+                        title="Создать задачу"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Day Tasks List */}
+                    <div className="flex-1 flex flex-col gap-1 overflow-y-auto max-h-[110px] sm:max-h-[140px] custom-scrollbar pointer-events-auto">
+                      {dayTasks.map(task => {
+                        const cardStyles = getNotionCardStyles(task);
+                        const isTaskSelected = task.id === selectedNodeId;
+
+                        return (
+                          <div
+                            key={task.id}
+                            draggable
+                            onDragStart={(e) => {
+                              e.stopPropagation();
+                              e.dataTransfer.setData('text/plain', task.id);
+                              setDraggingTaskId(task.id);
+                            }}
+                            onDragEnd={() => setDraggingTaskId(null)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectNode(task.id, e);
+                            }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              if (onFocusedTaskIdChange) onFocusedTaskIdChange(task.id);
+                            }}
+                            className={`task-item px-1.5 py-1 rounded text-[11px] leading-tight flex items-center gap-1.5 transition-all shadow-3xs cursor-grab active:cursor-grabbing border ${cardStyles.card} ${
+                              isTaskSelected ? 'ring-1.5 ring-[#2383E2]' : ''
+                            } ${draggingTaskId === task.id ? 'opacity-40 border-dashed' : ''}`}
+                            title={`${task.text} ${task.startTime || task.dueTime ? `(${formatTaskTime(task)})` : ''}`}
+                          >
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateNode({ ...task, completed: !task.completed });
+                              }}
+                              className="text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] transition-colors shrink-0"
+                            >
+                              {task.completed ? (
+                                <CheckCircle2 className="w-3 h-3 text-[#27AE60]" />
+                              ) : (
+                                <Circle className="w-3 h-3" />
+                              )}
+                            </button>
+
+                            <span className="text-[11px] shrink-0">{getTaskPageIcon(task)}</span>
+                            
+                            <span className={`truncate flex-1 font-normal ${task.completed ? 'line-through opacity-55' : ''}`}>
+                              {cleanTaskTitle(task.text)}
+                            </span>
+
+                            {(task.startTime || task.dueTime) && (
+                              <span className="text-[9px] font-mono text-[#787774] dark:text-[#9B9A97] shrink-0">
+                                {task.startTime || task.dueTime}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* D. NOTION CALENDAR SIDEBAR (MINI MONTH CALENDAR + UNSCHEDULED) */}
+        {/* ============================================================ */}
+        <div className={`shrink-0 border-t lg:border-t-0 lg:border-l border-[#EDEDEB] dark:border-[#2D2D2D] bg-[#FAFAF9] dark:bg-[#1C1C1C] flex flex-col transition-all duration-200 ${
+          isUnscheduledExpanded 
+            ? 'h-[300px] lg:h-full lg:w-72 p-3.5' 
+            : 'h-[44px] lg:h-full lg:w-12 p-2 lg:items-center'
+        }`}>
+          
+          {/* Header Toggle */}
+          <div 
+            onClick={() => setIsUnscheduledExpanded(!isUnscheduledExpanded)}
+            className="flex items-center justify-between w-full cursor-pointer select-none mb-2.5 hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] p-1 rounded-md transition-colors"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base">📅</span>
+              {isUnscheduledExpanded && (
+                <h3 className="text-xs font-semibold text-[#111] dark:text-[#FFF] truncate">
+                  Навигация & Задачи
+                </h3>
+              )}
+            </div>
+
+            {isUnscheduledExpanded && (
+              <span className="text-[11px] font-medium text-[#787774] dark:text-[#9B9A97] px-1.5 py-0.5 rounded bg-[#EDEDEB] dark:bg-[#2D2D2D]">
+                {unscheduledTasks.length} без даты
+              </span>
+            )}
+          </div>
+
+          {isUnscheduledExpanded && (
+            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto custom-scrollbar gap-3">
+              
+              {/* Mini Month Picker Calendar in Notion Calendar style */}
+              <div className="p-2 bg-white dark:bg-[#222222] border border-[#EDEDEB] dark:border-[#333] rounded-lg shadow-3xs">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-[#111] dark:text-[#FFF]">
+                    {MONTH_NAMES_RU[month]} {year}
+                  </span>
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      onClick={prevMonth}
+                      className="p-1 hover:bg-[#F0F0EE] dark:hover:bg-[#2D2D2D] rounded text-[#787774]"
+                    >
+                      <ChevronLeft className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={nextMonth}
+                      className="p-1 hover:bg-[#F0F0EE] dark:hover:bg-[#2D2D2D] rounded text-[#787774]"
+                    >
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-7 text-center text-[10px] text-[#9B9A97] mb-1 font-medium">
+                  {WEEKDAYS_SHORT_RU.map(d => (
+                    <div key={d}>{d[0]}</div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-7 gap-y-0.5 text-center text-[11px]">
+                  {calendarSlots.slice(0, 35).map((slot, i) => {
+                    const isSelected = slot.dateString === currentDateStr;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          const [y, m, d] = slot.dateString.split('-').map(Number);
+                          setCurrentDate(new Date(y, m - 1, d));
+                        }}
+                        className={`w-6 h-6 mx-auto rounded-full flex items-center justify-center transition-colors ${
+                          slot.isToday
+                            ? 'bg-[#2383E2] text-white font-semibold'
+                            : isSelected
+                            ? 'bg-[#EDEDEB] dark:bg-[#383838] font-semibold text-[#111] dark:text-[#FFF]'
+                            : slot.monthOffset !== 0
+                            ? 'text-[#C4C3C0] dark:text-[#555]'
+                            : 'text-[#37352F] dark:text-[#D4D4D4] hover:bg-[#F2F2F0] dark:hover:bg-[#2D2D2D]'
+                        }`}
+                      >
+                        {slot.dayNumber}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Unscheduled Tasks Section */}
+              <div className="flex-1 flex flex-col min-h-[140px]">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-semibold text-[#787774] dark:text-[#9B9A97] uppercase tracking-wider flex items-center gap-1">
+                    <span>📥</span> Без даты ({unscheduledTasks.length})
+                  </span>
+                </div>
+
+                {/* Search input */}
+                <div className="relative mb-2">
+                  <Search className="w-3 h-3 text-[#9B9A97] absolute left-2 top-2 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Поиск..."
+                    value={sidebarSearchQuery}
+                    onChange={(e) => setSidebarSearchQuery(e.target.value)}
+                    className="w-full text-xs pl-7 pr-2 py-1 bg-white dark:bg-[#222222] border border-[#EDEDEB] dark:border-[#333] rounded-md text-[#37352F] dark:text-[#FFF] outline-none placeholder-[#9B9A97]"
+                  />
+                </div>
+
+                {/* Unscheduled Task Items Dropzone */}
+                <div
+                  data-unscheduled-drop-zone="true"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDragEnter={() => setDraggedOverUnscheduled(true)}
+                  onDragLeave={() => setDraggedOverUnscheduled(false)}
+                  onDrop={(e) => {
+                    const taskId = e.dataTransfer.getData('text/plain');
+                    handleTaskDrop(taskId, null);
+                  }}
+                  className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar pr-0.5 rounded-md ${
+                    draggedOverUnscheduled ? 'bg-[#2383E2]/10 border-2 border-dashed border-[#2383E2]' : ''
+                  }`}
+                >
+                  {unscheduledTasks.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-[#9B9A97]">
+                      <p>Все задачи распределены!</p>
+                      <p className="text-[10px] text-[#B8B7B5] mt-1">Перетащите сюда, чтобы убрать срок</p>
+                    </div>
+                  ) : (
+                    unscheduledTasks.map(task => (
+                      <div
+                        key={task.id}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', task.id);
+                          setDraggingTaskId(task.id);
+                        }}
+                        onDragEnd={() => setDraggingTaskId(null)}
+                        onClick={(e) => onSelectNode(task.id, e)}
+                        className="p-2 bg-white dark:bg-[#222222] border border-[#EDEDEB] dark:border-[#333] hover:border-[#D3D3D0] rounded-md shadow-3xs flex flex-col gap-1 cursor-grab active:cursor-grabbing transition-all group"
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="flex items-start gap-1.5 flex-1 min-w-0">
+                            <span className="text-xs shrink-0">{getTaskPageIcon(task)}</span>
+                            <span className="text-xs font-medium text-[#37352F] dark:text-[#FFF] truncate">
+                              {cleanTaskTitle(task.text)}
+                            </span>
+                          </div>
+                          
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteNode(task.id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 text-[#9B9A97] hover:text-rose-500 p-0.5 rounded transition-all"
+                            title="Удалить"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-1 pt-1 border-t border-[#F1F1EF] dark:border-[#333]/50">
+                          <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-normal ${getPriorityBadgeColor(task.priority)}`}>
+                            {task.priority || 'medium'}
+                          </span>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateNode({ ...task, dueDate: realTodayStr });
+                            }}
+                            className="text-[10px] text-[#2383E2] hover:underline flex items-center gap-0.5"
+                          >
+                            На сегодня <ArrowRight className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
         </div>
 
       </div>
 
-      {/* Unscheduled Right deck drawer sidebar */}
-      <div className={`w-full bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 flex flex-col p-3 md:p-5 shrink-0 transition-all duration-300 ${
-        isUnscheduledExpandedMobile 
-          ? 'h-[280px] lg:h-full lg:w-80' 
-          : 'h-[56px] lg:h-full lg:w-16 lg:px-3 lg:py-5 lg:items-center'
-      }`}>
+      {/* 4. QUICK NEW TASK NOTION MODAL */}
+      {isQuickCreateModalOpen && (
+        <div 
+          onClick={() => setIsQuickCreateModalOpen(false)}
+          className="fixed inset-0 bg-black/40 backdrop-blur-2xs z-[200] flex items-center justify-center p-4 animate-fadeIn"
+        >
           <div 
-            onClick={() => setIsUnscheduledExpandedMobile(!isUnscheduledExpandedMobile)}
-            className={`flex items-center gap-2 mb-3 shrink-0 cursor-pointer select-none hover:bg-slate-50 dark:hover:bg-slate-800/40 p-1 px-2 rounded-xl transition-colors ${
-              isUnscheduledExpandedMobile ? 'w-full flex-row' : 'flex-row lg:flex-col lg:gap-3 lg:mb-5'
-            }`}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-[#202020] border border-[#EDEDEB] dark:border-[#333] shadow-2xl rounded-xl w-full max-w-md p-5 flex flex-col gap-4 text-[#37352F] dark:text-[#D4D4D4]"
           >
-            <span className="text-sm shrink-0"><span>📥</span></span>
-            <div className={`min-w-0 flex-1 ${isUnscheduledExpandedMobile ? 'block' : 'block lg:hidden'}`}>
-              <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 uppercase tracking-wider truncate">
-                Планирование (Без даты)
-              </h3>
-              <p className="text-[9px] text-slate-400 dark:text-slate-400 truncate">
-                {isUnscheduledExpandedMobile ? 'Нажмите, чтобы убрать список' : 'Нажмите, чтобы распределить по датам'}
-              </p>
-            </div>
-            <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-mono text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0">
-              {unscheduledTasks.length}
-            </span>
-            {/* Collapse/Expand indicator for both mobile and desktop */}
-            <span className="text-slate-400 text-[10px] font-bold select-none px-1">
-              {isUnscheduledExpandedMobile ? (
-                <>
-                  <span className="hidden lg:inline">▶</span>
-                  <span className="lg:hidden">▼</span>
-                </>
-              ) : (
-                <>
-                  <span className="hidden lg:inline">◀</span>
-                  <span className="lg:hidden">▲</span>
-                </>
-              )}
-            </span>
-          </div>
-
-          {/* Vertical rotated text for desktop when collapsed */}
-          {!isUnscheduledExpandedMobile && (
-            <span className="hidden lg:block text-[9.5px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest [writing-mode:vertical-lr] rotate-180 py-4 select-none animate-fade-in">
-              Планирование
-            </span>
-          )}
-
-          {/* Quick search input inside unscheduled sidebar of calendar */}
-          <div className={`relative mb-3.5 shrink-0 animate-fade-in ${isUnscheduledExpandedMobile ? 'block' : 'hidden'}`}>
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Поиск по архивам"
-              value={sidebarSearchQuery}
-              onChange={(e) => setSidebarSearchQuery(e.target.value)}
-              className="w-full text-[11px] font-semibold bg-slate-50 hover:bg-slate-100/70 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-205 pl-9 pr-3 py-2 rounded-xl border border-slate-200/65 dark:border-slate-800/80 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-            />
-          </div>
-
-          {/* Unscheduled List container */}
-          <div 
-            data-unscheduled-drop-zone="true"
-            onDragOver={(e) => e.preventDefault()}
-            onDragEnter={() => setDraggedOverUnscheduled(true)}
-            onDragLeave={() => setDraggedOverUnscheduled(false)}
-            onDrop={(e) => {
-              const taskId = e.dataTransfer.getData('text/plain');
-              handleTaskDrop(taskId, null);
-            }}
-            className={`overflow-y-auto space-y-2 pr-1 custom-scrollbar transition-all duration-200 p-1 rounded-xl ${
-              isUnscheduledExpandedMobile ? 'flex-1 flex flex-col animate-fade-in' : 'hidden'
-            } ${
-              draggedOverUnscheduled 
-                ? 'bg-indigo-50/40 border-2 border-dashed border-indigo-400 dark:bg-indigo-950/20' 
-                : 'border border-transparent'
-            }`}
-          >
-            {unscheduledTasks.length === 0 ? (
-              <div className="py-12 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-center flex flex-col items-center justify-center p-4">
-                <span className="text-xl mb-1.5 text-slate-400">✨</span>
-                <p className="font-bold text-xs text-slate-600 dark:text-slate-350">Все даты назначены!</p>
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 max-w-[180px] mt-1 leading-snug">
-                  Новые задачи без даты появятся здесь для быстрого контроля.
-                </p>
+            <div className="flex items-center justify-between border-b border-[#EDEDEB] dark:border-[#2D2D2D] pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📅</span>
+                <h3 className="font-semibold text-base text-[#111] dark:text-[#FFF]">
+                  Новое событие в Notion Calendar
+                </h3>
               </div>
-            ) : (
-              unscheduledTasks.map(task => (
-                <div
-                  key={task.id}
-                  onClick={(e) => onSelectNode(task.id, e)}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    if (onFocusedTaskIdChange) {
-                      onFocusedTaskIdChange(task.id);
-                    }
-                    if (window.innerWidth < 1024) {
-                      onSelectNode(null);
-                    }
-                  }}
-                  draggable={true}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('text/plain', task.id);
-                    setDraggingTaskId(task.id);
-                  }}
-                  onDragEnd={() => setDraggingTaskId(null)}
-                  onTouchStart={(e) => {
-                    e.stopPropagation();
-                    const touch = e.touches[0];
-                    touchStartPos.current = { x: touch.clientX, y: touch.clientY, dateString: null };
-                    touchHasMoved.current = false;
-                    setDraggingTaskId(task.id);
-                  }}
-                  className={`group border border-slate-200 dark:border-slate-800/80 p-2.5 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800 rounded-xl shadow-xs transition-all flex flex-col gap-2 cursor-grab active:cursor-grabbing hover:border-slate-300 dark:hover:border-slate-700 ${
-                    draggingTaskId === task.id ? 'opacity-40 border-dashed border-indigo-400' : ''
-                  }`}
-                >
-                  <div className="flex items-start gap-1.5 justify-between">
-                    {/* Title */}
-                    <span className={`text-xs font-semibold text-slate-800 dark:text-slate-200 leading-tight flex-1 flex items-center flex-wrap gap-1 ${
-                      task.completed ? 'line-through opacity-55' : ''
-                    }`}>
-                      <span>{task.text}</span>
-                      {(() => {
-                        const taskLinks = getTaskExternalLinks(task);
-                        if (taskLinks.length === 0) return null;
-                        return taskLinks.map((linkUrl, lIdx) => (
-                          <a
-                            key={lIdx}
-                            href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center justify-center p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                            title={`Открыть внешнюю ссылку (${lIdx + 1}/${taskLinks.length}): ${linkUrl}`}
-                          >
-                            <LinkIcon className="w-3 h-3 text-indigo-500" />
-                          </a>
-                        ));
-                      })()}
-                      {activePomodoroNodeId === task.id && (
-                        <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[9px] font-sans font-extrabold animate-pulse ml-0.5 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
-                          <span className="relative flex h-1.5 w-1.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
-                          </span>
-                          <span>🍅</span>
-                        </span>
-                      )}
-                    </span>
-                    
-                    {/* Delete button wrapper */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteNode(task.id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 p-0.5 rounded transition-colors cursor-pointer"
-                      title="Удалить"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+              <button
+                onClick={() => setIsQuickCreateModalOpen(false)}
+                className="text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] p-1 rounded"
+              >
+                ✕
+              </button>
+            </div>
 
-                  {/* Quick Date setup picker */}
-                  <div className="flex items-center gap-1.5 mt-0.5" onClick={(e) => e.stopPropagation()}>
-                    <Clock className="w-3 h-3 text-slate-400" />
-                    <input
-                      type="date"
-                      value={task.dueDate || ''}
-                      title="Назначить срок"
-                      onChange={(e) => {
-                        const newDueDate = e.target.value;
-                        onUpdateNode({
-                          ...task,
-                          dueDate: newDueDate || undefined,
-                          dueTime: !newDueDate ? undefined : task.dueTime
-                        });
-                      }}
-                      className="flex-1 text-[10px] bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded-lg focus:outline-none"
-                    />
-                    
-                    <button
-                      onClick={() => {
-                        const todayStr = new Date().toISOString().split('T')[0];
-                        onUpdateNode({
-                          ...task,
-                          dueDate: todayStr
-                        });
-                      }}
-                      title="Назначить на сегодня"
-                      className="p-1 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-600 hover:text-white rounded-lg text-indigo-600 dark:text-indigo-400 transition-colors text-[9px] font-extrabold flex items-center gap-0.5 cursor-pointer shrink-0"
-                    >
-                      Сегодня <ArrowRight className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
+            <form onSubmit={handleQuickModalSubmit} className="flex flex-col gap-3.5 text-xs">
+              <div>
+                <label className="block text-[11px] font-medium text-[#787774] dark:text-[#9B9A97] mb-1">
+                  Название
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Что планируется?"
+                  value={quickModalText}
+                  onChange={(e) => setQuickModalText(e.target.value)}
+                  className="w-full text-sm p-2 bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#EDEDEB] dark:border-[#333] rounded-md outline-none focus:border-[#2383E2] text-[#111] dark:text-[#FFF]"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-medium text-[#787774] dark:text-[#9B9A97] mb-1">
+                    Дата
+                  </label>
+                  <input
+                    type="date"
+                    value={quickModalDate}
+                    onChange={(e) => setQuickModalDate(e.target.value)}
+                    className="w-full p-1.5 bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#EDEDEB] dark:border-[#333] rounded-md outline-none text-[#37352F] dark:text-[#FFF]"
+                  />
                 </div>
-              ))
-            )}
+
+                <div>
+                  <label className="block text-[11px] font-medium text-[#787774] dark:text-[#9B9A97] mb-1">
+                    Начало
+                  </label>
+                  <input
+                    type="time"
+                    value={quickModalStartTime}
+                    onChange={(e) => setQuickModalStartTime(e.target.value)}
+                    className="w-full p-1.5 bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#EDEDEB] dark:border-[#333] rounded-md outline-none text-[#37352F] dark:text-[#FFF]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-[#787774] dark:text-[#9B9A97] mb-1">
+                    Конец
+                  </label>
+                  <input
+                    type="time"
+                    value={quickModalDueTime}
+                    onChange={(e) => setQuickModalDueTime(e.target.value)}
+                    className="w-full p-1.5 bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#EDEDEB] dark:border-[#333] rounded-md outline-none text-[#37352F] dark:text-[#FFF]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-[#787774] dark:text-[#9B9A97] mb-1">
+                  Приоритет
+                </label>
+                <select
+                  value={quickModalPriority}
+                  onChange={(e) => setQuickModalPriority(e.target.value as Priority)}
+                  className="w-full p-1.5 bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#EDEDEB] dark:border-[#333] rounded-md outline-none text-[#37352F] dark:text-[#FFF]"
+                >
+                  <option value="urgent">⚡ Urgent (Срочно)</option>
+                  <option value="high">🔥 High (Высокий)</option>
+                  <option value="medium">⏳ Medium (Средний)</option>
+                  <option value="low">💤 Low (Низкий)</option>
+                  <option value="none">None (Без приоритета)</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#EDEDEB] dark:border-[#2D2D2D] mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickCreateModalOpen(false)}
+                  className="px-3 py-1.5 text-xs text-[#787774] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] rounded-md font-medium"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs bg-[#2383E2] hover:bg-[#1D74C6] text-white rounded-md font-medium shadow-3xs"
+                >
+                  Создать
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
 
     </div>
   );

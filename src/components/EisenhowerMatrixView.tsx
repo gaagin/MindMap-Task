@@ -677,10 +677,10 @@ export default function EisenhowerMatrixView({
                 onDragLeave={() => setDraggedOverQuadrant(null)}
                 onDrop={(e) => handleDrop(e, quad.id)}
                 onClick={() => setActiveListQuadrantId(quad.id)}
-                className={`flex flex-col rounded-[20px] md:rounded-[24px] p-2.5 md:p-4 transition-all h-full bg-white dark:bg-slate-900 cursor-pointer hover:shadow-[0_4px_24px_rgba(0,0,0,0.02)] ${
+                className={`flex flex-col rounded-xl p-3 md:p-4 transition-all h-full notion-card cursor-pointer ${
                   isOver 
-                    ? `ring-4 ring-offset-0 ring-indigo-500/15 scale-[0.995] shadow-inner`
-                    : `shadow-[0_4px_20px_rgba(0,0,0,0.015)] dark:shadow-none`
+                    ? `ring-2 ring-indigo-500/20 scale-[0.995]`
+                    : ``
                 }`}
               >
                 {/* Header inside quadrant card */}

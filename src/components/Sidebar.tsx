@@ -256,23 +256,23 @@ export default function Sidebar({
         }}
       >
         <div 
-          className={`group flex items-center justify-between py-1.5 px-2 rounded-lg transition-colors text-slate-700 dark:text-slate-300 ${
+          className={`group flex items-center justify-between py-1 px-2 mx-1 rounded-md text-xs cursor-pointer transition-colors ${
             isDragOver 
-              ? 'bg-indigo-100/80 dark:bg-indigo-950/40 ring-2 ring-indigo-505 border-indigo-400' 
-              : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+              ? 'bg-[rgba(55,53,47,0.12)] dark:bg-[rgba(255,255,255,0.12)] text-[#37352F] dark:text-white' 
+              : 'text-[rgba(55,53,47,0.75)] dark:text-[rgba(255,255,255,0.75)] hover:bg-[rgba(55,53,47,0.06)] dark:hover:bg-[rgba(255,255,255,0.055)]'
           }`}
-          style={{ paddingLeft: `${Math.max(depth * 12 + 8, 8)}px` }}
+          style={{ paddingLeft: `${Math.max(depth * 12 + 6, 6)}px` }}
         >
-          <div className="flex items-center min-w-0 cursor-pointer flex-1" onClick={() => toggleFolder(folder.id)}>
-            <span className="mr-1 text-slate-400">
+          <div className="flex items-center min-w-0 cursor-pointer flex-1 gap-1.5" onClick={() => toggleFolder(folder.id)}>
+            <span className="text-[rgba(55,53,47,0.45)] dark:text-[rgba(255,255,255,0.45)] p-0.5 rounded hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)]">
               {isExpanded ? (
-                <ChevronDown className="w-4 h-4" />
+                <ChevronDown className="w-3.5 h-3.5" />
               ) : (
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5" />
               )}
             </span>
-            <span className="mr-2 text-indigo-500">
-              {isExpanded ? <FolderOpen className="w-4 h-4" /> : <FolderIcon className="w-4 h-4" />}
+            <span className="text-amber-500/90">
+              {isExpanded ? <FolderOpen className="w-3.5 h-3.5" /> : <FolderIcon className="w-3.5 h-3.5" />}
             </span>
 
             {editingFolderId === folder.id ? (
@@ -289,22 +289,22 @@ export default function Sidebar({
                 autoFocus
               />
             ) : (
-              <span className="text-sm font-medium truncate">{folder.name}</span>
+              <span className="text-xs font-medium truncate">{folder.name}</span>
             )}
           </div>
 
           {/* Folder actions hover */}
-          <div className="relative z-50 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 flex items-center gap-1 ml-2 transition-opacity">
+          <div className="relative z-50 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-1 transition-opacity">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 setShowNewProjectInput(folder.id);
                 setExpandedFolders(prev => ({ ...prev, [folder.id]: true }));
               }}
-              title="Создать карту в папке"
-              className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+              title="Создать страницу"
+              className="p-1 rounded hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)] text-[rgba(55,53,47,0.5)] dark:text-[rgba(255,255,255,0.5)]"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3 h-3" />
             </button>
             <button
               onClick={(e) => {
@@ -313,9 +313,9 @@ export default function Sidebar({
                 setExpandedFolders(prev => ({ ...prev, [folder.id]: true }));
               }}
               title="Создать подпапку"
-              className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+              className="p-1 rounded hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)] text-[rgba(55,53,47,0.5)] dark:text-[rgba(255,255,255,0.5)]"
             >
-              <FolderPlus className="w-3.5 h-3.5" />
+              <FolderPlus className="w-3 h-3" />
             </button>
             <button
               onClick={(e) => {
@@ -324,9 +324,9 @@ export default function Sidebar({
                 setEditingFolderName(folder.name);
               }}
               title="Переименовать"
-              className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40"
+              className="p-1 rounded hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)] text-[rgba(55,53,47,0.5)] dark:text-[rgba(255,255,255,0.5)]"
             >
-              <Edit className="w-3.5 h-3.5" />
+              <Edit className="w-3 h-3" />
             </button>
             <button
               onClick={(e) => {
@@ -339,19 +339,17 @@ export default function Sidebar({
                   setTimeout(() => setConfirmDeleteFolderId(curr => curr === folder.id ? null : curr), 4000);
                 }
               }}
-              title={confirmDeleteFolderId === folder.id ? "Подтвердите удаление (нажмите еще раз)" : "Удалить папку"}
-              className={`p-1 rounded transition-all duration-200 ${
+              title={confirmDeleteFolderId === folder.id ? "Подтвердите удаление" : "Удалить папку"}
+              className={`p-1 rounded transition-colors ${
                 confirmDeleteFolderId === folder.id
-                  ? "text-white bg-rose-600 hover:bg-rose-700 font-bold px-2 animate-pulse"
-                  : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                  ? "text-rose-600 bg-rose-50 dark:bg-rose-950 font-bold px-1.5"
+                  : "text-[rgba(55,53,47,0.5)] dark:text-[rgba(255,255,255,0.5)] hover:text-rose-600"
               }`}
             >
               {confirmDeleteFolderId === folder.id ? (
-                <span className="text-[10px] flex items-center gap-1 font-sans">
-                  <AlertCircle className="w-3.5 h-3.5 text-white" /> Удалить?
-                </span>
+                <span className="text-[9px] font-sans">Удалить?</span>
               ) : (
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-3 h-3" />
               )}
             </button>
           </div>
@@ -359,26 +357,26 @@ export default function Sidebar({
 
         {/* Inputs local to this folder */}
         {showNewProjectInput === folder.id && (
-          <div className="flex gap-1 items-center mt-1 mb-2 px-2" style={{ paddingLeft: `${depth * 12 + 28}px` }}>
+          <div className="flex gap-1 items-center mt-1 mb-1 px-2" style={{ paddingLeft: `${depth * 12 + 24}px` }}>
             <input
               type="text"
-              placeholder="Новая карта задач..."
+              placeholder="Новая страница..."
               value={newProjectName}
               onChange={(e) => setNewProjectName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleCreateProject(folder.id);
                 if (e.key === 'Escape') setShowNewProjectInput(null);
               }}
-              className="bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs w-full focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+              className="bg-white dark:bg-slate-800 border border-[rgba(55,53,47,0.15)] dark:border-[rgba(255,255,255,0.15)] rounded px-2 py-1 text-xs w-full focus:outline-none"
               autoFocus
             />
-            <button onClick={() => handleCreateProject(folder.id)} className="px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700">ОК</button>
-            <button onClick={() => setShowNewProjectInput(null)} className="p-1 rounded text-slate-400 hover:bg-slate-200"><X className="w-4 h-4" /></button>
+            <button onClick={() => handleCreateProject(folder.id)} className="px-2 py-0.5 bg-[#37352F] text-white text-[11px] rounded">ОК</button>
+            <button onClick={() => setShowNewProjectInput(null)} className="p-1 rounded text-slate-400 hover:bg-slate-200"><X className="w-3.5 h-3.5" /></button>
           </div>
         )}
 
         {showNewFolderInput === folder.id && (
-          <div className="flex gap-1 items-center mt-1 mb-2 px-2" style={{ paddingLeft: `${depth * 12 + 28}px` }}>
+          <div className="flex gap-1 items-center mt-1 mb-1 px-2" style={{ paddingLeft: `${depth * 12 + 24}px` }}>
             <input
               type="text"
               placeholder="Новая папка..."
@@ -388,22 +386,22 @@ export default function Sidebar({
                 if (e.key === 'Enter') handleCreateFolder(folder.id);
                 if (e.key === 'Escape') setShowNewFolderInput(null);
               }}
-              className="bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs w-full focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+              className="bg-white dark:bg-slate-800 border border-[rgba(55,53,47,0.15)] dark:border-[rgba(255,255,255,0.15)] rounded px-2 py-1 text-xs w-full focus:outline-none"
               autoFocus
             />
-            <button onClick={() => handleCreateFolder(folder.id)} className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700">ОК</button>
-            <button onClick={() => setShowNewFolderInput(null)} className="p-1 rounded text-slate-400 hover:bg-slate-200"><X className="w-4 h-4" /></button>
+            <button onClick={() => handleCreateFolder(folder.id)} className="px-2 py-0.5 bg-[#37352F] text-white text-[11px] rounded">ОК</button>
+            <button onClick={() => setShowNewFolderInput(null)} className="p-1 rounded text-slate-400 hover:bg-slate-200"><X className="w-3.5 h-3.5" /></button>
           </div>
         )}
 
         {/* Children (Subfolders & Projects) */}
         {isExpanded && (
-          <div className="mt-0.5">
+          <div className="mt-0.5 space-y-0.5">
             {subfolders.map(sf => renderFolderNode(sf, depth + 1))}
             {folderProjects.map(p => renderProjectNode(p, depth + 1))}
             {!hasChildren && (
               <div 
-                className="text-xs text-slate-400 italic py-1 pl-4"
+                className="text-[11px] text-[rgba(55,53,47,0.4)] dark:text-[rgba(255,255,255,0.4)] italic py-1 pl-4"
                 style={{ paddingLeft: `${(depth + 1) * 12 + 16}px` }}
               >
                 Пустая папка
@@ -427,12 +425,12 @@ export default function Sidebar({
           e.dataTransfer.setData('text/plain', project.id);
           e.dataTransfer.effectAllowed = 'move';
         }}
-        className={`group flex items-center justify-between py-1.5 px-3 mx-1 mb-0.5 rounded-lg transition-all ${
+        className={`group flex items-center justify-between py-1 px-2 mx-1 mb-0.5 rounded-md text-xs transition-colors cursor-pointer ${
           isActive 
-            ? 'bg-indigo-50 text-indigo-700 border-l-4 border-indigo-600 font-medium shadow-sm dark:bg-indigo-950/40 dark:text-indigo-300' 
-            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-905 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
-        } cursor-grab active:cursor-grabbing`}
-        style={{ paddingLeft: `${Math.max(depth * 12 + 12, 12)}px` }}
+            ? 'bg-[rgba(55,53,47,0.08)] dark:bg-[rgba(255,255,255,0.08)] text-[#37352F] dark:text-white font-medium' 
+            : 'text-[rgba(55,53,47,0.75)] dark:text-[rgba(255,255,255,0.75)] hover:bg-[rgba(55,53,47,0.06)] dark:hover:bg-[rgba(255,255,255,0.055)] hover:text-[#37352F] dark:hover:text-white'
+        }`}
+        style={{ paddingLeft: `${Math.max(depth * 12 + 10, 10)}px` }}
       >
         {isMoving ? (
           <div className="flex items-center gap-1.5 w-full" onClick={(e) => e.stopPropagation()}>
@@ -465,9 +463,9 @@ export default function Sidebar({
           <>
             <div 
               onClick={() => onSelectProject(project.id)}
-              className="flex items-center min-w-0 cursor-pointer flex-1 gap-2"
+              className="flex items-center min-w-0 flex-1 gap-2"
             >
-              <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+              <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-[#37352F] dark:text-white' : 'text-[rgba(55,53,47,0.5)] dark:text-[rgba(255,255,255,0.5)]'}`} />
               
               {editingProjectId === project.id ? (
                 <input
@@ -479,34 +477,34 @@ export default function Sidebar({
                     if (e.key === 'Escape') setEditingProjectId(null);
                   }}
                   onClick={(e) => e.stopPropagation()}
-                  className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-1 py-0.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans"
+                  className="bg-white dark:bg-slate-700 border border-[rgba(55,53,47,0.2)] dark:border-slate-600 rounded px-1 py-0.5 text-xs w-full focus:outline-none font-sans"
                   autoFocus
                 />
               ) : (
-                <span className="text-sm truncate">{project.name}</span>
+                <span className="text-xs truncate">{project.name}</span>
               )}
             </div>
 
-            <div className="relative z-50 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 flex items-center gap-1.5 ml-2 transition-opacity">
+            <div className="relative z-50 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-1 transition-opacity">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setMovingProjectId(project.id);
                 }}
                 title="Переместить в другую папку"
-                className="p-0.5 hover:text-emerald-600 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850"
+                className="p-1 rounded hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)] text-[rgba(55,53,47,0.5)] dark:text-[rgba(255,255,255,0.5)]"
               >
-                <Move className="w-3.5 h-3.5" />
+                <Move className="w-3 h-3" />
               </button>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onDuplicateProject(project.id);
                 }}
-                title="Дублировать интеллект-карту"
-                className="p-0.5 hover:text-indigo-600 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850"
+                title="Дублировать страницу"
+                className="p-1 rounded hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)] text-[rgba(55,53,47,0.5)] dark:text-[rgba(255,255,255,0.5)]"
               >
-                <Copy className="w-3.5 h-3.5" />
+                <Copy className="w-3 h-3" />
               </button>
               <button
                 onClick={(e) => {
@@ -514,10 +512,10 @@ export default function Sidebar({
                   setEditingProjectId(project.id);
                   setEditingProjectName(project.name);
                 }}
-                title="Переименовать интеллект-карту"
-                className="p-0.5 hover:text-blue-600 rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850"
+                title="Переименовать"
+                className="p-1 rounded hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)] text-[rgba(55,53,47,0.5)] dark:text-[rgba(255,255,255,0.5)]"
               >
-                <Edit className="w-3.5 h-3.5" />
+                <Edit className="w-3 h-3" />
               </button>
               <button
                 onClick={(e) => {
@@ -530,19 +528,17 @@ export default function Sidebar({
                     setTimeout(() => setConfirmDeleteProjectId(curr => curr === project.id ? null : curr), 4000);
                   }
                 }}
-                title={confirmDeleteProjectId === project.id ? "Подтвердите удаление (нажмите еще раз)" : "Удалить интеллект-карту"}
-                className={`p-0.5 rounded transition-all duration-200 ${
+                title={confirmDeleteProjectId === project.id ? "Подтвердите удаление" : "Удалить страницу"}
+                className={`p-1 rounded transition-colors ${
                   confirmDeleteProjectId === project.id
-                    ? "text-white bg-rose-600 hover:bg-rose-700 font-bold px-1.5 animate-pulse"
-                    : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/45"
+                    ? "text-rose-600 bg-rose-50 dark:bg-rose-950 font-bold px-1"
+                    : "text-[rgba(55,53,47,0.5)] dark:text-[rgba(255,255,255,0.5)] hover:text-rose-600"
                 }`}
               >
                 {confirmDeleteProjectId === project.id ? (
-                  <span className="text-[9px] flex items-center gap-0.5 font-sans">
-                    Удалить?
-                  </span>
+                  <span className="text-[9px] font-sans">Удалить?</span>
                 ) : (
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3 h-3" />
                 )}
               </button>
             </div>
@@ -567,68 +563,74 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 bg-white dark:bg-slate-900 lg:glass-panel border-r border-slate-205/30 dark:border-slate-850/30 w-72 flex flex-col z-[150] transform transition-all duration-300 ease-out shrink-0 ${
+        className={`fixed inset-y-0 left-0 bg-[#F7F6F3] dark:bg-[#202020] text-[#37352F] dark:text-[#E6E6E6] border-r border-[rgba(55,53,47,0.09)] dark:border-[rgba(255,255,255,0.09)] w-72 flex flex-col z-[150] transform transition-all duration-300 ease-out shrink-0 font-sans ${
           isOpen 
             ? 'translate-x-0 opacity-100 shadow-xl' 
             : '-translate-x-full opacity-0 pointer-events-none'
         }`}
       >
-        {/* Header */}
-        <div className="h-16 px-5 border-b border-slate-150/40 dark:border-slate-800/30 flex items-center justify-between">
+        {/* Notion Workspace Header */}
+        <div className="h-14 px-4 border-b border-[rgba(55,53,47,0.07)] dark:border-[rgba(255,255,255,0.07)] flex items-center justify-between hover:bg-[rgba(55,53,47,0.03)] dark:hover:bg-[rgba(255,255,255,0.03)] transition-colors">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center text-white font-bold text-lg shadow-sm shrink-0 animate-pulse-subtle">
-              M
+            <div className="w-7 h-7 rounded-md bg-[#37352F] dark:bg-white text-white dark:text-[#202020] flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+              N
             </div>
-            <div className="truncate">
-              <h1 className="text-sm font-bold tracking-tight text-slate-800 dark:text-slate-100 font-sans truncate">
+            <div className="truncate flex items-center gap-1.5">
+              <h1 className="text-xs font-semibold tracking-tight text-[#37352F] dark:text-[#E6E6E6] truncate">
                 Интеллект-Карты
               </h1>
-              <p className="text-[9px] font-mono text-indigo-500 dark:text-indigo-400 font-bold tracking-wider truncate">
-                ЗАДАЧИ & ПРОЕКТЫ
-              </p>
+              <ChevronDown className="w-3 h-3 text-[rgba(55,53,47,0.45)] dark:text-[rgba(255,255,255,0.45)] shrink-0" />
             </div>
           </div>
           {/* Theme toggle and Close buttons */}
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-0.5 shrink-0">
             <button
               onClick={onToggleDarkMode}
-              className="p-1.5 rounded-lg hover:bg-slate-100/60 dark:hover:bg-slate-800/60 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer transition-colors"
+              className="p-1.5 rounded-md hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)] text-[rgba(55,53,47,0.65)] hover:text-[#37352F] dark:text-[rgba(255,255,255,0.65)] dark:hover:text-white cursor-pointer transition-colors"
               title={darkMode ? "Включить светлую тему" : "Включить темную тему"}
             >
               {darkMode ? (
-                <Sun className="w-4.5 h-4.5 text-amber-500" />
+                <Sun className="w-4 h-4 text-amber-400" />
               ) : (
-                <Moon className="w-4.5 h-4.5 text-indigo-500" />
+                <Moon className="w-4 h-4 text-slate-600" />
               )}
             </button>
             <button 
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-slate-100/60 dark:hover:bg-slate-800/60 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer transition-colors"
-              title="Свернуть panel"
+              className="p-1.5 rounded-md hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)] text-[rgba(55,53,47,0.65)] hover:text-[#37352F] dark:text-[rgba(255,255,255,0.65)] dark:hover:text-white cursor-pointer transition-colors"
+              title="Свернуть меню"
             >
               <span className="hidden lg:inline">
-                <ChevronLeft className="w-4.5 h-4.5" />
+                <ChevronLeft className="w-4 h-4" />
               </span>
               <span className="lg:hidden">
-                <X className="w-4.5 h-4.5" />
+                <X className="w-4 h-4" />
               </span>
             </button>
           </div>
         </div>
 
-        {/* Create root action shortcuts */}
-        <div className="p-4 grid grid-cols-2 gap-2 border-b border-slate-150/40 dark:border-slate-800/30 bg-transparent">
+        {/* Notion Quick Actions */}
+        <div className="px-3 pt-3 pb-2 space-y-0.5 border-b border-[rgba(55,53,47,0.07)] dark:border-[rgba(255,255,255,0.07)]">
           <button
             onClick={() => setShowNewProjectInput('root')}
-            className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-indigo-50/50 border border-indigo-150/40 hover:bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-xl transition-all dark:bg-indigo-950/20 dark:border-indigo-900/35 dark:text-indigo-400 dark:hover:bg-indigo-950/40 shadow-2xs hover:shadow-xs"
+            className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-[rgba(55,53,47,0.75)] dark:text-[rgba(255,255,255,0.75)] hover:bg-[rgba(55,53,47,0.06)] dark:hover:bg-[rgba(255,255,255,0.055)] rounded-md transition-colors font-medium cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" /> Карту
+            <div className="flex items-center gap-2">
+              <Plus className="w-3.5 h-3.5 text-[rgba(55,53,47,0.65)] dark:text-[rgba(255,255,255,0.65)]" />
+              <span>Новая карта</span>
+            </div>
+            <span className="text-[10px] text-[rgba(55,53,47,0.4)] dark:text-[rgba(255,255,255,0.4)] font-mono">Page</span>
           </button>
           <button
             onClick={() => setShowNewFolderInput('root')}
-            className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-teal-50/50 border border-teal-150/40 hover:bg-teal-50 text-teal-700 text-xs font-semibold rounded-xl transition-all dark:bg-teal-950/20 dark:border-teal-900/35 dark:text-teal-400 dark:hover:bg-teal-950/40 shadow-2xs hover:shadow-xs"
+            className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-[rgba(55,53,47,0.75)] dark:text-[rgba(255,255,255,0.75)] hover:bg-[rgba(55,53,47,0.06)] dark:hover:bg-[rgba(255,255,255,0.055)] rounded-md transition-colors font-medium cursor-pointer"
           >
-            <FolderPlus className="w-3.5 h-3.5" /> Папку
+            <div className="flex items-center gap-2">
+              <FolderPlus className="w-3.5 h-3.5 text-[rgba(55,53,47,0.65)] dark:text-[rgba(255,255,255,0.65)]" />
+              <span>Новая папка</span>
+            </div>
+            <span className="text-[10px] text-[rgba(55,53,47,0.4)] dark:text-[rgba(255,255,255,0.4)] font-mono">Folder</span>
           </button>
           {onCreateGtdWorkflow && (
             <button
@@ -636,11 +638,14 @@ export default function Sidebar({
                 onCreateGtdWorkflow();
                 playNotificationChime();
               }}
-              className="col-span-2 flex items-center justify-center gap-1.5 py-2 px-3 bg-amber-500/10 hover:bg-amber-500/15 text-amber-800 text-xs font-bold rounded-xl border border-amber-200/30 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-950/30 transition-all cursor-pointer select-none shadow-2xs"
-              title="Создать полную рабочую среду GTD (Getting Things Done) с интерактивными контейнерами"
+              className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-[#CC6933] dark:text-[#E27E58] hover:bg-[#FAECE5] dark:hover:bg-[#49291F]/40 rounded-md transition-colors font-medium cursor-pointer"
+              title="Создать полную рабочую среду GTD (Getting Things Done)"
             >
-              <Network className="w-3.5 h-3.5 text-amber-500 dark:text-amber-450 animate-pulse" />
-              Создать GTD Воркфлоу
+              <div className="flex items-center gap-2">
+                <Network className="w-3.5 h-3.5" />
+                <span>GTD Воркфлоу</span>
+              </div>
+              <span className="text-[9px] bg-[#FAECE5] dark:bg-[#49291F] px-1.5 py-0.2 rounded text-[#CC6933] dark:text-[#E27E58] font-bold">Template</span>
             </button>
           )}
         </div>
@@ -1112,7 +1117,7 @@ export default function Sidebar({
         </div>
 
         {/* Footer (Sync, Export/Import, Reset) */}
-        <div className="border-t border-slate-200 dark:border-slate-800 p-4 space-y-2 bg-[#FAFBFD]/30 dark:bg-slate-900/30">
+        <div className="border-t border-slate-150/50 dark:border-slate-800/80 p-4 space-y-2 bg-[#F9FAFC]/30 dark:bg-slate-900/30">
           <div className="flex items-center justify-between text-xs text-slate-400 py-1 font-mono">
             <span>Локальное хранилище</span>
             <span className="text-indigo-500 font-semibold">Активно</span>

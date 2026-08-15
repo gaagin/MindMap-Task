@@ -1,41 +1,49 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-  Check, 
-  Trash2, 
   Plus, 
-  Calendar, 
-  Flag, 
-  Tag, 
-  FileText, 
-  Clock, 
-  ChevronRight, 
-  Eye,
-  CheckCircle, 
+  Trash2, 
   Circle, 
-  ChevronDown, 
-  Search, 
-  Filter, 
-  SlidersHorizontal, 
-  Sparkles, 
-  AlertCircle, 
-  ExternalLink,
-  FolderMinus,
-  CheckSquare,
-  ListFilter,
   CheckCircle2, 
-  Layers,
-  Loader2,
-  CalendarCheck,
+  Loader2, 
+  Tag, 
+  Calendar, 
+  ChevronUp, 
+  ChevronDown, 
+  ChevronRight,
+  ChevronLeft,
+  SlidersHorizontal, 
+  ArrowUpDown, 
+  FileText, 
+  Link as LinkIcon, 
+  Maximize2, 
+  Minimize2, 
+  Timer, 
+  MessageSquare, 
+  Layers, 
+  Search, 
+  MoreHorizontal, 
+  ExternalLink, 
+  Check, 
+  Eye,
   GripVertical,
-  Maximize2,
-  Minimize2,
-  Target,
-  Timer,
+  Star,
+  Share2,
+  CheckSquare,
+  Square,
+  Sparkles,
+  Smile,
+  Copy,
+  Clock,
+  Menu,
   X,
-  MessageSquare,
-  CornerUpLeft
+  User,
+  Filter,
+  Paperclip,
+  Flame,
+  Zap,
+  ListFilter
 } from 'lucide-react';
-import { TaskNode, Priority, TagCategory } from '../types';
+import { TaskNode, Priority, TagCategory, ViewMode } from '../types';
 import { generateId, getPomoStatsForNode, formatTotalPomoTime, getTaskExternalLinks } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -64,12 +72,149 @@ interface MobileListViewProps {
   onBulkDelete?: () => void;
   onBulkToggleCompleted?: (completed: boolean) => void;
   setIsMultiSelectMode?: (val: boolean) => void;
+
+  // Notion project & view control props
+  projectName?: string;
+  projectIcon?: string;
+  onUpdateProjectName?: (name: string) => void;
+  onUpdateProjectIcon?: (icon: string) => void;
+  setViewMode?: (mode: ViewMode) => void;
+  onOpenSidebar?: () => void;
 }
 
 interface TaskTreeItem {
   node: TaskNode;
   children: TaskTreeItem[];
 }
+
+// Authentic Notion Pastel Color Palette for Tag Pills
+const NOTION_TAG_COLORS: Record<string, { bg: string; text: string; darkBg: string; darkText: string }> = {
+  blue: { bg: 'bg-[#E8F3FF]', text: 'text-[#1E67C6]', darkBg: 'dark:bg-[#1E3A5F]', darkText: 'dark:text-[#90CDF4]' },
+  yellow: { bg: 'bg-[#FFF5E5]', text: 'text-[#9A6700]', darkBg: 'dark:bg-[#4A3B18]', darkText: 'dark:text-[#FBD38D]' },
+  purple: { bg: 'bg-[#F6EEFF]', text: 'text-[#7843B6]', darkBg: 'dark:bg-[#3D2561]', darkText: 'dark:text-[#D6BCFA]' },
+  teal: { bg: 'bg-[#E8F9F3]', text: 'text-[#0F766E]', darkBg: 'dark:bg-[#1B4D43]', darkText: 'dark:text-[#81E6D9]' },
+  red: { bg: 'bg-[#FDF0EE]', text: 'text-[#C53030]', darkBg: 'dark:bg-[#5C2323]', darkText: 'dark:text-[#FEB2B2]' },
+  pink: { bg: 'bg-[#F8E8F8]', text: 'text-[#97266D]', darkBg: 'dark:bg-[#4C1D4A]', darkText: 'dark:text-[#F687B3]' },
+  brown: { bg: 'bg-[#F0EEEB]', text: 'text-[#5A554E]', darkBg: 'dark:bg-[#3A3733]', darkText: 'dark:text-[#CBD5E0]' },
+  gray: { bg: 'bg-[#F1F3F5]', text: 'text-[#495057]', darkBg: 'dark:bg-[#373E47]', darkText: 'dark:text-[#E2E8F0]' },
+  green: { bg: 'bg-[#EBF7EE]', text: 'text-[#2B7A4B]', darkBg: 'dark:bg-[#1C452C]', darkText: 'dark:text-[#9AE6B4]' },
+  orange: { bg: 'bg-[#FFF0E6]', text: 'text-[#C05621]', darkBg: 'dark:bg-[#4E2D1A]', darkText: 'dark:text-[#FEEBC8]' },
+};
+
+// Map tag names / categories to Notion tag color schemes
+function getNotionTagStyle(tagName: string): { bg: string; text: string; darkBg: string; darkText: string } {
+  const lower = (tagName || '').toLowerCase();
+  if (lower.includes('kickoff') || lower.includes('проект') || lower.includes('старт')) return NOTION_TAG_COLORS.blue;
+  if (lower.includes('comment') || lower.includes('rfc') || lower.includes('обсуждение') || lower.includes('интервью')) return NOTION_TAG_COLORS.yellow;
+  if (lower.includes('spec') || lower.includes('tech') || lower.includes('тз') || lower.includes('архитектур') || lower.includes('движок')) return NOTION_TAG_COLORS.purple;
+  if (lower.includes('analysis') || lower.includes('data') || lower.includes('анализ') || lower.includes('данные')) return NOTION_TAG_COLORS.teal;
+  if (lower.includes('overview') || lower.includes('postgres') || lower.includes('db') || lower.includes('база')) return NOTION_TAG_COLORS.red;
+  if (lower.includes('research') || lower.includes('study') || lower.includes('исследован') || lower.includes('отзыв')) return NOTION_TAG_COLORS.pink;
+  if (lower.includes('plan') || lower.includes('план') || lower.includes('roadmap') || lower.includes('модель')) return NOTION_TAG_COLORS.brown;
+  if (lower.includes('report') || lower.includes('отчет') || lower.includes('решение') || lower.includes('лог')) return NOTION_TAG_COLORS.gray;
+  if (lower.includes('release') || lower.includes('релиз') || lower.includes('готов')) return NOTION_TAG_COLORS.green;
+  if (lower.includes('review') || lower.includes('код') || lower.includes('ревью')) return NOTION_TAG_COLORS.blue;
+  
+  // Hash string to pick deterministic color
+  let hash = 0;
+  for (let i = 0; i < tagName.length; i++) {
+    hash = tagName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const colorKeys = Object.keys(NOTION_TAG_COLORS);
+  const colorKey = colorKeys[Math.abs(hash) % colorKeys.length];
+  return NOTION_TAG_COLORS[colorKey];
+}
+
+// Notion Priority Pills: P1 (Urgent), P2 (High), P3 (Medium), P4 (Low/None)
+function getNotionPriorityBadge(priority: Priority): { label: string; bg: string; text: string; darkBg: string; darkText: string } {
+  switch (priority) {
+    case 'urgent':
+      return { label: 'P1', bg: 'bg-[#FDF0EE]', text: 'text-[#C53030]', darkBg: 'dark:bg-[#5C2323]', darkText: 'dark:text-[#FEB2B2]' };
+    case 'high':
+      return { label: 'P1', bg: 'bg-[#FDF0EE]', text: 'text-[#C53030]', darkBg: 'dark:bg-[#5C2323]', darkText: 'dark:text-[#FEB2B2]' };
+    case 'medium':
+      return { label: 'P2', bg: 'bg-[#FFF5E5]', text: 'text-[#DD6B20]', darkBg: 'dark:bg-[#4A3B18]', darkText: 'dark:text-[#FBD38D]' };
+    case 'low':
+      return { label: 'P3', bg: 'bg-[#FEFCE8]', text: 'text-[#CA8A04]', darkBg: 'dark:bg-[#423C15]', darkText: 'dark:text-[#FDE047]' };
+    case 'none':
+    default:
+      return { label: 'P4', bg: 'bg-[#F1F3F5]', text: 'text-[#718096]', darkBg: 'dark:bg-[#373E47]', darkText: 'dark:text-[#CBD5E0]' };
+  }
+}
+
+// Notion Illustrated Face Avatars (matching the screenshot)
+const NOTION_AVATARS = [
+  { id: 'av-1', name: 'Alex', svg: (
+    <svg viewBox="0 0 36 36" fill="none" className="w-full h-full">
+      <circle cx="18" cy="18" r="17" fill="#F7F7F5" stroke="#37352F" strokeWidth="1.5" />
+      {/* Hair */}
+      <path d="M11 15C11 11 14 9 18 9C22 9 25 11 25 15C25 16 24 16 23 15C21 14 19 14 18 14C17 14 15 14 13 15C12 16 11 16 11 15Z" fill="#37352F" />
+      {/* Glasses */}
+      <rect x="13" y="16" width="4" height="3" rx="1" fill="none" stroke="#37352F" strokeWidth="1.2" />
+      <rect x="19" y="16" width="4" height="3" rx="1" fill="none" stroke="#37352F" strokeWidth="1.2" />
+      <line x1="17" y1="17.5" x2="19" y2="17.5" stroke="#37352F" strokeWidth="1.2" />
+      {/* Smile */}
+      <path d="M16 23C17 24 19 24 20 23" stroke="#37352F" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )},
+  { id: 'av-2', name: 'Elena', svg: (
+    <svg viewBox="0 0 36 36" fill="none" className="w-full h-full">
+      <circle cx="18" cy="18" r="17" fill="#F7F7F5" stroke="#37352F" strokeWidth="1.5" />
+      {/* Long dark hair */}
+      <path d="M10 14C10 9 13 8 18 8C23 8 26 9 26 14C26 21 25 24 25 24C24 20 23 18 23 15C22 13 19 13 18 13C17 13 14 13 13 15C13 18 12 20 11 24C11 24 10 21 10 14Z" fill="#37352F" />
+      {/* Eyes */}
+      <circle cx="15" cy="17" r="1.2" fill="#37352F" />
+      <circle cx="21" cy="17" r="1.2" fill="#37352F" />
+      {/* Smile */}
+      <path d="M16 22C17 23 19 23 20 22" stroke="#37352F" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )},
+  { id: 'av-3', name: 'Max', svg: (
+    <svg viewBox="0 0 36 36" fill="none" className="w-full h-full">
+      <circle cx="18" cy="18" r="17" fill="#F7F7F5" stroke="#37352F" strokeWidth="1.5" />
+      {/* Curly hair */}
+      <path d="M11 14C10 12 12 9 15 9C16 8 18 8 20 9C23 9 25 11 25 14C25 15 24 15 23 14C21 13 19 13 18 13C17 13 15 13 13 14C12 15 11 15 11 14Z" fill="#37352F" />
+      {/* Eyes & Eyebrows */}
+      <circle cx="15" cy="16" r="1.2" fill="#37352F" />
+      <circle cx="21" cy="16" r="1.2" fill="#37352F" />
+      {/* Beard */}
+      <path d="M14 21C14 25 22 25 22 21" stroke="#37352F" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )},
+  { id: 'av-4', name: 'Sophia', svg: (
+    <svg viewBox="0 0 36 36" fill="none" className="w-full h-full">
+      <circle cx="18" cy="18" r="17" fill="#F7F7F5" stroke="#37352F" strokeWidth="1.5" />
+      {/* Bob hair */}
+      <path d="M11 16C11 10 13 9 18 9C23 9 25 10 25 16C25 20 24 21 24 21C23 18 23 16 22 14C21 13 19 13 18 13C17 13 15 13 14 14C13 16 13 18 12 21C12 21 11 20 11 16Z" fill="#37352F" />
+      {/* Eyes */}
+      <circle cx="15.5" cy="17" r="1.2" fill="#37352F" />
+      <circle cx="20.5" cy="17" r="1.2" fill="#37352F" />
+      {/* Smile */}
+      <path d="M16.5 22C17.5 23 18.5 23 19.5 22" stroke="#37352F" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )}
+];
+
+// Helper to get or pick a Notion avatar deterministically for a task
+function getTaskNotionAvatar(task: TaskNode) {
+  if (task.assigneeAvatar) {
+    const found = NOTION_AVATARS.find(a => a.id === task.assigneeAvatar);
+    if (found) return found;
+  }
+  let hash = 0;
+  const str = task.id + (task.text || '');
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % NOTION_AVATARS.length;
+  return NOTION_AVATARS[idx];
+}
+
+// Popular curated emojis for Notion Docs items matching the screenshot
+const NOTION_SAMPLE_EMOJIS = [
+  '🐵', '🤝', '🚂', '🏗️', '📬', '🛢️', '🥕', '📝', '⌨️', '👩‍💻', '⬆️', '📖', '🦜',
+  '📄', '📎', '💡', '🚀', '🎯', '✨', '⚡', '📊', '🔍', '📌', '🛠️', '🔒', '📦', '💬'
+];
 
 export default function MobileListView({
   nodes,
@@ -96,16 +241,81 @@ export default function MobileListView({
   onBulkDelete,
   onBulkToggleCompleted,
   setIsMultiSelectMode,
+
+  // Notion project & view control props
+  projectName = 'Docs',
+  projectIcon = '📎',
+  onUpdateProjectName,
+  onUpdateProjectIcon,
+  setViewMode,
+  onOpenSidebar
 }: MobileListViewProps) {
-  // Inbox / State filters
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed' | 'today' | 'overdue'>('active');
+  // Tabs & filters
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'today' | 'overdue' | 'completed'>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
-  const [containerFilter, setContainerFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [mobileSearchIndex, setMobileSearchIndex] = useState(0);
-  const [showFilters, setShowFilters] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchMatchIndex, setSearchMatchIndex] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
+
+  // Popover menus state
+  const [showViewMenu, setShowViewMenu] = useState(false);
+  const [showPropertiesMenu, setShowPropertiesMenu] = useState(false);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showNewTemplateMenu, setShowNewTemplateMenu] = useState(false);
+  const [showProjectEmojiPicker, setShowProjectEmojiPicker] = useState(false);
+
+  // Active sort state
+  const [sortBy, setSortBy] = useState<'manual' | 'title' | 'priority' | 'tag' | 'date' | 'completed'>('manual');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // Visible column properties toggles
+  const [visibleProps, setVisibleProps] = useState({
+    tag: true,
+    priority: true,
+    assignee: true,
+    dueDate: true,
+    checkbox: true,
+    subtasks: true,
+    comments: true,
+    pomodoro: false
+  });
+
+  // Inline editing state
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [editingTitleText, setEditingTitleText] = useState('');
+  const [isEditingProjectName, setIsEditingProjectName] = useState(false);
+  const [projectNameInput, setProjectNameInput] = useState(projectName);
+
+  // Inline quick item addition row
+  const [isInlineAdding, setIsInlineAdding] = useState(false);
+  const [inlineNewTitle, setInlineNewTitle] = useState('');
+  const [inlineNewEmoji, setInlineNewEmoji] = useState('📄');
+  const inlineInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Task-specific popovers
+  const [activeEmojiPickerTaskId, setActiveEmojiPickerTaskId] = useState<string | null>(null);
+  const [activeTagPickerTaskId, setActiveTagPickerTaskId] = useState<string | null>(null);
+  const [activePriorityPickerTaskId, setActivePriorityPickerTaskId] = useState<string | null>(null);
+  const [activeAssigneePickerTaskId, setActiveAssigneePickerTaskId] = useState<string | null>(null);
+  const [activeTaskMenuId, setActiveTaskMenuId] = useState<string | null>(null);
+
+  // Collapsed parents state for nested subtasks
+  const [collapsedParentIds, setCollapsedParentIds] = useState<Record<string, boolean>>({});
+
+  // Drag & drop state
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+  const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<'above' | 'below' | 'inside' | null>(null);
+
+  useEffect(() => {
+    setProjectNameInput(projectName);
+  }, [projectName]);
 
   useEffect(() => {
     if (onFullScreenChange) {
@@ -115,27 +325,48 @@ export default function MobileListView({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullScreen) {
-        setIsFullScreen(false);
+      if (e.key === 'Escape') {
+        if (isFullScreen) setIsFullScreen(false);
+        setEditingNodeId(null);
+        setIsInlineAdding(false);
+        setActiveEmojiPickerTaskId(null);
+        setActiveTagPickerTaskId(null);
+        setActivePriorityPickerTaskId(null);
+        setActiveAssigneePickerTaskId(null);
+        setActiveTaskMenuId(null);
+        setShowViewMenu(false);
+        setShowPropertiesMenu(false);
+        setShowFilterMenu(false);
+        setShowSortMenu(false);
+        setShowMoreMenu(false);
+        setShowShareModal(false);
+        setShowNewTemplateMenu(false);
+        setShowProjectEmojiPicker(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullScreen]);
 
-  // Tags Manager modal state variables
-  const [showTagsManager, setShowTagsManager] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
-  const [newCatColor, setNewCatColor] = useState('#6366f1');
-  const [showAddCatForm, setShowAddCatForm] = useState(false);
-  const [expandedCatIds, setExpandedCatIds] = useState<Record<string, boolean>>({});
-  const [editingCategoryTagId, setEditingCategoryTagId] = useState<string | null>(null);
-  const [editingCategoryTagName, setEditingCategoryTagName] = useState('');
-  const [editingCategoryTagColor, setEditingCategoryTagColor] = useState('#6366f1');
-  const [addingTagToCatId, setAddingTagToCatId] = useState<string | null>(null);
-  const [newTagNameInput, setNewTagNameInput] = useState('');
+  // Focus inline input when triggered
+  useEffect(() => {
+    if (isInlineAdding && inlineInputRef.current) {
+      inlineInputRef.current.focus();
+    }
+  }, [isInlineAdding]);
+
+  // Search results calculation
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const query = searchQuery.toLowerCase();
+    return nodes.filter(n => {
+      if (n.isContainer || n.isWorkflowRectangle || n.isNotTask) return false;
+      const matchTitle = (n.text || '').toLowerCase().includes(query);
+      const matchNotes = (n.notes || '').toLowerCase().includes(query);
+      const matchTags = (n.tags || []).some(t => t.toLowerCase().includes(query));
+      return matchTitle || matchNotes || matchTags;
+    });
+  }, [nodes, searchQuery]);
 
   const highlightText = (text: string, query: string) => {
     if (!query.trim()) return <span>{text}</span>;
@@ -145,578 +376,65 @@ export default function MobileListView({
       <span>
         {parts.map((part, i) => 
           part.toLowerCase() === query.toLowerCase() 
-            ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800/60 dark:text-yellow-100 px-0.5 rounded-sm font-bold">{part}</mark> 
+            ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800/80 dark:text-yellow-100 px-0.5 rounded font-medium">{part}</mark> 
             : <span key={i}>{part}</span>
         )}
       </span>
     );
   };
 
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const query = searchQuery.toLowerCase();
-    return nodes.filter(n => {
-      const matchesText = n.text?.toLowerCase().includes(query);
-      const matchesNotes = n.notes?.toLowerCase().includes(query) || false;
-      const matchesTags = n.tags?.some(t => t.toLowerCase().includes(query)) || false;
-      const matchesEqModel = n.equipmentModel?.toLowerCase().includes(query) || false;
-      const matchesEqBarcode = n.equipmentBarcode?.toLowerCase().includes(query) || false;
-      const matchesEqStock = n.equipmentStockCode?.toLowerCase().includes(query) || false;
-      const matchesEqNote = n.equipmentNote?.toLowerCase().includes(query) || false;
-      const matchesCustomProps = n.customProperties?.some(
-        cp => cp.name?.toLowerCase().includes(query) || cp.value?.toLowerCase().includes(query)
-      ) || false;
-      return matchesText || matchesNotes || matchesTags || matchesEqModel || matchesEqBarcode || matchesEqStock || matchesEqNote || matchesCustomProps;
-    });
-  }, [nodes, searchQuery]);
-
-  const handleNextMobileSearchMatch = () => {
-    if (searchResults.length <= 1) return;
-    const nextIdx = (mobileSearchIndex + 1) % searchResults.length;
-    setMobileSearchIndex(nextIdx);
-    const nextMatch = searchResults[nextIdx];
-    onSelectNode(nextMatch.id);
-    
-    setTimeout(() => {
-      const el = document.getElementById(`mobile-task-card-${nextMatch.id}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 80);
+  // Clean task title & get icon
+  const getTaskDisplayIcon = (task: TaskNode) => {
+    if (task.icon) return task.icon;
+    const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u;
+    const match = task.text.match(emojiRegex);
+    if (match) return match[0];
+    return '📄';
   };
 
-  // Auto focus and scroll to first found node on mobile search query change
-  useEffect(() => {
-    if (searchQuery.trim() && searchResults.length > 0) {
-      setMobileSearchIndex(0);
-      const firstMatch = searchResults[0];
-      onSelectNode(firstMatch.id);
-      
-      // Expand parent of selected node if collapsed, so it is visible in the tree
-      const parentId = firstMatch.parentId;
-      if (parentId && collapsedParents[parentId]) {
-        setCollapsedParents(prev => ({ ...prev, [parentId]: false }));
-      }
-
-      setTimeout(() => {
-        const el = document.getElementById(`mobile-task-card-${firstMatch.id}`);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 80);
-    } else {
-      setMobileSearchIndex(0);
-    }
-  }, [searchQuery]);
-  
-  // Quick task input states (TickTick experience)
-  const [newTaskText, setNewTaskText] = useState('');
-  const [newTaskPriority, setNewTaskPriority] = useState<Priority>('low');
-  const [newTaskDueDate, setNewTaskDueDate] = useState('');
-  const [newTaskTags, setNewTaskTags] = useState<string[]>([]);
-  const [showQuickOptions, setShowQuickOptions] = useState(false);
-  
-  // Inline edit state
-  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState('');
-
-  // Safe confirmation states for iframes (Mobile view)
-  const [confirmDeleteNodeId, setConfirmDeleteNodeId] = useState<string | null>(null);
-  const [confirmDeleteSubtaskId, setConfirmDeleteSubtaskId] = useState<string | null>(null);
-  const [confirmDeleteCatId, setConfirmDeleteCatId] = useState<string | null>(null);
-
-  // Local state for expanded / collapsed parent tree items (TickTick style folders)
-  const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
-  const [collapsedSubtaskLists, setCollapsedSubtaskLists] = useState<Record<string, boolean>>({});
-
-  // Local subtask creation input states mapping parentTaskId -> input text
-  const [newSubtaskTexts, setNewSubtaskTexts] = useState<Record<string, string>>({});
-
-  // --- Long Press / Click-and-Hold Detection for Multi-Selection ---
-  const longPressTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-  const pointerStartPosRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const didLongPressTriggerRef = React.useRef<boolean>(false);
-
-  const isInteractiveElement = (target: HTMLElement): boolean => {
-    let el: HTMLElement | null = target;
-    while (el && el !== document.body) {
-      const tagName = el.tagName.toLowerCase();
-      if (
-        tagName === 'button' || 
-        tagName === 'input' || 
-        tagName === 'textarea' || 
-        tagName === 'select' || 
-        tagName === 'a' ||
-        el.getAttribute('contenteditable') === 'true' ||
-        el.getAttribute('data-drag-ignore') === 'true' ||
-        el.classList.contains('cursor-grab')
-      ) {
-        return true;
-      }
-      el = el.parentElement;
-    }
-    return false;
+  const getTaskCleanText = (task: TaskNode) => {
+    const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation})\s*/u;
+    return task.text.replace(emojiRegex, '').trim() || task.text;
   };
 
-  const handleCardPointerDown = (e: React.PointerEvent, nodeId: string) => {
-    if (editingNodeId || e.button !== 0) return;
-    
-    if (isInteractiveElement(e.target as HTMLElement)) {
-      return;
-    }
+  // Available tag categories & tags
+  const allAvailableTags = useMemo(() => {
+    const fromProps = tagCategories.flatMap(c => c.tags || []);
+    const fromNodes = nodes.flatMap(n => n.tags || []);
+    return Array.from(new Set([...fromProps, ...fromNodes])).filter(Boolean);
+  }, [tagCategories, nodes]);
 
-    pointerStartPosRef.current = { x: e.clientX, y: e.clientY };
-    didLongPressTriggerRef.current = false;
-
-    if (longPressTimeoutRef.current) {
-      clearTimeout(longPressTimeoutRef.current);
-    }
-
-    longPressTimeoutRef.current = setTimeout(() => {
-      didLongPressTriggerRef.current = true;
-      if (setIsMultiSelectMode) {
-        setIsMultiSelectMode(true);
-      }
-      if (onToggleSelectNode) {
-        onToggleSelectNode(nodeId);
-      }
-      if (navigator.vibrate) {
-        navigator.vibrate(50);
-      }
-    }, 600);
-  };
-
-  const handleCardPointerMove = (e: React.PointerEvent) => {
-    if (longPressTimeoutRef.current) {
-      const dx = Math.abs(e.clientX - pointerStartPosRef.current.x);
-      const dy = Math.abs(e.clientY - pointerStartPosRef.current.y);
-      if (dx > 8 || dy > 8) {
-        clearTimeout(longPressTimeoutRef.current);
-        longPressTimeoutRef.current = null;
-      }
-    }
-  };
-
-  const handleCardPointerUp = (e: React.PointerEvent, nodeId: string) => {
-    if (longPressTimeoutRef.current) {
-      clearTimeout(longPressTimeoutRef.current);
-      longPressTimeoutRef.current = null;
-    }
-
-    if (didLongPressTriggerRef.current) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-
-    if (isInteractiveElement(e.target as HTMLElement)) {
-      return;
-    }
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (isMultiSelectMode) {
-      if (onToggleSelectNode) {
-        onToggleSelectNode(nodeId);
-      }
-    } else {
-      onSelectNode(nodeId === selectedNodeId ? null : nodeId);
-    }
-  };
-
-  const handleCardPointerCancel = () => {
-    if (longPressTimeoutRef.current) {
-      clearTimeout(longPressTimeoutRef.current);
-      longPressTimeoutRef.current = null;
-    }
-  };
-
-  // Drag and drop states
-  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
-  const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
-
-  // Checks if node A is a descendant of node B
-  const isDescendant = (targetId: string, ancestorId: string): boolean => {
-    let current = nodes.find(n => n.id === targetId);
-    while (current && current.parentId) {
-      if (current.parentId === ancestorId) return true;
-      current = nodes.find(n => n.id === current.parentId);
-    }
-    return false;
-  };
-
-  // Custom pointer drag handlers for fully-supported mobile touch drag & drop
-  const activePointerId = React.useRef<number | null>(null);
-  
-  const handlePointerDown = (e: React.PointerEvent, id: string) => {
-    if (e.button !== 0) return; // Only drag with left click / touch
-    
-    const target = e.currentTarget as HTMLElement;
-    try {
-      target.setPointerCapture(e.pointerId);
-    } catch (err) {}
-    activePointerId.current = e.pointerId;
-    setDraggedNodeId(id);
-    setDragOverNodeId(null);
-    
-    e.stopPropagation();
-  };
-
-  const handlePointerMove = (e: React.PointerEvent, id: string) => {
-    if (draggedNodeId !== id) return;
-    if (activePointerId.current !== e.pointerId) return;
-
-    // Utilize elementFromPoint to find custom drag Target under the point
-    const elementUnderPointer = document.elementFromPoint(e.clientX, e.clientY);
-    if (!elementUnderPointer) {
-      if (dragOverNodeId !== null) {
-        setDragOverNodeId(null);
-      }
-      return;
-    }
-
-    // Check if hovering over the de-nesting root zone
-    const rootDropzone = elementUnderPointer.closest('[id="mobile-task-root-dropzone"]');
-    if (rootDropzone) {
-      if (dragOverNodeId !== 'background_root_zone') {
-        setDragOverNodeId('background_root_zone');
-      }
-      return;
-    }
-
-    const cardElement = elementUnderPointer.closest('[id^="mobile-task-card-"]');
-    if (cardElement) {
-      const targetId = cardElement.getAttribute('id')?.replace('mobile-task-card-', '') || null;
-      
-      if (targetId && targetId !== id && !isDescendant(targetId, id)) {
-        if (dragOverNodeId !== targetId) {
-          setDragOverNodeId(targetId);
-        }
-      } else {
-        if (dragOverNodeId !== null) {
-          setDragOverNodeId(null);
-        }
-      }
-    } else {
-      if (dragOverNodeId !== null) {
-        setDragOverNodeId(null);
-      }
-    }
-  };
-
-  const handlePointerUp = (e: React.PointerEvent, id: string) => {
-    if (draggedNodeId !== id) return;
-    activePointerId.current = null;
-    
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch (err) {}
-
-    const targetId = dragOverNodeId;
-    
-    // Clear states
-    setDraggedNodeId(null);
-    setDragOverNodeId(null);
-
-    if (targetId === 'background_root_zone') {
-      const draggedNode = nodes.find(n => n.id === id);
-      if (draggedNode && draggedNode.parentId !== null) {
-        onUpdateNode({
-          ...draggedNode,
-          parentId: null,
-          isFloating: true,
-        });
-      }
-    } else if (targetId && targetId !== id && !isDescendant(targetId, id)) {
-      const draggedNode = nodes.find(n => n.id === id);
-      if (draggedNode && draggedNode.parentId !== targetId) {
-        onUpdateNode({
-          ...draggedNode,
-          parentId: targetId,
-          isFloating: false,
-        });
-      }
-    }
-  };
-
-  const handlePointerCancel = (e: React.PointerEvent, id: string) => {
-    if (draggedNodeId !== id) return;
-    activePointerId.current = null;
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch (err) {}
-    setDraggedNodeId(null);
-    setDragOverNodeId(null);
-  };
-
-  const handleDragStart = (e: React.DragEvent, id: string) => {
-    e.dataTransfer.setData('text/plain', id);
-    setDraggedNodeId(id);
-  };
-
-  const handleDragOverCard = (e: React.DragEvent, id: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (draggedNodeId === id || isDescendant(id, draggedNodeId || '')) {
-      return;
-    }
-    if (dragOverNodeId !== id) {
-      setDragOverNodeId(id);
-    }
-  };
-
-  const handleDragLeaveCard = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOverNodeId(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedNodeId(null);
-    setDragOverNodeId(null);
-  };
-
-  const handleDropOnCard = (e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOverNodeId(null);
-    
-    const dragId = e.dataTransfer.getData('text/plain') || draggedNodeId;
-    setDraggedNodeId(null);
-
-    if (!dragId || dragId === targetId || isDescendant(targetId, dragId)) {
-      return;
-    }
-
-    const draggedNode = nodes.find(n => n.id === dragId);
-    if (draggedNode && draggedNode.parentId !== targetId) {
-      onUpdateNode({
-        ...draggedNode,
-        parentId: targetId,
-        isFloating: false,
-      });
-    }
-  };
-
-  const handleDropOnBackground = (e: React.DragEvent) => {
-    e.preventDefault();
-    const dragId = e.dataTransfer.getData('text/plain') || draggedNodeId;
-    setDraggedNodeId(null);
-    setDragOverNodeId(null);
-
-    if (!dragId) return;
-
-    const draggedNode = nodes.find(n => n.id === dragId);
-    if (draggedNode && draggedNode.parentId !== null) {
-      onUpdateNode({
-        ...draggedNode,
-        parentId: null,
-        isFloating: true,
-      });
-    }
-  };
-
-  // Priority metadata for colors and icons
-  const priorities: { value: Priority; label: string; bg: string; border: string; text: string }[] = [
-    { value: 'none', label: 'Без приоритета', bg: 'bg-slate-50 dark:bg-slate-800', border: 'border-slate-200 dark:border-slate-700', text: 'text-slate-500 dark:text-slate-400' },
-    { value: 'low', label: 'Низкий', bg: 'bg-sky-50/10 dark:bg-sky-500/10', border: 'border-sky-200 dark:border-sky-800/40', text: 'text-sky-600 dark:text-sky-450' },
-    { value: 'medium', label: 'Средний', bg: 'bg-amber-50/10 dark:bg-amber-500/10', border: 'border-amber-200 dark:border-amber-800/40', text: 'text-amber-600 dark:text-amber-450' },
-    { value: 'high', label: 'Высокий', bg: 'bg-orange-50/10 dark:bg-orange-500/10', border: 'border-orange-200 dark:border-orange-850/40', text: 'text-orange-600 dark:text-orange-450' },
-    { value: 'urgent', label: 'Срочный', bg: 'bg-rose-50/10 dark:bg-rose-500/10', border: 'border-rose-200 dark:border-rose-800/40', text: 'text-rose-600 dark:text-rose-450' }
-  ];
-
-  // Map priorities array to easy helper
-  const priorityMap = useMemo(() => {
-    return priorities.reduce((acc, p) => {
-      acc[p.value] = p;
-      return acc;
-    }, {} as Record<Priority, typeof priorities[0]>);
-  }, []);
-
-  // Pre-calculate full children mappings for badges and nested checklists
-  const { nodeChildrenCountMap, nodeChildrenCompletedCountMap, childrenByParentId } = useMemo(() => {
-    const countMap: Record<string, number> = {};
-    const completedMap: Record<string, number> = {};
-    const byParentMap: Record<string, TaskNode[]> = {};
-
-    nodes.forEach(n => {
-      if (n.parentId) {
-        countMap[n.parentId] = (countMap[n.parentId] || 0) + 1;
-        if (n.completed) {
-          completedMap[n.parentId] = (completedMap[n.parentId] || 0) + 1;
-        }
-        if (!byParentMap[n.parentId]) {
-          byParentMap[n.parentId] = [];
-        }
-        byParentMap[n.parentId].push(n);
-      }
-    });
-
-    return {
-      nodeChildrenCountMap: countMap,
-      nodeChildrenCompletedCountMap: completedMap,
-      childrenByParentId: byParentMap
-    };
-  }, [nodes]);
-
-  // Quick Task Creation handler
-  const handleAddTaskSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskText.trim()) return;
-
-    onCreateTask(
-      newTaskText.trim(),
-      newTaskTags,
-      newTaskPriority,
-      newTaskDueDate || undefined,
-      null // Level 1 main task
-    );
-
-    // Reset fields
-    setNewTaskText('');
-    setNewTaskPriority('low');
-    setNewTaskDueDate('');
-    setNewTaskTags([]);
-    setShowQuickOptions(false);
-  };
-
-  // Quick Subtask Creation handler
-  const handleAddSubtaskSubmit = (parentId: string, text: string) => {
-    if (!text.trim()) return;
-    onCreateTask(
-      text.trim(),
-      [], // Empty tags initially
-      'none', // No priority initially
-      undefined, // No due date initially
-      parentId
-    );
-    // Erase input for this parent
-    setNewSubtaskTexts(prev => ({ ...prev, [parentId]: '' }));
-  };
-
-  // Toggle node completion status locally with TickTick checklist behavior
-  const handleToggleCompleted = (node: TaskNode) => {
-    onUpdateNode({
-      ...node,
-      completed: !node.completed,
-    });
-  };
-
-  const handleUpdatePriority = (node: TaskNode, priority: Priority) => {
-    onUpdateNode({
-      ...node,
-      priority,
-    });
-  };
-
-  const handleUpdateDueDate = (node: TaskNode, date: string) => {
-    onUpdateNode({
-      ...node,
-      dueDate: date || undefined,
-      dueTime: !date ? undefined : node.dueTime,
-    });
-  };
-
-  const handleStartInlineEdit = (node: TaskNode) => {
-    setEditingNodeId(node.id);
-    setEditingText(node.text);
-  };
-
-  const handleSaveInlineEdit = (node: TaskNode) => {
-    if (editingText.trim()) {
-      onUpdateNode({
-        ...node,
-        text: editingText.trim(),
-      });
-    }
-    setEditingNodeId(null);
-  };
-
-  const getTaskContainerId = (node: TaskNode): string | null => {
-    let curr: TaskNode | undefined = node;
-    const visited = new Set<string>();
-    while (curr && curr.parentId) {
-      if (visited.has(curr.parentId)) break; // cycle protection
-      visited.add(curr.parentId);
-      const parentNode = nodes.find(n => n.id === curr!.parentId);
-      if (parentNode && parentNode.isContainer) return parentNode.id;
-      curr = parentNode;
-    }
-    return null;
-  };
-
-  const allContainers = useMemo(() => {
-    return nodes.filter(n => n.isContainer && !n.archived);
-  }, [nodes]);
-
-  const todayStr = useMemo(() => {
-    const d = new Date();
-    return d.toISOString().split('T')[0];
-  }, []);
-
+  // Friendly date helper
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const tomorrowStr = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   }, []);
 
-  const getFriendlyDate = (dateStr: string, completed?: boolean) => {
+  const formatRowDate = (dateStr?: string) => {
     if (!dateStr) return null;
-    if (dateStr === todayStr) {
-      return {
-        text: 'Сегодня',
-        style: completed 
-          ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent' 
-          : 'bg-orange-500/10 text-orange-600 border-orange-500/20 dark:bg-orange-500/15 dark:text-orange-400 dark:border-orange-500/30'
-      };
-    } else if (dateStr === tomorrowStr) {
-      return {
-        text: 'Завтра',
-        style: completed
-          ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent'
-          : 'bg-sky-500/10 text-sky-600 border-sky-500/20 dark:bg-sky-500/15 dark:text-sky-400 dark:border-sky-500/30'
-      };
-    } else if (dateStr < todayStr) {
-      return {
-        text: 'Просрочено',
-        style: completed
-          ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent'
-          : 'bg-rose-500/10 text-rose-600 border-rose-500/20 dark:bg-rose-500/15 dark:text-rose-400 dark:border-rose-500/30 font-bold animate-pulse'
-      };
-    } else {
-      try {
-        const parts = dateStr.split('-');
-        if (parts.length === 3) {
-          const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-          const day = parseInt(parts[2], 10);
-          const monthIdx = parseInt(parts[1], 10) - 1;
-          if (monthIdx >= 0 && monthIdx < 12) {
-            return {
-              text: `${day} ${months[monthIdx]}`,
-              style: completed
-                ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent'
-                : 'bg-slate-100 text-slate-500 border-slate-200/60 dark:bg-slate-800/50 dark:text-slate-400 dark:border-slate-700/80'
-            };
-          }
-        }
-      } catch (e) {}
-      return {
-        text: dateStr,
-        style: completed
-          ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent'
-          : 'bg-slate-100 text-slate-500 border-slate-200/60 dark:bg-slate-800/50 dark:text-slate-400 dark:border-slate-700/80'
-      };
-    }
+    if (dateStr === todayStr) return { text: 'Сегодня', shortText: 'Сег.', isOverdue: false, isToday: true };
+    if (dateStr === tomorrowStr) return { text: 'Завтра', shortText: 'Завтра', isOverdue: false, isToday: false };
+    if (dateStr < todayStr) return { text: 'Просрочено', shortText: 'Проср.', isOverdue: true, isToday: false };
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+        const day = parseInt(parts[2], 10);
+        const mIdx = parseInt(parts[1], 10) - 1;
+        return { text: `${day} ${months[mIdx]}`, shortText: `${day} ${months[mIdx]}`, isOverdue: false, isToday: false };
+      }
+    } catch {}
+    return { text: dateStr, shortText: dateStr, isOverdue: false, isToday: false };
   };
 
-  // Filter existing active user nodes
+  // Filter tasks based on view tab & criteria
   const filteredNodes = useMemo(() => {
     return nodes.filter(n => {
-      // Exclude container nodes since we focus on tasks here!
-      if (n.isContainer) return false;
-      if (n.isWorkflowRectangle) return false;
+      if (n.isContainer || n.isWorkflowRectangle || n.isNotTask) return false;
 
-      // Tab logic
+      // Tab filter
       if (activeTab === 'active' && n.completed) return false;
       if (activeTab === 'completed' && !n.completed) return false;
       if (activeTab === 'today') {
@@ -728,598 +446,759 @@ export default function MobileListView({
         if (!n.dueDate || n.dueDate >= todayStr) return false;
       }
 
-      // Priority criteria
-      if (priorityFilter !== 'all' && n.priority !== priorityFilter) return false;
-
-      // Tags criteria
-      if (tagFilter !== 'all' && !n.tags?.includes(tagFilter)) return false;
-
-      // Container criteria
-      if (containerFilter !== 'all') {
-        const tContainerId = getTaskContainerId(n);
-        if (containerFilter === 'no-container') {
-          if (tContainerId !== null) return false;
-        } else {
-          if (tContainerId !== containerFilter) return false;
-        }
+      // Priority filter
+      if (priorityFilter !== 'all') {
+        if (priorityFilter === 'urgent' && n.priority !== 'urgent') return false;
+        if (priorityFilter === 'high' && n.priority !== 'high' && n.priority !== 'urgent') return false;
+        if (priorityFilter === 'medium' && n.priority !== 'medium') return false;
+        if (priorityFilter === 'low' && n.priority !== 'low') return false;
+        if (priorityFilter === 'none' && n.priority !== 'none' && n.priority) return false;
       }
 
-      // Text search criteria
+      // Tag filter
+      if (tagFilter !== 'all') {
+        if (!n.tags || !n.tags.includes(tagFilter)) return false;
+      }
+
+      // Search query
       if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesText = n.text?.toLowerCase().includes(query);
-        const matchesNotes = n.notes?.toLowerCase().includes(query);
-        const matchesTags = n.tags?.some(t => t.toLowerCase().includes(query));
-        const matchesEqModel = n.equipmentModel?.toLowerCase().includes(query);
-        const matchesEqBarcode = n.equipmentBarcode?.toLowerCase().includes(query);
-        const matchesEqStock = n.equipmentStockCode?.toLowerCase().includes(query);
-        const matchesEqNote = n.equipmentNote?.toLowerCase().includes(query);
-        const matchesCustomProps = n.customProperties?.some(
-          cp => cp.name?.toLowerCase().includes(query) || cp.value?.toLowerCase().includes(query)
-        );
-        if (!matchesText && !matchesNotes && !matchesTags && !matchesEqModel && !matchesEqBarcode && !matchesEqStock && !matchesEqNote && !matchesCustomProps) return false;
+        const q = searchQuery.toLowerCase();
+        const matchTitle = (n.text || '').toLowerCase().includes(q);
+        const matchNotes = (n.notes || '').toLowerCase().includes(q);
+        const matchTags = (n.tags || []).some(t => t.toLowerCase().includes(q));
+        if (!matchTitle && !matchNotes && !matchTags) return false;
       }
 
       return true;
     });
-  }, [nodes, activeTab, priorityFilter, tagFilter, containerFilter, searchQuery, todayStr]);
+  }, [nodes, activeTab, priorityFilter, tagFilter, searchQuery, todayStr]);
 
-  // Grouping options as a clean, nested structure!
+  // Sort tasks
+  const sortedNodes = useMemo(() => {
+    const list = [...filteredNodes];
+    if (sortBy === 'title') {
+      list.sort((a, b) => {
+        const tA = getTaskCleanText(a).toLowerCase();
+        const tB = getTaskCleanText(b).toLowerCase();
+        return sortOrder === 'asc' ? tA.localeCompare(tB) : tB.localeCompare(tA);
+      });
+    } else if (sortBy === 'priority') {
+      const pOrder: Record<Priority, number> = { urgent: 4, high: 3, medium: 2, low: 1, none: 0 };
+      list.sort((a, b) => {
+        const diff = (pOrder[b.priority || 'none'] || 0) - (pOrder[a.priority || 'none'] || 0);
+        return sortOrder === 'asc' ? diff : -diff;
+      });
+    } else if (sortBy === 'date') {
+      list.sort((a, b) => {
+        const dA = a.dueDate || '9999-99-99';
+        const dB = b.dueDate || '9999-99-99';
+        return sortOrder === 'asc' ? dA.localeCompare(dB) : dB.localeCompare(dA);
+      });
+    } else if (sortBy === 'completed') {
+      list.sort((a, b) => {
+        const cA = a.completed ? 1 : 0;
+        const cB = b.completed ? 1 : 0;
+        return sortOrder === 'asc' ? cA - cB : cB - cA;
+      });
+    }
+    return list;
+  }, [filteredNodes, sortBy, sortOrder]);
+
+  // Build hierarchical task tree
   const taskTreeRoots = useMemo(() => {
-    // 1. Map of IDs -> tree items
-    const itemMap = new Map<string, TaskTreeItem>();
-
-    // Prepare sort properties for tasks (TickTick priorities and due dates)
-    const priorityWeight = { urgent: 4, high: 3, medium: 2, low: 1, none: 0 };
-    const sortedNodes = [...filteredNodes].sort((a, b) => {
-      if (a.completed !== b.completed) {
-        return a.completed ? 1 : -1;
-      }
-      const weightA = priorityWeight[a.priority] || 0;
-      const weightB = priorityWeight[b.priority] || 0;
-      if (weightA !== weightB) {
-        return weightB - weightA; // Higher weight first
-      }
-      if (a.dueDate && b.dueDate) {
-        return a.dueDate.localeCompare(b.dueDate);
-      }
-      if (a.dueDate) return -1;
-      if (b.dueDate) return 1;
-      return a.text.localeCompare(b.text);
-    });
-
+    const nodeMap = new Map<string, TaskTreeItem>();
     sortedNodes.forEach(node => {
-      itemMap.set(node.id, { node, children: [] });
+      nodeMap.set(node.id, { node, children: [] });
     });
 
     const roots: TaskTreeItem[] = [];
-
-    // 2. Nest children correctly if parent is also visible, otherwise treat as Root
     sortedNodes.forEach(node => {
-      const currentItem = itemMap.get(node.id)!;
-      if (node.parentId && itemMap.has(node.parentId)) {
-        const parentItem = itemMap.get(node.parentId)!;
-        parentItem.children.push(currentItem);
+      const item = nodeMap.get(node.id)!;
+      if (node.parentId && nodeMap.has(node.parentId)) {
+        nodeMap.get(node.parentId)!.children.push(item);
       } else {
-        roots.push(currentItem);
+        roots.push(item);
       }
     });
 
     return roots;
-  }, [filteredNodes]);
+  }, [sortedNodes]);
 
-  // Aggregate stats (Tasks, not container nodes)
-  const totalCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle).length;
-  const completedCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && n.completed).length;
+  // Statistics
+  const totalCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.isNotTask).length;
+  const completedCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.isNotTask && n.completed).length;
   const activeCount = totalCount - completedCount;
-  const todayCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.completed && n.dueDate === todayStr).length;
-  const overdueCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.completed && n.dueDate && n.dueDate < todayStr).length;
+  const overdueCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.isNotTask && !n.completed && n.dueDate && n.dueDate < todayStr).length;
 
-  // Toggle tag selection for quick input
-  const handleToggleTagInNewTask = (tag: string) => {
-    setNewTaskTags(prev => 
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+  // Handlers for task mutations
+  const handleToggleComplete = (task: TaskNode, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    onUpdateNode({
+      ...task,
+      completed: !task.completed
+    });
+  };
+
+  const handleUpdateIcon = (taskId: string, newIcon: string) => {
+    const task = nodes.find(n => n.id === taskId);
+    if (!task) return;
+    onUpdateNode({
+      ...task,
+      icon: newIcon
+    });
+    setActiveEmojiPickerTaskId(null);
+  };
+
+  const handleUpdatePriority = (taskId: string, newPriority: Priority) => {
+    const task = nodes.find(n => n.id === taskId);
+    if (!task) return;
+    onUpdateNode({
+      ...task,
+      priority: newPriority
+    });
+    setActivePriorityPickerTaskId(null);
+  };
+
+  const handleToggleTag = (taskId: string, tagName: string) => {
+    const task = nodes.find(n => n.id === taskId);
+    if (!task) return;
+    const currentTags = task.tags || [];
+    const hasTag = currentTags.includes(tagName);
+    const updatedTags = hasTag ? currentTags.filter(t => t !== tagName) : [...currentTags, tagName];
+    onUpdateNode({
+      ...task,
+      tags: updatedTags
+    });
+  };
+
+  const handleUpdateAssignee = (taskId: string, avatarId: string) => {
+    const task = nodes.find(n => n.id === taskId);
+    if (!task) return;
+    onUpdateNode({
+      ...task,
+      assigneeAvatar: avatarId
+    });
+    setActiveAssigneePickerTaskId(null);
+  };
+
+  const handleSaveInlineTitle = (task: TaskNode) => {
+    if (editingTitleText.trim()) {
+      onUpdateNode({
+        ...task,
+        text: editingTitleText.trim()
+      });
+    }
+    setEditingNodeId(null);
+  };
+
+  const handleCreateInlineTask = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!inlineNewTitle.trim()) {
+      setIsInlineAdding(false);
+      return;
+    }
+    const fullText = inlineNewEmoji ? `${inlineNewEmoji} ${inlineNewTitle.trim()}` : inlineNewTitle.trim();
+    onCreateTask(fullText, [], 'none', undefined, null);
+    setInlineNewTitle('');
+    // Keep adding mode active for rapid creation, like Notion
+    setTimeout(() => {
+      if (inlineInputRef.current) inlineInputRef.current.focus();
+    }, 50);
+  };
+
+  const handleCreateTemplateTask = (template: { title: string; tag: string; priority: Priority; emoji: string }) => {
+    onCreateTask(`${template.emoji} ${template.title}`, [template.tag], template.priority, undefined, null);
+    setShowNewTemplateMenu(false);
+  };
+
+  const handleDuplicateTask = (task: TaskNode) => {
+    onCreateTask(
+      `Копия: ${task.text}`,
+      [...(task.tags || [])],
+      task.priority || 'none',
+      task.dueDate,
+      task.parentId
     );
+    setActiveTaskMenuId(null);
   };
 
-  const toggleParentCollapse = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setCollapsedParents(prev => ({ ...prev, [id]: !prev[id] }));
+  // Drag & Drop handlers
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData('text/plain', id);
+    setDraggedNodeId(id);
   };
 
-  // Recursive element renderer for nestable tasks
-  const renderTreeItem = (item: TaskTreeItem, depth: number = 0): React.ReactNode => {
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    if (draggedNodeId === id) return;
+    setDragOverNodeId(id);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    if (relY < rect.height * 0.3) {
+      setDragOverPosition('above');
+    } else if (relY > rect.height * 0.7) {
+      setDragOverPosition('below');
+    } else {
+      setDragOverPosition('inside');
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain') || draggedNodeId;
+    setDraggedNodeId(null);
+    setDragOverNodeId(null);
+    setDragOverPosition(null);
+
+    if (!sourceId || sourceId === targetId) return;
+
+    const sourceTask = nodes.find(n => n.id === sourceId);
+    const targetTask = nodes.find(n => n.id === targetId);
+    if (!sourceTask || !targetTask) return;
+
+    if (dragOverPosition === 'inside') {
+      // Make source a subtask of target
+      onUpdateNode({
+        ...sourceTask,
+        parentId: targetId
+      });
+      setCollapsedParentIds(prev => ({ ...prev, [targetId]: false }));
+    } else {
+      // Move to same parent level as target
+      onUpdateNode({
+        ...sourceTask,
+        parentId: targetTask.parentId || null
+      });
+    }
+  };
+
+  // Render recursive Notion row item
+  const renderNotionRow = (item: TaskTreeItem, depth = 0) => {
     const { node, children } = item;
-    const pMeta = priorityMap[node.priority] || priorityMap.none;
     const isSelected = selectedNodeId === node.id;
+    const isChecked = isMultiSelectMode && selectedNodeIds.includes(node.id);
     const isEditing = editingNodeId === node.id;
-    const isCollapsed = !!collapsedParents[node.id];
-    const allDirectChildren = childrenByParentId[node.id] || [];
-    const isSelectedInMulti = selectedNodeIds && selectedNodeIds.includes(node.id);
+    const isCollapsed = !!collapsedParentIds[node.id];
+    const hasChildren = children.length > 0;
 
-    // Subtask styling offset and container card margin
-    const mlClass = depth > 0 ? 'ml-3 mt-1' : 'mt-1.5';
+    const displayIcon = getTaskDisplayIcon(node);
+    const cleanTitle = getTaskCleanText(node);
+    const priorityBadge = getNotionPriorityBadge(node.priority);
+    const avatar = getTaskNotionAvatar(node);
+    const dateInfo = formatRowDate(node.dueDate);
+    const primaryTag = node.tags && node.tags.length > 0 ? node.tags[0] : null;
+    const tagStyle = primaryTag ? getNotionTagStyle(primaryTag) : null;
 
-    const priorityBorderClass = 
-      node.priority === 'urgent' ? 'border-l-[3.5px] border-l-rose-500' :
-      node.priority === 'high' ? 'border-l-[3.5px] border-l-orange-500' :
-      node.priority === 'medium' ? 'border-l-[3.5px] border-l-amber-500' :
-      node.priority === 'low' ? 'border-l-[3.5px] border-l-sky-400 font-medium' :
-      'border-l-[3.5px] border-l-transparent';
-
-    const cardBgBorderClass = draggedNodeId === node.id
-      ? 'pointer-events-none opacity-20 bg-slate-100/50 dark:bg-slate-800/50 border-dashed border-slate-300'
-      : dragOverNodeId === node.id
-        ? 'border-dashed border-indigo-500 bg-indigo-500/5 dark:bg-indigo-950/20 shadow-xs'
-        : isMultiSelectMode
-          ? isSelectedInMulti
-            ? 'border-indigo-400 dark:border-indigo-500/65 bg-indigo-500/5 dark:bg-indigo-950/15 shadow-[0_1px_6px_rgba(99,102,241,0.08)]'
-            : 'bg-white dark:bg-slate-900/40 border-slate-200/60 dark:border-slate-800/60 opacity-90'
-          : isSelected 
-            ? 'bg-indigo-50/10 dark:bg-indigo-950/10 border-indigo-200 dark:border-indigo-900/50 shadow-xs' 
-            : node.archived
-              ? 'bg-amber-500/5 border-dashed border-amber-400/40 dark:bg-amber-500/2 opacity-60'
-              : 'bg-white dark:bg-slate-900 border-slate-150/80 dark:border-slate-850/80 hover:shadow-[0_2px_8px_rgba(0,0,0,0.02)]';
+    const isDragTarget = dragOverNodeId === node.id;
 
     return (
-      <div key={node.id} className={`${mlClass} flex flex-col`}>
+      <div 
+        key={node.id} 
+        id={`notion-task-row-${node.id}`}
+        className="flex flex-col select-none relative"
+      >
+        {/* Drop indicator above */}
+        {isDragTarget && dragOverPosition === 'above' && (
+          <div className="h-0.5 bg-[#2383e2] w-full rounded-full my-0.5 animate-pulse" />
+        )}
+
         <div
-          id={`mobile-task-card-${node.id}`}
-          data-task-id={node.id}
-          draggable={!isEditing}
+          draggable
           onDragStart={(e) => handleDragStart(e, node.id)}
-          onDragOver={(e) => handleDragOverCard(e, node.id)}
-          onDragLeave={handleDragLeaveCard}
-          onDragEnd={handleDragEnd}
-          onDrop={(e) => handleDropOnCard(e, node.id)}
-          onPointerDown={(e) => handleCardPointerDown(e, node.id)}
-          onPointerMove={handleCardPointerMove}
-          onPointerUp={(e) => handleCardPointerUp(e, node.id)}
-          onPointerCancel={handleCardPointerCancel}
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            if (onFocusedTaskIdChange) {
-              onFocusedTaskIdChange(node.id);
+          onDragOver={(e) => handleDragOver(e, node.id)}
+          onDrop={(e) => handleDrop(e, node.id)}
+          onClick={(e) => {
+            if (isMultiSelectMode && onToggleSelectNode) {
+              onToggleSelectNode(node.id);
+            } else {
+              onSelectNode(node.id, e);
             }
-            onSelectNode(null);
           }}
-          className={`border rounded-xl p-2.5 px-3.5 transition-[background-color,border-color,opacity,box-shadow] duration-150 flex flex-col gap-1.5 relative select-none cursor-pointer ${cardBgBorderClass} ${priorityBorderClass} ${node.completed ? 'opacity-70' : ''}`}
+          className={`group flex items-center justify-between py-1.5 px-1.5 sm:px-2 rounded-md transition-all duration-150 cursor-pointer border border-transparent ${
+            isSelected
+              ? 'bg-[#EBF5FB] dark:bg-[#1E3A5F]/40 border-[#D4E6F1] dark:border-[#2B4C7E]'
+              : isChecked
+                ? 'bg-[#F0F7FF] dark:bg-[#1C2D42]'
+                : 'hover:bg-[#F7F7F5] dark:hover:bg-[#202020]'
+          } ${isDragTarget && dragOverPosition === 'inside' ? 'ring-2 ring-[#2383e2] bg-[#E8F3FF] dark:bg-[#1E3A5F]' : ''}`}
+          style={{ paddingLeft: `${Math.max(4, Math.min(depth * 14 + 4, 36))}px` }}
         >
-          {/* Connector guide line for nested subtasks */}
-          {depth > 0 && (
-            <div className="absolute left-[-16px] top-0 bottom-4 w-4 border-l-2 border-b-2 border-slate-200/60 dark:border-slate-800/60 rounded-bl-lg pointer-events-none" />
-          )}
-
-          {/* Visual Overlay Drop-zone Cue */}
-          {dragOverNodeId === node.id && (
-            <div className="absolute inset-0 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-xl flex items-center justify-center border-2 border-indigo-500 border-dashed pointer-events-none z-10 animate-pulse">
-              <span className="text-[10px] font-bold text-indigo-700 bg-white dark:text-indigo-300 dark:bg-slate-900 px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1 border border-indigo-150">
-                📥 Сделать подзадачей
-              </span>
+          {/* Left: Drag Handle, Chevron, Checkbox, Emoji Icon, Title */}
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 pr-1.5 sm:pr-2">
+            
+            {/* Drag 6-dots handle (appears on hover on desktop) */}
+            <div 
+              className="hidden sm:block opacity-0 group-hover:opacity-100 text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#D4D4D4] cursor-grab active:cursor-grabbing p-0.5 -ml-1 transition-opacity shrink-0"
+              title="Перетащить для изменения порядка или вложения"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <GripVertical className="w-3.5 h-3.5" />
             </div>
-          )}
 
-          {/* Flex Container linking Drag handle with card content */}
-          <div className="flex items-start gap-1 w-full relative">
-            {/* Multi-select checkbox or Grip handle */}
-            {!isEditing && (
-              isMultiSelectMode ? (
-                <div 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (onToggleSelectNode) {
-                      onToggleSelectNode(node.id);
-                    }
-                  }}
-                  className="p-1 shrink-0 mt-0.5 cursor-pointer select-none"
-                  data-drag-ignore="true"
-                >
-                  <div className={`w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                    isSelectedInMulti
-                      ? 'bg-indigo-600 border-indigo-600 dark:bg-indigo-500 dark:border-indigo-500 text-white'
-                      : 'border-slate-300 dark:border-slate-700 hover:border-indigo-500 bg-white dark:bg-slate-900'
-                  }`}>
-                    {isSelectedInMulti && <Check className="w-2.5 h-2.5 stroke-[3] text-white" />}
-                  </div>
-                </div>
-              ) : (
-                <div
-                  onPointerDown={(e) => handlePointerDown(e, node.id)}
-                  onPointerMove={(e) => handlePointerMove(e, node.id)}
-                  onPointerUp={(e) => handlePointerUp(e, node.id)}
-                  onPointerCancel={(e) => handleCardPointerCancel()}
-                  className="p-1 text-slate-350 dark:text-slate-600 hover:text-indigo-500 dark:hover:text-indigo-450 cursor-grab active:cursor-grabbing transition-colors shrink-0 mt-0.5 select-none touch-none"
-                  style={{ touchAction: 'none' }}
-                  title="Удерживайте для перемещения"
-                >
-                  <GripVertical className="w-3.5 h-3.5" />
-                </div>
-              )
+            {/* Hierarchical Chevron toggle for child items */}
+            {hasChildren ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCollapsedParentIds(prev => ({ ...prev, [node.id]: !prev[node.id] }));
+                }}
+                className="p-0.5 text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#D4D4D4] rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2F2F2F] transition-colors shrink-0"
+              >
+                <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-150 ${!isCollapsed ? 'rotate-90' : ''}`} />
+              </button>
+            ) : depth > 0 ? (
+              <span className="w-2.5 sm:w-3.5 shrink-0" />
+            ) : null}
+
+            {/* Multi-select checkbox if mode is enabled or on row hover */}
+            {isMultiSelectMode && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onToggleSelectNode) onToggleSelectNode(node.id);
+                }}
+                className="text-[#9B9A97] hover:text-[#2383e2] shrink-0 p-0.5 cursor-pointer"
+              >
+                {isChecked ? (
+                  <CheckSquare className="w-4 h-4 text-[#2383e2] fill-[#2383e2]/10" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+              </button>
             )}
 
-            {/* Pointer Events Wrapper to prevent drag-flicker on inner children */}
-            <div className={`flex-1 flex flex-col gap-1.5 min-w-0 ${draggedNodeId !== null ? 'pointer-events-none' : ''}`}>
+            {/* Notion Task Completion Checkbox */}
+            {visibleProps.checkbox && !isMultiSelectMode && (
+              <button
+                type="button"
+                onClick={(e) => handleToggleComplete(node, e)}
+                className={`p-0.5 rounded transition-all shrink-0 cursor-pointer ${
+                  node.completed
+                    ? 'text-[#2383e2]'
+                    : 'text-[#C4C3C0] hover:text-[#37352F] dark:hover:text-[#D4D4D4]'
+                }`}
+                title={node.completed ? "Отметить невыполненной" : "Отметить выполненной"}
+              >
+                {node.completed ? (
+                  <CheckCircle2 className="w-4 h-4 fill-[#2383e2]/15 text-[#2383e2]" />
+                ) : (
+                  <Circle className="w-4 h-4 stroke-[1.75]" />
+                )}
+              </button>
+            )}
 
-              <div className="flex items-center gap-2 justify-between">
-                {/* Tick Checkbox & title container */}
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  {/* Expand/Collapse Toggle if there are sub-elements in the list */}
-                  {children.length > 0 && (
+            {/* Notion Emoji / Document Page Icon (Clickable popover) */}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveEmojiPickerTaskId(activeEmojiPickerTaskId === node.id ? null : node.id);
+                }}
+                className="w-5 h-5 flex items-center justify-center text-sm rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2F2F2F] transition-colors cursor-pointer"
+                title="Изменить иконку страницы"
+              >
+                {displayIcon}
+              </button>
+
+              {/* Instant Emoji Picker Popover */}
+              {activeEmojiPickerTaskId === node.id && (
+                <div 
+                  className="fixed z-[160] bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-2.5 w-64 animate-in fade-in zoom-in-95 duration-150 select-text"
+                  style={{ top: 'auto', left: 'auto' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#E9E9E7] dark:border-[#373737]">
+                    <span className="text-[11px] font-semibold text-[#787774] dark:text-[#9B9A97]">Иконка страницы</span>
                     <button
-                      type="button"
-                      onClick={(e) => toggleParentCollapse(node.id, e)}
-                      className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
-                      title={isCollapsed ? "Развернуть подзадачи" : "Свернуть подзадачи"}
+                      onClick={() => setActiveEmojiPickerTaskId(null)}
+                      className="p-0.5 text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#D4D4D4] rounded"
                     >
-                      <ChevronDown className={`w-3 h-3 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+                      <X className="w-3.5 h-3.5" />
                     </button>
-                  )}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1 max-h-44 overflow-y-auto">
+                    {NOTION_SAMPLE_EMOJIS.map(emoji => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => handleUpdateIcon(node.id, emoji)}
+                        className="w-7 h-7 flex items-center justify-center text-base rounded hover:bg-[#F0EEEB] dark:hover:bg-[#2F2F2F] transition-all hover:scale-115 cursor-pointer"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
-                  {/* Checkbox button */}
+            {/* Notion Task Title with inline edit and hover underline */}
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={editingTitleText}
+                  autoFocus
+                  onChange={(e) => setEditingTitleText(e.target.value)}
+                  onBlur={() => handleSaveInlineTitle(node)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveInlineTitle(node);
+                    if (e.key === 'Escape') setEditingNodeId(null);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full bg-white dark:bg-[#191919] border border-[#2383e2] rounded px-1.5 py-0.5 text-[13.5px] sm:text-[14px] text-[#37352F] dark:text-[#EBEBEB] focus:outline-none"
+                />
+              ) : (
+                <span 
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setEditingNodeId(node.id);
+                    setEditingTitleText(cleanTitle);
+                  }}
+                  className={`text-[13.5px] sm:text-[14px] leading-snug font-normal md:font-medium text-[#37352F] dark:text-[#EBEBEB] group-hover:underline underline-offset-2 truncate transition-colors flex-1 min-w-[60px] sm:min-w-0 ${
+                    node.completed ? 'line-through opacity-50 text-[#787774] dark:text-[#8F8F8F]' : ''
+                  }`}
+                  title={cleanTitle}
+                >
+                  {highlightText(cleanTitle, searchQuery)}
+                </span>
+              )}
+
+              {/* Subtasks Count Badge if any */}
+              {visibleProps.subtasks && hasChildren && (
+                <span className="text-[10px] text-[#787774] dark:text-[#8F8F8F] bg-[#F1F1EF] dark:bg-[#2B2B2B] px-1.5 py-0.2 rounded-full font-mono shrink-0">
+                  {children.filter(c => c.node.completed).length}/{children.length}
+                </span>
+              )}
+
+              {/* Comments Badge if any */}
+              {visibleProps.comments && node.comments && node.comments.length > 0 && (
+                <span className="hidden xs:inline-flex items-center gap-0.5 text-[10px] text-[#787774] dark:text-[#8F8F8F] bg-[#F1F1EF] dark:bg-[#2B2B2B] px-1.5 py-0.2 rounded font-sans shrink-0">
+                  <MessageSquare className="w-2.5 h-2.5" />
+                  {node.comments.length}
+                </span>
+              )}
+
+              {/* Files Attached Badge if any */}
+              {node.files && node.files.length > 0 && (
+                <span className="hidden xs:inline-flex items-center gap-0.5 text-[10px] text-[#787774] dark:text-[#8F8F8F] shrink-0" title={`${node.files.length} вложенных файлов`}>
+                  <Paperclip className="w-2.5 h-2.5" />
+                </span>
+              )}
+
+              {/* Active Pomodoro Timer if running */}
+              {activePomodoroNodeId === node.id && (
+                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded-full border border-rose-200 dark:border-rose-900 animate-pulse shrink-0">
+                  <Timer className="w-2.5 h-2.5" />
+                  <span className="hidden sm:inline">Фокус</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Right Properties: Tag Pill, Priority Pill, Assignee Avatar, Date, Hover Actions (Matching SS_List.png) */}
+          <div className="flex items-center gap-1 sm:gap-2.5 shrink-0 ml-1">
+            
+            {/* 1. Tag / Category Pill in authentic Notion pastel colors (Hidden on mobile to prioritize title) */}
+            {visibleProps.tag && (
+              <div className="hidden sm:block relative shrink-0">
+                {primaryTag ? (
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleToggleCompleted(node);
+                      setActiveTagPickerTaskId(activeTagPickerTaskId === node.id ? null : node.id);
                     }}
-                    className={`w-4.5 h-4.5 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-all ${
-                      node.completed
-                        ? 'bg-indigo-600 border-indigo-600 dark:bg-indigo-500 dark:border-indigo-500 text-white shadow-xs'
-                        : activePomodoroNodeId === node.id
-                          ? 'border-rose-500 border-2 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse bg-rose-500/5'
-                          : node.priority === 'urgent'
-                            ? 'border-rose-500 border-2 bg-rose-500/5 hover:bg-rose-500/10'
-                            : node.priority === 'high'
-                              ? 'border-orange-500 border-2 bg-orange-500/5 hover:bg-orange-500/10'
-                              : node.priority === 'medium'
-                                ? 'border-amber-500 border-2 bg-amber-500/5 hover:bg-amber-500/10'
-                                : node.priority === 'low'
-                                  ? 'border-sky-400 border-2 bg-sky-400/5 hover:bg-sky-400/10'
-                                  : 'border-slate-300 dark:border-slate-600 border-[1.5px] hover:border-indigo-500 dark:hover:border-indigo-400 bg-transparent'
-                    }`}
-                    title={node.completed ? 'Восстановить' : 'Завершить'}
+                    className={`text-[12px] font-medium px-2 py-0.5 rounded transition-transform hover:scale-105 cursor-pointer whitespace-nowrap ${tagStyle?.bg} ${tagStyle?.text} ${tagStyle?.darkBg} ${tagStyle?.darkText}`}
                   >
-                    {node.completed ? (
-                      <Check className="w-2.5 h-2.5 stroke-[3]" />
-                    ) : activePomodoroNodeId === node.id ? (
-                      <Loader2 className="w-2.5 h-2.5 text-rose-500 animate-spin" />
-                    ) : null}
+                    {primaryTag}
                   </button>
-
-                  {/* Core Text Label */}
-                  <div className="min-w-0 flex-1">
-                    {isEditing ? (
-                      <div className="flex gap-1 items-center">
-                        <input
-                          type="text"
-                          value={editingText}
-                          onChange={(e) => setEditingText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveInlineEdit(node);
-                            if (e.key === 'Escape') setEditingNodeId(null);
-                          }}
-                          className="w-full bg-slate-100 dark:bg-slate-800 border border-indigo-500 rounded px-1.5 py-0.5 text-[11px] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-indigo-500"
-                          autoFocus
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleSaveInlineEdit(node)}
-                          className="px-1.5 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] rounded"
-                        >
-                          ОК
-                        </button>
-                      </div>
-                    ) : (
-                      <div 
-                        className="text-[12.5px] font-semibold text-slate-800 dark:text-slate-200 cursor-pointer pr-1.5 break-words flex items-center flex-wrap gap-1.5"
-                      >
-                        <span className={node.completed ? 'line-through text-slate-400 dark:text-slate-500 font-normal font-sans' : 'font-sans'}>
-                          {highlightText(node.text, searchQuery)}
-                        </span>
-
-                        {node.archived && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUpdateNode({
-                                ...node,
-                                archived: false
-                              });
-                            }}
-                            className="shrink-0 inline-flex items-center gap-1 text-[8.5px] font-black uppercase text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 px-1.5 py-0.5 rounded border border-amber-500/20 hover:border-amber-500/40 select-none cursor-pointer hover:scale-105 transition-all"
-                            title="Нажмите, чтобы вернуть задачу из архива"
-                          >
-                            📦 Архив (Вернуть)
-                          </button>
-                        )}
-
-                        {(() => {
-                          const nodeLinks = getTaskExternalLinks(node);
-                          if (nodeLinks.length === 0) return null;
-                          return nodeLinks.map((linkUrl, lIdx) => (
-                            <a
-                              key={lIdx}
-                              href={linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center justify-center p-1 hover:bg-slate-150 dark:hover:bg-slate-800 text-indigo-500 dark:text-indigo-400 rounded transition-colors shrink-0"
-                              title={`Открыть внешнюю ссылку (${lIdx + 1}/${nodeLinks.length}): ${linkUrl}`}
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
-                          ));
-                        })()}
-
-                        {activePomodoroNodeId === node.id && (
-                          <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1 py-0.5 rounded-md text-[10px] font-sans font-extrabold animate-pulse ml-0.5 shrink-0 border border-rose-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Запущена фокусировка Pomodoro">
-                            <span className="relative flex h-1.5 w-1.5">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
-                            </span>
-                            <span>🍅</span>
-                          </span>
-                        )}
-
-                        {/* Highly compressed inline metadata on main line to avoid extra height lines */}
-                        <div className="inline-flex items-center gap-1.5 text-[9.5px] font-mono select-none">
-                          {(() => {
-                            const parentNode = node.parentId ? nodes.find(n => n.id === node.parentId) : null;
-                            if (parentNode && !parentNode.isContainer) {
-                              return (
-                                <span 
-                                  className="inline-flex items-center gap-1 px-1.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-[8.5px] font-bold rounded-sm uppercase cursor-pointer"
-                                  title={`Родительская задача: ${parentNode.text}. Нажмите, чтобы перейти.`}
-                                  data-drag-ignore="true"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onSelectNode(parentNode.id);
-                                  }}
-                                >
-                                  <CornerUpLeft className="w-2.5 h-2.5" />
-                                  <span className="truncate max-w-[80px] font-medium">{parentNode.text}</span>
-                                </span>
-                              );
-                            }
-                            return null;
-                          })()}
-
-                          {node.mirrorParentText && (
-                            <span 
-                              className="inline-flex items-center gap-1 px-1 bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 text-[8.5px] font-bold rounded-sm uppercase cursor-pointer"
-                              title={`Связано с родительской задачей: ${node.mirrorParentText}. Нажмите, чтобы перейти.`}
-                              data-drag-ignore="true"
-                              onClick={(e) => {
-                                if (node.mirrorParentId && onSelectNode) {
-                                  const exists = nodes.some(n => n.id === node.mirrorParentId);
-                                  if (exists) {
-                                    e.stopPropagation();
-                                    onSelectNode(node.mirrorParentId);
-                                  }
-                                }
-                              }}
-                            >
-                              <span>🔗</span>
-                              <span className="truncate max-w-[80px]">{node.mirrorParentText}</span>
-                            </span>
-                          )}
-
-                          {node.mirrorGroupId && (() => {
-                            const mirrorCopies = nodes.filter(n => n.mirrorGroupId === node.mirrorGroupId && n.id !== node.id);
-                            if (mirrorCopies.length === 0) return null;
-                            return (
-                              <span 
-                                className="inline-flex items-center gap-1 px-1 bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 text-[8.5px] font-bold rounded-sm uppercase cursor-pointer"
-                                title="Эта задача имеет зеркальные копии. Нажмите, чтобы открыть свойства."
-                                data-drag-ignore="true"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onSelectNode && onSelectNode(node.id);
-                                }}
-                              >
-                                <span>🪞</span>
-                                <span className="truncate max-w-[80px]">Зеркала ({mirrorCopies.length})</span>
-                              </span>
-                            );
-                          })()}
-
-                          {node.priority !== 'none' && (
-                            <span className={`px-1 rounded-sm font-bold text-[9px] uppercase border ${pMeta.bg} ${pMeta.border} ${pMeta.text}`}>
-                              {node.priority}
-                            </span>
-                          )}
-
-                          {node.text.toLowerCase().includes('важн') && node.priority === 'none' && (
-                            <span className="px-1 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[8.5px] font-bold rounded-sm uppercase">важно</span>
-                          )}
-
-                          {node.dueDate && (() => {
-                            const fDate = getFriendlyDate(node.dueDate, node.completed);
-                            if (!fDate) return null;
-                            return (
-                              <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[9.5px] font-sans font-medium transition-all duration-150 ${fDate.style}`}>
-                                <Calendar className="w-2.5 h-2.5 shrink-0 opacity-80" />
-                                <span>{fDate.text}</span>
-                              </span>
-                            );
-                          })()}
-
-                          {nodeChildrenCountMap[node.id] > 0 && (
-                            <span className="text-indigo-600 dark:text-indigo-400 font-sans font-bold bg-slate-100 dark:bg-slate-800 px-1 rounded text-[9px]">
-                              {nodeChildrenCompletedCountMap[node.id] || 0}/{nodeChildrenCountMap[node.id]}
-                            </span>
-                          )}
-
-                          {(() => {
-                            const stats = getPomoStatsForNode(node, nodes);
-                            return stats.pomodoroTotalTime > 0 ? (
-                              <span 
-                                onMouseDown={(e) => e.stopPropagation()}
-                                className="flex items-center gap-1 px-1.5 py-0.5 rounded border bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400 text-[9px] font-bold select-none"
-                                title={`Проведено на помидоре: ${formatTotalPomoTime(stats.pomodoroTotalTime)}`}
-                              >
-                                <span>🍅</span>
-                                <span>{formatTotalPomoTime(stats.pomodoroTotalTime)}</span>
-                              </span>
-                            ) : null;
-                          })()}
-
-                          {node.estimatedTime !== undefined && node.estimatedTime !== null && !isNaN(node.estimatedTime) ? (
-                            <span 
-                              onMouseDown={(e) => e.stopPropagation()}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const val = prompt("Изменить ориентировочное время работы (в минутах):", node.estimatedTime?.toString() || "30");
-                                if (val !== null) {
-                                  if (val === "") {
-                                    onUpdateNode({ ...node, estimatedTime: undefined });
-                                  } else {
-                                    const num = parseFloat(val);
-                                    if (!isNaN(num)) {
-                                      onUpdateNode({ ...node, estimatedTime: num });
-                                    }
-                                  }
-                                }
-                              }}
-                              className="flex items-center gap-1 px-1.5 py-0.5 rounded border bg-indigo-50/70 border-indigo-150/40 text-indigo-600 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-400 text-[9px] font-bold cursor-pointer transition-colors"
-                              title={`Ориентировочное время: ${node.estimatedTime} мин (нажмите для изменения)`}
-                              data-drag-ignore="true"
-                            >
-                              <Timer className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
-                              <span>{node.estimatedTime} мин</span>
-                            </span>
-                          ) : (
-                            <span 
-                              onMouseDown={(e) => e.stopPropagation()}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const val = prompt("Укажите ориентировочное время работы (в минутах):", "30");
-                                if (val !== null) {
-                                  if (val === "") {
-                                    onUpdateNode({ ...node, estimatedTime: undefined });
-                                  } else {
-                                    const num = parseFloat(val);
-                                    if (!isNaN(num)) {
-                                      onUpdateNode({ ...node, estimatedTime: num });
-                                    }
-                                  }
-                                }
-                              }}
-                              className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed bg-slate-50/50 border-slate-300 text-slate-400 dark:bg-slate-800/40 dark:border-slate-700 dark:text-slate-500 text-[9px] font-bold cursor-pointer transition-colors"
-                              title="Нажмите, чтобы указать ориентировочное время работы"
-                              data-drag-ignore="true"
-                            >
-                              <Timer className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                              <span>0 мин</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Micro Controls Action Panel */}
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleStartInlineEdit(node)}
-                    className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-md hover:bg-slate-55/40 dark:hover:bg-slate-800 cursor-pointer"
-                    title="Редактировать текст"
-                  >
-                    <SlidersHorizontal className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (confirmDeleteNodeId === node.id) {
-                        onDeleteNode(node.id);
-                        setConfirmDeleteNodeId(null);
-                      } else {
-                        setConfirmDeleteNodeId(node.id);
-                        setTimeout(() => setConfirmDeleteNodeId(curr => curr === node.id ? null : curr), 4000);
-                      }
-                    }}
-                    className={`p-1 rounded-md transition-all duration-200 cursor-pointer flex items-center gap-0.5 ${
-                      confirmDeleteNodeId === node.id
-                        ? "text-white bg-rose-600 hover:bg-rose-700 px-1.5 text-[9px] font-bold animate-pulse"
-                        : "text-slate-400 hover:text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/25"
-                    }`}
-                    title={confirmDeleteNodeId === node.id ? "Подтвердите удаление" : "Удалить задачу"}
-                  >
-                    {confirmDeleteNodeId === node.id ? "Удалить?" : <Trash2 className="w-3.5 h-3.5" />}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onFocusTaskOnCanvas) {
-                        onFocusTaskOnCanvas(node.id);
-                      }
-                    }}
-                    className="p-1 text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 rounded-md hover:bg-slate-55/40 dark:hover:bg-slate-800 cursor-pointer"
-                    title="Фокусировать эту задачу на холсте"
-                  >
-                    <Target className="w-3.5 h-3.5" />
-                  </button>
-
+                ) : (
                   <button
                     type="button"
                     onClick={(e) => {
-                      onSelectNode(node.id === selectedNodeId ? null : node.id, e);
+                      e.stopPropagation();
+                      setActiveTagPickerTaskId(activeTagPickerTaskId === node.id ? null : node.id);
                     }}
-                    className={`p-1 rounded-md border cursor-pointer transition-all ${
-                      isSelected
-                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
-                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-850 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
-                    title={isSelected ? "Закрыть свойства" : "Открыть свойства"}
+                    className="opacity-0 group-hover:opacity-100 text-[11px] text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#D4D4D4] hover:bg-[#EAEAEA] dark:hover:bg-[#2F2F2F] px-1.5 py-0.5 rounded transition-all cursor-pointer"
                   >
-                    <Eye className="w-3.5 h-3.5" />
+                    + Тег
                   </button>
-                </div>
-              </div>
+                )}
 
-              {/* Subtags listed in details line when NOT editing */}
-              {(!isEditing && ((node.tags && node.tags.length > 0) || node.notes || (node.comments && node.comments.length > 0))) && (
-                <div className="flex flex-wrap items-center gap-1.5 ml-6.5 text-[10px] text-slate-400 font-mono">
-                  {node.tags && node.tags.map(t => (
-                    <span key={t} className="px-1 bg-indigo-5/50 dark:bg-indigo-95/20 text-indigo-500 border border-indigo-100/40 text-[9px] rounded-sm font-sans">
-                      #{t}
-                    </span>
-                  ))}
-                  {node.notes && (
-                    <span className="flex items-center gap-1 font-sans italic max-w-[150px] truncate text-[10px]">
-                      <FileText className="w-2.5 h-2.5 shrink-0" />
-                      <span className="truncate">{highlightText(node.notes, searchQuery)}</span>
-                    </span>
-                  )}
-                  {node.comments && node.comments.length > 0 && (
+                {/* Tag Selection Popover */}
+                {activeTagPickerTaskId === node.id && (
+                  <div 
+                    className="fixed z-[160] bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-2.5 w-52 animate-in fade-in duration-150 select-text"
+                    style={{ top: 'auto', right: 'auto' }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="text-[11px] font-semibold text-[#787774] dark:text-[#9B9A97] pb-1.5 mb-1.5 border-b border-[#E9E9E7] dark:border-[#373737] flex items-center justify-between">
+                      <span>Категория / Тег</span>
+                      <button onClick={() => setActiveTagPickerTaskId(null)}>
+                        <X className="w-3.5 h-3.5 text-[#9B9A97]" />
+                      </button>
+                    </div>
+                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                      {['Project Kickoff', 'Request for Comment', 'Technical Spec', 'Data Analysis', 'Architecture Overview', 'Research', 'Planning', 'Reporting', ...allAvailableTags.filter(t => !['Project Kickoff', 'Request for Comment', 'Technical Spec', 'Data Analysis', 'Architecture Overview', 'Research', 'Planning', 'Reporting'].includes(t))].map(tag => {
+                        const style = getNotionTagStyle(tag);
+                        const isSelectedTag = (node.tags || []).includes(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => handleToggleTag(node.id, tag)}
+                            className={`w-full text-left px-2 py-1 rounded text-xs flex items-center justify-between transition-colors ${
+                              isSelectedTag ? 'bg-[#F0F7FF] dark:bg-[#1C2D42]' : 'hover:bg-[#F7F7F5] dark:hover:bg-[#252525]'
+                            }`}
+                          >
+                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${style.bg} ${style.text} ${style.darkBg} ${style.darkText}`}>
+                              {tag}
+                            </span>
+                            {isSelectedTag && <Check className="w-3.5 h-3.5 text-[#2383e2]" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 2. Priority Pill (P1, P2, P3, P4) */}
+            {visibleProps.priority && (
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActivePriorityPickerTaskId(activePriorityPickerTaskId === node.id ? null : node.id);
+                  }}
+                  className={`text-[10.5px] sm:text-[12px] font-semibold px-1.5 py-0.2 sm:px-2 sm:py-0.5 rounded transition-transform hover:scale-105 cursor-pointer whitespace-nowrap ${priorityBadge.bg} ${priorityBadge.text} ${priorityBadge.darkBg} ${priorityBadge.darkText}`}
+                  title={`Приоритет: ${node.priority || 'none'}`}
+                >
+                  {priorityBadge.label}
+                </button>
+
+                {/* Priority Selection Popover */}
+                {activePriorityPickerTaskId === node.id && (
+                  <div 
+                    className="fixed z-[160] bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-2 w-44 animate-in fade-in duration-150 select-text"
+                    style={{ top: 'auto', right: 'auto' }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="text-[11px] font-semibold text-[#787774] dark:text-[#9B9A97] pb-1.5 mb-1 border-b border-[#E9E9E7] dark:border-[#373737] flex items-center justify-between">
+                      <span>Приоритет</span>
+                      <button onClick={() => setActivePriorityPickerTaskId(null)}>
+                        <X className="w-3.5 h-3.5 text-[#9B9A97]" />
+                      </button>
+                    </div>
+                    <div className="space-y-0.5">
+                      {[
+                        { val: 'urgent', badge: getNotionPriorityBadge('urgent'), label: 'P1 (Критический)' },
+                        { val: 'high', badge: getNotionPriorityBadge('high'), label: 'P1 (Высокий)' },
+                        { val: 'medium', badge: getNotionPriorityBadge('medium'), label: 'P2 (Средний)' },
+                        { val: 'low', badge: getNotionPriorityBadge('low'), label: 'P3 (Низкий)' },
+                        { val: 'none', badge: getNotionPriorityBadge('none'), label: 'P4 (Без приоритета)' },
+                      ].map(p => (
+                        <button
+                          key={p.val}
+                          type="button"
+                          onClick={() => handleUpdatePriority(node.id, p.val as Priority)}
+                          className="w-full text-left px-2 py-1 rounded text-xs flex items-center justify-between hover:bg-[#F7F7F5] dark:hover:bg-[#252525] transition-colors"
+                        >
+                          <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${p.badge.bg} ${p.badge.text} ${p.badge.darkBg} ${p.badge.darkText}`}>
+                            {p.badge.label}
+                          </span>
+                          <span className="text-[11px] text-[#787774] dark:text-[#9B9A97]">{p.label.split(' ')[1]}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. Assignee Illustrated Avatar Circle */}
+            {visibleProps.assignee && (
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveAssigneePickerTaskId(activeAssigneePickerTaskId === node.id ? null : node.id);
+                  }}
+                  className="w-5 h-5 sm:w-6 sm:h-6 rounded-full overflow-hidden hover:ring-2 hover:ring-[#2383e2] transition-all cursor-pointer shadow-xs flex items-center justify-center"
+                  title={`Исполнитель: ${avatar.name}`}
+                >
+                  {avatar.svg}
+                </button>
+
+                {/* Assignee Selection Popover */}
+                {activeAssigneePickerTaskId === node.id && (
+                  <div 
+                    className="fixed z-[160] bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-2 w-40 animate-in fade-in duration-150 select-text"
+                    style={{ top: 'auto', right: 'auto' }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="text-[11px] font-semibold text-[#787774] dark:text-[#9B9A97] pb-1 mb-1.5 border-b border-[#E9E9E7] dark:border-[#373737]">
+                      Исполнитель
+                    </div>
+                    <div className="space-y-1">
+                      {NOTION_AVATARS.map(av => (
+                        <button
+                          key={av.id}
+                          type="button"
+                          onClick={() => handleUpdateAssignee(node.id, av.id)}
+                          className="w-full flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[#F7F7F5] dark:hover:bg-[#252525] transition-colors text-xs text-left"
+                        >
+                          <div className="w-5 h-5 rounded-full overflow-hidden shrink-0">
+                            {av.svg}
+                          </div>
+                          <span className="text-xs text-[#37352F] dark:text-[#EBEBEB]">{av.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 4. Due Date Badge if enabled & present */}
+            {visibleProps.dueDate && dateInfo && (
+              <span 
+                className={`text-[10px] sm:text-[11px] px-1 sm:px-1.5 py-0.2 sm:py-0.5 rounded whitespace-nowrap ${
+                  dateInfo.isOverdue 
+                    ? 'bg-[#FDF0EE] text-[#C53030] dark:bg-[#5C2323] dark:text-[#FEB2B2] font-semibold animate-pulse'
+                    : dateInfo.isToday
+                      ? 'bg-[#FFF5E5] text-[#9A6700] dark:bg-[#4A3B18] dark:text-[#FBD38D] font-medium'
+                      : 'text-[#787774] dark:text-[#8F8F8F]'
+                }`}
+              >
+                <span className="sm:hidden">{dateInfo.shortText}</span>
+                <span className="hidden sm:inline">{dateInfo.text}</span>
+              </span>
+            )}
+
+            {/* 5. Hover Quick Action Buttons (Open Side Peek, Add subtask, 3-dots menu) */}
+            <div className="hidden md:flex opacity-0 group-hover:opacity-100 items-center gap-0.5 transition-opacity ml-1 shrink-0">
+              
+              {/* Add subtask */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCreateTask('Новая подзадача', [], 'none', undefined, node.id);
+                  setCollapsedParentIds(prev => ({ ...prev, [node.id]: false }));
+                }}
+                className="p-1 text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#D4D4D4] rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2F2F2F] transition-colors"
+                title="Добавить подзадачу"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Open page details side peek */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectNode(node.id, e, 'details');
+                }}
+                className="p-1 text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#D4D4D4] rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2F2F2F] transition-colors"
+                title="Открыть страницу"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+
+              {/* 3-dots Row Menu */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveTaskMenuId(activeTaskMenuId === node.id ? null : node.id);
+                  }}
+                  className="p-1 text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#D4D4D4] rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2F2F2F] transition-colors"
+                  title="Опции"
+                >
+                  <MoreHorizontal className="w-3.5 h-3.5" />
+                </button>
+
+                {activeTaskMenuId === node.id && (
+                  <div 
+                    className="fixed z-[160] bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-1.5 w-44 animate-in fade-in duration-150 select-text"
+                    style={{ top: 'auto', right: 'auto' }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectNode(node.id, undefined, 'chat');
+                      onClick={() => {
+                        setEditingNodeId(node.id);
+                        setEditingTitleText(cleanTitle);
+                        setActiveTaskMenuId(null);
                       }}
-                      className="inline-flex items-center gap-1 font-sans text-rose-600 dark:text-rose-450 font-bold text-[9.5px] bg-rose-50 dark:bg-rose-955/20 px-1.5 py-0.5 rounded-md cursor-pointer hover:scale-105 transition-transform border border-rose-100 dark:border-rose-950/30"
+                      className="w-full text-left px-2.5 py-1.5 rounded text-xs text-[#37352F] dark:text-[#EBEBEB] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] flex items-center gap-2"
                     >
-                      <MessageSquare className="w-2.5 h-2.5 shrink-0 text-rose-500" />
-                      <span>{node.comments.length}</span>
+                      <span>Переименовать</span>
                     </button>
-                  )}
-                </div>
-              )}
+                    <button
+                      type="button"
+                      onClick={() => handleDuplicateTask(node)}
+                      className="w-full text-left px-2.5 py-1.5 rounded text-xs text-[#37352F] dark:text-[#EBEBEB] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] flex items-center gap-2"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-[#9B9A97]" />
+                      <span>Дублировать</span>
+                    </button>
+                    {onFocusTaskOnCanvas && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onFocusTaskOnCanvas(node.id);
+                          setActiveTaskMenuId(null);
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded text-xs text-[#37352F] dark:text-[#EBEBEB] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] flex items-center gap-2"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>Открыть на холсте</span>
+                      </button>
+                    )}
+                    <div className="h-px bg-[#E9E9E7] dark:bg-[#373737] my-1" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDeleteNode(node.id);
+                        setActiveTaskMenuId(null);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center gap-2"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Удалить</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
 
-            </div> {/* End pointer-events-none wrapper */}
-          </div> {/* End tactile flex container */}
+          </div>
         </div>
 
-        {/* Display child items list recursively */}
-        {children.length > 0 && !isCollapsed && (
-          <div className="space-y-1">
-            {children.map(childItem => renderTreeItem(childItem, depth + 1))}
+        {/* Drop indicator below */}
+        {isDragTarget && dragOverPosition === 'below' && (
+          <div className="h-0.5 bg-[#2383e2] w-full rounded-full my-0.5 animate-pulse" />
+        )}
+
+        {/* Child items recursive rendering */}
+        {hasChildren && !isCollapsed && (
+          <div className="relative">
+            {/* Notion subtle hierarchical guide line */}
+            <div 
+              className="absolute left-0 top-0 bottom-2 w-px bg-[#E9E9E7] dark:bg-[#333333]" 
+              style={{ left: `${Math.max(8, Math.min(depth * 14 + 10, 36))}px` }} 
+            />
+            {children.map(child => renderNotionRow(child, depth + 1))}
           </div>
         )}
       </div>
@@ -1328,769 +1207,747 @@ export default function MobileListView({
 
   return (
     <div 
-      id="mobile-ticktick-view" 
-      className={`flex flex-col bg-slate-50 dark:bg-slate-950 transition-all duration-200 ${
-        isFullScreen 
-          ? 'fixed inset-0 z-[150] w-screen h-screen' 
-          : 'w-full h-full'
+      id="notion-list-view-container"
+      className={`flex flex-col bg-white dark:bg-[#191919] text-[#37352F] dark:text-[#D4D4D4] font-sans h-full w-full overflow-hidden select-none ${
+        isFullScreen ? 'fixed inset-0 z-[150] w-screen h-screen' : 'relative'
       }`}
     >
-      
-      {/* Super Compact Mobile-Adapted Dashboard Header */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-2 shrink-0 transition-all">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xs font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-widest whitespace-nowrap pl-1 shrink-0">
-            Задачи
-          </h2>
-          <div className="text-[10px] text-slate-400 font-mono flex items-center justify-end gap-x-2 gap-y-0.5 pr-1 flex-1 flex-wrap min-w-0">
-            <span className="whitespace-nowrap">Актив.: <strong className="font-bold text-slate-700 dark:text-slate-200">{activeCount}</strong></span>
-            <span className="whitespace-nowrap">Проср.: <strong className="font-bold text-rose-500">{overdueCount}</strong></span>
+      {/* 1. Top Bar / Notion Navigation (Matching macOS + Notion window header in SS_List.png) */}
+      <header className="h-11 px-3 sm:px-5 border-b border-[#E9E9E7] dark:border-[#2F2F2F] flex items-center justify-between shrink-0 bg-white/95 dark:bg-[#191919]/95 backdrop-blur-sm z-30">
+        
+        {/* Left: Window Controls, Sidebar toggle, Nav arrows, Breadcrumb */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          {/* macOS traffic light dots */}
+          <div className="hidden sm:flex items-center gap-1.5 pr-1">
+            <span className="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E]/50 hover:opacity-80 transition-opacity" />
+            <span className="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123]/50 hover:opacity-80 transition-opacity" />
+            <span className="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29]/50 hover:opacity-80 transition-opacity" />
+          </div>
+
+          {/* Sidebar Hamburger Menu toggle */}
+          {onOpenSidebar && (
             <button
               type="button"
-              onClick={() => setIsFullScreen(!isFullScreen)}
-              className={`p-1 rounded-sm border cursor-pointer select-none transition-all outline-none flex items-center justify-center shrink-0 ${
-                isFullScreen 
-                  ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400' 
-                  : 'bg-slate-50 hover:bg-slate-105 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
-              }`}
-              title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
+              onClick={onOpenSidebar}
+              className="p-1 rounded text-[#787774] hover:text-[#37352F] dark:hover:text-[#EBEBEB] hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] transition-colors cursor-pointer"
+              title="Открыть боковую панель"
             >
-              {isFullScreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              <Menu className="w-4 h-4" />
             </button>
+          )}
+
+          {/* Navigation Arrows */}
+          <div className="flex items-center gap-0.5 text-[#9B9A97]">
+            <button 
+              type="button"
+              className="p-1 rounded hover:text-[#37352F] dark:hover:text-[#EBEBEB] hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] transition-colors cursor-pointer"
+              title="Назад"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button 
+              type="button"
+              className="p-1 rounded hover:text-[#37352F] dark:hover:text-[#EBEBEB] hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] transition-colors cursor-pointer"
+              title="Вперед"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Breadcrumb Title Item */}
+          <div className="flex items-center gap-1.5 text-xs font-medium text-[#37352F] dark:text-[#D4D4D4] truncate">
+            <span className="text-sm">{projectIcon || '📎'}</span>
+            <span className="truncate">{projectName}</span>
           </div>
         </div>
 
-        {/* Tab Selection Row like TickTick */}
-        <div className="flex gap-1 mt-2.5 p-1 bg-slate-100/70 dark:bg-slate-900/65 rounded-xl overflow-x-auto scrollbar-none select-none">
-          {[
-            { id: 'active', label: 'В работе', count: activeCount },
-            { id: 'today', label: 'Сегодня', count: todayCount, icon: Clock },
-            { id: 'overdue', label: 'Просрочено', count: overdueCount },
-            { id: 'completed', label: 'Готово', count: completedCount },
-            { id: 'all', label: 'Все', count: totalCount }
-          ].map((tab) => {
-            const isTabActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setActiveTab(tab.id as any);
-                  onSelectNode(null);
-                }}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all duration-200 ${
-                  isTabActive 
-                    ? 'bg-white dark:bg-slate-800 text-indigo-650 dark:text-indigo-400 shadow-sm border border-slate-150/40 dark:border-slate-700/50' 
-                    : 'text-slate-500 hover:text-slate-850 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-slate-800/40'
-                }`}
-              >
-                {tab.icon && <tab.icon className="w-3 h-3 text-indigo-500 shrink-0" />}
-                <span>{tab.label}</span>
-                <span className={`px-1.5 py-0.5 rounded-md text-[9px] ${isTabActive ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-350 font-extrabold' : 'bg-slate-200/60 text-slate-500 dark:bg-slate-700 dark:text-slate-400 font-medium'}`}>
-                  {tab.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+        {/* Right: Share, Updates, Favorite, More Menu */}
+        <div className="flex items-center gap-1 sm:gap-2 text-xs font-medium text-[#787774] dark:text-[#9B9A97]">
+          
+          {/* Share Button */}
+          <button
+            type="button"
+            onClick={() => setShowShareModal(true)}
+            className="px-2.5 py-1 rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB] transition-colors cursor-pointer flex items-center gap-1"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Share</span>
+          </button>
 
-      {/* Advanced filters & text search block (Highly compressed with toggling selects) */}
-      <div className="p-2 bg-slate-100/50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800/80 shrink-0 space-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <div className="relative flex-1 flex items-center gap-1.5">
-            <div className="relative flex-1">
-              <span className="absolute left-3 top-2 text-slate-400 pointer-events-none">
-                <Search className="w-3.5 h-3.5" />
-              </span>
-              <input
-                id="mobile-search-input"
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск по задачам и тегам"
-                className="w-full leading-none py-1.5 pl-9 pr-14 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400 transition-colors"
-              />
-              {searchQuery && (
-                <div className="absolute right-2 top-1.5 flex items-center gap-1">
-                  {searchResults.length > 0 && (
-                    <span className="text-[10px] text-slate-400/80 font-mono font-medium select-none pointer-events-none">
-                      {mobileSearchIndex + 1}/{searchResults.length}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold w-4 h-4 flex items-center justify-center rounded-full"
-                    title="Очистить поиск"
-                  >
-                    ×
+          {/* Updates (Activity Log) Button */}
+          <button
+            type="button"
+            className="px-2.5 py-1 rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB] transition-colors cursor-pointer flex items-center gap-1"
+            title="История обновлений"
+          >
+            <Check className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">Updates</span>
+          </button>
+
+          {/* Favorite Star Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsFavorite(!isFavorite)}
+            className={`p-1.5 rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] transition-colors cursor-pointer ${
+              isFavorite ? 'text-amber-500 fill-amber-500' : 'hover:text-[#37352F] dark:hover:text-[#EBEBEB]'
+            }`}
+            title={isFavorite ? "Удалить из избранного" : "Добавить в избранное"}
+          >
+            <Star className={`w-3.5 h-3.5 ${isFavorite ? 'fill-amber-500' : ''}`} />
+          </button>
+
+          {/* More Database Options */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowMoreMenu(!showMoreMenu)}
+              className="p-1.5 rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB] transition-colors cursor-pointer"
+              title="Дополнительные действия"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+
+            {showMoreMenu && (
+              <div 
+                className="absolute right-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-1.5 w-48 animate-in fade-in zoom-in-95 duration-150 select-text"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsFullScreen(!isFullScreen);
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded text-xs hover:bg-[#F7F7F5] dark:hover:bg-[#252525] flex items-center justify-between"
+                >
+                  <span>Полноэкранный режим</span>
+                  {isFullScreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCollapsedParentIds({});
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded text-xs hover:bg-[#F7F7F5] dark:hover:bg-[#252525] flex items-center justify-between"
+                >
+                  <span>Развернуть все подзадачи</span>
+                </button>
+                <div className="h-px bg-[#E9E9E7] dark:bg-[#373737] my-1" />
+                <div className="px-2.5 py-1 text-[10px] text-[#9B9A97]">
+                  Всего записей: {totalCount}
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </header>
+
+      {/* Main Scrollable Canvas Body */}
+      <div className="flex-1 overflow-y-auto px-2.5 sm:px-12 lg:px-20 pt-3 sm:pt-6 pb-24 max-w-5xl mx-auto w-full">
+        
+        {/* 2. Notion Page Title Header (Icon + Large H1 Title matching SS_List.png) */}
+        <div className="mb-6 select-text group/header">
+          
+          {/* Large Notion Page Icon */}
+          <div className="relative inline-block mb-3">
+            <button
+              type="button"
+              onClick={() => setShowProjectEmojiPicker(!showProjectEmojiPicker)}
+              className="text-5xl sm:text-6xl p-1 rounded-xl hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] transition-all cursor-pointer block leading-none hover:scale-105"
+              title="Нажмите, чтобы сменить иконку проекта"
+            >
+              {projectIcon || '📎'}
+            </button>
+
+            {/* Project Emoji Picker Popover */}
+            {showProjectEmojiPicker && (
+              <div 
+                className="absolute left-0 top-16 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-2xl shadow-2xl p-3 w-72 animate-in fade-in zoom-in-95 duration-150 select-text"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#E9E9E7] dark:border-[#373737]">
+                  <span className="text-xs font-semibold text-[#787774] dark:text-[#9B9A97]">Иконка проекта</span>
+                  <button onClick={() => setShowProjectEmojiPicker(false)}>
+                    <X className="w-4 h-4 text-[#9B9A97]" />
                   </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1.5 max-h-52 overflow-y-auto">
+                  {NOTION_SAMPLE_EMOJIS.map(emoji => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => {
+                        if (onUpdateProjectIcon) onUpdateProjectIcon(emoji);
+                        setShowProjectEmojiPicker(false);
+                      }}
+                      className="w-8 h-8 flex items-center justify-center text-xl rounded-lg hover:bg-[#F0EEEB] dark:hover:bg-[#2F2F2F] transition-all hover:scale-120 cursor-pointer"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Large Bold H1 Title */}
+          {isEditingProjectName ? (
+            <input
+              type="text"
+              value={projectNameInput}
+              autoFocus
+              onChange={(e) => setProjectNameInput(e.target.value)}
+              onBlur={() => {
+                if (projectNameInput.trim() && onUpdateProjectName) {
+                  onUpdateProjectName(projectNameInput.trim());
+                }
+                setIsEditingProjectName(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  if (projectNameInput.trim() && onUpdateProjectName) {
+                    onUpdateProjectName(projectNameInput.trim());
+                  }
+                  setIsEditingProjectName(false);
+                }
+                if (e.key === 'Escape') {
+                  setIsEditingProjectName(false);
+                }
+              }}
+              className="text-3xl sm:text-4xl font-extrabold text-[#37352F] dark:text-[#EBEBEB] bg-transparent border-b-2 border-[#2383e2] focus:outline-none w-full tracking-tight"
+            />
+          ) : (
+            <h1 
+              onClick={() => setIsEditingProjectName(true)}
+              className="text-3xl sm:text-4xl font-extrabold text-[#37352F] dark:text-[#EBEBEB] tracking-tight hover:bg-[#F7F7F5] dark:hover:bg-[#202020] px-1 py-0.5 rounded-lg -ml-1 transition-colors cursor-text inline-block"
+              title="Кликните для переименования"
+            >
+              {projectName || 'Docs'}
+            </h1>
+          )}
+
+          {/* Page Subtitle / Metadata Stats */}
+          <div className="flex items-center gap-3 mt-1.5 text-xs text-[#787774] dark:text-[#8F8F8F]">
+            <span>{totalCount} страниц</span>
+            <span>·</span>
+            <span>{activeCount} в работе</span>
+            {overdueCount > 0 && (
+              <>
+                <span>·</span>
+                <span className="text-rose-600 dark:text-rose-400 font-semibold">{overdueCount} просрочено</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* 3. Database View Control Bar (Matching SS_List.png: "All docs ⌄" | Properties | Filter | Sort | Search | ••• | New ⌄) */}
+        <div className="border-b border-[#E9E9E7] dark:border-[#2F2F2F] pb-2 mb-3 flex items-center justify-between gap-2 flex-wrap">
+          
+          {/* Left: View selector dropdown tab */}
+          <div className="flex items-center gap-1">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowViewMenu(!showViewMenu)}
+                className="flex items-center gap-1.5 text-xs font-bold text-[#37352F] dark:text-[#EBEBEB] hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] px-2 py-1 rounded transition-colors cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-[#787774]" />
+                <span>All docs</span>
+                <ChevronDown className="w-3 h-3 text-[#9B9A97]" />
+              </button>
+
+              {/* View Switcher Menu */}
+              {showViewMenu && setViewMode && (
+                <div 
+                  className="absolute left-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-1.5 w-48 animate-in fade-in duration-150 select-text"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="text-[10px] font-bold text-[#9B9A97] px-2 py-1 uppercase tracking-wider">
+                    Виды базы данных
+                  </div>
+                  {[
+                    { id: 'mobile-list', name: 'Список (List)', icon: FileText, active: true },
+                    { id: 'kanban', name: 'Канбан (Board)', icon: Layers, active: false },
+                    { id: 'calendar', name: 'Календарь', icon: Calendar, active: false },
+                    { id: 'table', name: 'Таблица (Table)', icon: CheckSquare, active: false },
+                    { id: 'gantt', name: 'Ганнт (Timeline)', icon: Clock, active: false },
+                    { id: 'canvas', name: 'Холст (Mindmap)', icon: Sparkles, active: false },
+                  ].map(view => (
+                    <button
+                      key={view.id}
+                      type="button"
+                      onClick={() => {
+                        setViewMode(view.id as ViewMode);
+                        setShowViewMenu(false);
+                      }}
+                      className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between ${
+                        view.active 
+                          ? 'bg-[#F0F7FF] dark:bg-[#1C2D42] text-[#2383e2] font-semibold' 
+                          : 'hover:bg-[#F7F7F5] dark:hover:bg-[#252525] text-[#37352F] dark:text-[#EBEBEB]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <view.icon className="w-3.5 h-3.5" />
+                        <span>{view.name}</span>
+                      </div>
+                      {view.active && <Check className="w-3 h-3 text-[#2383e2]" />}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
 
-            {searchResults.length > 1 && (
+            {/* Quick Status Tabs: All / Active / Today / Completed */}
+            <div className="hidden md:flex items-center gap-0.5 ml-2 border-l border-[#E9E9E7] dark:border-[#2F2F2F] pl-2">
+              {[
+                { id: 'all', label: 'Все', count: totalCount },
+                { id: 'active', label: 'В работе', count: activeCount },
+                { id: 'today', label: 'Сегодня', count: nodes.filter(n => n.dueDate === todayStr && !n.completed).length },
+                { id: 'completed', label: 'Готово', count: completedCount },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+                    activeTab === tab.id
+                      ? 'bg-[#EAEAEA] dark:bg-[#2F2F2F] text-[#37352F] dark:text-[#EBEBEB] font-semibold'
+                      : 'text-[#787774] dark:text-[#9B9A97] hover:bg-[#F7F7F5] dark:hover:bg-[#202020]'
+                  }`}
+                >
+                  {tab.label}
+                  <span className="ml-1 text-[10px] opacity-70 font-mono">({tab.count})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Right Controls: Properties | Filter | Sort | Search | ••• | New ⌄ (Matching SS_List.png) */}
+          <div className="flex items-center gap-1 sm:gap-2 text-xs text-[#787774] dark:text-[#9B9A97]">
+            
+            {/* Properties Popover Button */}
+            <div className="relative">
               <button
                 type="button"
-                onClick={handleNextMobileSearchMatch}
-                className="p-1 px-1.5 rounded-lg border bg-indigo-50 border-indigo-200 dark:bg-indigo-950/45 dark:border-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold cursor-pointer shrink-0 transition-all flex items-center gap-0.5 shadow-xs"
-                title="Перейти к следующей задаче"
+                onClick={() => setShowPropertiesMenu(!showPropertiesMenu)}
+                className="px-2 py-1 rounded hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB] transition-colors cursor-pointer"
               >
-                <span>След.</span>
-                <ChevronRight className="w-3 h-3" />
+                Properties
               </button>
-            )}
-          </div>
 
-          <button
-            type="button"
-            onClick={() => setShowFilters(f => !f)}
-            className={`p-1 px-1.5 rounded-lg border flex items-center gap-1 cursor-pointer transition-all text-xs font-semibold ${
-              showFilters || priorityFilter !== 'all' || tagFilter !== 'all' || containerFilter !== 'all'
-                ? 'bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-950/40 dark:border-indigo-900/40 dark:text-indigo-400'
-                : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800 text-slate-500 hover:text-slate-700'
-            }`}
-            title="Фильтры по приоритетам, тегам и контейнерам"
-          >
-            <ListFilter className="w-3.5 h-3.5" />
-            <span>Фильтры</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowTagsManager(true)}
-            className="p-1 px-1.5 rounded-lg border bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800 text-slate-500 hover:text-slate-700 flex items-center gap-1 cursor-pointer transition-all text-xs font-semibold shrink-0"
-            title="Управление тегами и категориями"
-          >
-            <Tag className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-            <span>Теги</span>
-          </button>
-        </div>
-
-        {/* Dropdowns visible only when toggled */}
-        {(showFilters || priorityFilter !== 'all' || tagFilter !== 'all' || containerFilter !== 'all') && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pb-0.5 pt-0.5 animate-fadeIn">
-            {/* Priority options selector */}
-            <div className="relative">
-              <span className="absolute left-2 top-2 text-slate-400 pointer-events-none">
-                <Flag className="w-3 h-3" />
-              </span>
-              <select
-                id="mobile-priority-select"
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-6 pr-1.5 py-1 text-[11px] text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-              >
-                <option value="all">Все приоритеты</option>
-                <option value="urgent">Срочно 🔥</option>
-                <option value="high">Высокий 🔴</option>
-                <option value="medium">Средний 🟡</option>
-                <option value="low">Низкий 🔵</option>
-              </select>
-            </div>
-
-            {/* Tag choice selector */}
-            <div className="relative">
-              <span className="absolute left-2 top-2 text-slate-400 pointer-events-none">
-                <Tag className="w-3 h-3" />
-              </span>
-              <select
-                id="mobile-tag-select"
-                value={tagFilter}
-                onChange={(e) => setTagFilter(e.target.value)}
-                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-6 pr-1.5 py-1 text-[11px] text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-              >
-                <option value="all">Все теги</option>
-                {tagCategories.flatMap(c => c.tags || []).map(tag => (
-                  <option key={tag} value={tag}>#{tag}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Container choice selector */}
-            <div className="relative">
-              <span className="absolute left-2 top-2 text-slate-400 pointer-events-none">
-                <Layers className="w-3 h-3" />
-              </span>
-              <select
-                id="mobile-container-select"
-                value={containerFilter}
-                onChange={(e) => setContainerFilter(e.target.value)}
-                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-6 pr-1.5 py-1 text-[11px] text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-ellipsis overflow-hidden whitespace-nowrap"
-              >
-                <option value="all">Все области/контейнеры</option>
-                <option value="no-container">📦 Вне областей</option>
-                {allContainers.map(container => (
-                  <option key={container.id} value={container.id}>
-                    📦 {container.text}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Main interactive Tasks container */}
-      <div 
-        className="flex-1 overflow-y-auto px-4 pt-3 pb-24 space-y-2 relative"
-        onDragOver={(e) => {
-          e.preventDefault();
-        }}
-        onDrop={handleDropOnBackground}
-      >
-        {/* Help tooltip and Touch de-nesting dropzone when dragging a task */}
-        {draggedNodeId !== null && (
-          <div 
-            id="mobile-task-root-dropzone"
-            className={`sticky top-1 mx-auto text-center w-full max-w-md p-3 border-2 border-dashed rounded-xl transition-all duration-150 z-20 shadow-md ${
-              dragOverNodeId === 'background_root_zone'
-                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold scale-[1.01]'
-                : 'border-slate-300 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 text-slate-500 dark:text-slate-400'
-            }`}
-            style={{ touchAction: 'none' }}
-          >
-            <span className="text-[10px] font-bold tracking-wide uppercase flex items-center justify-center gap-1.5 select-none">
-              📂 Перетащите сюда, чтобы сделать задачу главной
-            </span>
-          </div>
-        )}
-
-        {taskTreeRoots.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 px-6 text-center text-slate-400 h-full">
-            <div className="w-12 h-12 bg-slate-100 dark:bg-slate-850 rounded-full flex items-center justify-center mb-3">
-              <CheckSquare className="w-6 h-6 text-slate-400" />
-            </div>
-            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Список пуст</p>
-            <p className="text-xs text-slate-400 mt-1 max-w-xs">
-              Нет задач соответствующих фильтрам. Добавьте первую задачу с помощью простой мобильной панели ниже!
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-1 pb-4">
-            {taskTreeRoots.map(item => renderTreeItem(item, 0))}
-          </div>
-        )}
-      </div>
-
-      {/* Modern Quick Task Creator - Fixed Mobile Pane at the bottom (TickTick essence!) */}
-      <div className="p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-150 dark:border-slate-800/85 shrink-0 shadow-[0_-4px_16px_rgba(0,0,0,0.03)] select-none">
-        <form onSubmit={handleAddTaskSubmit} className="space-y-0.5">
-          <div className="flex items-center gap-2">
-            <input
-              id="mobile-quick-task-text"
-              type="text"
-              value={newTaskText}
-              onChange={(e) => {
-                setNewTaskText(e.target.value);
-                if (e.target.value.trim() && !showQuickOptions) {
-                  setShowQuickOptions(true);
-                }
-              }}
-              onFocus={() => setShowQuickOptions(true)}
-              placeholder="Добавить задачу..."
-              className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-1.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white dark:focus:bg-slate-850 transition-colors"
-            />
-            
-            <button
-              type="button"
-              onClick={() => setShowQuickOptions(!showQuickOptions)}
-              className={`p-2 rounded-lg transition-all cursor-pointer border shrink-0 flex items-center justify-center ${
-                showQuickOptions 
-                  ? 'bg-indigo-55/10 border-indigo-200/50 dark:bg-indigo-950/40 border-indigo-900 text-indigo-600 dark:text-indigo-400' 
-                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
-              }`}
-              title={showQuickOptions ? "Скрыть настройки" : "Дополнительные параметры"}
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-            </button>
-
-            <button
-              id="mobile-quick-task-submit"
-              type="submit"
-              disabled={!newTaskText.trim()}
-              className="p-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg transition-all shadow-xs cursor-pointer shrink-0 flex items-center justify-center w-8 h-8"
-              title="Добавить"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-            </button>
-          </div>
-
-          {/* Context Options panel (Priority, Date, Tags selection) - COLLAPSIBLE via Framer Motion */}
-          <AnimatePresence initial={false}>
-            {showQuickOptions && (
-              <motion.div
-                initial={{ height: 0, opacity: 0, marginTop: 0 }}
-                animate={{ height: "auto", opacity: 1, marginTop: 10 }}
-                exit={{ height: 0, opacity: 0, marginTop: 0 }}
-                transition={{ duration: 0.2, ease: "easeInOut" }}
-                className="overflow-hidden"
-              >
-                <div className="flex flex-col gap-2 pt-2 xs:flex-row xs:items-center xs:justify-between border-t border-slate-100 dark:border-slate-800/60">
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-                    
-                    {/* Priority Select inside input frame */}
-                    <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 px-2 py-1 rounded-lg border border-slate-150/50 dark:border-slate-750 shrink-0 max-w-[120px] min-w-0 shadow-2xs">
-                      <Flag className="w-3 h-3 text-indigo-500 shrink-0" />
-                      <select
-                        id="mobile-quick-priority"
-                        value={newTaskPriority}
-                        onChange={(e) => setNewTaskPriority(e.target.value as Priority)}
-                        className="bg-transparent border-none text-[10px] font-bold text-slate-600 dark:text-slate-400 focus:outline-none cursor-pointer w-full py-0 leading-tight"
+              {showPropertiesMenu && (
+                <div 
+                  className="absolute right-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-2 w-52 animate-in fade-in duration-150 select-text"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="text-[11px] font-semibold text-[#787774] dark:text-[#9B9A97] pb-1 mb-1.5 border-b border-[#E9E9E7] dark:border-[#373737] flex items-center justify-between">
+                    <span>Отображение свойств</span>
+                    <button onClick={() => setShowPropertiesMenu(false)}>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    {[
+                      { key: 'tag', label: 'Тег / Категория' },
+                      { key: 'priority', label: 'Приоритет (P1-P4)' },
+                      { key: 'assignee', label: 'Исполнитель' },
+                      { key: 'dueDate', label: 'Срок / Дедлайн' },
+                      { key: 'checkbox', label: 'Чекбокс выполнения' },
+                      { key: 'subtasks', label: 'Счетчик подзадач' },
+                      { key: 'comments', label: 'Комментарии' },
+                    ].map(prop => (
+                      <label 
+                        key={prop.key}
+                        className="flex items-center justify-between px-2 py-1 rounded hover:bg-[#F7F7F5] dark:hover:bg-[#252525] cursor-pointer text-xs"
                       >
-                        <option value="low">Низкий 🔵</option>
-                        <option value="medium">Средний 🟡</option>
-                        <option value="high">Высокий 🔴</option>
-                        <option value="urgent">Срочно 🔥</option>
+                        <span className="text-[#37352F] dark:text-[#EBEBEB]">{prop.label}</span>
+                        <input
+                          type="checkbox"
+                          checked={(visibleProps as any)[prop.key]}
+                          onChange={(e) => setVisibleProps(prev => ({ ...prev, [prop.key]: e.target.checked }))}
+                          className="accent-[#2383e2] rounded cursor-pointer"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Filter Popover Button */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowFilterMenu(!showFilterMenu)}
+                className={`px-2 py-1 rounded transition-colors cursor-pointer flex items-center gap-1 ${
+                  priorityFilter !== 'all' || tagFilter !== 'all'
+                    ? 'text-[#2383e2] font-semibold bg-[#F0F7FF] dark:bg-[#1C2D42]'
+                    : 'hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB]'
+                }`}
+              >
+                <span>Filter</span>
+                {(priorityFilter !== 'all' || tagFilter !== 'all') && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#2383e2]" />
+                )}
+              </button>
+
+              {showFilterMenu && (
+                <div 
+                  className="absolute right-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-3 w-60 animate-in fade-in duration-150 select-text"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#E9E9E7] dark:border-[#373737]">
+                    <span className="text-xs font-semibold text-[#787774] dark:text-[#9B9A97]">Фильтры</span>
+                    {(priorityFilter !== 'all' || tagFilter !== 'all') && (
+                      <button 
+                        onClick={() => {
+                          setPriorityFilter('all');
+                          setTagFilter('all');
+                        }}
+                        className="text-[10px] text-rose-600 hover:underline"
+                      >
+                        Сбросить
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-2.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-[#9B9A97] block mb-1 uppercase">Приоритет</label>
+                      <select
+                        value={priorityFilter}
+                        onChange={(e) => setPriorityFilter(e.target.value)}
+                        className="w-full bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#E9E9E7] dark:border-[#373737] rounded-lg px-2 py-1 text-xs text-[#37352F] dark:text-[#EBEBEB] focus:outline-none"
+                      >
+                        <option value="all">Все приоритеты</option>
+                        <option value="urgent">P1 (Критический)</option>
+                        <option value="high">P1 (Высокий)</option>
+                        <option value="medium">P2 (Средний)</option>
+                        <option value="low">P3 (Низкий)</option>
+                        <option value="none">P4 (Без приоритета)</option>
                       </select>
                     </div>
-
-                    {/* Date Select inside input frame */}
-                    <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 px-2 py-1 rounded-lg border border-slate-150/50 dark:border-slate-750 shrink-0 shadow-2xs">
-                      <Calendar className="w-3 h-3 text-indigo-500 shrink-0" />
-                      <input
-                        id="mobile-quick-date"
-                        type="date"
-                        value={newTaskDueDate}
-                        onChange={(e) => setNewTaskDueDate(e.target.value)}
-                        className="bg-transparent border-none text-[10px] font-semibold text-slate-600 dark:text-slate-400 focus:outline-none focus:ring-0 w-[100px] p-0 leading-tight"
-                      />
+                    <div>
+                      <label className="text-[10px] font-bold text-[#9B9A97] block mb-1 uppercase">Тег / Категория</label>
+                      <select
+                        value={tagFilter}
+                        onChange={(e) => setTagFilter(e.target.value)}
+                        className="w-full bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#E9E9E7] dark:border-[#373737] rounded-lg px-2 py-1 text-xs text-[#37352F] dark:text-[#EBEBEB] focus:outline-none"
+                      >
+                        <option value="all">Все теги</option>
+                        {allAvailableTags.map(t => (
+                          <option key={t} value={t}>#{t}</option>
+                        ))}
+                      </select>
                     </div>
-
                   </div>
-
-                  {/* Quick tags selection selector */}
-                  {tagCategories.length > 0 && (
-                    <div className="flex gap-1 max-w-[200px] overflow-x-auto pb-0.5 scrollbar-none select-none">
-                      {tagCategories.flatMap(c => c.tags || []).slice(0, 5).map(tag => {
-                        const isSelected = newTaskTags.includes(tag);
-                        return (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => handleToggleTagInNewTask(tag)}
-                            className={`px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap cursor-pointer border transition-all ${
-                              isSelected
-                                ? 'bg-indigo-600 border-transparent text-white'
-                                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700'
-                            }`}
-                          >
-                            #{tag}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </form>
-      </div>
-
-      {/* Tags & Categories Manager bottom overlay sheet */}
-      {showTagsManager && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center animate-fadeIn">
-          <div 
-            className="absolute inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-xs" 
-            onClick={() => setShowTagsManager(false)}
-          />
-          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-2xl shadow-2xl p-4 flex flex-col max-h-[85vh] z-10 animate-slideUp">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 mb-3 shrink-0">
-              <div className="flex items-center gap-2">
-                <Tag className="w-4 h-4 text-indigo-500" />
-                <h3 className="text-sm font-bold text-slate-850 dark:text-slate-100 uppercase tracking-wider">
-                  Теги и категории
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowTagsManager(false)}
-                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
-              >
-                Готово
-              </button>
+              )}
             </div>
 
-            {/* Scrollable area */}
-            <div className="flex-1 overflow-y-auto space-y-4 pb-8 pr-1">
-              
-              {/* Add New Category quick section */}
-              <div className="bg-slate-50 dark:bg-slate-850/60 border border-slate-100 dark:border-slate-800/60 rounded-xl p-3">
-                {!showAddCatForm ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddCatForm(true);
-                      setNewCatName('');
-                      setNewCatColor('#6366f1');
-                    }}
-                    className="w-full py-2 border border-dashed border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50/30 rounded-lg text-indigo-100 dark:text-indigo-400 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-all"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-indigo-505" />
-                    <span className="text-indigo-650 dark:text-indigo-400 font-bold">Создать категорию тегов</span>
-                  </button>
-                ) : (
-                  <div className="space-y-3">
-                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">Новая категория</span>
-                    <input
-                      type="text"
-                      value={newCatName}
-                      onChange={(e) => setNewCatName(e.target.value)}
-                      placeholder="Название (например: Этап, Приоритет)..."
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
-                    />
+            {/* Sort Popover Button (Notion styled blue when active) */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSortMenu(!showSortMenu)}
+                className={`px-2 py-1 rounded transition-colors cursor-pointer flex items-center gap-1 ${
+                  sortBy !== 'manual'
+                    ? 'text-[#2383e2] font-semibold bg-[#F0F7FF] dark:bg-[#1C2D42]'
+                    : 'hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB]'
+                }`}
+              >
+                <span>Sort</span>
+                {sortBy !== 'manual' && (
+                  <span className="text-[10px]">({sortBy})</span>
+                )}
+              </button>
 
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-1.5">Цвет</span>
-                      <div className="flex flex-wrap gap-2">
-                        {[
-                          '#ef4444', '#f59e0b', '#10b981', '#14b8a6', 
-                          '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899'
-                        ].map(hex => (
-                          <button
-                            key={hex}
-                            type="button"
-                            onClick={() => setNewCatColor(hex)}
-                            style={{ backgroundColor: hex }}
-                            className={`w-5 h-5 rounded-full transition-all cursor-pointer ${
-                              newCatColor === hex ? 'scale-125 ring-2 ring-indigo-550' : 'hover:scale-110'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2 justify-end pt-1">
+              {showSortMenu && (
+                <div 
+                  className="absolute right-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-2 w-48 animate-in fade-in duration-150 select-text"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="text-[11px] font-semibold text-[#787774] dark:text-[#9B9A97] pb-1 mb-1 border-b border-[#E9E9E7] dark:border-[#373737] flex items-center justify-between">
+                    <span>Сортировка</span>
+                    <button onClick={() => setShowSortMenu(false)}>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="space-y-0.5">
+                    {[
+                      { id: 'manual', label: 'По порядку (Drag & Drop)' },
+                      { id: 'title', label: 'По названию (А-Я)' },
+                      { id: 'priority', label: 'По приоритету (P1 -> P4)' },
+                      { id: 'date', label: 'По дате дедлайна' },
+                      { id: 'completed', label: 'По статусу выполнения' },
+                    ].map(s => (
                       <button
-                        type="button"
-                        onClick={() => setShowAddCatForm(false)}
-                        className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-705 bg-slate-100 dark:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                      >
-                        Отмена
-                      </button>
-                      <button
+                        key={s.id}
                         type="button"
                         onClick={() => {
-                          if (newCatName.trim() && onCreateTagCategory) {
-                            onCreateTagCategory(newCatName.trim(), newCatColor);
-                            setNewCatName('');
-                            setShowAddCatForm(false);
-                          }
+                          setSortBy(s.id as any);
+                          setShowSortMenu(false);
                         }}
-                        className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                        className={`w-full text-left px-2 py-1 rounded text-xs flex items-center justify-between ${
+                          sortBy === s.id
+                            ? 'bg-[#F0F7FF] dark:bg-[#1C2D42] text-[#2383e2] font-semibold'
+                            : 'hover:bg-[#F7F7F5] dark:hover:bg-[#252525] text-[#37352F] dark:text-[#EBEBEB]'
+                        }`}
                       >
-                        Создать
+                        <span>{s.label}</span>
+                        {sortBy === s.id && <Check className="w-3 h-3 text-[#2383e2]" />}
                       </button>
-                    </div>
+                    ))}
                   </div>
-                )}
+                </div>
+              )}
+            </div>
+
+            {/* Search Input / Button */}
+            <div className="relative flex items-center">
+              {isSearchOpen ? (
+                <div className="flex items-center bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#2383e2] rounded-md px-2 py-0.5">
+                  <Search className="w-3.5 h-3.5 text-[#9B9A97] mr-1.5 shrink-0" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    autoFocus
+                    placeholder="Search docs..."
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-28 sm:w-36 bg-transparent text-xs text-[#37352F] dark:text-[#EBEBEB] focus:outline-none"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => setSearchQuery('')} className="text-[#9B9A97] hover:text-[#37352F]">
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsSearchOpen(true)}
+                  className="px-2 py-1 rounded hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB] transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Search</span>
+                </button>
+              )}
+            </div>
+
+            {/* Notion's Iconic Solid Blue "New ⌄" Button (Matching SS_List.png) */}
+            <div className="relative flex items-center ml-1">
+              <div className="inline-flex rounded-md shadow-xs overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsInlineAdding(true)}
+                  className="bg-[#2383e2] hover:bg-[#1d6fc2] text-white font-semibold text-xs px-3 py-1 flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <span>New</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowNewTemplateMenu(!showNewTemplateMenu)}
+                  className="bg-[#2383e2] hover:bg-[#1d6fc2] text-white text-xs px-1.5 py-1 border-l border-white/20 transition-colors cursor-pointer"
+                  title="Шаблоны новых страниц"
+                >
+                  <ChevronDown className="w-3 h-3" />
+                </button>
               </div>
 
-              {/* Tag Categories List */}
-              <div className="space-y-3">
-                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider block">Существующие категории</span>
-                {tagCategories.length === 0 ? (
-                  <div className="text-center py-6 text-xs text-slate-400 italic">
-                    Категории тегов отсутствуют
+              {/* New Template Choice Popover */}
+              {showNewTemplateMenu && (
+                <div 
+                  className="absolute right-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-2 w-56 animate-in fade-in duration-150 select-text"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="text-[10px] font-bold text-[#9B9A97] px-2 py-1 uppercase tracking-wider">
+                    Быстрые шаблоны
                   </div>
-                ) : (
-                  tagCategories.map(cat => {
-                    const isEditing = editingCategoryTagId === cat.id;
-                    const isAddingTag = addingTagToCatId === cat.id;
-                    const isExpanded = !expandedCatIds[cat.id]; // default expanded
-
-                    return (
-                      <div
-                        key={cat.id}
-                        className="border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 bg-white dark:bg-slate-900 space-y-2"
-                      >
-                        {/* Title block */}
-                        {isEditing ? (
-                          <div className="space-y-2">
-                            <input
-                              type="text"
-                              value={editingCategoryTagName}
-                              onChange={(e) => setEditingCategoryTagName(e.target.value)}
-                              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-bold"
-                            />
-                            <div className="flex flex-wrap gap-1.5 py-1">
-                              {[
-                                '#ef4444', '#f59e0b', '#10b981', '#14b8a6', 
-                                '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899'
-                              ].map(hex => (
-                                <button
-                                  key={hex}
-                                  type="button"
-                                  onClick={() => setEditingCategoryTagColor(hex)}
-                                  style={{ backgroundColor: hex }}
-                                  className={`w-4 h-4 rounded-full transition-all cursor-pointer ${
-                                    editingCategoryTagColor === hex ? 'scale-125 ring-2 ring-indigo-500' : 'hover:scale-110'
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                            <div className="flex gap-2 justify-end">
-                              <button
-                                type="button"
-                                onClick={() => setEditingCategoryTagId(null)}
-                                className="px-2 py-0.5 text-[10px] text-slate-500 hover:text-slate-700 bg-slate-50 dark:bg-slate-800 rounded"
-                              >
-                                Отмена
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (editingCategoryTagName.trim() && onUpdateTagCategory) {
-                                    onUpdateTagCategory(cat.id, editingCategoryTagName.trim(), editingCategoryTagColor, cat.tags || []);
-                                    setEditingCategoryTagId(null);
-                                  }
-                                }}
-                                className="px-2 py-0.5 text-[10px] bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold"
-                              >
-                                Сохранить
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between">
-                            <div 
-                              className="flex items-center gap-1.5 min-w-0 cursor-pointer select-none py-1 flex-1"
-                              onClick={() => {
-                                setExpandedCatIds(prev => ({ ...prev, [cat.id]: !prev[cat.id] }));
-                              }}
-                            >
-                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                              <span className="font-bold text-xs text-slate-850 dark:text-slate-100 truncate">{cat.name}</span>
-                              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingCategoryTagId(cat.id);
-                                  setEditingCategoryTagName(cat.name);
-                                  setEditingCategoryTagColor(cat.color);
-                                }}
-                                className="text-[10px] py-1 px-1.5 font-bold text-indigo-650 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-850 rounded transition-colors"
-                              >
-                                Изм.
-                              </button>
-                              {onDeleteTagCategory && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (confirmDeleteCatId === cat.id) {
-                                      onDeleteTagCategory(cat.id);
-                                      setConfirmDeleteCatId(null);
-                                    } else {
-                                      setConfirmDeleteCatId(cat.id);
-                                      setTimeout(() => setConfirmDeleteCatId(curr => curr === cat.id ? null : curr), 4000);
-                                    }
-                                  }}
-                                  className={`text-[10px] py-1 px-1.5 rounded transition-all cursor-pointer font-bold ${
-                                    confirmDeleteCatId === cat.id
-                                      ? "text-white bg-rose-600 px-2 animate-pulse"
-                                      : "text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-955/20"
-                                  }`}
-                                  title={confirmDeleteCatId === cat.id ? "Нажмите еще раз для подтверждения" : "Удалить категорию"}
-                                >
-                                  {confirmDeleteCatId === cat.id ? "Удалить?" : "Удал."}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Expandable tags body */}
-                        {isExpanded && !isEditing && (
-                          <div className="space-y-2 pt-1 border-t border-slate-50 dark:border-slate-800/50">
-                            {/* Tags bubble list */}
-                            <div className="flex flex-wrap gap-1">
-                              {(cat.tags || []).length === 0 ? (
-                                <span className="text-[10px] text-slate-400 italic">Теги отсутствуют</span>
-                              ) : (
-                                (cat.tags || []).map(t => (
-                                  <div
-                                    key={t}
-                                    className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded px-2 py-0.5 text-[10px] font-sans text-slate-600 dark:text-slate-350"
-                                  >
-                                    <span>#{t}</span>
-                                    {onUpdateTagCategory && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const filtered = (cat.tags || []).filter(item => item !== t);
-                                          onUpdateTagCategory(cat.id, cat.name, cat.color, filtered);
-                                        }}
-                                        className="text-slate-400 hover:text-rose-500 font-bold ml-1 text-xs shrink-0 w-3 h-3 flex items-center justify-center cursor-pointer"
-                                        title="Удалить тег"
-                                      >
-                                        ×
-                                      </button>
-                                    )}
-                                  </div>
-                                ))
-                              )}
-                            </div>
-
-                            {/* Add inline tag form */}
-                            {onUpdateTagCategory && (
-                              <div className="pt-1 select-none">
-                                {isAddingTag ? (
-                                  <div className="flex items-center gap-1 mt-1">
-                                    <input
-                                      type="text"
-                                      placeholder="Новый тег (без пробелов)..."
-                                      value={newTagNameInput}
-                                      onChange={(e) => setNewTagNameInput(e.target.value.replace(/\s+/g, '-'))}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          e.preventDefault();
-                                          const tagText = newTagNameInput.trim().replace(/#/g, '');
-                                          if (tagText) {
-                                            const updated = Array.from(new Set([...(cat.tags || []), tagText]));
-                                            onUpdateTagCategory(cat.id, cat.name, cat.color, updated);
-                                          }
-                                          setNewTagNameInput('');
-                                          setAddingTagToCatId(null);
-                                        }
-                                        if (e.key === 'Escape') {
-                                          setAddingTagToCatId(null);
-                                        }
-                                      }}
-                                      className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-0.5 text-[10px] focus:ring-1 focus:ring-indigo-500 focus:outline-none flex-1 font-sans text-slate-850 dark:text-slate-100"
-                                      autoFocus
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setAddingTagToCatId(null)}
-                                      className="text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-slate-500"
-                                    >
-                                      Отмена
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const tagText = newTagNameInput.trim().replace(/#/g, '');
-                                        if (tagText) {
-                                          const updated = Array.from(new Set([...(cat.tags || []), tagText]));
-                                          onUpdateTagCategory(cat.id, cat.name, cat.color, updated);
-                                        }
-                                        setNewTagNameInput('');
-                                        setAddingTagToCatId(null);
-                                      }}
-                                      className="text-[10px] px-2 py-0.5 bg-indigo-600 text-white font-bold rounded"
-                                    >
-                                      ОК
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setAddingTagToCatId(cat.id);
-                                      setNewTagNameInput('');
-                                    }}
-                                    className="text-[10px] font-bold text-indigo-650 dark:text-indigo-400 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
-                                  >
-                                    <Plus className="w-2.5 h-2.5" /> Добавить тег
-                                  </button>
-                                )}
-                              </div>
-                            )}
-
-                          </div>
-                        )}
+                  {[
+                    { title: 'Project Kickoff Plan', tag: 'Project Kickoff', priority: 'urgent' as Priority, emoji: '🐵' },
+                    { title: 'Request for Comment (RFC)', tag: 'Request for Comment', priority: 'high' as Priority, emoji: '🤝' },
+                    { title: 'Technical Specification', tag: 'Technical Spec', priority: 'high' as Priority, emoji: '🚂' },
+                    { title: 'Data Analysis Report', tag: 'Data Analysis', priority: 'medium' as Priority, emoji: '🏗️' },
+                    { title: 'Architecture Overview', tag: 'Architecture Overview', priority: 'medium' as Priority, emoji: '🛢️' },
+                    { title: 'User Research & Feedback', tag: 'Research', priority: 'low' as Priority, emoji: '🦜' },
+                  ].map(tmpl => (
+                    <button
+                      key={tmpl.title}
+                      type="button"
+                      onClick={() => handleCreateTemplateTask(tmpl)}
+                      className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-[#F7F7F5] dark:hover:bg-[#252525] flex items-center gap-2"
+                    >
+                      <span className="text-sm">{tmpl.emoji}</span>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[#37352F] dark:text-[#EBEBEB] font-medium truncate">{tmpl.title}</span>
+                        <span className="text-[10px] text-[#9B9A97]">{tmpl.tag}</span>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
+          </div>
+        </div>
+
+        {/* 4. Notion List Rows (The Core View Content matching SS_List.png) */}
+        <div className="space-y-0.5">
+          {taskTreeRoots.length === 0 ? (
+            <div className="py-16 text-center text-[#9B9A97]">
+              <FileText className="w-10 h-10 mx-auto mb-2 opacity-40" />
+              <p className="text-sm font-medium text-[#787774] dark:text-[#9B9A97]">Список документов пуст</p>
+              <p className="text-xs mt-1">Нажмите «New» или кнопку ниже, чтобы создать первую страницу</p>
+              <button
+                type="button"
+                onClick={() => setIsInlineAdding(true)}
+                className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#2383e2] text-white text-xs font-semibold rounded-md shadow-xs hover:bg-[#1d6fc2] transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Создать страницу</span>
+              </button>
+            </div>
+          ) : (
+            taskTreeRoots.map(item => renderNotionRow(item, 0))
+          )}
+        </div>
+
+        {/* 5. Inline "+ New page" Row at the bottom of the list */}
+        {isInlineAdding ? (
+          <form 
+            onSubmit={handleCreateInlineTask}
+            className="flex items-center gap-2 py-2 px-2.5 rounded-md bg-[#F7F7F5] dark:bg-[#202020] border border-[#2383e2] mt-1 animate-in fade-in duration-100"
+          >
+            <span className="text-base">{inlineNewEmoji}</span>
+            <input
+              ref={inlineInputRef}
+              type="text"
+              value={inlineNewTitle}
+              onChange={(e) => setInlineNewTitle(e.target.value)}
+              placeholder="Название новой страницы (Enter для создания, Esc для отмены)..."
+              className="flex-1 bg-transparent text-sm text-[#37352F] dark:text-[#EBEBEB] focus:outline-none placeholder-[#9B9A97]"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setIsInlineAdding(false);
+              }}
+            />
+            <button
+              type="submit"
+              className="px-2.5 py-1 bg-[#2383e2] hover:bg-[#1d6fc2] text-white text-xs font-semibold rounded transition-colors cursor-pointer"
+            >
+              Добавить
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsInlineAdding(true)}
+            className="flex items-center gap-2 py-1.5 px-2.5 text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#EBEBEB] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] rounded-md transition-colors cursor-pointer mt-1 text-xs font-medium w-full text-left group"
+          >
+            <Plus className="w-4 h-4 text-[#9B9A97] group-hover:text-[#37352F] dark:group-hover:text-[#EBEBEB]" />
+            <span>New page</span>
+          </button>
+        )}
+
+      </div>
+
+      {/* 6. Multi-Select Bottom Floating Action Bar */}
+      {isMultiSelectMode && selectedNodeIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#202020] text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 z-[140] animate-in slide-in-from-bottom-4 duration-200 border border-[#373737]">
+          <span className="text-xs font-semibold text-[#D4D4D4]">
+            Выбрано: {selectedNodeIds.length}
+          </span>
+          <div className="h-4 w-px bg-[#444444]" />
+          
+          {onBulkToggleCompleted && (
+            <button
+              type="button"
+              onClick={() => onBulkToggleCompleted(true)}
+              className="px-2.5 py-1 bg-[#333333] hover:bg-[#444444] rounded-lg text-xs font-medium transition-colors cursor-pointer"
+            >
+              Отметить выполненными
+            </button>
+          )}
+
+          {onBulkDelete && (
+            <button
+              type="button"
+              onClick={onBulkDelete}
+              className="px-2.5 py-1 bg-rose-900/40 hover:bg-rose-900/60 text-rose-300 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>Удалить</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              if (setIsMultiSelectMode) setIsMultiSelectMode(false);
+              if (onSelectNodes) onSelectNodes([]);
+            }}
+            className="p-1 text-[#9B9A97] hover:text-white rounded transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Share Modal Dialog */}
+      {showShareModal && (
+        <div 
+          className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setShowShareModal(false)}
+        >
+          <div 
+            className="bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-2xl shadow-2xl p-5 w-full max-w-md animate-in zoom-in-95 duration-150 select-text"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#E9E9E7] dark:border-[#373737]">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{projectIcon || '📎'}</span>
+                <h3 className="text-sm font-bold text-[#37352F] dark:text-[#EBEBEB]">Поделиться базой «{projectName}»</h3>
+              </div>
+              <button 
+                onClick={() => setShowShareModal(false)}
+                className="p-1 rounded text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#EBEBEB]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-[#787774] dark:text-[#9B9A97] mb-4 leading-relaxed">
+              Все страницы в этом представлении синхронизируются в реальном времени с вашей базой данных и картой задач.
+            </p>
+            <div className="flex items-center gap-2 bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#E9E9E7] dark:border-[#373737] rounded-xl p-2 mb-4">
+              <input
+                type="text"
+                readOnly
+                value={window.location.href}
+                className="flex-1 bg-transparent text-xs text-[#37352F] dark:text-[#EBEBEB] focus:outline-none select-all font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(window.location.href);
+                  alert('Ссылка скопирована в буфер обмена!');
+                }}
+                className="px-3 py-1 bg-[#2383e2] hover:bg-[#1d6fc2] text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0"
+              >
+                Копировать
+              </button>
+            </div>
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={() => setShowShareModal(false)}
+                className="px-4 py-1.5 rounded-lg border border-[#E9E9E7] dark:border-[#373737] text-xs font-medium text-[#787774] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] transition-colors"
+              >
+                Закрыть
+              </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Floating bulk action selection panel at bottom */}
-      <AnimatePresence>
-        {isMultiSelectMode && selectedNodeIds && selectedNodeIds.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.95 }}
-            className="fixed bottom-16 left-1/2 -translate-x-1/2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-2xl shadow-2xl z-50 flex items-center justify-between gap-4 max-w-[calc(100vw-2rem)] w-auto shrink-0 select-none"
-          >
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse shrink-0" />
-              <p className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider shrink-0">
-                Выбрано: <strong className="text-slate-800 dark:text-slate-100 font-black">{selectedNodeIds.length}</strong>
-              </p>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (onBulkToggleCompleted) {
-                    onBulkToggleCompleted(true);
-                  }
-                }}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors cursor-pointer"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Готово</span>
-              </button>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (onBulkToggleCompleted) {
-                    onBulkToggleCompleted(false);
-                  }
-                }}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-              >
-                <Circle className="w-3.5 h-3.5 text-slate-400" />
-                <span>Сбросить</span>
-              </button>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (onBulkDelete) {
-                    onBulkDelete();
-                  }
-                }}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-bold bg-rose-500 hover:bg-rose-600 text-white shadow-xs transition-colors cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Удалить</span>
-              </button>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (onSelectNodes) {
-                    onSelectNodes([]);
-                  }
-                  if (setIsMultiSelectMode) {
-                    setIsMultiSelectMode(false);
-                  }
-                }}
-                className="flex items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-                title="Сбросить выделение"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
     </div>
   );

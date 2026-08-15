@@ -5998,13 +5998,13 @@ export default function MindMapCanvas({
   return (
     <div 
       ref={containerRef}
-      className={`relative select-none overflow-hidden bg-white dark:bg-slate-950 outline-none transition-all duration-300 ${
+      className={`relative select-none overflow-hidden bg-[#faf9f6] dark:bg-[#191919] outline-none transition-all duration-300 font-sans ${
         isFullScreen 
           ? 'fixed inset-0 z-[150] w-screen h-screen' 
           : 'flex-1 h-full'
-      } ${focusedContainerId ? 'ring-4 ring-amber-500/15 ring-inset shadow-[inset_0_0_80px_rgba(245,158,11,0.05)]' : ''}`}
+      } ${focusedContainerId ? 'ring-2 ring-[#2383e2]/30 ring-inset shadow-[inset_0_0_80px_rgba(35,131,226,0.03)]' : ''}`}
       style={{
-        backgroundImage: `radial-gradient(${darkMode ? '#3b375b' : '#cccae0'} 1.2px, transparent 1.2px)`,
+        backgroundImage: `radial-gradient(${darkMode ? '#333333' : '#e0dfdb'} 1.2px, transparent 1.2px)`,
         backgroundSize: '24px 24px',
         backgroundPosition: `${panX}px ${panY}px`,
       }}
@@ -6021,17 +6021,17 @@ export default function MindMapCanvas({
       {focusedTaskId && (() => {
         const focusedTask = nodes.find(n => n.id === focusedTaskId);
         return (
-          <div className="absolute top-4 left-4 z-50 flex items-center gap-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3.5 py-2 border border-rose-250 dark:border-rose-900/40 rounded-xl shadow-[0_8px_20px_-6px_rgba(239,68,68,0.25)] select-none animate-in fade-in slide-in-from-top-2">
-            <span className="flex h-2.5 w-2.5 relative shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-450 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+          <div className="absolute top-4 left-4 z-50 flex items-center gap-2 bg-white/95 dark:bg-[#202020]/95 backdrop-blur-md px-3 py-1.5 border border-[#e9e9e8] dark:border-[#2e2e2e] rounded-md shadow-sm select-none animate-in fade-in slide-in-from-top-2">
+            <span className="flex h-2 w-2 relative shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#eb5757] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#eb5757]"></span>
             </span>
-            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 font-sans truncate max-w-[200px]">
-              Фокус: <strong className="font-extrabold text-rose-600 dark:text-rose-400">{focusedTask?.text || 'Задача'}</strong>
+            <span className="text-[12px] font-medium text-[#37352f] dark:text-[#d4d4d4] truncate max-w-[200px]">
+              Фокус: <strong className="font-semibold text-[#eb5757] dark:text-[#ff7b72]">{focusedTask?.text || 'Задача'}</strong>
             </span>
             <button
               onClick={handleGoBackFocus}
-              className="text-[10px] font-black text-rose-500 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-200 uppercase tracking-wider hover:scale-105 transition-transform px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/40 rounded-md cursor-pointer border border-rose-100 dark:border-rose-900/30"
+              className="text-[11px] font-medium text-[#787774] dark:text-[#9b9a97] hover:text-[#37352f] dark:hover:text-[#ffffff] hover:bg-[#f1f1ef] dark:hover:bg-[#2c2c2c] transition-colors px-1.5 py-0.5 rounded cursor-pointer border border-[#e9e9e8] dark:border-[#2e2e2e]"
               title="Вернуться на один уровень выше"
             >
               Назад
@@ -6042,17 +6042,17 @@ export default function MindMapCanvas({
 
       {/* Floating Full Screen Control on Top Right */}
       {!focusedContainerId && (
-        <div className="absolute top-4 right-4 z-50">
+        <div className="absolute top-3 right-3 z-50">
           <button
             onClick={() => setIsFullScreen(!isFullScreen)}
-            className={`p-2.5 rounded-lg border shadow-md transition-all cursor-pointer flex items-center justify-center shrink-0 outline-none ${
+            className={`p-1.5 rounded-md border shadow-xs transition-all cursor-pointer flex items-center justify-center shrink-0 outline-none ${
               isFullScreen 
-                ? 'bg-amber-50 dark:bg-amber-950/35 border-amber-200 dark:border-amber-805 text-amber-600 dark:text-amber-400' 
-                : 'bg-white/95 dark:bg-slate-905/95 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80'
+                ? 'bg-[#efeffe] dark:bg-[#202538] border-[#c4c7f8] dark:border-[#343b60] text-[#2383e2] dark:text-[#529cca]' 
+                : 'bg-white/90 dark:bg-[#202020]/90 text-[#787774] dark:text-[#9b9a97] border-[#e9e9e8] dark:border-[#2e2e2e] hover:text-[#37352f] dark:hover:text-[#ffffff] hover:bg-[#f7f6f3] dark:hover:bg-[#2c2c2c]'
             }`}
             title={isFullScreen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран"}
           >
-            {isFullScreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+            {isFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
         </div>
       )}
@@ -6355,18 +6355,18 @@ export default function MindMapCanvas({
         );
       })()}
       {/* Floating Canvas UI Controls */}
-      <div className={`absolute ${focusedContainerId ? 'top-20 sm:top-4' : 'top-4'} left-4 z-10 flex gap-2`}>
-        <div className="hidden lg:flex items-center gap-1 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm">
-          <span className="text-xs font-mono font-medium text-slate-500 dark:text-slate-400">
-            Перемещение: ЛКМ / Жест. Масштаб:
+      <div className={`absolute ${focusedContainerId ? 'top-20 sm:top-4' : 'top-3'} left-3 z-10 flex gap-2`}>
+        <div className="hidden lg:flex items-center gap-1.5 bg-white/90 dark:bg-[#202020]/90 backdrop-blur-md px-2.5 py-1 border border-[#e9e9e8] dark:border-[#2e2e2e] rounded-md shadow-xs">
+          <span className="text-[11px] font-medium text-[#787774] dark:text-[#9b9a97]">
+            Перемещение: ЛКМ · Масштаб:
           </span>
-          <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 px-1 bg-indigo-50 dark:bg-indigo-950/40 rounded">
+          <span className="text-[11px] font-semibold text-[#37352f] dark:text-[#d4d4d4] px-1 bg-[#f1f1ef] dark:bg-[#2c2c2c] rounded">
             {Math.round(zoom * 100)}%
           </span>
         </div>
       </div>
 
-      <div className="absolute bottom-12 right-4 sm:bottom-4 sm:right-4 z-40 flex flex-col gap-3 items-end">
+      <div className="absolute bottom-12 right-4 sm:bottom-4 sm:right-4 z-40 flex flex-col gap-2.5 items-end">
         {/* Кнопка списка контейнеров */}
         <div className="relative">
           <button
@@ -6375,23 +6375,23 @@ export default function MindMapCanvas({
               setIsContainersDropdownOpen(!isContainersDropdownOpen);
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:scale-110 active:scale-95 transition-all duration-200 cursor-pointer focus:outline-none`}
+            className={`w-9 h-9 rounded-md flex items-center justify-center shadow-xs bg-white dark:bg-[#202020] border border-[#e9e9e8] dark:border-[#2e2e2e] text-[#787774] dark:text-[#9b9a97] hover:text-[#37352f] dark:hover:text-[#ffffff] hover:bg-[#f7f6f3] dark:hover:bg-[#2c2c2c] transition-all cursor-pointer focus:outline-none`}
             title="Контейнеры проекта"
           >
-            <Layers className="w-5 h-5" />
+            <Layers className="w-4 h-4" />
           </button>
 
           {isContainersDropdownOpen && (
             <div
-              className="absolute bottom-12 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-3.5 w-72 z-50 flex flex-col gap-2 origin-bottom-right animate-in fade-in zoom-in-95 duration-150"
+              className="absolute bottom-11 right-0 bg-white dark:bg-[#202020] border border-[#e9e9e8] dark:border-[#2e2e2e] rounded-lg shadow-lg p-2.5 w-72 z-50 flex flex-col gap-1.5 origin-bottom-right animate-in fade-in zoom-in-95 duration-150"
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                <span className="text-xs font-extrabold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+              <div className="flex items-center justify-between border-b border-[#ededeb] dark:border-[#2a2a2a] pb-2 px-1">
+                <span className="text-xs font-semibold text-[#37352f] dark:text-[#d4d4d4]">
                   Контейнеры проекта
                 </span>
-                <span className="text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded">
+                <span className="text-[10px] font-medium bg-[#f1f1ef] dark:bg-[#2c2c2c] text-[#787774] dark:text-[#9b9a97] px-1.5 py-0.5 rounded">
                   {nodes.filter(n => n.isContainer && !n.archived).length}
                 </span>
               </div>
@@ -6505,15 +6505,15 @@ export default function MindMapCanvas({
               setIsElementDropdownOpen(!isElementDropdownOpen);
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all duration-250 cursor-pointer text-white bg-indigo-600 hover:bg-indigo-700 hover:scale-110 active:scale-95 border-none focus:outline-none`}
+            className={`w-10 h-10 rounded-md flex items-center justify-center shadow-xs transition-all duration-200 cursor-pointer text-white bg-[#2383e2] hover:bg-[#1b6ec2] dark:bg-[#2383e2] dark:hover:bg-[#1b6ec2] focus:outline-none border border-transparent`}
             title="Добавить элемент"
           >
-            <Plus className={`w-7 h-7 transition-transform duration-250 ${isElementDropdownOpen ? 'rotate-45' : ''}`} />
+            <Plus className={`w-5 h-5 transition-transform duration-200 ${isElementDropdownOpen ? 'rotate-45' : ''}`} />
           </button>
 
           {isElementDropdownOpen && (
             <div
-              className="absolute bottom-16 right-0 mb-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-2 w-64 z-50 flex flex-col gap-1 select-text origin-bottom-right"
+              className="absolute bottom-12 right-0 mb-1 bg-white dark:bg-[#202020] border border-[#e9e9e8] dark:border-[#2e2e2e] rounded-lg shadow-lg p-1.5 w-64 z-50 flex flex-col gap-0.5 select-text origin-bottom-right"
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             >
@@ -7431,20 +7431,20 @@ export default function MindMapCanvas({
                     }
                   }
                 }}
-                className={`absolute group rounded-2xl border-2 ${(isDraggingThisNode || resizingNodeId === node.id) ? '' : 'transition-[background-color,border-color,opacity,box-shadow,transform] duration-150'} ${
+                className={`absolute group rounded-xl border ${(isDraggingThisNode || resizingNodeId === node.id) ? '' : 'transition-[background-color,border-color,opacity,box-shadow,transform] duration-150'} ${
                   isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                 } ${
                   draggedOverTagNodeId === node.id
-                    ? 'bg-emerald-50/10 dark:bg-emerald-950/10 border-emerald-500 ring-4 ring-emerald-500/30 scale-[1.015]'
+                    ? 'bg-[#edf3ec]/50 dark:bg-[#1c2c20]/50 border-[#448361] ring-2 ring-[#448361]/30 scale-[1.01]'
                     : hoverTargetId === node.id
-                      ? 'bg-amber-50 dark:bg-amber-950 border-amber-500 ring-4 ring-amber-500/30 scale-[1.015]'
+                      ? 'bg-[#fbf3db]/50 dark:bg-[#342e1d]/50 border-[#cb912f] ring-2 ring-[#cb912f]/30 scale-[1.01]'
                       : isOverdueCont
-                        ? 'bg-white dark:bg-slate-900 border-rose-500 dark:border-rose-600/80 shadow-[0_0_15px_rgba(239,68,68,0.25)] ring-4 ring-rose-500/20'
+                        ? 'bg-white dark:bg-[#202020] border-[#eb5757] dark:border-[#eb5757]/80 shadow-xs ring-2 ring-[#eb5757]/20'
                         : hasNonOverdueCont
-                          ? 'bg-sky-50/30 dark:bg-sky-950/20 border-sky-500 dark:border-sky-500/80 shadow-[0_0_15px_rgba(56,189,248,0.25)] ring-4 ring-sky-500/20'
+                          ? 'bg-[#edf5fa]/40 dark:bg-[#1a2634]/40 border-[#2383e2] dark:border-[#529cca]/80 shadow-xs ring-2 ring-[#2383e2]/20'
                           : isContainerSelected
-                            ? 'bg-white dark:bg-slate-900 border-amber-500 shadow-lg ring-4 ring-amber-500/20'
-                            : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 shadow-sm hover:border-slate-400 dark:hover:border-slate-700'
+                            ? 'bg-white dark:bg-[#202020] border-[#2383e2] dark:border-[#529cca] shadow-sm ring-2 ring-[#2383e2]/20'
+                            : 'bg-white dark:bg-[#202020] border-[#e9e9e8] dark:border-[#2e2e2e] shadow-xs hover:border-[#d0d0ce] dark:hover:border-[#3e3e3e]'
                 } flex flex-col`}
                 onMouseDown={(e) => {
                   const target = e.target as HTMLElement;
@@ -7489,14 +7489,14 @@ export default function MindMapCanvas({
                     startDragNode(e, node);
                   }}
                 >
-                  <div className={`flex items-center gap-1.5 px-3 py-1 font-sans font-extrabold text-[11px] uppercase tracking-wider whitespace-nowrap rounded-[5px] border cursor-grab active:cursor-grabbing select-none shadow-sm transition-all duration-150 ${
+                  <div className={`flex items-center gap-1.5 px-2.5 py-0.5 font-sans font-medium text-[11px] whitespace-nowrap rounded border cursor-grab active:cursor-grabbing select-none shadow-xs transition-all duration-150 ${
                     isOverdueCont
-                      ? 'bg-rose-500 text-white border-rose-600 shadow-md animate-pulse'
+                      ? 'bg-[#ffe2dd] dark:bg-[#4d2323] text-[#c93b3b] dark:text-[#eb5757] border-[#eb5757]/40'
                       : hasNonOverdueCont
-                        ? 'bg-sky-500 text-white border-sky-600 shadow-md'
+                        ? 'bg-[#e0f0ff] dark:bg-[#1a3350] text-[#1c64b0] dark:text-[#529cca] border-[#2383e2]/40'
                         : isContainerSelected
-                          ? 'bg-amber-500 text-white border-amber-600 shadow-md'
-                          : 'bg-slate-100 dark:bg-slate-805 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-750'
+                          ? 'bg-[#2383e2] text-white border-[#2383e2]'
+                          : 'bg-[#f1f1ef] dark:bg-[#2c2c2c] text-[#37352f] dark:text-[#d4d4d4] border-[#e9e9e8] dark:border-[#373737] hover:bg-[#eae9e5] dark:hover:bg-[#333333]'
                   }`}>
                     {editingNodeId === node.id ? (
                       <input
@@ -8812,25 +8812,25 @@ export default function MindMapCanvas({
                   }
                 }
               }}
-              className={`absolute group cursor-grab active:cursor-grabbing rounded-xl border ${isDraggingThisNode ? '' : 'transition-[background-color,border-color,opacity,box-shadow,transform] duration-150'} ${
+              className={`absolute group cursor-grab active:cursor-grabbing rounded-lg border ${(isDraggingThisNode || resizingNodeId === node.id) ? '' : 'transition-[background-color,border-color,opacity,box-shadow,transform] duration-150'} ${
                 isDimmed 
                   ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 hover:opacity-90 hover:grayscale-0 hover:scale-100 duration-300' 
                   : ''
               } ${
                 draggedOverTagNodeId === node.id
-                  ? 'bg-emerald-50/10 dark:bg-emerald-950/15 border-emerald-500 ring-4 ring-emerald-500 scale-[1.03] shadow-[0_0_15px_rgba(16,185,129,0.4)] animate-pulse'
+                  ? 'bg-[#edf3ec]/50 dark:bg-[#1c2c20]/50 border-[#448361] ring-2 ring-[#448361]/30 scale-[1.015]'
                   : hoverTargetId === node.id
-                    ? 'bg-indigo-50/10 dark:bg-indigo-950/20 border-indigo-500 ring-4 ring-indigo-500 scale-[1.03] shadow-[0_0_15px_rgba(99,102,241,0.4)] animate-pulse'
+                    ? 'bg-[#fbf3db]/50 dark:bg-[#342e1d]/50 border-[#cb912f] ring-2 ring-[#cb912f]/30 scale-[1.015]'
                     : isRoot
                       ? isSelected
-                        ? 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent ring-4 ring-indigo-250 dark:ring-indigo-900 shadow-xl'
-                        : 'bg-indigo-600 dark:bg-indigo-800 text-white border-transparent shadow-md hover:shadow-lg hover:scale-[1.02]'
+                        ? 'bg-[#2383e2] text-white border-transparent ring-2 ring-[#2383e2]/40 shadow-sm'
+                        : 'bg-[#2383e2] text-white border-transparent shadow-xs hover:shadow-sm'
                       : priorityViewActive
-                        ? `bg-white dark:bg-slate-900 ${getPriorityCardStyles(node.priority, isSelected)}`
+                        ? `bg-white dark:bg-[#202020] ${getPriorityCardStyles(node.priority, isSelected)}`
                         : isSelected
-                          ? 'bg-white dark:bg-slate-900 border-indigo-650 dark:border-indigo-400 ring-4 ring-indigo-100 dark:ring-indigo-950/40 shadow-lg' 
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:hover:border-slate-655 shadow-sm'
-              } ${node.completed ? 'opacity-85' : isNodeOverdue(node, nodes) ? 'border-red-400 dark:border-red-900/60 shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-50/10 dark:bg-red-950/5' : ''}`}
+                          ? 'bg-white dark:bg-[#202020] border-[#2383e2] dark:border-[#529cca] ring-2 ring-[#2383e2]/25 shadow-sm' 
+                          : 'bg-white dark:bg-[#202020] border-[#e9e9e8] dark:border-[#2e2e2e] hover:border-[#d0d0ce] dark:hover:border-[#3e3e3e] shadow-xs'
+              } ${node.completed ? 'opacity-70 bg-[#faf9f6] dark:bg-[#1c1c1c]' : isNodeOverdue(node, nodes) ? 'border-[#eb5757]/60 dark:border-[#eb5757]/50 bg-[#fff5f5]/30 dark:bg-[#2e1d1d]/30' : ''}`}
               onMouseDown={(e) => {
                 const target = e.target as HTMLElement;
                 if (target.tagName === 'INPUT' || target.closest('button')) return;
@@ -8878,9 +8878,9 @@ export default function MindMapCanvas({
               )}
 
               {/* Card Title & Checkbox */}
-              <div className="p-3">
+              <div className="p-2.5">
                 {isRoot && (
-                  <p className="text-[8px] font-bold text-indigo-200 uppercase tracking-widest mb-1">
+                  <p className="text-[9px] font-medium text-white/80 uppercase tracking-wider mb-1">
                     Главная цель / Идея
                   </p>
                 )}
@@ -8900,30 +8900,30 @@ export default function MindMapCanvas({
                     }
                     className={`mt-0.5 transition-colors ${
                       checkHasActiveBlockers(node.id)
-                        ? 'text-rose-500 hover:text-rose-600 dark:text-rose-450 dark:hover:text-rose-400 cursor-not-allowed'
+                        ? 'text-[#eb5757] hover:text-[#d14343] cursor-not-allowed'
                         : isRoot 
-                          ? 'text-indigo-300 hover:text-white cursor-pointer' 
-                          : 'text-slate-400 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer'
+                          ? 'text-white/80 hover:text-white cursor-pointer' 
+                          : 'text-[#9b9a97] dark:text-[#5a5a5a] hover:text-[#37352f] dark:hover:text-[#d4d4d4] cursor-pointer'
                     }`}
                   >
                     {node.completed ? (
                       isRoot ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-300 fill-indigo-800/50" />
+                        <CheckCircle2 className="w-4 h-4 text-white fill-white/20" />
                       ) : (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 fill-emerald-50 dark:fill-emerald-950/30" />
+                        <CheckCircle2 className="w-4 h-4 text-[#448361] dark:text-[#529e72] fill-[#edf3ec] dark:fill-[#1c2c20]" />
                       )
                     ) : checkHasActiveBlockers(node.id) ? (
-                      <Lock className="w-4 h-4 text-rose-500 dark:text-rose-400 animate-in zoom-in-50" />
+                      <Lock className="w-4 h-4 text-[#eb5757] animate-in zoom-in-50" />
                     ) : activePomodoroNodeId === node.id ? (
                       <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
-                        <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-rose-400 opacity-75"></span>
-                        <Loader2 className="w-4 h-4 text-rose-500 dark:text-rose-400 animate-spin" />
+                        <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-[#eb5757] opacity-75"></span>
+                        <Loader2 className="w-4 h-4 text-[#eb5757] animate-spin" />
                       </span>
                     ) : (
                       isRoot ? (
-                        <Circle className="w-4 h-4 text-indigo-400 grayscale contrast-125" />
+                        <Circle className="w-4 h-4 text-white/60" />
                       ) : (
-                        <Circle className="w-4 h-4 text-slate-300 dark:text-slate-705" />
+                        <Circle className="w-4 h-4 text-[#d3d3d1] dark:text-[#454545] hover:text-[#787774]" />
                       )
                     )}
                   </button>
@@ -8965,18 +8965,18 @@ export default function MindMapCanvas({
                             text: e.target.value
                           });
                         }}
-                        className={`w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-1 py-0.5 rounded border border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+                        className={`w-full text-[13px] font-normal bg-[#f7f6f3] dark:bg-[#2c2c2c] text-[#37352f] dark:text-[#d4d4d4] px-1 py-0.5 rounded border border-[#2383e2] focus:outline-none focus:ring-1 focus:ring-[#2383e2] ${
                           isRoot ? 'text-slate-900 bg-white' : ''
                         }`}
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
                       />
                     ) : (
-                      <p className={`text-xs font-semibold leading-snug font-sans break-words ${
+                      <p className={`text-[13px] leading-snug font-sans break-words ${
                         isRoot 
-                          ? 'text-white' 
-                          : 'text-slate-800 dark:text-slate-100 font-medium'
-                      } ${node.completed ? 'line-through opacity-60 italic' : ''} flex items-center flex-wrap gap-1`}>
+                          ? 'text-white font-medium' 
+                          : 'text-[#37352f] dark:text-[#d4d4d4] font-medium'
+                      } ${node.completed ? 'line-through text-[#9b9a97] dark:text-[#6a6a6a] italic' : ''} flex items-center flex-wrap gap-1`}>
                         {(() => {
                           if (!node.parentId) return null;
                           const parent = nodes.find(p => p.id === node.parentId);
@@ -9148,16 +9148,16 @@ export default function MindMapCanvas({
                 {!node.isCardCollapsed ? (
                   <>
                     {/* Priority, Due Date & Tags inline editing triggers */}
-                    <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                    <div className="flex flex-wrap items-center gap-1 mt-2">
                       {!isRoot && (
                         <div className="relative">
                           <button
                             type="button"
                             onClick={(e) => handleToggleInlineMenu(e, node.id, 'priority')}
-                            className="hover:scale-[1.03] transition-transform cursor-pointer block text-left"
+                            className="transition-transform cursor-pointer block text-left"
                             title="Изменить приоритет"
                           >
-                            <span className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${pInfo.bg}`}>
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-normal px-1.5 py-0.5 rounded leading-none ${pInfo.bg}`}>
                               <span className={`w-1 h-1 rounded-full ${pInfo.dot}`} />
                               {pInfo.label}
                             </span>
@@ -9165,13 +9165,13 @@ export default function MindMapCanvas({
                           
                           {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'priority' && (
                             <div 
-                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 rounded-xl shadow-xl p-1.5 w-44 z-[100] animate-in fade-in zoom-in-95 duration-100 ${
-                                openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                              className={`absolute left-0 bg-white dark:bg-[#202020] border border-[#e9e9e8] dark:border-[#2e2e2e] rounded-lg shadow-lg p-1 w-44 z-[100] animate-in fade-in zoom-in-95 duration-100 ${
+                                openInlineMenuUpwards ? 'bottom-full mb-1' : 'top-full mt-1'
                               }`}
                               onClick={(e) => e.stopPropagation()}
                               onMouseDown={(e) => e.stopPropagation()}
                             >
-                              <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase px-2 mb-1 tracking-wider text-left">Приоритет:</p>
+                              <p className="text-[10px] font-medium text-[#787774] dark:text-[#9b9a97] px-2 py-1 text-left">Приоритет:</p>
                               <div className="space-y-0.5">
                                 {(['urgent', 'high', 'medium', 'low', 'none'] as Priority[]).map((p) => {
                                   const label = p === 'urgent' ? '🔥 Критический' : p === 'high' ? '🟠 Высокий' : p === 'medium' ? '🔵 Средний' : p === 'low' ? '🟢 Низкий' : '⚪ Без приоритета';
@@ -9184,12 +9184,12 @@ export default function MindMapCanvas({
                                         onUpdateNode({ ...node, priority: p });
                                         setActiveInlineMenu(null);
                                       }}
-                                      className={`w-full text-left font-semibold hover:bg-slate-100 dark:hover:bg-slate-700 px-2 py-1 text-[10.5px] rounded flex items-center justify-between cursor-pointer ${
-                                        isSelected ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20' : 'text-slate-650 dark:text-slate-300'
+                                      className={`w-full text-left font-normal hover:bg-[#f1f1ef] dark:hover:bg-[#2c2c2c] px-2 py-1 text-[11px] rounded flex items-center justify-between cursor-pointer ${
+                                        isSelected ? 'text-[#2383e2] dark:text-[#529cca] bg-[#efeffe] dark:bg-[#202538]' : 'text-[#37352f] dark:text-[#d4d4d4]'
                                       }`}
                                     >
                                       <span>{label}</span>
-                                      {isSelected && <CheckCircle2 className="w-3 h-3 text-indigo-650 dark:text-indigo-400" />}
+                                      {isSelected && <CheckCircle2 className="w-3 h-3 text-[#2383e2] dark:text-[#529cca]" />}
                                     </button>
                                   );
                                 })}
@@ -9205,16 +9205,16 @@ export default function MindMapCanvas({
                           <button
                             type="button"
                             onClick={(e) => handleToggleInlineMenu(e, node.id, 'date')}
-                            className={`inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider hover:scale-[1.03] transition-transform cursor-pointer text-left ${
+                            className={`inline-flex items-center gap-1 text-[10px] font-normal px-1.5 py-0.5 rounded leading-none transition-transform cursor-pointer text-left ${
                               node.completed
                                 ? isRoot
-                                  ? 'bg-indigo-700/50 text-indigo-200 border-indigo-500/30'
-                                  : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-550 border-slate-200 dark:border-slate-800'
+                                  ? 'bg-white/20 text-white/80'
+                                  : 'bg-[#f1f1ef] dark:bg-[#2c2c2c] text-[#787774] dark:text-[#9b9a97]'
                                 : isNodeOverdue(node, nodes)
-                                  ? 'bg-rose-50 dark:bg-rose-955/50 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-900/60 animate-pulse font-extrabold shadow-[0_0_6px_rgba(244,63,94,0.3)]'
+                                  ? 'bg-[#ffe2dd] dark:bg-[#4d2323] text-[#c93b3b] dark:text-[#eb5757] font-medium'
                                   : isRoot
-                                    ? 'bg-indigo-500/20 text-indigo-100 border-indigo-400/30'
-                                    : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-250 dark:border-emerald-900'
+                                    ? 'bg-white/20 text-white'
+                                    : 'bg-[#edf3ec] dark:bg-[#1c2c20] text-[#346b4e] dark:text-[#448361]'
                             }`}
                             title={
                               node.completed 
@@ -9225,9 +9225,9 @@ export default function MindMapCanvas({
                             }
                           >
                             {isNodeOverdue(node, nodes) && !node.completed ? (
-                              <AlertTriangle className="w-2.5 h-2.5 text-rose-500 animate-bounce" />
+                              <AlertTriangle className="w-2.5 h-2.5 text-[#c93b3b] dark:text-[#eb5757]" />
                             ) : (
-                              <Calendar className="w-2.5 h-2.5 text-indigo-500 dark:text-indigo-400" />
+                              <Calendar className="w-2.5 h-2.5 text-[#787774] dark:text-[#9b9a97]" />
                             )}
                             <span>{formatDisplayDate(node.dueDate)}{node.dueTime ? `, ${node.dueTime}` : ''}</span>
                           </button>
@@ -9236,10 +9236,10 @@ export default function MindMapCanvas({
                             <button
                               type="button"
                               onClick={(e) => handleToggleInlineMenu(e, node.id, 'date')}
-                              className="inline-flex items-center gap-1 text-[8px] text-slate-400 dark:text-slate-550 hover:text-slate-600 dark:hover:text-slate-300 px-1.5 py-0.5 rounded border border-dashed border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-900 hover:scale-[1.03] transition-all cursor-pointer text-left"
+                              className="inline-flex items-center gap-1 text-[10px] text-[#787774] dark:text-[#9b9a97] hover:text-[#37352f] dark:hover:text-[#ffffff] px-1.5 py-0.5 rounded hover:bg-[#f1f1ef] dark:hover:bg-[#2c2c2c] transition-all cursor-pointer text-left"
                               title="Добавить срок выполнения"
                             >
-                              <Calendar className="w-2.5 h-2.5 text-slate-400" />
+                              <Calendar className="w-2.5 h-2.5 text-[#787774] dark:text-[#9b9a97]" />
                               <span>+ Срок</span>
                             </button>
                           )
@@ -9401,39 +9401,39 @@ export default function MindMapCanvas({
                           <button
                             type="button"
                             onClick={(e) => handleToggleInlineMenu(e, node.id, 'tag')}
-                            className="inline-flex items-center gap-1 text-[8px] text-slate-455 dark:text-slate-500 hover:text-indigo-605 dark:hover:text-amber-400 px-1.5 py-0.5 rounded border border-dashed border-slate-205 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850 hover:scale-[1.03] transition-all cursor-pointer text-left"
+                            className="inline-flex items-center gap-1 text-[10px] text-[#787774] dark:text-[#9b9a97] hover:text-[#37352f] dark:hover:text-[#ffffff] px-1.5 py-0.5 rounded hover:bg-[#f1f1ef] dark:hover:bg-[#2c2c2c] transition-all cursor-pointer text-left"
                             title="Добавить или изменить теги на месте"
                           >
-                            <Tag className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                            <Tag className="w-2.5 h-2.5 text-[#787774] dark:text-[#9b9a97] shrink-0" />
                             <span>Теги</span>
                           </button>
 
                           {activeInlineMenu?.cardId === node.id && activeInlineMenu?.type === 'tag' && (
                             <div 
-                              className={`absolute left-0 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-755 rounded-2xl shadow-2xl p-3 w-64 z-[100] flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 ${
-                                openInlineMenuUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                              className={`absolute left-0 bg-white dark:bg-[#202020] border border-[#e9e9e8] dark:border-[#2e2e2e] rounded-lg shadow-lg p-2.5 w-64 z-[100] flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-100 ${
+                                openInlineMenuUpwards ? 'bottom-full mb-1' : 'top-full mt-1'
                               }`}
                               onClick={(e) => e.stopPropagation()}
                               onMouseDown={(e) => e.stopPropagation()}
                             >
                               <div className="flex items-center justify-between">
-                                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider text-left">Теги задачи:</p>
+                                <p className="text-[10px] font-medium text-[#787774] dark:text-[#9b9a97] text-left">Теги задачи:</p>
                                 <button 
                                   type="button" 
                                   onClick={() => setActiveInlineMenu(null)}
-                                  className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
+                                  className="p-1 rounded hover:bg-[#f1f1ef] dark:hover:bg-[#2c2c2c] text-[#787774] dark:text-[#9b9a97] cursor-pointer"
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <X className="w-3 h-3" />
                                 </button>
                               </div>
 
-                              <div className="max-h-48 overflow-y-auto space-y-2.5 my-1 pr-1 border-b border-slate-100 dark:border-slate-800/60 pb-2 text-left whitespace-normal">
+                              <div className="max-h-48 overflow-y-auto space-y-2 my-1 pr-1 border-b border-[#ededeb] dark:border-[#2a2a2a] pb-2 text-left whitespace-normal">
                                 {tagCategories.length === 0 ? (
-                                  <p className="text-[10px] text-slate-450 font-medium leading-relaxed">Нет созданных категорий или тегов в проекте.</p>
+                                  <p className="text-[10px] text-[#787774] font-normal leading-relaxed">Нет созданных категорий или тегов в проекте.</p>
                                 ) : (
                                   tagCategories.map(cat => (
                                     <div key={cat.id} className="space-y-1">
-                                      <div className="flex items-center gap-1.5 text-[10px] font-extrabold" style={{ color: cat.color }}>
+                                      <div className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: cat.color }}>
                                         <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
                                         <span>{cat.name}</span>
                                       </div>
@@ -9454,10 +9454,10 @@ export default function MindMapCanvas({
                                                   tags: nextTags
                                                 });
                                               }}
-                                              className={`text-[9.5px] font-bold px-2 py-0.5 rounded-lg border transition-all cursor-pointer ${
+                                              className={`text-[10px] font-normal px-1.5 py-0.5 rounded border transition-all cursor-pointer ${
                                                 isAssigned 
-                                                  ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900 shadow-2xs'
-                                                  : 'bg-slate-50 dark:bg-slate-850 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-750 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                                  ? 'bg-[#efeffe] dark:bg-[#202538] text-[#2383e2] dark:text-[#529cca] border-[#c4c7f8] dark:border-[#343b60]'
+                                                  : 'bg-[#f1f1ef] dark:bg-[#2c2c2c] text-[#787774] dark:text-[#9b9a97] border-[#e9e9e8] dark:border-[#2e2e2e] hover:bg-[#eae9e5] dark:hover:bg-[#333333]'
                                               }`}
                                             >
                                               #{tag_val}

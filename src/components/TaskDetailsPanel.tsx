@@ -3021,9 +3021,9 @@ export default function TaskDetailsPanel({
           {/* COLUMN 3: SCHEDULES, CATEGORIES & FILES */}
           <div className="flex flex-col gap-4 min-h-0 h-full">
             {/* EQUIPMENT & HARDWARE PROPERTIES CARD */}
-            <div className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-slate-900/5 dark:from-amber-950/20 dark:to-slate-900/40 p-3.5 rounded-xl border border-amber-500/30 dark:border-amber-500/20 shadow-xs space-y-3 shrink-0 text-left">
+            <div className="notion-callout-yellow p-3.5 rounded-xl border border-amber-500/20 shadow-xs space-y-3 shrink-0 text-left">
               <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
-                <span className="text-xs font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
                   <span className="text-sm">⚙️</span>
                   Оборудование и Аппаратура
                 </span>

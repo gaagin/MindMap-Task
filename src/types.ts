@@ -1,5 +1,7 @@
 export type Priority = 'low' | 'medium' | 'high' | 'urgent' | 'none';
 
+export type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo';
+
 export interface AttachmentFile {
   id: string;
   name: string;
@@ -54,6 +56,8 @@ export interface TaskNode {
   tags: string[];
   notes: string;
   completed: boolean;
+  icon?: string;
+  createdAt?: string;
   status?: 'todo' | 'progress' | 'waiting' | 'done';
   files: AttachmentFile[];
   comments?: Comment[]; // Task chat feedback comments list
@@ -102,6 +106,11 @@ export interface TaskNode {
   equipmentBarcode?: string; // Equipment Barcode (Barkod) property
   equipmentStockCode?: string; // Equipment Stock Code (Stok kod) property
   equipmentNote?: string; // Equipment Note (Qeyd) property
+  assignee?: string; // Optional assignee name (e.g. Mr.Pugo, Gillde)
+  assigneeAvatar?: string; // Optional assignee avatar color or image
+  budget?: string; // Optional budget/cost string (e.g. $40,000)
+  health?: 'on_track' | 'off_track' | 'at_risk'; // Optional project health indicator
+  stage?: 'ideation' | 'planning' | 'execution' | 'refinement' | 'review' | 'done'; // Optional workflow stage
   customProperties?: { id: string; name: string; value: string }[]; // Dynamic custom key-value properties
   blockedBy?: string[]; // Optional array of node IDs that block this node
   defaultView?: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo'; // Optional view mode to display by default when focused
@@ -125,6 +134,7 @@ export interface TaskNode {
 export interface Project {
   id: string;
   name: string;
+  icon?: string;
   folderId: string | null; // null means root directory
   createdAt: string;
   updatedAt: string;

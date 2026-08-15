@@ -50,7 +50,11 @@ import {
   FolderPlus,
   Grid,
   Tag,
-  Home
+  Home,
+  Columns,
+  ArrowRight,
+  ArrowLeft,
+  Split
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime, getTaskExternalLinks } from './utils';
@@ -1446,7 +1450,118 @@ export default function App() {
   const [zoom, setZoom] = useState(1);
 
   // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo'
-  const [viewMode, setViewMode] = useState<'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo'>('canvas');
+  type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo';
+  const [viewMode, setViewMode] = useState<ViewMode>('canvas');
+
+  // Split Screen Dual-View Mode States (Desktop Split View)
+  const [isSplitScreen, setIsSplitScreen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('milli_split_screen_active') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [leftViewMode, setLeftViewMode] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem('milli_left_view_mode') as ViewMode;
+      if (saved) return saved;
+    } catch {}
+    return 'canvas';
+  });
+
+  const [rightViewMode, setRightViewMode] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem('milli_right_view_mode') as ViewMode;
+      if (saved) return saved;
+    } catch {}
+    return 'kanban';
+  });
+
+  const [splitRatio, setSplitRatio] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('milli_split_ratio');
+      if (saved) return Number(saved) || 50;
+    } catch {}
+    return 50;
+  });
+
+  // Canvas pan/zoom states for Right Pane when Right Pane is Canvas
+  const [rightPanX, setRightPanX] = useState(0);
+  const [rightPanY, setRightPanY] = useState(0);
+  const [rightZoom, setRightZoom] = useState(1);
+
+  // Dragging state for resizable divider & drop indicators
+  const [isResizingSplit, setIsResizingSplit] = useState(false);
+  const [isDraggingOverLeftPane, setIsDraggingOverLeftPane] = useState(false);
+  const [isDraggingOverRightPane, setIsDraggingOverRightPane] = useState(false);
+  const splitContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Persist split screen configuration
+  useEffect(() => {
+    try {
+      localStorage.setItem('milli_split_screen_active', String(isSplitScreen));
+      localStorage.setItem('milli_left_view_mode', leftViewMode);
+      localStorage.setItem('milli_right_view_mode', rightViewMode);
+      localStorage.setItem('milli_split_ratio', String(splitRatio));
+    } catch {}
+  }, [isSplitScreen, leftViewMode, rightViewMode, splitRatio]);
+
+  // Handle splitter dragging to resize left & right panes
+  const handleSplitterMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingSplit(true);
+  };
+
+  useEffect(() => {
+    if (!isResizingSplit) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!splitContainerRef.current) return;
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      const relativeX = e.clientX - rect.left;
+      const percentage = (relativeX / rect.width) * 100;
+      // Constrain ratio between 20% and 80%
+      const clamped = Math.max(20, Math.min(80, percentage));
+      setSplitRatio(clamped);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingSplit(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingSplit]);
+
+  // Transfer element between screens in split screen mode
+  const handleMoveTaskToPane = (
+    taskId: string, 
+    targetPane: 'left' | 'right', 
+    overrideFields?: Partial<TaskNode>
+  ) => {
+    if (!state.activeProjectId) return;
+    const currentNodes = state.nodes[state.activeProjectId] || [];
+    const targetNode = currentNodes.find(n => n.id === taskId);
+    if (!targetNode) return;
+
+    const targetParentId = overrideFields?.parentId !== undefined 
+      ? overrideFields.parentId 
+      : (focusedContainerId || focusedTaskId || targetNode.parentId);
+
+    const updatedNode: TaskNode = {
+      ...targetNode,
+      parentId: targetParentId,
+      ...overrideFields,
+      updatedAt: new Date().toISOString()
+    };
+
+    handleUpdateNode(updatedNode);
+  };
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(() => {
     try {
       return localStorage.getItem('milli_focused_task_id') || null;
@@ -3445,6 +3560,13 @@ export default function App() {
     setState(prev => ({
       ...prev,
       projects: prev.projects.map(p => p.id === id ? { ...p, name, updatedAt: new Date().toISOString() } : p)
+    }));
+  };
+
+  const handleUpdateProjectIcon = (id: string, icon: string) => {
+    setState(prev => ({
+      ...prev,
+      projects: prev.projects.map(p => p.id === id ? { ...p, icon, updatedAt: new Date().toISOString() } : p)
     }));
   };
 
@@ -5892,8 +6014,325 @@ export default function App() {
   const isNetworkFailure = sheetsError?.includes('Failed to fetch') || sheetsError?.includes('NetworkError');
   const hasSyncOrAuthError = !!authError || (!!sheetsError && !isNetworkFailure) || (syncStatus.sheets === 'error' && !isNetworkFailure) || syncStatus.local === 'error';
 
+  const renderViewComponent = (mode: ViewMode, paneSide: 'left' | 'right' | 'single' = 'single') => {
+    if (!state.activeProjectId) {
+      return (
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+          <p className="text-sm text-slate-400 font-serif max-w-sm">
+            Нет открытых интеллект-карт. Создайте новую карту в левой панели, чтобы развернуть интерактивный холст целей!
+          </p>
+        </div>
+      );
+    }
+
+    const activeProjectTags = state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || [];
+
+    switch (mode) {
+      case 'mobile-list':
+        return (
+          <MobileListView
+            nodes={displayedNodesForViews}
+            tagCategories={activeProjectTags}
+            activeProjectId={state.activeProjectId}
+            selectedNodeId={selectedNodeId}
+            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+            onSelectNode={handleSelectNode}
+            onUpdateNode={handleUpdateNode}
+            onDeleteNode={handleDeleteNode}
+            onCreateTask={handleCreateMobileTask}
+            onCreateTagCategory={handleCreateTagCategory}
+            onUpdateTagCategory={handleUpdateTagCategory}
+            onDeleteTagCategory={handleDeleteTagCategory}
+            onFullScreenChange={setIsViewFullScreen}
+            onFocusTaskOnCanvas={(taskId) => {
+              setFocusedTaskId(taskId);
+              if (paneSide === 'right') setRightViewMode('canvas');
+              else if (paneSide === 'left') setLeftViewMode('canvas');
+              else setViewMode('canvas');
+            }}
+            onFocusedTaskIdChange={setFocusedTaskId}
+            selectedNodeIds={selectedNodeIds}
+            isMultiSelectMode={isMultiSelectMode}
+            onToggleSelectNode={handleToggleSelectNode}
+            onSelectNodes={(ids) => {
+              setSelectedNodeIds(ids);
+              setIsMultiSelectMode(ids.length > 0);
+            }}
+            onBulkDelete={handleBulkDelete}
+            onBulkToggleCompleted={handleBulkToggleCompleted}
+            setIsMultiSelectMode={setIsMultiSelectMode}
+            projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Docs'}
+            projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '📎'}
+            onUpdateProjectName={(name) => {
+              if (state.activeProjectId) {
+                handleRenameProject(state.activeProjectId, name);
+              }
+            }}
+            onUpdateProjectIcon={(icon) => {
+              if (state.activeProjectId) {
+                handleUpdateProjectIcon(state.activeProjectId, icon);
+              }
+            }}
+            setViewMode={(newMode) => {
+              if (paneSide === 'right') setRightViewMode(newMode);
+              else if (paneSide === 'left') setLeftViewMode(newMode);
+              else setViewMode(newMode);
+            }}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        );
+
+      case 'kanban':
+        return (
+          <KanbanView
+            nodes={displayedNodesForViews}
+            tagCategories={activeProjectTags}
+            activeProjectId={state.activeProjectId}
+            selectedNodeId={selectedNodeId}
+            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+            onSelectNode={handleSelectNode}
+            onUpdateNode={handleUpdateNode}
+            onDeleteNode={handleDeleteNode}
+            onCreateTask={handleCreateKanbanTask}
+            onCreateTagCategory={handleCreateTagCategory}
+            selectedNodeIds={selectedNodeIds}
+            onToggleSelectNode={handleToggleSelectNode}
+            searchQuery={searchQuery}
+            onFullScreenChange={setIsViewFullScreen}
+            selectedCategoryId={filterCategoryId}
+            onSelectCategoryId={setFilterCategoryId}
+            kanbanGroupBy={kanbanGroupBy}
+            onKanbanGroupByChange={setKanbanGroupBy}
+            kanbanContainerFilterId={kanbanContainerFilterId}
+            onKanbanContainerFilterIdChange={setKanbanContainerFilterId}
+            sortBy={state.globalSettings?.kanbanSortBy}
+            onSortByChange={handleKanbanSortByChange}
+            collapseCompleted={state.globalSettings?.kanbanCollapseCompleted}
+            onCollapseCompletedChange={handleKanbanCollapseCompletedChange}
+            showSubtasks={state.globalSettings?.kanbanShowSubtasks}
+            onShowSubtasksChange={handleKanbanShowSubtasksChange}
+            isFiltersCollapsed={state.globalSettings?.kanbanFiltersCollapsed}
+            onFiltersCollapsedChange={handleKanbanFiltersCollapsedChange}
+            isCategoriesExpanded={state.globalSettings?.categoriesExpanded}
+            onCategoriesExpandedChange={handleCategoriesExpandedChange}
+            focusedContainerId={focusedContainerId}
+            focusedTaskId={focusedTaskId}
+            onFocusedTaskIdChange={setFocusedTaskId}
+            filterStatus={filterStatus}
+            filterPriority={filterPriority}
+            filterTag={filterTag}
+            filterDueDate={filterDueDate}
+            projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Project Workflow Kanban'}
+            projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '🗂️'}
+            onUpdateProjectName={(name) => {
+              if (state.activeProjectId) {
+                handleRenameProject(state.activeProjectId, name);
+              }
+            }}
+            setViewMode={(newMode) => {
+              if (paneSide === 'right') setRightViewMode(newMode);
+              else if (paneSide === 'left') setLeftViewMode(newMode);
+              else setViewMode(newMode);
+            }}
+          />
+        );
+
+      case 'calendar':
+        return (
+          <CalendarView
+            nodes={displayedNodesForViews}
+            tagCategories={activeProjectTags}
+            activeProjectId={state.activeProjectId}
+            selectedNodeId={selectedNodeId}
+            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+            onSelectNode={handleSelectNode}
+            onUpdateNode={handleUpdateNode}
+            onDeleteNode={handleDeleteNode}
+            onCreateTask={(text, initialTags, dueDate, dueTime) => {
+              handleCreateMobileTask(text, initialTags || [], 'none', dueDate, null, dueTime);
+            }}
+            setViewMode={(newMode) => {
+              if (paneSide === 'right') setRightViewMode(newMode);
+              else if (paneSide === 'left') setLeftViewMode(newMode);
+              else setViewMode(newMode);
+            }}
+            onFullScreenChange={setIsViewFullScreen}
+            onFocusedTaskIdChange={setFocusedTaskId}
+            projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Календарь'}
+            projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '📅'}
+            onUpdateProjectName={(name) => {
+              if (state.activeProjectId) {
+                handleRenameProject(state.activeProjectId, name);
+              }
+            }}
+          />
+        );
+
+      case 'gantt':
+        return (
+          <GanttView
+            nodes={displayedNodesForViews}
+            allNodes={activeNodes}
+            setViewMode={(newMode) => {
+              if (paneSide === 'right') setRightViewMode(newMode);
+              else if (paneSide === 'left') setLeftViewMode(newMode);
+              else setViewMode(newMode);
+            }}
+            tagCategories={activeProjectTags}
+            activeProjectId={state.activeProjectId}
+            selectedNodeId={selectedNodeId}
+            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+            onSelectNode={handleSelectNode}
+            onUpdateNode={handleUpdateNode}
+            onDeleteNode={handleDeleteNode}
+            onCreateTask={(text, initialTags, dueDate) => {
+              handleCreateMobileTask(text, initialTags || [], 'none', dueDate);
+            }}
+            onFullScreenChange={setIsViewFullScreen}
+            focusedTaskId={focusedTaskId}
+            onFocusedTaskIdChange={setFocusedTaskId}
+          />
+        );
+
+      case 'table':
+        return (
+          <TableView
+            nodes={displayedNodesForViews}
+            tagCategories={activeProjectTags}
+            activeProjectId={state.activeProjectId}
+            selectedNodeId={selectedNodeId}
+            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+            onSelectNode={handleSelectNode}
+            onUpdateNode={handleUpdateNode}
+            onDeleteNode={handleDeleteNode}
+            onCreateTask={(text, initialTags) => {
+              handleCreateMobileTask(text, initialTags || [], 'none');
+            }}
+            selectedNodeIds={selectedNodeIds}
+            onToggleSelectNode={handleToggleSelectNode}
+            onToggleSelectAll={handleToggleSelectAll}
+            onFullScreenChange={setIsViewFullScreen}
+            onFocusedTaskIdChange={setFocusedTaskId}
+            projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Проекты'}
+            projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '📁'}
+            onUpdateProjectName={(name) => {
+              if (state.activeProjectId) {
+                handleRenameProject(state.activeProjectId, name);
+              }
+            }}
+            setViewMode={(newMode) => {
+              if (paneSide === 'right') setRightViewMode(newMode);
+              else if (paneSide === 'left') setLeftViewMode(newMode);
+              else setViewMode(newMode);
+            }}
+          />
+        );
+
+      case 'eisenhower':
+        return (
+          <EisenhowerMatrixView
+            nodes={displayedNodesForViews}
+            tagCategories={activeProjectTags}
+            activeProjectId={state.activeProjectId}
+            selectedNodeId={selectedNodeId}
+            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+            onSelectNode={handleSelectNode}
+            onUpdateNode={handleUpdateNode}
+            onDeleteNode={handleDeleteNode}
+            onCreateTask={handleCreateKanbanTask}
+            selectedNodeIds={selectedNodeIds}
+            searchQuery={searchQuery}
+            onFullScreenChange={setIsViewFullScreen}
+            onFocusedTaskIdChange={setFocusedTaskId}
+          />
+        );
+
+      case 'anydo':
+        return (
+          <AnyDoView
+            nodes={activeNodes}
+            tagCategories={activeProjectTags}
+            activeProjectId={state.activeProjectId}
+            selectedNodeId={selectedNodeId}
+            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+            onSelectNode={handleSelectNode}
+            onUpdateNode={handleUpdateNode}
+            onDeleteNode={handleDeleteNode}
+            onCreateTask={handleCreateKanbanTask}
+            selectedNodeIds={selectedNodeIds}
+            onToggleSelectNode={handleToggleSelectNode}
+          />
+        );
+
+      case 'canvas':
+      default:
+        return (
+          <MindMapCanvas
+            nodes={displayedNodesForViews}
+            darkMode={darkMode}
+            googleToken={googleToken}
+            activeProjectId={state.activeProjectId}
+            selectedNodeId={selectedNodeId}
+            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+            lastCreatedNodeId={lastCreatedNodeId}
+            onClearLastCreatedNodeId={() => setLastCreatedNodeId(null)}
+            onSelectNode={handleSelectCanvasNode}
+            selectedNodeIds={selectedNodeIds}
+            isMultiSelectMode={isMultiSelectMode}
+            onSelectNodes={(ids) => {
+              setSelectedNodeIds(ids);
+              setIsMultiSelectMode(ids.length > 0);
+            }}
+            onBulkDelete={handleBulkDelete}
+            onBulkToggleCompleted={handleBulkToggleCompleted}
+            onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
+            onUpdateNodeParent={handleUpdateNodeParent}
+            onAddChildNode={handleAddChildNode}
+            onAddFloatingNode={handleAddFloatingNode}
+            onAddContainerNode={handleAddContainerNode}
+            onAddInboxTask={handleAddInboxTask}
+            onCopyNodes={(ids) => {
+              setCopySourceNodeIds(ids);
+              setIsCopyModalOpen(true);
+            }}
+            onDuplicateEquipment={handleDuplicateEquipment}
+            onDeleteNode={handleDeleteNode}
+            onToggleNodeCompleted={handleToggleNodeCompleted}
+            onToggleNodeCollapse={handleToggleNodeCollapse}
+            onUpdateNode={handleUpdateNode}
+            panX={paneSide === 'right' ? rightPanX : panX}
+            panY={paneSide === 'right' ? rightPanY : panY}
+            zoom={paneSide === 'right' ? rightZoom : zoom}
+            setPanX={paneSide === 'right' ? setRightPanX : setPanX}
+            setPanY={paneSide === 'right' ? setRightPanY : setPanY}
+            setZoom={paneSide === 'right' ? setRightZoom : setZoom}
+            onOpenSidebar={() => setSidebarOpen(true)}
+            onOpenDrawer={(initialFullscreen) => {
+              setIsDrawerOpen(true);
+              setDetailsPanelFullscreen(!!initialFullscreen);
+            }}
+            filterStatus={filterStatus}
+            filterPriority={filterPriority}
+            filterTag={filterTag}
+            filterDueDate={filterDueDate}
+            filterAttachments={filterAttachments}
+            filterNotes={filterNotes}
+            searchQuery={searchQuery}
+            tagCategories={activeProjectTags}
+            onContainerFocusChange={setIsContainerFocused}
+            onFullScreenChange={setIsViewFullScreen}
+            focusedTaskId={focusedTaskId}
+            onFocusedTaskIdChange={setFocusedTaskId}
+            focusedContainerId={focusedContainerId}
+            onFocusedContainerIdChange={setFocusedContainerId}
+            onFilterTagChange={(tag) => setFilterTag(tag)}
+          />
+        );
+    }
+  };
+
   return (
-    <div className="flex h-screen h-[100dvh] overflow-hidden text-slate-900 bg-[#FAFBFD] dark:bg-[#090714] dark:text-slate-100 font-sans transition-colors duration-150">
+    <div className="flex h-screen h-[100dvh] overflow-hidden text-slate-800 bg-[#F9FAFC] dark:bg-[#070510] dark:text-slate-100 font-sans transition-colors duration-150">
       
       {/* Sidebar drawer handles folders/projects */}
       <Sidebar
@@ -6213,6 +6652,21 @@ export default function App() {
               </button>
             )}
 
+            {/* Split Screen Mode Desktop Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsSplitScreen(!isSplitScreen)}
+              className={`p-1.5 hover:scale-[1.02] border rounded-lg flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-all duration-200 shrink-0 ${
+                isSplitScreen
+                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-extrabold shadow-xs ring-2 ring-indigo-500/20'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 hover:bg-slate-100/70'
+              }`}
+              title={isSplitScreen ? "Закрыть раздельный экран (1 экран)" : "Разделить экран на два вида (Раздельный режим)"}
+            >
+              <Columns className="w-3.5 h-3.5 text-indigo-500" />
+              <span className="hidden xl:inline">{isSplitScreen ? '1 Экран' : '2 Экрана'}</span>
+            </button>
+
             {/* Micro search results list box if search query is set */}
             {searchQuery.trim().length > 0 && (
               <div className="absolute top-15 right-2 sm:right-24 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl p-2 w-[calc(100vw-2rem)] sm:w-72 max-h-56 overflow-y-auto z-50">
@@ -6496,8 +6950,8 @@ export default function App() {
                 onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
                 className={`p-2 rounded-lg border cursor-pointer transition-all ${
                   searchQuery.trim().length > 0 || isMobileSearchOpen
-                    ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
-                    : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    ? 'border-indigo-200/60 bg-indigo-55/40 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
+                    : 'border-transparent text-slate-500 hover:bg-slate-100/75 dark:hover:bg-slate-800/60'
                 }`}
                 title="Поиск"
               >
@@ -6509,10 +6963,10 @@ export default function App() {
                 onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
                 className={`p-2 border rounded-lg cursor-pointer transition-all ${
                   isAnyFilterActive
-                    ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
+                    ? 'border-indigo-200/60 bg-indigo-55/40 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
                     : isFilterPanelOpen
-                      ? 'border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-850 text-slate-800 dark:text-slate-100'
-                      : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      ? 'border-transparent bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100'
+                      : 'border-transparent text-slate-500 hover:bg-slate-100/75 dark:hover:bg-slate-800/60'
                 }`}
                 title="Фильтры"
               >
@@ -6524,12 +6978,12 @@ export default function App() {
                 onClick={() => setIsSyncMenuOpen(true)}
                 className={`p-2 border rounded-lg cursor-pointer transition-all ${
                   isSyncingSheets || syncStatus.firebase === 'syncing'
-                    ? 'border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
-                    : 'border-slate-200 dark:border-slate-850 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    ? 'border-indigo-200/60 bg-indigo-55/50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
+                    : 'border-transparent text-slate-500 hover:bg-slate-100/75 dark:hover:bg-slate-800/60'
                 }`}
                 title="Синхронизация"
               >
-                <Database className="w-4 h-4 text-indigo-500" />
+                <Database className="w-4 h-4 text-indigo-555" />
               </button>
 
               <button
@@ -6537,8 +6991,8 @@ export default function App() {
                 onClick={handleQuickSheetsSync}
                 className={`p-2 border rounded-lg cursor-pointer transition-all ${
                   isSyncingSheets
-                    ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse'
-                    : 'border-slate-200 dark:border-slate-850 text-emerald-600 dark:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    ? 'border-emerald-200 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse'
+                    : 'border-transparent text-emerald-600 dark:text-emerald-400 hover:bg-slate-100/75 dark:hover:bg-slate-800/60'
                 }`}
                 title="Google Sheets"
               >
@@ -6716,7 +7170,7 @@ export default function App() {
 
         {/* The Mind Map Interactive Canvas Frame. Occupies 100% space! */}
         <div 
-          className="flex-1 w-full min-h-0 relative bg-[#FAFBFD] dark:bg-slate-950/20 pb-14 sm:pb-0 flex flex-col"
+          className="flex-1 w-full min-h-0 relative bg-[#F9FAFC] dark:bg-slate-950/20 pb-14 sm:pb-0 flex flex-col"
           onMouseDown={handleGlobalMouseDown}
           onMouseMove={handleGlobalMouseMove}
           onMouseUp={handleGlobalMouseUp}
@@ -6924,231 +7378,154 @@ export default function App() {
             );
           })()}
           
-          {state.activeProjectId ? (
-            viewMode === 'mobile-list' ? (
-              <MobileListView
-                nodes={displayedNodesForViews}
-                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
-                activeProjectId={state.activeProjectId}
-                selectedNodeId={selectedNodeId}
-                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={handleSelectNode}
-                onUpdateNode={handleUpdateNode}
-                onDeleteNode={handleDeleteNode}
-                onCreateTask={handleCreateMobileTask}
-                onCreateTagCategory={handleCreateTagCategory}
-                onUpdateTagCategory={handleUpdateTagCategory}
-                onDeleteTagCategory={handleDeleteTagCategory}
-                onFullScreenChange={setIsViewFullScreen}
-                onFocusTaskOnCanvas={(taskId) => {
-                  setFocusedTaskId(taskId);
-                  setViewMode('canvas');
+          {isSplitScreen ? (
+            <div 
+              ref={splitContainerRef}
+              className="flex-1 w-full h-full flex flex-col md:flex-row overflow-hidden relative select-none"
+            >
+              {/* Left Pane (Screen 1) */}
+              <div 
+                style={{ width: `${splitRatio}%` }}
+                className={`relative flex flex-col h-full overflow-hidden border-r border-slate-200 dark:border-slate-800 transition-all ${
+                  isDraggingOverLeftPane ? 'ring-4 ring-indigo-500/40 bg-indigo-50/20 dark:bg-indigo-950/20' : ''
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (!isDraggingOverLeftPane) setIsDraggingOverLeftPane(true);
                 }}
-                onFocusedTaskIdChange={setFocusedTaskId}
-                selectedNodeIds={selectedNodeIds}
-                isMultiSelectMode={isMultiSelectMode}
-                onToggleSelectNode={handleToggleSelectNode}
-                onSelectNodes={(ids) => {
-                  setSelectedNodeIds(ids);
-                  setIsMultiSelectMode(ids.length > 0);
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setIsDraggingOverLeftPane(false);
+                  }
                 }}
-                onBulkDelete={handleBulkDelete}
-                onBulkToggleCompleted={handleBulkToggleCompleted}
-                setIsMultiSelectMode={setIsMultiSelectMode}
-              />
-            ) : viewMode === 'kanban' ? (
-              <KanbanView
-                nodes={displayedNodesForViews}
-                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
-                activeProjectId={state.activeProjectId}
-                selectedNodeId={selectedNodeId}
-                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={handleSelectNode}
-                onUpdateNode={handleUpdateNode}
-                onDeleteNode={handleDeleteNode}
-                onCreateTask={handleCreateKanbanTask}
-                onCreateTagCategory={handleCreateTagCategory}
-                selectedNodeIds={selectedNodeIds}
-                onToggleSelectNode={handleToggleSelectNode}
-                searchQuery={searchQuery}
-                onFullScreenChange={setIsViewFullScreen}
-                selectedCategoryId={filterCategoryId}
-                onSelectCategoryId={setFilterCategoryId}
-                kanbanGroupBy={kanbanGroupBy}
-                onKanbanGroupByChange={setKanbanGroupBy}
-                kanbanContainerFilterId={kanbanContainerFilterId}
-                onKanbanContainerFilterIdChange={setKanbanContainerFilterId}
-                sortBy={state.globalSettings?.kanbanSortBy}
-                onSortByChange={handleKanbanSortByChange}
-                collapseCompleted={state.globalSettings?.kanbanCollapseCompleted}
-                onCollapseCompletedChange={handleKanbanCollapseCompletedChange}
-                showSubtasks={state.globalSettings?.kanbanShowSubtasks}
-                onShowSubtasksChange={handleKanbanShowSubtasksChange}
-                isFiltersCollapsed={state.globalSettings?.kanbanFiltersCollapsed}
-                onFiltersCollapsedChange={handleKanbanFiltersCollapsedChange}
-                isCategoriesExpanded={state.globalSettings?.categoriesExpanded}
-                onCategoriesExpandedChange={handleCategoriesExpandedChange}
-                focusedContainerId={focusedContainerId}
-                focusedTaskId={focusedTaskId}
-                onFocusedTaskIdChange={setFocusedTaskId}
-                filterStatus={filterStatus}
-                filterPriority={filterPriority}
-                filterTag={filterTag}
-                filterDueDate={filterDueDate}
-              />
-            ) : viewMode === 'calendar' ? (
-              <CalendarView
-                nodes={displayedNodesForViews}
-                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
-                activeProjectId={state.activeProjectId}
-                selectedNodeId={selectedNodeId}
-                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={handleSelectNode}
-                onUpdateNode={handleUpdateNode}
-                onDeleteNode={handleDeleteNode}
-                onCreateTask={(text, initialTags, dueDate, dueTime) => {
-                  handleCreateMobileTask(text, initialTags || [], 'none', dueDate, null, dueTime);
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingOverLeftPane(false);
+                  let taskId = '';
+                  try {
+                    const dataStr = e.dataTransfer.getData('application/json');
+                    if (dataStr) {
+                      const parsed = JSON.parse(dataStr);
+                      taskId = parsed.taskId || '';
+                    }
+                  } catch {}
+                  if (!taskId) taskId = e.dataTransfer.getData('text/plain');
+                  if (taskId) {
+                    handleMoveTaskToPane(taskId, 'left');
+                  }
                 }}
-                setViewMode={setViewMode}
-                onFullScreenChange={setIsViewFullScreen}
-                onFocusedTaskIdChange={setFocusedTaskId}
-              />
-            ) : viewMode === 'gantt' ? (
-              <GanttView
-                nodes={displayedNodesForViews}
-                allNodes={activeNodes}
-                setViewMode={setViewMode}
-                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
-                activeProjectId={state.activeProjectId}
-                selectedNodeId={selectedNodeId}
-                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={handleSelectNode}
-                onUpdateNode={handleUpdateNode}
-                onDeleteNode={handleDeleteNode}
-                onCreateTask={(text, initialTags, dueDate) => {
-                  handleCreateMobileTask(text, initialTags || [], 'none', dueDate);
+              >
+                {/* Header for Left Pane */}
+                <div className="h-9 px-3 bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 z-20">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-900/60 shrink-0">
+                      Экран 1
+                    </span>
+                    <select
+                      value={leftViewMode}
+                      onChange={(e) => setLeftViewMode(e.target.value as ViewMode)}
+                      className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold px-2 py-0.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-3xs"
+                    >
+                      {viewsList.map(v => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium hidden lg:inline truncate">
+                    Перетащите элементы сюда
+                  </div>
+                </div>
+
+                {/* Left Pane View Content */}
+                <div className="flex-1 w-full h-full min-h-0 relative overflow-hidden">
+                  {renderViewComponent(leftViewMode, 'left')}
+                </div>
+              </div>
+
+              {/* Resizable Splitter Divider */}
+              <div
+                onMouseDown={handleSplitterMouseDown}
+                className="hidden md:flex w-2 hover:w-3 bg-slate-200 hover:bg-indigo-500 dark:bg-slate-800 dark:hover:bg-indigo-500 transition-all cursor-col-resize z-30 select-none items-center justify-center group shrink-0 relative active:bg-indigo-600"
+                title="Перетащите мышью для изменения ширины экранов"
+              >
+                <div className="w-1 h-8 rounded-full bg-slate-400 dark:bg-slate-600 group-hover:bg-white transition-colors" />
+              </div>
+
+              {/* Right Pane (Screen 2) */}
+              <div 
+                style={{ width: `${100 - splitRatio}%` }}
+                className={`relative flex flex-col h-full overflow-hidden transition-all ${
+                  isDraggingOverRightPane ? 'ring-4 ring-indigo-500/40 bg-indigo-50/20 dark:bg-indigo-950/20' : ''
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (!isDraggingOverRightPane) setIsDraggingOverRightPane(true);
                 }}
-                onFullScreenChange={setIsViewFullScreen}
-                focusedTaskId={focusedTaskId}
-                onFocusedTaskIdChange={setFocusedTaskId}
-              />
-            ) : viewMode === 'table' ? (
-              <TableView
-                nodes={displayedNodesForViews}
-                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
-                activeProjectId={state.activeProjectId}
-                selectedNodeId={selectedNodeId}
-                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={handleSelectNode}
-                onUpdateNode={handleUpdateNode}
-                onDeleteNode={handleDeleteNode}
-                onCreateTask={(text, initialTags) => {
-                  handleCreateMobileTask(text, initialTags || [], 'none');
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setIsDraggingOverRightPane(false);
+                  }
                 }}
-                selectedNodeIds={selectedNodeIds}
-                onToggleSelectNode={handleToggleSelectNode}
-                onToggleSelectAll={handleToggleSelectAll}
-                onFullScreenChange={setIsViewFullScreen}
-                onFocusedTaskIdChange={setFocusedTaskId}
-              />
-            ) : viewMode === 'eisenhower' ? (
-              <EisenhowerMatrixView
-                nodes={displayedNodesForViews}
-                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
-                activeProjectId={state.activeProjectId}
-                selectedNodeId={selectedNodeId}
-                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={handleSelectNode}
-                onUpdateNode={handleUpdateNode}
-                onDeleteNode={handleDeleteNode}
-                onCreateTask={handleCreateKanbanTask}
-                selectedNodeIds={selectedNodeIds}
-                searchQuery={searchQuery}
-                onFullScreenChange={setIsViewFullScreen}
-                onFocusedTaskIdChange={setFocusedTaskId}
-              />
-            ) : viewMode === 'anydo' ? (
-              <AnyDoView
-                nodes={activeNodes}
-                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
-                activeProjectId={state.activeProjectId}
-                selectedNodeId={selectedNodeId}
-                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                onSelectNode={handleSelectNode}
-                onUpdateNode={handleUpdateNode}
-                onDeleteNode={handleDeleteNode}
-                onCreateTask={handleCreateKanbanTask}
-                selectedNodeIds={selectedNodeIds}
-                onToggleSelectNode={handleToggleSelectNode}
-              />
-            ) : (
-              <MindMapCanvas
-                nodes={displayedNodesForViews}
-                darkMode={darkMode}
-                googleToken={googleToken}
-                activeProjectId={state.activeProjectId}
-                selectedNodeId={selectedNodeId}
-                activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-                lastCreatedNodeId={lastCreatedNodeId}
-                onClearLastCreatedNodeId={() => setLastCreatedNodeId(null)}
-                onSelectNode={handleSelectCanvasNode}
-                selectedNodeIds={selectedNodeIds}
-                isMultiSelectMode={isMultiSelectMode}
-                onSelectNodes={(ids) => {
-                  setSelectedNodeIds(ids);
-                  setIsMultiSelectMode(ids.length > 0);
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingOverRightPane(false);
+                  let taskId = '';
+                  try {
+                    const dataStr = e.dataTransfer.getData('application/json');
+                    if (dataStr) {
+                      const parsed = JSON.parse(dataStr);
+                      taskId = parsed.taskId || '';
+                    }
+                  } catch {}
+                  if (!taskId) taskId = e.dataTransfer.getData('text/plain');
+                  if (taskId) {
+                    handleMoveTaskToPane(taskId, 'right');
+                  }
                 }}
-                onBulkDelete={handleBulkDelete}
-                onBulkToggleCompleted={handleBulkToggleCompleted}
-                onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
-                onUpdateNodeParent={handleUpdateNodeParent}
-                onAddChildNode={handleAddChildNode}
-                onAddFloatingNode={handleAddFloatingNode}
-                onAddContainerNode={handleAddContainerNode}
-                onAddInboxTask={handleAddInboxTask}
-                onCopyNodes={(ids) => {
-                  setCopySourceNodeIds(ids);
-                  setIsCopyModalOpen(true);
-                }}
-                onDuplicateEquipment={handleDuplicateEquipment}
-                onDeleteNode={handleDeleteNode}
-                onToggleNodeCompleted={handleToggleNodeCompleted}
-                onToggleNodeCollapse={handleToggleNodeCollapse}
-                onUpdateNode={handleUpdateNode}
-                panX={panX}
-                panY={panY}
-                zoom={zoom}
-                setPanX={setPanX}
-                setPanY={setPanY}
-                setZoom={setZoom}
-                onOpenSidebar={() => setSidebarOpen(true)}
-                onOpenDrawer={(initialFullscreen) => {
-                  setIsDrawerOpen(true);
-                  setDetailsPanelFullscreen(!!initialFullscreen);
-                }}
-                filterStatus={filterStatus}
-                filterPriority={filterPriority}
-                filterTag={filterTag}
-                filterDueDate={filterDueDate}
-                filterAttachments={filterAttachments}
-                filterNotes={filterNotes}
-                searchQuery={searchQuery}
-                tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
-                onContainerFocusChange={setIsContainerFocused}
-                onFullScreenChange={setIsViewFullScreen}
-                focusedTaskId={focusedTaskId}
-                onFocusedTaskIdChange={setFocusedTaskId}
-                focusedContainerId={focusedContainerId}
-                onFocusedContainerIdChange={setFocusedContainerId}
-                onFilterTagChange={(tag) => setFilterTag(tag)}
-              />
-            )
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-              <p className="text-sm text-slate-400 font-serif max-w-sm">
-                Нет открытых интеллект-карт. Создайте новую карту в левой панели, чтобы развернуть интерактивный холст целей!
-              </p>
+              >
+                {/* Header for Right Pane */}
+                <div className="h-9 px-3 bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 z-20">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-900/60 shrink-0">
+                      Экран 2
+                    </span>
+                    <select
+                      value={rightViewMode}
+                      onChange={(e) => setRightViewMode(e.target.value as ViewMode)}
+                      className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold px-2 py-0.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-3xs"
+                    >
+                      {viewsList.map(v => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium hidden lg:inline truncate">
+                      Перетащите элементы сюда
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsSplitScreen(false)}
+                      className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                      title="Выйти из раздельного режима (1 экран)"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right Pane View Content */}
+                <div className="flex-1 w-full h-full min-h-0 relative overflow-hidden">
+                  {renderViewComponent(rightViewMode, 'right')}
+                </div>
+              </div>
             </div>
+          ) : (
+            renderViewComponent(viewMode, 'single')
           )}
 
 
@@ -7190,8 +7567,8 @@ export default function App() {
                         onClick={() => setViewMode(option.id as any)}
                         className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold transition-all shrink-0 cursor-pointer border ${
                           isSelected
-                            ? 'bg-indigo-50 dark:bg-indigo-950/45 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900/60 shadow-xs'
-                            : 'text-slate-600 dark:text-slate-350 border-slate-100/50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-200 dark:hover:border-slate-700'
+                            ? 'bg-indigo-50/70 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 border-indigo-200/50 dark:border-indigo-900/40 shadow-xs'
+                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 border-transparent hover:bg-slate-50 dark:hover:bg-slate-800'
                         }`}
                       >
                         <OptionIcon className="w-3.5 h-3.5" />
@@ -7199,6 +7576,22 @@ export default function App() {
                       </button>
                     );
                   })}
+
+                  {/* Split Screen Quick Toggle in Bottom Views Bar */}
+                  <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1 hidden md:block shrink-0" />
+                  <button
+                    type="button"
+                    onClick={() => setIsSplitScreen(!isSplitScreen)}
+                    className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-extrabold transition-all shrink-0 cursor-pointer border ${
+                      isSplitScreen
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20'
+                        : 'text-indigo-600 dark:text-indigo-400 border-indigo-200/80 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60'
+                    }`}
+                    title={isSplitScreen ? "Вернуться к 1 экрану" : "Разделить на 2 экрана"}
+                  >
+                    <Columns className="w-3.5 h-3.5" />
+                    <span>{isSplitScreen ? '1 Экран' : '2 Экрана'}</span>
+                  </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">

@@ -317,12 +317,12 @@ export default function AnyDoView({
                       setExpandedContainerId(container.id);
                       setExpandedFilter('all');
                     }}
-                    className="group relative flex flex-col items-center justify-center bg-white dark:bg-slate-900 border border-slate-100/80 dark:border-slate-800 rounded-[22px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer aspect-square p-5 text-center select-none"
+                    className="group relative flex flex-col items-center justify-center notion-card rounded-xl hover:scale-[1.01] active:scale-[0.99] transition-all duration-150 cursor-pointer aspect-square p-5 text-center select-none"
                   >
                     {/* Badge Count */}
                     {uncompleted.length > 0 && (
                       <div 
-                        className="absolute top-3.5 right-3.5 text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center font-sans shadow-2xs"
+                        className="absolute top-3 right-3 text-[10px] font-medium px-2 py-0.5 rounded-full font-mono"
                         style={{ backgroundColor: `${color}15`, color: color }}
                       >
                         {uncompleted.length}
@@ -331,10 +331,10 @@ export default function AnyDoView({
 
                     {/* Centered Large Name */}
                     <div className="flex flex-col items-center gap-2 px-1 min-w-0 w-full">
-                      <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base tracking-wide uppercase truncate w-full font-sans">
+                      <h3 className="font-semibold text-slate-800 dark:text-slate-100 text-sm sm:text-base tracking-tight truncate w-full">
                         {container.text}
                       </h3>
-                      <IconComponent className="w-4.5 h-4.5 text-slate-300 dark:text-slate-600 group-hover:text-sky-500 transition-colors shrink-0" style={{ color: `${color}cc` }} />
+                      <IconComponent className="w-4.5 h-4.5 text-slate-400 dark:text-slate-500 group-hover:text-indigo-500 transition-colors shrink-0" style={{ color: `${color}cc` }} />
                     </div>
 
                     {/* Delete Icon on Hover */}
@@ -343,7 +343,7 @@ export default function AnyDoView({
                         e.stopPropagation();
                         handleDeleteContainer(container.id, e);
                       }}
-                      className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                      className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-500 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
                       title="Удалить список"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -355,20 +355,21 @@ export default function AnyDoView({
               {/* --- 3. CREATE NEW LIST CARD (ANY.DO PLUS TILE) --- */}
               <motion.div
                 layoutId="create-list-card"
-                className="relative flex flex-col items-center justify-center bg-white dark:bg-slate-900 border border-slate-100/80 dark:border-slate-800 rounded-[22px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer aspect-square p-5 text-center"
+                className="relative flex flex-col items-center justify-center notion-card rounded-xl hover:scale-[1.01] active:scale-[0.99] transition-all duration-150 cursor-pointer aspect-square p-5 text-center"
               >
                 {!isCreatingList ? (
                   <button
                     onClick={() => setIsCreatingList(true)}
-                    className="w-full h-full flex flex-col items-center justify-center gap-2 cursor-pointer text-sky-500 hover:text-sky-600 transition-colors"
+                    className="w-full h-full flex flex-col items-center justify-center gap-2 cursor-pointer text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
                   >
-                    <Plus className="w-8 h-8 stroke-[1.5]" />
+                    <Plus className="w-6 h-6 stroke-[1.5]" />
+                    <span className="text-xs font-medium">Новый список</span>
                   </button>
                 ) : (
                   <form onSubmit={handleCreateNewList} className="w-full h-full flex flex-col justify-between text-left" onClick={e => e.stopPropagation()}>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-sans">
+                        <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
                           Новый список
                         </span>
                         <button
@@ -385,7 +386,7 @@ export default function AnyDoView({
                         placeholder="Название..."
                         value={newListTitle}
                         onChange={(e) => setNewListTitle(e.target.value)}
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-800 dark:text-slate-100 font-sans"
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100"
                         autoFocus
                         required
                       />
@@ -399,7 +400,7 @@ export default function AnyDoView({
                           type="button"
                           onClick={() => setNewListColor(col)}
                           className={`w-4 h-4 rounded-full transition-transform cursor-pointer ${
-                            newListColor === col ? 'scale-125 ring-1 ring-sky-500 ring-offset-1 dark:ring-offset-slate-900' : 'hover:scale-110'
+                            newListColor === col ? 'scale-125 ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-slate-900' : 'hover:scale-110'
                           }`}
                           style={{ backgroundColor: col }}
                         />
@@ -408,7 +409,7 @@ export default function AnyDoView({
 
                     <button
                       type="submit"
-                      className="w-full bg-sky-500 hover:bg-sky-600 text-white text-[11px] py-1.5 rounded-xl font-semibold transition-colors cursor-pointer shadow-xs"
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] py-1.5 rounded-lg font-medium transition-colors cursor-pointer shadow-xs"
                     >
                       Создать
                     </button>
@@ -426,7 +427,7 @@ export default function AnyDoView({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.25 }}
-            className="max-w-4xl mx-auto bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-lg overflow-hidden flex flex-col min-h-[500px]"
+            className="max-w-4xl mx-auto notion-card rounded-2xl overflow-hidden flex flex-col min-h-[500px]"
           >
             {/* Header with back button */}
             {(() => {

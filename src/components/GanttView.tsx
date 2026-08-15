@@ -1016,7 +1016,7 @@ export default function GanttView({
   return (
     <div 
       id="gantt-chart-workspace" 
-      className={`flex flex-col bg-[#FAFBFD] dark:bg-slate-900 font-sans overflow-hidden transition-all duration-200 ${
+      className={`flex flex-col bg-[#F9FAFC] dark:bg-slate-900 font-sans overflow-hidden transition-all duration-200 ${
         isFullScreen 
           ? 'fixed inset-0 z-[150] w-screen h-screen' 
           : 'w-full h-full dark:bg-slate-950/20'
