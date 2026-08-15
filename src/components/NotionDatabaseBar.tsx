@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Filter, 
   ArrowUpDown, 
@@ -39,12 +39,26 @@ import {
   User,
   DollarSign,
   Palette,
-  ExternalLink
+  ExternalLink,
+  PanelLeft,
+  Box,
+  Boxes,
+  Layers,
+  FolderOpen
 } from 'lucide-react';
 import { ViewMode, Priority, TagCategory, TaskNode } from '../types';
 
 export type SortField = 'text' | 'completed' | 'priority' | 'progress' | 'dueDate' | 'startDate' | 'createdAt' | 'pomodoroTotalTime' | 'none';
 export type SortOrder = 'asc' | 'desc';
+
+export interface AreaOption {
+  id: string;
+  name: string;
+  isContainer?: boolean;
+  isWorkflow?: boolean;
+  isEquipment?: boolean;
+  count?: number;
+}
 
 export interface NotionDatabaseBarProps {
   viewMode: ViewMode;
@@ -53,6 +67,11 @@ export interface NotionDatabaseBarProps {
   projectIcon?: string;
   onUpdateProjectName?: (name: string) => void;
   
+  // Sidebar states
+  isSidebarOpen?: boolean;
+  onOpenSidebar?: () => void;
+  onToggleSidebar?: () => void;
+  
   // Filter states
   filterStatus: string;
   onFilterStatusChange: (status: string) => void;
@@ -60,6 +79,8 @@ export interface NotionDatabaseBarProps {
   onFilterPriorityChange: (priority: string) => void;
   filterTag: string;
   onFilterTagChange: (tag: string) => void;
+  filterArea?: string;
+  onFilterAreaChange?: (area: string) => void;
   filterDueDate: string;
   onFilterDueDateChange: (dueDate: string) => void;
   filterAttachments: string;
@@ -89,7 +110,6 @@ export interface NotionDatabaseBarProps {
   onCreateTask: (text: string, priority?: Priority, tags?: string[], dueDate?: string) => void;
   onOpenSyncModal: () => void;
   onOpenAiConsole: () => void;
-  onOpenSidebar?: () => void;
   
   // Split screen
   isSplitScreen?: boolean;
@@ -103,9 +123,10 @@ export interface NotionDatabaseBarProps {
   onExitFocus?: () => void;
   onToggleDefaultView?: () => void;
   
-  // Tag categories & properties
+  // Tag categories, available tags & areas
   tagCategories?: TagCategory[];
-  availableTags?: string[];
+  allProjectTags?: string[];
+  availableAreas?: AreaOption[];
   
   // Sync status
   isSyncing?: boolean;
@@ -134,6 +155,7 @@ export const PROPERTY_DEFINITIONS = [
   { id: 'dueDate', name: 'Срок (Дедлайн)', icon: Calendar, default: true },
   { id: 'startDate', name: 'Дата начала', icon: Clock, default: false },
   { id: 'tags', name: 'Теги и категории', icon: TagIcon, default: true },
+  { id: 'area', name: 'Область / Контейнер', icon: Box, default: true },
   { id: 'assignee', name: 'Исполнитель', icon: User, default: true },
   { id: 'progress', name: 'Прогресс %', icon: Check, default: true },
   { id: 'pomodoroTotalTime', name: 'Фокус-время (Помодоро)', icon: Clock, default: false },
@@ -148,12 +170,17 @@ export default function NotionDatabaseBar({
   projectName = 'Проекты',
   projectIcon = '📁',
   onUpdateProjectName,
+  isSidebarOpen = false,
+  onOpenSidebar,
+  onToggleSidebar,
   filterStatus,
   onFilterStatusChange,
   filterPriority,
   onFilterPriorityChange,
   filterTag,
   onFilterTagChange,
+  filterArea = 'all',
+  onFilterAreaChange,
   filterDueDate,
   onFilterDueDateChange,
   filterAttachments,
@@ -175,7 +202,6 @@ export default function NotionDatabaseBar({
   onCreateTask,
   onOpenSyncModal,
   onOpenAiConsole,
-  onOpenSidebar,
   isSplitScreen = false,
   onToggleSplitScreen,
   focusedTaskId,
@@ -185,7 +211,8 @@ export default function NotionDatabaseBar({
   onExitFocus,
   onToggleDefaultView,
   tagCategories = [],
-  availableTags = [],
+  allProjectTags = [],
+  availableAreas = [],
   isSyncing = false,
   hasSyncError = false,
   visibleProperties = {},
@@ -198,8 +225,6 @@ export default function NotionDatabaseBar({
   const [isSearchInputOpen, setIsSearchInputOpen] = useState(false);
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
   const [isViewsMenuOpen, setIsViewsMenuOpen] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editedTitleText, setEditedTitleText] = useState(projectName);
   const [copiedLinkSuccess, setCopiedLinkSuccess] = useState(false);
 
   // Submenus inside View Settings modal
@@ -209,16 +234,29 @@ export default function NotionDatabaseBar({
   const [activeFilterPopover, setActiveFilterPopover] = useState<string | null>(null);
   const [isAddFilterMenuOpen, setIsAddFilterMenuOpen] = useState(false);
 
+  // Instant search queries for inside popovers
+  const [statusSearchQuery, setStatusSearchQuery] = useState('');
+  const [prioritySearchQuery, setPrioritySearchQuery] = useState('');
+  const [tagSearchQuery, setTagSearchQuery] = useState('');
+  const [areaSearchQuery, setAreaSearchQuery] = useState('');
+  const [dueSearchQuery, setDueSearchQuery] = useState('');
+  const [sortSearchQuery, setSortSearchQuery] = useState('');
+  const [addFilterSearchQuery, setAddFilterSearchQuery] = useState('');
+  const [propSearchQuery, setPropSearchQuery] = useState('');
+  const [layoutSearchQuery, setLayoutSearchQuery] = useState('');
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const viewSettingsRef = useRef<HTMLDivElement>(null);
   const newMenuRef = useRef<HTMLDivElement>(null);
   const sortMenuRef = useRef<HTMLDivElement>(null);
+  const filterPopoverRef = useRef<HTMLDivElement>(null);
 
   // Count active filters
   const activeFiltersCount = [
     filterStatus !== 'all',
     filterPriority !== 'all',
     filterTag !== 'all',
+    filterArea !== 'all',
     filterDueDate !== 'all',
     filterAttachments !== 'all',
     filterNotes !== 'all'
@@ -247,6 +285,9 @@ export default function NotionDatabaseBar({
       if (sortMenuRef.current && !sortMenuRef.current.contains(target) && !target.closest('#notion-sort-btn')) {
         setIsSortMenuOpen(false);
       }
+      if (filterPopoverRef.current && !filterPopoverRef.current.contains(target) && !target.closest('.notion-filter-pill')) {
+        setActiveFilterPopover(null);
+      }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -256,6 +297,7 @@ export default function NotionDatabaseBar({
     onFilterStatusChange('all');
     onFilterPriorityChange('all');
     onFilterTagChange('all');
+    if (onFilterAreaChange) onFilterAreaChange('all');
     onFilterDueDateChange('all');
     onFilterAttachmentsChange('all');
     onFilterNotesChange('all');
@@ -277,6 +319,116 @@ export default function NotionDatabaseBar({
 
   const currentViewObj = ALL_VIEW_MODES.find(v => v.id === viewMode) || ALL_VIEW_MODES[0];
   const CurrentViewIcon = currentViewObj.icon;
+
+  // Selected area info
+  const selectedAreaObj = useMemo(() => {
+    if (!filterArea || filterArea === 'all') return null;
+    if (filterArea === 'root') return { id: 'root', name: 'Корень (без области)', count: 0 };
+    return availableAreas.find(a => a.id === filterArea) || null;
+  }, [filterArea, availableAreas]);
+
+  // All combined tags list filtered by tagSearchQuery
+  const processedTags = useMemo(() => {
+    const query = tagSearchQuery.trim().toLowerCase();
+    
+    // Group categorized tags
+    const categorizedGroups: { category: TagCategory; tags: string[] }[] = [];
+    const usedTagSet = new Set<string>();
+
+    tagCategories.forEach(cat => {
+      const matched = (cat.tags || []).filter(t => {
+        if (!t) return false;
+        if (!query) return true;
+        return t.toLowerCase().includes(query) || cat.name.toLowerCase().includes(query);
+      });
+      if (matched.length > 0) {
+        categorizedGroups.push({ category: cat, tags: matched });
+        matched.forEach(t => usedTagSet.add(t));
+      }
+    });
+
+    // Uncategorized / all remaining tags
+    const otherTags = allProjectTags.filter(t => {
+      if (!t) return false;
+      if (usedTagSet.has(t)) return false;
+      if (!query) return true;
+      return t.toLowerCase().includes(query);
+    });
+
+    return { categorizedGroups, otherTags };
+  }, [tagCategories, allProjectTags, tagSearchQuery]);
+
+  // Filtered areas by areaSearchQuery
+  const filteredAreas = useMemo(() => {
+    const q = areaSearchQuery.trim().toLowerCase();
+    if (!q) return availableAreas;
+    return availableAreas.filter(a => a.name.toLowerCase().includes(q));
+  }, [availableAreas, areaSearchQuery]);
+
+  // Filtered statuses
+  const statusOptions = [
+    { id: 'all', label: 'Все статусы' },
+    { id: 'active', label: 'Активные задачи' },
+    { id: 'completed', label: 'Выполненные' },
+    { id: 'archived', label: '📦 Архивные' },
+    { id: 'not_tasks', label: '🚫 Не-задачи' },
+  ];
+  const filteredStatuses = statusOptions.filter(s => 
+    !statusSearchQuery || s.label.toLowerCase().includes(statusSearchQuery.toLowerCase())
+  );
+
+  // Filtered priorities
+  const priorityOptions = [
+    { id: 'all', label: 'Все приоритеты' },
+    { id: 'urgent', label: '⚡ Критический' },
+    { id: 'high', label: '🔴 Высокий' },
+    { id: 'medium', label: '🟡 Средний' },
+    { id: 'low', label: '🔵 Низкий' },
+    { id: 'none', label: '⚪ Без приоритета' },
+  ];
+  const filteredPriorities = priorityOptions.filter(p => 
+    !prioritySearchQuery || p.label.toLowerCase().includes(prioritySearchQuery.toLowerCase())
+  );
+
+  // Filtered due dates
+  const dueDateOptions = [
+    { id: 'all', label: 'Любой срок' },
+    { id: 'overdue', label: '⚠️ Просрочено' },
+    { id: 'today', label: '📅 Сегодня' },
+    { id: 'this_week', label: '📆 На этой неделе' },
+    { id: 'has_due_date', label: 'С дедлайном' },
+    { id: 'no_due_date', label: 'Без дедлайна' },
+  ];
+  const filteredDueDates = dueDateOptions.filter(d => 
+    !dueSearchQuery || d.label.toLowerCase().includes(dueSearchQuery.toLowerCase())
+  );
+
+  // Filtered sort fields
+  const sortOptions = [
+    { id: 'text', label: 'По названию' },
+    { id: 'dueDate', label: 'По сроку (дедлайну)' },
+    { id: 'startDate', label: 'По дате начала' },
+    { id: 'priority', label: 'По приоритету' },
+    { id: 'progress', label: 'По прогрессу' },
+    { id: 'pomodoroTotalTime', label: 'По фокус-времени' },
+  ];
+  const filteredSortOptions = sortOptions.filter(s => 
+    !sortSearchQuery || s.label.toLowerCase().includes(sortSearchQuery.toLowerCase())
+  );
+
+  // Add filter items
+  const addFilterOptions = [
+    { id: 'area', label: 'Область / Контейнер', icon: Box },
+    { id: 'tags', label: 'Теги', icon: TagIcon },
+    { id: 'status', label: 'Статус', icon: CheckCircle2 },
+    { id: 'priority', label: 'Приоритет', icon: Zap },
+    { id: 'dueDate', label: 'Срок (дедлайн)', icon: Calendar },
+    { id: 'files', label: 'Вложения / Файлы', icon: Paperclip },
+    { id: 'notes', label: 'Заметки', icon: FileText },
+  ];
+  const filteredAddFilterOptions = addFilterOptions.filter(f => 
+    !addFilterSearchQuery || f.label.toLowerCase().includes(addFilterSearchQuery.toLowerCase())
+  );
 
   return (
     <div className="w-full shrink-0 flex flex-col bg-white dark:bg-[#191919] border-b border-[#E9E9E7] dark:border-[#2F2F2F] text-[#37352F] dark:text-[#E3E2E0] select-none transition-colors z-20">
@@ -339,10 +491,29 @@ export default function NotionDatabaseBar({
       )}
 
       {/* 2. NOTION MAIN VIEW TABS & DATABASE ACTION BUTTONS */}
-      <div className="h-11 px-3 sm:px-6 flex items-center justify-between gap-2 overflow-x-auto invisible-scrollbar">
+      <div className="h-11 px-2.5 sm:px-4 flex items-center justify-between gap-2 overflow-x-auto invisible-scrollbar">
         
-        {/* Left: View Tabs List matching Notion Screenshot 1 */}
+        {/* Left: Sidebar Toggle + Project title + View Tabs List */}
         <div className="flex items-center gap-1 overflow-x-auto invisible-scrollbar shrink-0">
+          
+          {/* Main Left Sidebar Toggle Button */}
+          <button
+            type="button"
+            onClick={onToggleSidebar || onOpenSidebar}
+            className={`p-1.5 rounded-md flex items-center gap-1.5 text-xs transition-colors cursor-pointer mr-1 shrink-0 ${
+              isSidebarOpen
+                ? 'bg-[#EFEFED] dark:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0] font-semibold ring-1 ring-[#2383E2]/30'
+                : 'text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0]'
+            }`}
+            title={isSidebarOpen ? "Скрыть главную левую панель (меню)" : "Открыть главную левую панель (меню)"}
+          >
+            <PanelLeft className="w-4 h-4 text-[#2383E2] dark:text-[#2383E2]" />
+            <span className="hidden md:inline font-semibold text-xs text-slate-800 dark:text-slate-200">Панель</span>
+          </button>
+
+          <div className="h-4 w-px bg-[#E9E9E7] dark:bg-[#2F2F2F] mx-0.5 shrink-0" />
+
+          {/* View Modes Tabs */}
           {ALL_VIEW_MODES.map(option => {
             const OptionIcon = option.icon;
             const isSelected = viewMode === option.id;
@@ -353,7 +524,7 @@ export default function NotionDatabaseBar({
                 onClick={() => onViewModeChange(option.id)}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all shrink-0 cursor-pointer ${
                   isSelected
-                    ? 'bg-[#EFEFED] dark:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0] shadow-2xs'
+                    ? 'bg-[#EFEFED] dark:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0] shadow-2xs font-semibold'
                     : 'text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0]'
                 }`}
               >
@@ -376,7 +547,7 @@ export default function NotionDatabaseBar({
 
             {isViewsMenuOpen && (
               <div 
-                className="absolute top-8 left-0 w-48 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1 z-50 animate-in fade-in zoom-in-95 duration-150"
+                className="absolute top-8 left-0 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1 z-50 animate-in fade-in zoom-in-95 duration-150"
                 onClick={() => setIsViewsMenuOpen(false)}
               >
                 <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider">
@@ -404,7 +575,7 @@ export default function NotionDatabaseBar({
           </div>
         </div>
 
-        {/* Right: Notion Action Icons Toolbar matching Screenshot 1 */}
+        {/* Right: Notion Action Icons Toolbar */}
         <div className="flex items-center gap-1 shrink-0">
           
           {/* 1. Filter Button */}
@@ -413,14 +584,15 @@ export default function NotionDatabaseBar({
             onClick={() => setIsFilterBarOpen(!isFilterBarOpen)}
             className={`p-1.5 rounded-md flex items-center gap-1 text-xs transition-colors cursor-pointer ${
               isFilterBarOpen || isAnyFilterActive
-                ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
+                ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold ring-1 ring-[#2383E2]/20'
                 : 'text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0]'
             }`}
             title="Фильтры"
           >
             <Filter className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Фильтры</span>
             {activeFiltersCount > 0 && (
-              <span className="text-[10px] font-bold bg-[#2383E2] text-white rounded-full px-1 leading-tight">
+              <span className="text-[10px] font-bold bg-[#2383E2] text-white rounded-full px-1.5 py-0.2 leading-tight">
                 {activeFiltersCount}
               </span>
             )}
@@ -431,7 +603,10 @@ export default function NotionDatabaseBar({
             <button
               id="notion-sort-btn"
               type="button"
-              onClick={() => setIsSortMenuOpen(!isSortMenuOpen)}
+              onClick={() => {
+                setIsSortMenuOpen(!isSortMenuOpen);
+                setSortSearchQuery('');
+              }}
               className={`p-1.5 rounded-md flex items-center gap-1 text-xs transition-colors cursor-pointer ${
                 isSortingActive || isSortMenuOpen
                   ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
@@ -440,6 +615,7 @@ export default function NotionDatabaseBar({
               title="Сортировка"
             >
               <ArrowUpDown className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">Сортировка</span>
               {isSortingActive && (
                 <span className="text-[10px] font-bold text-[#2383E2]">
                   {sortOrder === 'asc' ? '↑' : '↓'}
@@ -447,10 +623,10 @@ export default function NotionDatabaseBar({
               )}
             </button>
 
-            {/* Quick Sort Popover */}
+            {/* Quick Sort Popover with Search */}
             {isSortMenuOpen && (
-              <div className="absolute right-0 top-8 w-56 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-150">
-                <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider flex items-center justify-between">
+              <div className="absolute right-0 top-8 w-60 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider flex items-center justify-between border-b border-[#E9E9E7] dark:border-[#2F2F2F] pb-1.5">
                   <span>Сортировка</span>
                   {isSortingActive && (
                     <button
@@ -465,16 +641,29 @@ export default function NotionDatabaseBar({
                     </button>
                   )}
                 </div>
+
+                {/* Instant Search inside Sort popover */}
+                <div className="p-1 my-1">
+                  <div className="relative flex items-center">
+                    <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={sortSearchQuery}
+                      onChange={(e) => setSortSearchQuery(e.target.value)}
+                      placeholder="Поиск поля..."
+                      className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                    />
+                    {sortSearchQuery && (
+                      <button onClick={() => setSortSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
                 
-                <div className="space-y-0.5 mt-1">
-                  {[
-                    { id: 'text', label: 'По названию' },
-                    { id: 'dueDate', label: 'По сроку (дедлайну)' },
-                    { id: 'startDate', label: 'По дате начала' },
-                    { id: 'priority', label: 'По приоритету' },
-                    { id: 'progress', label: 'По прогрессу' },
-                    { id: 'pomodoroTotalTime', label: 'По фокус-времени' },
-                  ].map(f => {
+                <div className="space-y-0.5 mt-1 max-h-48 overflow-y-auto">
+                  {filteredSortOptions.map(f => {
                     const isCur = sortField === f.id;
                     return (
                       <button
@@ -548,7 +737,7 @@ export default function NotionDatabaseBar({
             <Search className="w-3.5 h-3.5" />
           </button>
 
-          {/* 6. Notion View Settings Button (Screenshot 3) */}
+          {/* 6. Notion View Settings Button */}
           <button
             id="notion-settings-btn"
             type="button"
@@ -634,9 +823,9 @@ export default function NotionDatabaseBar({
         </div>
       </div>
 
-      {/* 3. NOTION INLINE FILTER & SORT BAR (Screenshot 2) */}
+      {/* 3. NOTION INLINE FILTER & SORT BAR WITH INSTANT SEARCH IN ALL POPOVERS */}
       {(isFilterBarOpen || isSearchInputOpen || isAnyFilterActive || isSortingActive) && (
-        <div className="px-3 sm:px-6 py-1.5 bg-white dark:bg-[#191919] border-t border-[#E9E9E7] dark:border-[#2F2F2F] flex flex-wrap items-center gap-1.5 text-xs animate-in slide-in-from-top-1 duration-150">
+        <div className="px-3 sm:px-6 py-1.5 bg-white dark:bg-[#191919] border-t border-[#E9E9E7] dark:border-[#2F2F2F] flex flex-wrap items-center gap-1.5 text-xs animate-in slide-in-from-top-1 duration-150 relative">
           
           {/* Active Sort Pills */}
           {isSortingActive && (
@@ -674,18 +863,251 @@ export default function NotionDatabaseBar({
             <div className="h-4 w-px bg-[#E9E9E7] dark:bg-[#2F2F2F] mx-0.5" />
           )}
 
+          {/* Filter: Areas / Containers Pill ("Фильтр по областям") */}
+          {onFilterAreaChange && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveFilterPopover(activeFilterPopover === 'area' ? null : 'area');
+                  setAreaSearchQuery('');
+                }}
+                className={`notion-filter-pill px-2 py-0.5 rounded flex items-center gap-1 cursor-pointer transition-colors ${
+                  filterArea !== 'all'
+                    ? 'bg-[#2383E2]/15 text-[#2383E2] font-semibold ring-1 ring-[#2383E2]/30'
+                    : 'bg-[#F7F7F5] dark:bg-[#202020] text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'
+                }`}
+              >
+                <Box className="w-3 h-3 text-[#2383E2]" />
+                <span className="truncate max-w-[140px]">
+                  {filterArea === 'all' && 'Область'}
+                  {filterArea === 'root' && 'Область: Корень'}
+                  {selectedAreaObj && `Область: ${selectedAreaObj.name}`}
+                </span>
+                <ChevronDown className="w-3 h-3 opacity-60" />
+              </button>
+
+              {/* Area Filter Popover with Instant Search */}
+              {activeFilterPopover === 'area' && (
+                <div 
+                  ref={filterPopoverRef}
+                  className="absolute left-0 top-7 w-64 max-h-72 overflow-y-auto bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
+                >
+                  <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] sticky top-0 bg-white dark:bg-[#202020] z-10">
+                    <div className="relative flex items-center">
+                      <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                      <input
+                        type="text"
+                        autoFocus
+                        value={areaSearchQuery}
+                        onChange={(e) => setAreaSearchQuery(e.target.value)}
+                        placeholder="Поиск области / контейнера..."
+                        className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                      />
+                      {areaSearchQuery && (
+                        <button onClick={() => setAreaSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-0.5 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onFilterAreaChange('all');
+                        setActiveFilterPopover(null);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                    >
+                      <div className="flex items-center gap-1.5 font-semibold">
+                        <Boxes className="w-3.5 h-3.5 text-[#787774]" />
+                        <span>Все области</span>
+                      </div>
+                      {filterArea === 'all' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onFilterAreaChange('root');
+                        setActiveFilterPopover(null);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400">🌐</span>
+                        <span>Корень (без области/контейнера)</span>
+                      </div>
+                      {filterArea === 'root' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                    </button>
+
+                    {filteredAreas.length > 0 ? (
+                      filteredAreas.map(a => (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => {
+                            onFilterAreaChange(a.id);
+                            setActiveFilterPopover(null);
+                          }}
+                          className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                            <span className="shrink-0">{a.isContainer ? '📦' : a.isWorkflow ? '📐' : a.isEquipment ? '⚙️' : '📁'}</span>
+                            <span className="truncate">{a.name}</span>
+                            {a.count !== undefined && (
+                              <span className="text-[10px] text-[#787774] font-mono shrink-0">({a.count})</span>
+                            )}
+                          </div>
+                          {filterArea === a.id && <Check className="w-3.5 h-3.5 text-[#2383E2] shrink-0" />}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="text-center py-2 text-xs text-[#787774] italic">
+                        Области не найдены
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Filter: Tags Pill (With ALL tags + Instant Search) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveFilterPopover(activeFilterPopover === 'tags' ? null : 'tags');
+                setTagSearchQuery('');
+              }}
+              className={`notion-filter-pill px-2 py-0.5 rounded flex items-center gap-1 cursor-pointer transition-colors ${
+                filterTag !== 'all'
+                  ? 'bg-[#2383E2]/15 text-[#2383E2] font-semibold ring-1 ring-[#2383E2]/30'
+                  : 'bg-[#F7F7F5] dark:bg-[#202020] text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'
+              }`}
+            >
+              <TagIcon className="w-3 h-3 text-[#2383E2]" />
+              <span className="truncate max-w-[120px]">{filterTag === 'all' ? 'Теги' : `#${filterTag}`}</span>
+              <ChevronDown className="w-3 h-3 opacity-60" />
+            </button>
+
+            {/* Tags Filter Popover with Instant Search & All Tags */}
+            {activeFilterPopover === 'tags' && (
+              <div 
+                ref={filterPopoverRef}
+                className="absolute left-0 top-7 w-64 max-h-72 overflow-y-auto bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
+              >
+                <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] sticky top-0 bg-white dark:bg-[#202020] z-10">
+                  <div className="relative flex items-center">
+                    <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={tagSearchQuery}
+                      onChange={(e) => setTagSearchQuery(e.target.value)}
+                      placeholder="Поиск тега..."
+                      className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                    />
+                    {tagSearchQuery && (
+                      <button onClick={() => setTagSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onFilterTagChange('all');
+                      setActiveFilterPopover(null);
+                    }}
+                    className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer font-semibold"
+                  >
+                    <span>Все теги</span>
+                    {filterTag === 'all' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                  </button>
+
+                  {/* Categorized tag groups */}
+                  {processedTags.categorizedGroups.map(group => (
+                    <div key={group.category.id} className="pt-1 border-t border-[#E9E9E7] dark:border-[#2F2F2F]">
+                      <div className="px-2 py-0.5 text-[9.5px] font-bold uppercase flex items-center gap-1" style={{ color: group.category.color || '#2383E2' }}>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: group.category.color || '#2383E2' }} />
+                        <span>{group.category.name}</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        {group.tags.map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => {
+                              onFilterTagChange(t);
+                              setActiveFilterPopover(null);
+                            }}
+                            className="w-full text-left px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                          >
+                            <span className={filterTag === t ? 'font-bold text-[#2383E2]' : ''}>#{t}</span>
+                            {filterTag === t && <Check className="w-3 h-3 text-[#2383E2]" />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* All other uncategorized tags */}
+                  {processedTags.otherTags.length > 0 && (
+                    <div className="pt-1 border-t border-[#E9E9E7] dark:border-[#2F2F2F]">
+                      <div className="px-2 py-0.5 text-[9.5px] font-bold uppercase text-[#787774]">
+                        {processedTags.categorizedGroups.length > 0 ? 'Все остальные теги' : 'Теги задач'}
+                      </div>
+                      <div className="space-y-0.5">
+                        {processedTags.otherTags.map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => {
+                              onFilterTagChange(t);
+                              setActiveFilterPopover(null);
+                            }}
+                            className="w-full text-left px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                          >
+                            <span className={filterTag === t ? 'font-bold text-[#2383E2]' : ''}>#{t}</span>
+                            {filterTag === t && <Check className="w-3 h-3 text-[#2383E2]" />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {processedTags.categorizedGroups.length === 0 && processedTags.otherTags.length === 0 && (
+                    <div className="text-center py-2 text-xs text-[#787774] italic">
+                      Теги не найдены
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Filter: Status Pill */}
           <div className="relative">
             <button
               type="button"
-              onClick={() => setActiveFilterPopover(activeFilterPopover === 'status' ? null : 'status')}
-              className={`px-2 py-0.5 rounded flex items-center gap-1 cursor-pointer transition-colors ${
+              onClick={() => {
+                setActiveFilterPopover(activeFilterPopover === 'status' ? null : 'status');
+                setStatusSearchQuery('');
+              }}
+              className={`notion-filter-pill px-2 py-0.5 rounded flex items-center gap-1 cursor-pointer transition-colors ${
                 filterStatus !== 'all'
-                  ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
+                  ? 'bg-[#2383E2]/15 text-[#2383E2] font-semibold ring-1 ring-[#2383E2]/30'
                   : 'bg-[#F7F7F5] dark:bg-[#202020] text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'
               }`}
             >
-              <CheckCircle2 className="w-3 h-3" />
+              <CheckCircle2 className="w-3 h-3 text-[#2383E2]" />
               <span>
                 {filterStatus === 'all' && 'Статус'}
                 {filterStatus === 'active' && 'Статус: Активные'}
@@ -698,26 +1120,44 @@ export default function NotionDatabaseBar({
 
             {activeFilterPopover === 'status' && (
               <div 
-                className="absolute left-0 top-7 w-48 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1 z-50 text-xs"
-                onClick={() => setActiveFilterPopover(null)}
+                ref={filterPopoverRef}
+                className="absolute left-0 top-7 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
               >
-                {[
-                  { id: 'all', label: 'Все разделы' },
-                  { id: 'active', label: 'Активные задачи' },
-                  { id: 'completed', label: 'Выполненные' },
-                  { id: 'archived', label: '📦 Архивные' },
-                  { id: 'not_tasks', label: '🚫 Не-задачи' },
-                ].map(item => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => onFilterStatusChange(item.id)}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                  >
-                    <span>{item.label}</span>
-                    {filterStatus === item.id && <Check className="w-3 h-3 text-[#2383E2]" />}
-                  </button>
-                ))}
+                <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
+                  <div className="relative flex items-center">
+                    <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={statusSearchQuery}
+                      onChange={(e) => setStatusSearchQuery(e.target.value)}
+                      placeholder="Поиск статуса..."
+                      className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                    />
+                    {statusSearchQuery && (
+                      <button onClick={() => setStatusSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-0.5">
+                  {filteredStatuses.map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        onFilterStatusChange(item.id);
+                        setActiveFilterPopover(null);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                    >
+                      <span>{item.label}</span>
+                      {filterStatus === item.id && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -726,14 +1166,17 @@ export default function NotionDatabaseBar({
           <div className="relative">
             <button
               type="button"
-              onClick={() => setActiveFilterPopover(activeFilterPopover === 'priority' ? null : 'priority')}
-              className={`px-2 py-0.5 rounded flex items-center gap-1 cursor-pointer transition-colors ${
+              onClick={() => {
+                setActiveFilterPopover(activeFilterPopover === 'priority' ? null : 'priority');
+                setPrioritySearchQuery('');
+              }}
+              className={`notion-filter-pill px-2 py-0.5 rounded flex items-center gap-1 cursor-pointer transition-colors ${
                 filterPriority !== 'all'
-                  ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
+                  ? 'bg-[#2383E2]/15 text-[#2383E2] font-semibold ring-1 ring-[#2383E2]/30'
                   : 'bg-[#F7F7F5] dark:bg-[#202020] text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'
               }`}
             >
-              <Zap className="w-3 h-3" />
+              <Zap className="w-3 h-3 text-[#2383E2]" />
               <span>
                 {filterPriority === 'all' && 'Приоритет'}
                 {filterPriority === 'none' && 'Приоритет: Без'}
@@ -747,78 +1190,44 @@ export default function NotionDatabaseBar({
 
             {activeFilterPopover === 'priority' && (
               <div 
-                className="absolute left-0 top-7 w-48 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1 z-50 text-xs"
-                onClick={() => setActiveFilterPopover(null)}
+                ref={filterPopoverRef}
+                className="absolute left-0 top-7 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
               >
-                {[
-                  { id: 'all', label: 'Все приоритеты' },
-                  { id: 'urgent', label: '⚡ Критический' },
-                  { id: 'high', label: '🔴 Высокий' },
-                  { id: 'medium', label: '🟡 Средний' },
-                  { id: 'low', label: '🔵 Низкий' },
-                  { id: 'none', label: '⚪ Без приоритета' },
-                ].map(item => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => onFilterPriorityChange(item.id)}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                  >
-                    <span>{item.label}</span>
-                    {filterPriority === item.id && <Check className="w-3 h-3 text-[#2383E2]" />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Filter: Tags Pill */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setActiveFilterPopover(activeFilterPopover === 'tags' ? null : 'tags')}
-              className={`px-2 py-0.5 rounded flex items-center gap-1 cursor-pointer transition-colors ${
-                filterTag !== 'all'
-                  ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
-                  : 'bg-[#F7F7F5] dark:bg-[#202020] text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'
-              }`}
-            >
-              <TagIcon className="w-3 h-3" />
-              <span>{filterTag === 'all' ? 'Теги' : `#${filterTag}`}</span>
-              <ChevronDown className="w-3 h-3 opacity-60" />
-            </button>
-
-            {activeFilterPopover === 'tags' && (
-              <div 
-                className="absolute left-0 top-7 w-52 max-h-64 overflow-y-auto bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1 z-50 text-xs"
-                onClick={() => setActiveFilterPopover(null)}
-              >
-                <button
-                  type="button"
-                  onClick={() => onFilterTagChange('all')}
-                  className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                >
-                  <span>Все теги</span>
-                  {filterTag === 'all' && <Check className="w-3 h-3 text-[#2383E2]" />}
-                </button>
-                {tagCategories.map(cat => (
-                  <div key={cat.id} className="pt-1">
-                    <div className="px-2 py-0.5 text-[9px] font-bold uppercase text-[#787774]" style={{ color: cat.color }}>
-                      {cat.name}
-                    </div>
-                    {(cat.tags || []).map(t => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => onFilterTagChange(t)}
-                        className="w-full text-left px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                      >
-                        <span>#{t}</span>
-                        {filterTag === t && <Check className="w-3 h-3 text-[#2383E2]" />}
+                <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
+                  <div className="relative flex items-center">
+                    <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={prioritySearchQuery}
+                      onChange={(e) => setPrioritySearchQuery(e.target.value)}
+                      placeholder="Поиск приоритета..."
+                      className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                    />
+                    {prioritySearchQuery && (
+                      <button onClick={() => setPrioritySearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                        <X className="w-3 h-3" />
                       </button>
-                    ))}
+                    )}
                   </div>
-                ))}
+                </div>
+
+                <div className="space-y-0.5">
+                  {filteredPriorities.map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        onFilterPriorityChange(item.id);
+                        setActiveFilterPopover(null);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                    >
+                      <span>{item.label}</span>
+                      {filterPriority === item.id && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -827,14 +1236,17 @@ export default function NotionDatabaseBar({
           <div className="relative">
             <button
               type="button"
-              onClick={() => setActiveFilterPopover(activeFilterPopover === 'dueDate' ? null : 'dueDate')}
-              className={`px-2 py-0.5 rounded flex items-center gap-1 cursor-pointer transition-colors ${
+              onClick={() => {
+                setActiveFilterPopover(activeFilterPopover === 'dueDate' ? null : 'dueDate');
+                setDueSearchQuery('');
+              }}
+              className={`notion-filter-pill px-2 py-0.5 rounded flex items-center gap-1 cursor-pointer transition-colors ${
                 filterDueDate !== 'all'
-                  ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
+                  ? 'bg-[#2383E2]/15 text-[#2383E2] font-semibold ring-1 ring-[#2383E2]/30'
                   : 'bg-[#F7F7F5] dark:bg-[#202020] text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'
               }`}
             >
-              <Calendar className="w-3 h-3" />
+              <Calendar className="w-3 h-3 text-[#2383E2]" />
               <span>
                 {filterDueDate === 'all' && 'Срок'}
                 {filterDueDate === 'overdue' && 'Срок: Просрочено'}
@@ -848,98 +1260,111 @@ export default function NotionDatabaseBar({
 
             {activeFilterPopover === 'dueDate' && (
               <div 
-                className="absolute left-0 top-7 w-48 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1 z-50 text-xs"
-                onClick={() => setActiveFilterPopover(null)}
+                ref={filterPopoverRef}
+                className="absolute left-0 top-7 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
               >
-                {[
-                  { id: 'all', label: 'Любой срок' },
-                  { id: 'overdue', label: '⚠️ Просрочено' },
-                  { id: 'today', label: '📅 Сегодня' },
-                  { id: 'this_week', label: '📆 На этой неделе' },
-                  { id: 'has_due_date', label: 'С дедлайном' },
-                  { id: 'no_due_date', label: 'Без дедлайна' },
-                ].map(item => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => onFilterDueDateChange(item.id)}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                  >
-                    <span>{item.label}</span>
-                    {filterDueDate === item.id && <Check className="w-3 h-3 text-[#2383E2]" />}
-                  </button>
-                ))}
+                <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
+                  <div className="relative flex items-center">
+                    <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={dueSearchQuery}
+                      onChange={(e) => setDueSearchQuery(e.target.value)}
+                      placeholder="Поиск срока..."
+                      className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                    />
+                    {dueSearchQuery && (
+                      <button onClick={() => setDueSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-0.5">
+                  {filteredDueDates.map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        onFilterDueDateChange(item.id);
+                        setActiveFilterPopover(null);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                    >
+                      <span>{item.label}</span>
+                      {filterDueDate === item.id && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
 
-          {/* Add Filter / More Filters Pill */}
+          {/* Add Filter / More Filters Pill with Instant Search */}
           <div className="relative">
             <button
               type="button"
-              onClick={() => setIsAddFilterMenuOpen(!isAddFilterMenuOpen)}
-              className="px-2 py-0.5 rounded text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] flex items-center gap-1 cursor-pointer transition-colors"
+              onClick={() => {
+                setIsAddFilterMenuOpen(!isAddFilterMenuOpen);
+                setAddFilterSearchQuery('');
+              }}
+              className="notion-filter-pill px-2 py-0.5 rounded text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] flex items-center gap-1 cursor-pointer transition-colors border border-dashed border-[#E9E9E7] dark:border-[#2F2F2F]"
             >
               <Plus className="w-3 h-3" />
-              <span>Filter</span>
+              <span>+ Фильтр</span>
             </button>
 
             {isAddFilterMenuOpen && (
               <div 
-                className="absolute left-0 top-7 w-48 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1 z-50 text-xs"
-                onClick={() => setIsAddFilterMenuOpen(false)}
+                ref={filterPopoverRef}
+                className="absolute left-0 top-7 w-56 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
               >
-                <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider">
-                  Фильтровать по свойству
+                <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
+                  <div className="relative flex items-center">
+                    <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={addFilterSearchQuery}
+                      onChange={(e) => setAddFilterSearchQuery(e.target.value)}
+                      placeholder="Поиск типа фильтра..."
+                      className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                    />
+                    {addFilterSearchQuery && (
+                      <button onClick={() => setAddFilterSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveFilterPopover('status')}
-                  className="w-full text-left px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[#787774]" />
-                  <span>Статус</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveFilterPopover('priority')}
-                  className="w-full text-left px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
-                >
-                  <Zap className="w-3.5 h-3.5 text-[#787774]" />
-                  <span>Приоритет</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveFilterPopover('tags')}
-                  className="w-full text-left px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
-                >
-                  <TagIcon className="w-3.5 h-3.5 text-[#787774]" />
-                  <span>Теги</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveFilterPopover('dueDate')}
-                  className="w-full text-left px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
-                >
-                  <Calendar className="w-3.5 h-3.5 text-[#787774]" />
-                  <span>Срок</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onFilterAttachmentsChange(filterAttachments === 'has_files' ? 'all' : 'has_files')}
-                  className="w-full text-left px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
-                >
-                  <Paperclip className="w-3.5 h-3.5 text-[#787774]" />
-                  <span>Вложения / Файлы</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onFilterNotesChange(filterNotes === 'has_notes' ? 'all' : 'has_notes')}
-                  className="w-full text-left px-2 py-1 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
-                >
-                  <FileText className="w-3.5 h-3.5 text-[#787774]" />
-                  <span>Заметки</span>
-                </button>
+
+                <div className="space-y-0.5">
+                  {filteredAddFilterOptions.map(opt => {
+                    const Icon = opt.icon;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          if (opt.id === 'files') {
+                            onFilterAttachmentsChange(filterAttachments === 'has_files' ? 'all' : 'has_files');
+                          } else if (opt.id === 'notes') {
+                            onFilterNotesChange(filterNotes === 'has_notes' ? 'all' : 'has_notes');
+                          } else {
+                            setActiveFilterPopover(opt.id);
+                          }
+                          setIsAddFilterMenuOpen(false);
+                        }}
+                        className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
+                      >
+                        <Icon className="w-3.5 h-3.5 text-[#2383E2]" />
+                        <span>{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -953,7 +1378,7 @@ export default function NotionDatabaseBar({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => onSearchQueryChange(e.target.value)}
-                placeholder="Поиск по задачам..."
+                placeholder="Мгновенный поиск..."
                 className="pl-7 pr-6 py-0.5 text-xs bg-[#F7F7F5] dark:bg-[#202020] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] focus:bg-white dark:focus:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-md focus:outline-none focus:ring-1 focus:ring-[#2383E2] text-[#37352F] dark:text-[#E3E2E0] placeholder-[#787774] transition-all w-32 sm:w-48"
               />
               {searchQuery.trim().length > 0 && (
@@ -973,10 +1398,10 @@ export default function NotionDatabaseBar({
               <button
                 type="button"
                 onClick={handleClearAllFiltersAndSort}
-                className="text-[11px] text-rose-500 hover:text-rose-600 hover:underline px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                className="text-[11px] text-rose-500 hover:text-rose-600 hover:underline px-1.5 py-0.5 rounded cursor-pointer transition-colors font-medium whitespace-nowrap"
                 title="Сбросить все фильтры и сортировку"
               >
-                Сбросить
+                Сбросить все
               </button>
             )}
           </div>
@@ -984,7 +1409,7 @@ export default function NotionDatabaseBar({
         </div>
       )}
 
-      {/* 4. NOTION "VIEW SETTINGS" POPUP MODAL / DRAWER (Screenshot 3) */}
+      {/* 4. NOTION "VIEW SETTINGS" POPUP MODAL / DRAWER */}
       {isViewSettingsOpen && (
         <div 
           ref={viewSettingsRef}
@@ -1027,7 +1452,10 @@ export default function NotionDatabaseBar({
               {/* Layout Switcher row */}
               <button
                 type="button"
-                onClick={() => setActiveSettingsSubmenu('layout')}
+                onClick={() => {
+                  setActiveSettingsSubmenu('layout');
+                  setLayoutSearchQuery('');
+                }}
                 className="w-full text-left px-2 py-2 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
               >
                 <div className="flex items-center gap-2">
@@ -1043,7 +1471,10 @@ export default function NotionDatabaseBar({
               {/* Property Visibility row */}
               <button
                 type="button"
-                onClick={() => setActiveSettingsSubmenu('properties')}
+                onClick={() => {
+                  setActiveSettingsSubmenu('properties');
+                  setPropSearchQuery('');
+                }}
                 className="w-full text-left px-2 py-2 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
               >
                 <div className="flex items-center gap-2">
@@ -1080,7 +1511,10 @@ export default function NotionDatabaseBar({
               {/* Sort row */}
               <button
                 type="button"
-                onClick={() => setActiveSettingsSubmenu('sort')}
+                onClick={() => {
+                  setActiveSettingsSubmenu('sort');
+                  setSortSearchQuery('');
+                }}
                 className="w-full text-left px-2 py-2 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
               >
                 <div className="flex items-center gap-2">
@@ -1212,10 +1646,26 @@ export default function NotionDatabaseBar({
           {/* Submenu: Layout Selection */}
           {activeSettingsSubmenu === 'layout' && (
             <div className="space-y-1">
-              <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider">
-                Выберите вид отображения
+              <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
+                <div className="relative flex items-center">
+                  <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={layoutSearchQuery}
+                    onChange={(e) => setLayoutSearchQuery(e.target.value)}
+                    placeholder="Поиск вида..."
+                    className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                  />
+                  {layoutSearchQuery && (
+                    <button onClick={() => setLayoutSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
-              {ALL_VIEW_MODES.map(v => {
+
+              {ALL_VIEW_MODES.filter(v => !layoutSearchQuery || v.name.toLowerCase().includes(layoutSearchQuery.toLowerCase())).map(v => {
                 const Icon = v.icon;
                 return (
                   <button
@@ -1240,13 +1690,29 @@ export default function NotionDatabaseBar({
             </div>
           )}
 
-          {/* Submenu: Property Visibility */}
+          {/* Submenu: Property Visibility with Instant Search */}
           {activeSettingsSubmenu === 'properties' && (
             <div className="space-y-1">
-              <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider">
-                Видимость свойств карточек / столбцов
+              <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
+                <div className="relative flex items-center">
+                  <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={propSearchQuery}
+                    onChange={(e) => setPropSearchQuery(e.target.value)}
+                    placeholder="Поиск свойства..."
+                    className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                  />
+                  {propSearchQuery && (
+                    <button onClick={() => setPropSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
-              {PROPERTY_DEFINITIONS.map(prop => {
+
+              {PROPERTY_DEFINITIONS.filter(p => !propSearchQuery || p.name.toLowerCase().includes(propSearchQuery.toLowerCase())).map(prop => {
                 const isVisible = visibleProperties[prop.id] !== false;
                 const Icon = prop.icon;
                 return (
@@ -1276,29 +1742,26 @@ export default function NotionDatabaseBar({
           {/* Submenu: Sort Options */}
           {activeSettingsSubmenu === 'sort' && (
             <div className="space-y-1">
-              <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider flex items-center justify-between">
-                <span>Сортировка</span>
-                {isSortingActive && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSortFieldChange('none');
-                      setActiveSettingsSubmenu('main');
-                    }}
-                    className="text-rose-500 text-[10px] hover:underline"
-                  >
-                    Сбросить
-                  </button>
-                )}
+              <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
+                <div className="relative flex items-center">
+                  <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={sortSearchQuery}
+                    onChange={(e) => setSortSearchQuery(e.target.value)}
+                    placeholder="Поиск сортировки..."
+                    className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                  />
+                  {sortSearchQuery && (
+                    <button onClick={() => setSortSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
-              {[
-                { id: 'text', label: 'По названию' },
-                { id: 'dueDate', label: 'По сроку (дедлайну)' },
-                { id: 'startDate', label: 'По дате начала' },
-                { id: 'priority', label: 'По приоритету' },
-                { id: 'progress', label: 'По прогрессу' },
-                { id: 'pomodoroTotalTime', label: 'По фокус-времени' },
-              ].map(f => {
+
+              {filteredSortOptions.map(f => {
                 const isCur = sortField === f.id;
                 return (
                   <button

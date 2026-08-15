@@ -1402,6 +1402,7 @@ export default function App() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [filterTag, setFilterTag] = useState<string>('all');
+  const [filterArea, setFilterArea] = useState<string>('all');
   const [filterDueDate, setFilterDueDate] = useState<string>('all');
   const [filterAttachments, setFilterAttachments] = useState<string>('all');
   const [filterNotes, setFilterNotes] = useState<string>('all');
@@ -3803,6 +3804,42 @@ export default function App() {
     if (filterNotes === "has_notes" && (!node.notes || node.notes.trim() === "")) return false;
     if (filterNotes === "no_notes" && (node.notes && node.notes.trim() !== "")) return false;
 
+    // 8. Area / Container filter
+    if (filterArea !== "all") {
+      if (filterArea === "root") {
+        if (node.parentId) return false;
+        const insideAnyContainer = activeNodes.some(c => (c.isContainer || c.isWorkflowRectangle || c.isEquipment) &&
+          Math.abs(node.x - c.x) <= ((c.width || 520) / 2) &&
+          Math.abs(node.y - c.y) <= ((c.height || 400) / 2)
+        );
+        if (insideAnyContainer) return false;
+      } else {
+        if (node.id !== filterArea) {
+          let isDescendant = false;
+          let currentParentId = node.parentId;
+          while (currentParentId) {
+            if (currentParentId === filterArea) {
+              isDescendant = true;
+              break;
+            }
+            const parent = activeNodes.find(n => n.id === currentParentId);
+            currentParentId = parent ? parent.parentId : null;
+          }
+          if (!isDescendant) {
+            const targetContainer = activeNodes.find(n => n.id === filterArea);
+            if (targetContainer && (targetContainer.isContainer || targetContainer.isWorkflowRectangle || targetContainer.isEquipment)) {
+              const isInside = 
+                Math.abs(node.x - targetContainer.x) <= ((targetContainer.width || 520) / 2) &&
+                Math.abs(node.y - targetContainer.y) <= ((targetContainer.height || 400) / 2);
+              if (!isInside) return false;
+            } else {
+              return false;
+            }
+          }
+        }
+      }
+    }
+
     return true;
   };
 
@@ -3826,10 +3863,54 @@ export default function App() {
     filterStatus !== "all" || 
     filterPriority !== "all" || 
     filterTag !== "all" || 
+    filterArea !== "all" ||
     filterDueDate !== "all" || 
     filterAttachments !== "all" || 
     filterNotes !== "all" || 
     searchQuery.trim() !== "";
+
+  // Available areas / containers for filtering
+  const availableAreas = useMemo(() => {
+    const result: { id: string; name: string; isContainer?: boolean; isWorkflow?: boolean; isEquipment?: boolean; count?: number }[] = [];
+    activeNodes.forEach(node => {
+      if (node.isContainer || node.isWorkflowRectangle || node.isEquipment || activeNodes.some(child => child.parentId === node.id)) {
+        const count = activeNodes.filter(child => {
+          if (child.id === node.id) return false;
+          if (child.parentId === node.id) return true;
+          if (node.isContainer || node.isWorkflowRectangle || node.isEquipment) {
+            return (
+              Math.abs(child.x - node.x) <= ((node.width || 520) / 2) &&
+              Math.abs(child.y - node.y) <= ((node.height || 400) / 2)
+            );
+          }
+          return false;
+        }).length;
+
+        result.push({
+          id: node.id,
+          name: node.text || (node.isContainer ? 'Контейнер без имени' : node.isWorkflowRectangle ? 'Секция без имени' : 'Без названия'),
+          isContainer: !!node.isContainer,
+          isWorkflow: !!node.isWorkflowRectangle,
+          isEquipment: !!node.isEquipment,
+          count
+        });
+      }
+    });
+    return result;
+  }, [activeNodes]);
+
+  // All available tags in the project and workspace
+  const allProjectTags = useMemo(() => {
+    const tagsSet = new Set<string>();
+    const activeProj = state.projects.find(p => p.id === state.activeProjectId);
+    (activeProj?.tagCategories || []).forEach(c => (c.tags || []).forEach(t => t && tagsSet.add(t.trim())));
+    (state.tagCategories || []).forEach(c => (c.tags || []).forEach(t => t && tagsSet.add(t.trim())));
+    activeNodes.forEach(n => {
+      (n.tags || []).forEach(t => t && tagsSet.add(t.trim()));
+      (n.tagCategories || []).forEach(c => (c.tags || []).forEach(t => t && tagsSet.add(t.trim())));
+    });
+    return Array.from(tagsSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [state.projects, state.activeProjectId, state.tagCategories, activeNodes]);
 
   const displayedNodesForViews = useMemo(() => {
     const filtered = activeNodes.filter(node => {
@@ -6508,6 +6589,8 @@ export default function App() {
             onFilterPriorityChange={setFilterPriority}
             filterTag={filterTag}
             onFilterTagChange={setFilterTag}
+            filterArea={filterArea}
+            onFilterAreaChange={setFilterArea}
             filterDueDate={filterDueDate}
             onFilterDueDateChange={setFilterDueDate}
             filterAttachments={filterAttachments}
@@ -6531,7 +6614,9 @@ export default function App() {
             }}
             onOpenSyncModal={() => setIsSyncMenuOpen(true)}
             onOpenAiConsole={() => setAiConsoleOpen(true)}
+            isSidebarOpen={sidebarOpen}
             onOpenSidebar={() => setSidebarOpen(true)}
+            onToggleSidebar={() => setSidebarOpen(prev => !prev)}
             isSplitScreen={isSplitScreen}
             onToggleSplitScreen={() => setIsSplitScreen(!isSplitScreen)}
             focusedTaskId={focusedTaskId}
@@ -6545,6 +6630,8 @@ export default function App() {
             }}
             onToggleDefaultView={handleToggleDefaultView}
             tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
+            allProjectTags={allProjectTags}
+            availableAreas={availableAreas}
             isSyncing={isSyncingSheets || syncStatus.firebase === 'syncing'}
             hasSyncError={hasSyncOrAuthError}
             visibleProperties={visibleProperties}
