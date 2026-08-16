@@ -6270,6 +6270,7 @@ export default function App() {
             onDeleteNode={handleDeleteNode}
             onCreateTask={handleCreateKanbanTask}
             onCreateTagCategory={handleCreateTagCategory}
+            onUpdateTagCategory={handleUpdateTagCategory}
             selectedNodeIds={selectedNodeIds}
             onToggleSelectNode={handleToggleSelectNode}
             searchQuery={searchQuery}
@@ -6632,6 +6633,8 @@ export default function App() {
             }}
             onToggleDefaultView={handleToggleDefaultView}
             tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
+            selectedCategoryId={filterCategoryId}
+            onSelectCategoryId={setFilterCategoryId}
             allProjectTags={allProjectTags}
             availableAreas={availableAreas}
             isSyncing={isSyncingSheets || syncStatus.firebase === 'syncing'}

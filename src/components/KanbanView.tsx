@@ -53,6 +53,7 @@ interface KanbanViewProps {
   onDeleteNode: (id: string) => void;
   onCreateTask: (text: string, initialTags: string[], priority?: Priority, parentId?: string | null, dueDate?: string, extraFields?: Partial<TaskNode>) => void;
   onCreateTagCategory: (name: string, color: string) => void;
+  onUpdateTagCategory?: (id: string, name: string, color: string, tags: string[]) => void;
   selectedNodeIds?: string[];
   onToggleSelectNode?: (id: string) => void;
   searchQuery?: string;
@@ -147,6 +148,7 @@ export default function KanbanView({
   onDeleteNode,
   onCreateTask,
   onCreateTagCategory,
+  onUpdateTagCategory,
   selectedNodeIds = [],
   onToggleSelectNode,
   searchQuery = '',
@@ -250,6 +252,34 @@ export default function KanbanView({
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const groupDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns on outside click or Escape
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target as Node)) {
+        setIsCategoryDropdownOpen(false);
+      }
+      if (groupDropdownRef.current && !groupDropdownRef.current.contains(e.target as Node)) {
+        setIsGroupDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsCategoryDropdownOpen(false);
+        setIsGroupDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // Subtasks visibility
   const [localShowSubtasks, setLocalShowSubtasks] = useState<boolean>(() => {
@@ -325,17 +355,39 @@ export default function KanbanView({
 
   // Active Category selection for Tag Grouping
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(() => {
-    return tagCategories.length > 0 ? tagCategories[0].id : null;
+    if (propsSelectedCategoryId !== undefined && propsSelectedCategoryId !== null) {
+      return propsSelectedCategoryId;
+    }
+    return tagCategories.length > 0 ? tagCategories[0].id : 'all';
   });
 
   useEffect(() => {
-    if (propsSelectedCategoryId !== undefined && propsSelectedCategoryId !== null) {
+    if (propsSelectedCategoryId !== undefined) {
       setSelectedCategoryId(propsSelectedCategoryId);
     }
   }, [propsSelectedCategoryId]);
 
-  const activeCategory = tagCategories.find(c => c.id === selectedCategoryId) || tagCategories[0];
-  const activeTags = activeCategory?.tags || [];
+  const handleSelectCategory = (catId: string | null) => {
+    setSelectedCategoryId(catId);
+    if (onSelectCategoryId) {
+      onSelectCategoryId(catId);
+    }
+  };
+
+  const isAllCategories = selectedCategoryId === 'all' || (!selectedCategoryId && tagCategories.length === 0);
+  const activeCategory = isAllCategories 
+    ? null 
+    : (tagCategories.find(c => c.id === selectedCategoryId) || tagCategories[0] || null);
+
+  const activeTags = useMemo(() => {
+    if (isAllCategories) {
+      const allTags = new Set<string>();
+      tagCategories.forEach(c => (c.tags || []).forEach(t => allTags.add(t)));
+      nodes.forEach(n => (n.tags || []).forEach(t => allTags.add(t)));
+      return Array.from(allTags).filter(Boolean);
+    }
+    return activeCategory?.tags || [];
+  }, [isAllCategories, tagCategories, nodes, activeCategory]);
 
   // Inline creation states
   const [activeAddInColumn, setActiveAddInColumn] = useState<string | null>(null);
@@ -450,6 +502,7 @@ export default function KanbanView({
     textBadge: string;
     borderBadge: string;
     items: TaskNode[];
+    color?: string;
   }
 
   const columns = useMemo<NotionColumn[]>(() => {
@@ -554,7 +607,7 @@ export default function KanbanView({
     } else if (groupBy === 'category') {
       cols.push({
         id: 'uncategorized',
-        title: 'No Tag',
+        title: 'Без тега',
         bgBadge: 'bg-[#E3E2E0] dark:bg-[#333333]',
         textBadge: 'text-[#5A5A58] dark:text-[#B8B7B5]',
         borderBadge: 'border-[#D1D0CE] dark:border-[#444444]',
@@ -562,12 +615,16 @@ export default function KanbanView({
       });
 
       activeTags.forEach(tag => {
+        const parentCat = tagCategories.find(c => (c.tags || []).includes(tag)) || activeCategory;
+        const catColor = parentCat?.color;
+
         cols.push({
           id: tag,
-          title: tag,
-          bgBadge: 'bg-[#EAE4F2] dark:bg-[#382352]/40',
-          textBadge: 'text-[#5B3D7D] dark:text-[#D2BFEC]',
-          borderBadge: 'border-[#D9CFE6] dark:border-[#4B2F6E]',
+          title: `#${tag}`,
+          bgBadge: catColor ? '' : 'bg-[#EAE4F2] dark:bg-[#382352]/40',
+          textBadge: catColor ? '' : 'text-[#5B3D7D] dark:text-[#D2BFEC]',
+          borderBadge: catColor ? '' : 'border-[#D9CFE6] dark:border-[#4B2F6E]',
+          color: catColor,
           items: filteredNodes.filter(n => n.tags && n.tags.includes(tag))
         });
       });
@@ -896,6 +953,308 @@ export default function KanbanView({
 
   return (
     <div className="w-full h-full flex flex-col bg-white dark:bg-[#191919] text-[#37352F] dark:text-[#D3D3D0] overflow-hidden select-none font-sans">
+      {/* CATEGORY & GROUPING SELECTION TOOLBAR */}
+      <div className="px-3 sm:px-5 py-1.5 border-b border-[#E9E9E7] dark:border-[#2F2F2F] bg-[#FAF9F6] dark:bg-[#1E1E1E] flex items-center justify-between gap-2 text-xs shrink-0 min-h-[38px]">
+        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-x-auto invisible-scrollbar">
+          {/* GroupBy Switcher pills (desktop/tablet) */}
+          <div className="hidden sm:flex items-center bg-[#EFEFED] dark:bg-[#2A2A2A] p-0.5 rounded-lg shrink-0">
+            <button
+              type="button"
+              onClick={() => setGroupBy('category')}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                groupBy === 'category'
+                  ? 'bg-white dark:bg-[#333333] text-[#37352F] dark:text-white shadow-2xs font-semibold'
+                  : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-white'
+              }`}
+            >
+              <Tag className="w-3 h-3 text-purple-500" />
+              <span>По тегам</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setGroupBy('status')}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                groupBy === 'status'
+                  ? 'bg-white dark:bg-[#333333] text-[#37352F] dark:text-white shadow-2xs font-semibold'
+                  : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-white'
+              }`}
+            >
+              <CheckCircle2 className="w-3 h-3 text-[#2383E2]" />
+              <span>По статусу</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setGroupBy('priority')}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                groupBy === 'priority'
+                  ? 'bg-white dark:bg-[#333333] text-[#37352F] dark:text-white shadow-2xs font-semibold'
+                  : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-white'
+              }`}
+            >
+              <AlertTriangle className="w-3 h-3 text-amber-500" />
+              <span>По приоритету</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setGroupBy('container')}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                groupBy === 'container'
+                  ? 'bg-white dark:bg-[#333333] text-[#37352F] dark:text-white shadow-2xs font-semibold'
+                  : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-white'
+              }`}
+            >
+              <Layers className="w-3 h-3 text-blue-500" />
+              <span>По разделам</span>
+            </button>
+          </div>
+
+          {/* GroupBy Dropdown on mobile (sm:hidden) */}
+          <div className="relative sm:hidden shrink-0" ref={groupDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsGroupDropdownOpen(!isGroupDropdownOpen)}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11.5px] font-medium bg-[#EFEFED] dark:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0] border border-[#E0E0DE] dark:border-[#383838] shadow-2xs cursor-pointer"
+            >
+              {groupBy === 'category' && <Tag className="w-3 h-3 text-purple-500" />}
+              {groupBy === 'status' && <CheckCircle2 className="w-3 h-3 text-[#2383E2]" />}
+              {groupBy === 'priority' && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+              {groupBy === 'container' && <Layers className="w-3 h-3 text-blue-500" />}
+              <span className="font-semibold">
+                {groupBy === 'category' && 'По тегам'}
+                {groupBy === 'status' && 'По статусу'}
+                {groupBy === 'priority' && 'По приоритету'}
+                {groupBy === 'container' && 'По разделам'}
+              </span>
+              <ChevronDown className={`w-3 h-3 text-[#787774] transition-transform ${isGroupDropdownOpen ? 'rotate-180 text-[#2383E2]' : ''}`} />
+            </button>
+
+            {isGroupDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-[150]" onClick={() => setIsGroupDropdownOpen(false)} />
+                <div className="absolute left-0 top-full mt-1 w-44 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-xl shadow-xl p-1 z-[160] animate-in fade-in zoom-in-95 duration-150">
+                  <button
+                    type="button"
+                    onClick={() => { setGroupBy('category'); setIsGroupDropdownOpen(false); }}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'category' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Tag className="w-3.5 h-3.5 text-purple-500" />
+                      <span>По тегам</span>
+                    </div>
+                    {groupBy === 'category' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setGroupBy('status'); setIsGroupDropdownOpen(false); }}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'status' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#2383E2]" />
+                      <span>По статусу</span>
+                    </div>
+                    {groupBy === 'status' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setGroupBy('priority'); setIsGroupDropdownOpen(false); }}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'priority' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                      <span>По приоритету</span>
+                    </div>
+                    {groupBy === 'priority' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setGroupBy('container'); setIsGroupDropdownOpen(false); }}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'container' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-3.5 h-3.5 text-blue-500" />
+                      <span>По разделам</span>
+                    </div>
+                    {groupBy === 'container' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* When GroupBy is Category: Compact Category Dropdown Selector */}
+          {groupBy === 'category' && (
+            <div className="flex items-center gap-1.5 pl-2 border-l border-[#E2E1DE] dark:border-[#383838] shrink-0" ref={categoryDropdownRef}>
+              {/* Category Dropdown Trigger */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11.5px] font-medium bg-white dark:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0] border border-[#E0E0DE] dark:border-[#383838] shadow-2xs hover:bg-[#F7F7F5] dark:hover:bg-[#333333] transition-colors cursor-pointer"
+                  title="Выбрать категорию тегов"
+                >
+                  <span className="text-[#787774] dark:text-[#9B9A97] font-normal hidden xs:inline">Категория:</span>
+                  {isAllCategories ? (
+                    <span className="font-semibold flex items-center gap-1 text-[#2383E2]">
+                      <span>Все теги</span>
+                      <span className="px-1 py-0.2 text-[9.5px] rounded-full bg-[#2383E2]/10 text-[#2383E2] font-mono">
+                        {tagCategories.reduce((acc, c) => acc + (c.tags || []).length, 0)}
+                      </span>
+                    </span>
+                  ) : activeCategory ? (
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: activeCategory.color || '#2383E2' }} />
+                      <span className="truncate max-w-[90px] sm:max-w-[130px]">{activeCategory.name}</span>
+                      <span className="px-1 py-0.2 text-[9.5px] rounded-full bg-black/5 dark:bg-white/10 font-mono text-[#787774] dark:text-[#9B9A97]">
+                        {(activeCategory.tags || []).length}
+                      </span>
+                    </span>
+                  ) : (
+                    <span>Все теги</span>
+                  )}
+                  <ChevronDown className={`w-3 h-3 text-[#787774] dark:text-[#9B9A97] transition-transform ${isCategoryDropdownOpen ? 'rotate-180 text-[#2383E2]' : ''}`} />
+                </button>
+
+                {/* Category Dropdown Popover */}
+                {isCategoryDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-[150]" onClick={() => setIsCategoryDropdownOpen(false)} />
+                    <div className="absolute left-0 top-full mt-1.5 w-64 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-xl shadow-2xl p-1.5 z-[160] animate-in fade-in zoom-in-95 duration-150">
+                      <div className="px-2 py-1 text-[10px] font-bold text-[#787774] dark:text-[#9B9A97] uppercase tracking-wider flex items-center justify-between border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
+                        <span>Категории тегов</span>
+                        <span className="text-[10px] font-normal text-[#9B9A97]">{tagCategories.length + 1}</span>
+                      </div>
+
+                      {/* "Все теги" item */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleSelectCategory('all');
+                          setIsCategoryDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                          isAllCategories
+                            ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
+                            : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Tag className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                          <span className="truncate">Все теги</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-black/5 dark:bg-white/10 font-mono">
+                            {tagCategories.reduce((acc, c) => acc + (c.tags || []).length, 0)}
+                          </span>
+                          {isAllCategories && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                        </div>
+                      </button>
+
+                      {/* Category List */}
+                      <div className="space-y-0.5 my-1 max-h-48 overflow-y-auto">
+                        {tagCategories.map(cat => {
+                          const isSelected = selectedCategoryId === cat.id;
+                          const tagCount = (cat.tags || []).length;
+                          return (
+                            <button
+                              key={cat.id}
+                              type="button"
+                              onClick={() => {
+                                handleSelectCategory(cat.id);
+                                setIsCategoryDropdownOpen(false);
+                              }}
+                              className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
+                                  : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0]'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color || '#2383E2' }} />
+                                <span className="truncate">{cat.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-black/5 dark:bg-white/10 font-mono">
+                                  {tagCount}
+                                </span>
+                                {isSelected && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Dropdown Action Footer */}
+                      <div className="border-t border-[#E9E9E7] dark:border-[#2F2F2F] pt-1 mt-1 space-y-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCategoryDropdownOpen(false);
+                            const name = prompt('Введите название новой категории тегов:');
+                            if (name && name.trim()) {
+                              onCreateTagCategory(name.trim(), '#2383E2');
+                            }
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 rounded-md text-[11.5px] text-[#2383E2] hover:bg-[#2383E2]/10 flex items-center gap-1.5 cursor-pointer font-medium"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Создать категорию</span>
+                        </button>
+
+                        {activeCategory && onUpdateTagCategory && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCategoryDropdownOpen(false);
+                              const tagName = prompt(`Добавить новый тег в категорию «${activeCategory.name}»:`);
+                              if (tagName && tagName.trim()) {
+                                const cleanTag = tagName.trim().replace(/^#/, '');
+                                if (!activeCategory.tags.includes(cleanTag)) {
+                                  onUpdateTagCategory(activeCategory.id, activeCategory.name, activeCategory.color, [...activeCategory.tags, cleanTag]);
+                                }
+                              }
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 rounded-md text-[11.5px] text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40 flex items-center gap-1.5 cursor-pointer font-medium"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span className="truncate">Тег в «{activeCategory.name}»</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Quick "+" add action button right next to dropdown */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeCategory && onUpdateTagCategory) {
+                    const tagName = prompt(`Добавить новый тег в категорию «${activeCategory.name}»:`);
+                    if (tagName && tagName.trim()) {
+                      const cleanTag = tagName.trim().replace(/^#/, '');
+                      if (!activeCategory.tags.includes(cleanTag)) {
+                        onUpdateTagCategory(activeCategory.id, activeCategory.name, activeCategory.color, [...activeCategory.tags, cleanTag]);
+                      }
+                    }
+                  } else {
+                    const name = prompt('Введите название новой категории тегов:');
+                    if (name && name.trim()) {
+                      onCreateTagCategory(name.trim(), '#2383E2');
+                    }
+                  }
+                }}
+                className="p-1 px-1.5 rounded-md text-[11px] bg-[#EFEFED] dark:bg-[#2A2A2A] hover:bg-[#E2E2DF] dark:hover:bg-[#333333] text-[#37352F] dark:text-[#E3E2E0] flex items-center gap-1 cursor-pointer transition-colors border border-[#E0E0DE] dark:border-[#383838]"
+                title={activeCategory ? `Быстро добавить тег в «${activeCategory.name}»` : "Создать категорию тегов"}
+              >
+                <Plus className="w-3 h-3 text-[#2383E2]" />
+                <span className="hidden sm:inline font-medium">{activeCategory ? `+Тег` : `+Категория`}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* NOTION KANBAN COLUMNS BOARD */}
       <div 
         id="kanban-columns-container" 
@@ -935,7 +1294,14 @@ export default function KanbanView({
                 <div className="flex items-center justify-between px-1 py-1.5 mb-2">
                   <div className="flex items-center gap-2 min-w-0">
                     {/* Notion pastel status badge */}
-                    <span className={`px-2 py-0.5 rounded text-[12px] font-normal tracking-tight border ${col.bgBadge} ${col.textBadge} ${col.borderBadge} truncate`}>
+                    <span 
+                      className={`px-2 py-0.5 rounded text-[12px] font-normal tracking-tight border ${col.bgBadge} ${col.textBadge} ${col.borderBadge} truncate`}
+                      style={col.color ? {
+                        backgroundColor: `${col.color}15`,
+                        color: col.color,
+                        borderColor: `${col.color}35`,
+                      } : undefined}
+                    >
                       {col.title}
                     </span>
 
@@ -1050,15 +1416,38 @@ export default function KanbanView({
             <button
               type="button"
               onClick={() => {
-                const name = prompt('Name for new group / tag:');
-                if (name && name.trim()) {
-                  onCreateTagCategory(name.trim(), '#6366f1');
+                if (groupBy === 'category') {
+                  if (activeCategory && onUpdateTagCategory) {
+                    const tagName = prompt(`Введите название нового тега для категории «${activeCategory.name}»:`);
+                    if (tagName && tagName.trim()) {
+                      const cleanTag = tagName.trim().replace(/^#/, '');
+                      if (!activeCategory.tags.includes(cleanTag)) {
+                        onUpdateTagCategory(activeCategory.id, activeCategory.name, activeCategory.color, [...activeCategory.tags, cleanTag]);
+                      }
+                    }
+                  } else {
+                    const name = prompt('Введите название новой категории тегов:');
+                    if (name && name.trim()) {
+                      onCreateTagCategory(name.trim(), '#2383E2');
+                    }
+                  }
+                } else {
+                  const name = prompt('Название новой группы / раздела:');
+                  if (name && name.trim()) {
+                    onCreateTagCategory(name.trim(), '#2383E2');
+                  }
                 }
               }}
-              className="py-1.5 px-3 flex items-center gap-2 text-[13px] text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] hover:bg-[#F0F0EE] dark:hover:bg-[#252525] rounded transition-colors cursor-pointer"
+              className="py-2 px-3 flex items-center gap-2 text-[13px] text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] hover:bg-[#F0F0EE] dark:hover:bg-[#252525] rounded-lg transition-colors cursor-pointer border border-dashed border-[#E0E0DE] dark:border-[#333]"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add a group</span>
+              <span>
+                {groupBy === 'category' && activeCategory
+                  ? `Добавить тег в «${activeCategory.name}»`
+                  : groupBy === 'category'
+                  ? 'Добавить категорию тегов'
+                  : 'Добавить группу'}
+              </span>
             </button>
           </div>
         </div>

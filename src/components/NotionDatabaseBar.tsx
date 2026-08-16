@@ -106,6 +106,8 @@ export interface NotionDatabaseBarProps {
   // Group by
   groupBy?: 'status' | 'category' | 'container' | 'priority' | 'none';
   onGroupByChange?: (groupBy: 'status' | 'category' | 'container' | 'priority' | 'none') => void;
+  selectedCategoryId?: string | null;
+  onSelectCategoryId?: (id: string | null) => void;
   
   // Action callbacks
   onCreateTask: (text: string, priority?: Priority, tags?: string[], dueDate?: string) => void;
@@ -202,6 +204,8 @@ export default function NotionDatabaseBar({
   onPrevSearchMatch,
   groupBy = 'none',
   onGroupByChange,
+  selectedCategoryId,
+  onSelectCategoryId,
   onCreateTask,
   onOpenSyncModal,
   onOpenAiConsole,
@@ -1924,18 +1928,58 @@ export default function NotionDatabaseBar({
                 { id: 'category', label: 'По категориям / тегам' },
                 { id: 'container', label: 'По контейнерам / разделам' },
               ].map(g => (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => {
-                    onGroupByChange(g.id as any);
-                    setActiveSettingsSubmenu('main');
-                  }}
-                  className="w-full text-left px-2 py-2 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                >
-                  <span className={groupBy === g.id ? 'font-semibold text-[#2383E2]' : ''}>{g.label}</span>
-                  {groupBy === g.id && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
-                </button>
+                <div key={g.id} className="flex flex-col">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onGroupByChange(g.id as any);
+                      if (g.id !== 'category') {
+                        setActiveSettingsSubmenu('main');
+                      }
+                    }}
+                    className="w-full text-left px-2 py-2 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                  >
+                    <span className={groupBy === g.id ? 'font-semibold text-[#2383E2]' : ''}>{g.label}</span>
+                    {groupBy === g.id && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                  </button>
+
+                  {/* If category grouping is chosen, show category picker */}
+                  {g.id === 'category' && groupBy === 'category' && tagCategories && tagCategories.length > 0 && (
+                    <div className="ml-3 my-1 pl-2 border-l border-[#E2E1DE] dark:border-[#383838] space-y-1">
+                      <div className="text-[10px] font-medium text-[#787774]">Выберите категорию:</div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelectCategoryId?.('all');
+                          setActiveSettingsSubmenu('main');
+                        }}
+                        className="w-full text-left px-2 py-1 rounded text-xs hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                      >
+                        <span className={selectedCategoryId === 'all' || !selectedCategoryId ? 'font-semibold text-[#2383E2]' : ''}>
+                          Все теги
+                        </span>
+                        {(selectedCategoryId === 'all' || !selectedCategoryId) && <Check className="w-3 h-3 text-[#2383E2]" />}
+                      </button>
+                      {tagCategories.map(cat => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            onSelectCategoryId?.(cat.id);
+                            setActiveSettingsSubmenu('main');
+                          }}
+                          className="w-full text-left px-2 py-1 rounded text-xs hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color || '#2383E2' }} />
+                            <span className={selectedCategoryId === cat.id ? 'font-semibold text-[#2383E2]' : ''}>{cat.name}</span>
+                          </div>
+                          {selectedCategoryId === cat.id && <Check className="w-3 h-3 text-[#2383E2]" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}
