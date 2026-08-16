@@ -94,11 +94,9 @@ export default function EisenhowerMatrixView({
   onFullScreenChange,
   onFocusedTaskIdChange,
 }: EisenhowerMatrixProps) {
-  const [filterCompleted, setFilterCompleted] = useState<'all' | 'active' | 'completed'>('active');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [viewLayout, setViewLayout] = useState<'matrix2x2' | 'columns'>('matrix2x2');
   const [showHelp, setShowHelp] = useState(false);
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showPropertiesMenu, setShowPropertiesMenu] = useState(false);
 
   // Property visibility toggles (Notion style properties menu)
@@ -226,30 +224,8 @@ export default function EisenhowerMatrixView({
 
   // Filter tasks mapping containers and workflow rectangles out
   const filteredTasks = useMemo(() => {
-    return nodes.filter(n => {
-      if (n.isContainer || n.isWorkflowRectangle) return false;
-      
-      const isSearchActive = !!searchQuery.trim();
-      if (n.archived) {
-        if (!isSearchActive) return false;
-        const q = searchQuery.toLowerCase();
-        return n.text.toLowerCase().includes(q) || (n.notes?.toLowerCase().includes(q) || false);
-      }
-
-      if (isSearchActive) {
-        const q = searchQuery.toLowerCase();
-        const textMatch = n.text.toLowerCase().includes(q);
-        const tagMatch = n.tags?.some(t => t.toLowerCase().includes(q)) || false;
-        const notesMatch = n.notes?.toLowerCase().includes(q) || false;
-        if (!textMatch && !tagMatch && !notesMatch) return false;
-      }
-
-      if (filterCompleted === 'active' && n.completed) return false;
-      if (filterCompleted === 'completed' && !n.completed) return false;
-
-      return true;
-    });
-  }, [nodes, searchQuery, filterCompleted]);
+    return nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.archived);
+  }, [nodes]);
 
   const getTasksForQuadrant = (quad: QuadrantConfig) => {
     return filteredTasks.filter(task => {
@@ -565,7 +541,6 @@ export default function EisenhowerMatrixView({
               type="button"
               onClick={() => {
                 setShowPropertiesMenu(!showPropertiesMenu);
-                setShowFilterMenu(false);
               }}
               className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
                 showPropertiesMenu 
@@ -602,56 +577,6 @@ export default function EisenhowerMatrixView({
                       {visibleProps[prop.id as keyof typeof visibleProps] && (
                         <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                       )}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Filter dropdown */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                setShowFilterMenu(!showFilterMenu);
-                setShowPropertiesMenu(false);
-              }}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
-                showFilterMenu || filterCompleted !== 'active'
-                  ? 'bg-[#EFEFED] dark:bg-[#2F2F2F] text-[#37352F] dark:text-white' 
-                  : 'text-[#787774] dark:text-[#9B9A97] hover:bg-[#F7F6F3] dark:hover:bg-[#252525]'
-              }`}
-              title="Фильтрация"
-            >
-              <Filter className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">
-                {filterCompleted === 'active' ? 'Фильтр' : filterCompleted === 'completed' ? 'Выполненные' : 'Все'}
-              </span>
-            </button>
-
-            {showFilterMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowFilterMenu(false)} />
-                <div className="absolute right-0 top-8 z-50 w-44 bg-white dark:bg-[#252525] border border-[#EDEDEB] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1.5 space-y-0.5 text-xs">
-                  {(['active', 'all', 'completed'] as const).map(f => (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => {
-                        setFilterCompleted(f);
-                        setShowFilterMenu(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-2 py-1.5 rounded transition-colors text-left cursor-pointer ${
-                        filterCompleted === f 
-                          ? 'bg-[#F7F6F3] dark:bg-[#2F2F2F] font-semibold text-[#37352F] dark:text-white' 
-                          : 'text-[#787774] dark:text-[#9B9A97] hover:bg-[#F7F6F3] dark:hover:bg-[#2F2F2F]'
-                      }`}
-                    >
-                      <span>
-                        {f === 'active' ? 'Активные задачи' : f === 'completed' ? 'Выполненные' : 'Все задачи'}
-                      </span>
-                      {filterCompleted === f && <Check className="w-3.5 h-3.5 text-indigo-500" />}
                     </button>
                   ))}
                 </div>

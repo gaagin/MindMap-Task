@@ -121,18 +121,9 @@ export default function TableView({
 }: TableViewProps) {
   const [sortField, setSortField] = useState<SortField>('text');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
-  const [filterText, setFilterText] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'todo' | 'progress' | 'waiting' | 'done'>('all');
-  const [containerFilter, setContainerFilter] = useState<string>('all');
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [isSortOpen, setIsSortOpen] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isPropertiesOpen, setIsPropertiesOpen] = useState(false);
   const [isAddingInline, setIsAddingInline] = useState(false);
   const [inlineNewText, setInlineNewText] = useState('');
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editedTitle, setEditedTitle] = useState(projectName);
   const [activePriorityMenuTaskId, setActivePriorityMenuTaskId] = useState<string | null>(null);
 
   // Visible columns state
@@ -162,10 +153,6 @@ export default function TableView({
   };
 
   useEffect(() => {
-    setEditedTitle(projectName);
-  }, [projectName]);
-
-  useEffect(() => {
     if (onFullScreenChange) {
       onFullScreenChange(isFullScreen);
     }
@@ -175,9 +162,6 @@ export default function TableView({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (isFullScreen) setIsFullScreen(false);
-        setIsFilterOpen(false);
-        setIsSortOpen(false);
-        setIsPropertiesOpen(false);
         setActivePriorityMenuTaskId(null);
       }
     };
@@ -291,59 +275,6 @@ export default function TableView({
     const tasksMap = new Map<string, TaskNode>();
     rawTasks.forEach(t => tasksMap.set(t.id, t));
 
-    const taskMatchesFilter = (task: TaskNode): boolean => {
-      const matchText = task.text.toLowerCase().includes(filterText.toLowerCase());
-      const matchNote = task.notes && task.notes.toLowerCase().includes(filterText.toLowerCase());
-      if (!matchText && !matchNote) return false;
-
-      if (containerFilter !== 'all') {
-        const tContainerId = getTaskContainerId(task);
-        if (containerFilter === 'no-container') {
-          if (tContainerId !== null) return false;
-        } else {
-          if (tContainerId !== containerFilter) return false;
-        }
-      }
-
-      if (statusFilter === 'active') {
-        return !task.completed;
-      } else if (statusFilter === 'todo') {
-        return !task.completed && (!task.progress || task.progress === 0) && task.status !== 'waiting';
-      } else if (statusFilter === 'progress') {
-        return !task.completed && task.progress !== undefined && task.progress > 0 && task.status !== 'waiting';
-      } else if (statusFilter === 'waiting') {
-        return !task.completed && task.status === 'waiting';
-      } else if (statusFilter === 'done') {
-        return task.completed;
-      }
-      return true;
-    };
-
-    const memoMatch = new Map<string, boolean>();
-    const checkMatchOrDescendantMatch = (taskId: string): boolean => {
-      if (memoMatch.has(taskId)) return memoMatch.get(taskId)!;
-      const task = tasksMap.get(taskId);
-      if (!task) return false;
-
-      if (taskMatchesFilter(task)) {
-        memoMatch.set(taskId, true);
-        return true;
-      }
-
-      const children = rawTasks.filter(t => t.parentId === taskId);
-      for (const child of children) {
-        if (checkMatchOrDescendantMatch(child.id)) {
-          memoMatch.set(taskId, true);
-          return true;
-        }
-      }
-
-      memoMatch.set(taskId, false);
-      return false;
-    };
-
-    const roots = rawTasks.filter(t => !t.parentId || !tasksMap.has(t.parentId));
-
     const sortSiblings = (siblings: TaskNode[]) => {
       const sorted = [...siblings];
       sorted.sort((a, b) => {
@@ -373,12 +304,11 @@ export default function TableView({
     const result: { node: TaskNode; depth: number; hasChildren: boolean }[] = [];
 
     const traverse = (siblings: TaskNode[], depth: number, parentCollapsed: boolean) => {
-      const visibleSiblings = siblings.filter(s => checkMatchOrDescendantMatch(s.id));
-      const sortedSiblings = sortSiblings(visibleSiblings);
+      const sortedSiblings = sortSiblings(siblings);
 
       sortedSiblings.forEach(task => {
         const children = rawTasks.filter(c => c.parentId === task.id);
-        const hasChildren = children.some(c => checkMatchOrDescendantMatch(c.id));
+        const hasChildren = children.length > 0;
 
         if (!parentCollapsed) {
           result.push({
@@ -388,15 +318,16 @@ export default function TableView({
           });
         }
 
-        if (children.length > 0) {
+        if (hasChildren) {
           traverse(children, depth + 1, parentCollapsed || !!task.collapsed);
         }
       });
     };
 
+    const roots = rawTasks.filter(t => !t.parentId || !tasksMap.has(t.parentId));
     traverse(roots, 0, false);
     return result;
-  }, [rawTasks, filterText, statusFilter, containerFilter, sortField, sortOrder, nodes]);
+  }, [rawTasks, sortField, sortOrder, nodes]);
 
   const handleCreateNewTask = (textToCreate?: string) => {
     const defaultText = textToCreate?.trim() || 'Новая запись';
@@ -510,8 +441,6 @@ export default function TableView({
     );
   };
 
-  const isAnyFilterActive = statusFilter !== 'all' || containerFilter !== 'all' || filterText.trim().length > 0;
-
   return (
     <div 
       id="notion-database-table-view"
@@ -522,315 +451,8 @@ export default function TableView({
           : 'w-full h-full'
       }`}
     >
-      {/* 1. NOTION TOP HEADER / BREADCRUMB BAR */}
-      <div className="shrink-0 px-6 sm:px-10 pt-5 pb-3">
-        {/* Breadcrumbs */}
-        <div className="flex items-center justify-between text-[13px] text-[#787774] dark:text-[#9B9A97] mb-3">
-          <div className="flex items-center gap-1.5">
-            <span className="text-base">{projectIcon}</span>
-            <span className="font-medium text-[#37352F] dark:text-[#E3E2E0]">{projectName}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Fullscreen Button */}
-            <button
-              type="button"
-              onClick={() => setIsFullScreen(!isFullScreen)}
-              className="p-1 hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] rounded transition-colors cursor-pointer"
-              title={isFullScreen ? "Свернуть (Esc)" : "На весь экран"}
-            >
-              {isFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Big Notion Database Title */}
-        <div className="flex items-center gap-3 group/header mb-4">
-          <span className="text-3xl sm:text-4xl cursor-pointer hover:scale-105 transition-transform" title="Иконка проекта">
-            {projectIcon}
-          </span>
-
-          {isEditingTitle ? (
-            <input
-              type="text"
-              value={editedTitle}
-              autoFocus
-              onChange={(e) => setEditedTitle(e.target.value)}
-              onBlur={() => {
-                setIsEditingTitle(false);
-                if (editedTitle.trim() && onUpdateProjectName) {
-                  onUpdateProjectName(editedTitle.trim());
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  setIsEditingTitle(false);
-                  if (editedTitle.trim() && onUpdateProjectName) {
-                    onUpdateProjectName(editedTitle.trim());
-                  }
-                }
-              }}
-              className="text-2xl sm:text-3xl font-bold bg-transparent border-b border-[#2383E2] focus:outline-none text-[#37352F] dark:text-[#E3E2E0]"
-            />
-          ) : (
-            <h1 
-              onClick={() => setIsEditingTitle(true)}
-              className="text-2xl sm:text-3xl font-bold tracking-tight text-[#37352F] dark:text-[#E3E2E0] hover:bg-[#EFEFED]/60 dark:hover:bg-[#2A2A2A]/60 px-2 py-0.5 -ml-2 rounded-md cursor-pointer transition-colors"
-              title="Нажмите, чтобы переименовать"
-            >
-              {projectName}
-            </h1>
-          )}
-        </div>
-
-        {/* 2. NOTION VIEW TABS & DATABASE ACTION CONTROLS BAR */}
-        <div className="flex items-center justify-between gap-2 border-b border-[#E9E9E7] dark:border-[#2F2F2F] pb-2 text-[13px]">
-          {/* Left View Tabs */}
-          <div className="flex items-center gap-1 overflow-x-auto invisible-scrollbar">
-            {/* Active Table Tab */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#EFEFED] dark:bg-[#2A2A2A] font-medium text-[#37352F] dark:text-[#E3E2E0] cursor-pointer shadow-2xs">
-              <Grid className="w-3.5 h-3.5 text-[#37352F] dark:text-[#E3E2E0]" />
-              <span>Таблица</span>
-            </div>
-
-            {/* Other Notion Views Switchers if setViewMode is available */}
-            {setViewMode && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('calendar')}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
-                >
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span>Календарь</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setViewMode('gantt')}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
-                >
-                  <GanttChart className="w-3.5 h-3.5" />
-                  <span>График</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setViewMode('kanban')}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
-                >
-                  <Kanban className="w-3.5 h-3.5" />
-                  <span>Доска</span>
-                </button>
-              </>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                if (setViewMode) setViewMode('canvas');
-              }}
-              className="p-1 rounded text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] transition-colors cursor-pointer"
-              title="Добавить или переключить вид"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Right Action Icons Toolbar */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Filter Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setIsFilterOpen(!isFilterOpen)}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors cursor-pointer ${
-                isAnyFilterActive || isFilterOpen
-                  ? 'bg-[#2383E2]/10 text-[#2383E2] font-medium'
-                  : 'text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'
-              }`}
-              title="Фильтрация"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Фильтр</span>
-              {isAnyFilterActive && (
-                <span className="w-1.5 h-1.5 rounded-full bg-[#2383E2]" />
-              )}
-            </button>
-
-            {/* Sort Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setIsSortOpen(!isSortOpen)}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors cursor-pointer ${
-                isSortOpen
-                  ? 'bg-[#EFEFED] dark:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0] font-medium'
-                  : 'text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'
-              }`}
-              title="Сортировка"
-            >
-              <ArrowUpDown className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Сортировка</span>
-            </button>
-
-            {/* Search Input / Button */}
-            {isSearchOpen ? (
-              <div className="flex items-center bg-[#EFEFED] dark:bg-[#2A2A2A] rounded px-2 py-0.5 gap-1.5 animate-fadeIn">
-                <Search className="w-3.5 h-3.5 text-[#787774]" />
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Поиск..."
-                  value={filterText}
-                  onChange={(e) => setFilterText(e.target.value)}
-                  className="bg-transparent border-0 text-xs text-[#37352F] dark:text-[#E3E2E0] focus:outline-none w-24 sm:w-36"
-                />
-                {filterText && (
-                  <button onClick={() => setFilterText('')} className="text-[10px] text-slate-400 hover:text-slate-600">✕</button>
-                )}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsSearchOpen(true)}
-                className="p-1 rounded text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] transition-colors cursor-pointer"
-                title="Поиск по таблице"
-              >
-                <Search className="w-3.5 h-3.5" />
-              </button>
-            )}
-
-            {/* Properties Selector */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsPropertiesOpen(!isPropertiesOpen)}
-                className="p-1 rounded text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] transition-colors cursor-pointer"
-                title="Отображение свойств / колонок"
-              >
-                <Eye className="w-3.5 h-3.5" />
-              </button>
-
-              {isPropertiesOpen && (
-                <div className="absolute right-0 top-full mt-1 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-lg p-2.5 z-50 w-52 text-xs space-y-1.5">
-                  <div className="text-[10px] font-semibold uppercase text-slate-400 px-1">Видимость свойств</div>
-                  {Object.keys(visibleColumns).map((col) => {
-                    const titles: Record<string, string> = {
-                      startDate: '📅 Дата начала',
-                      dueDate: '📅 Срок',
-                      effort: '⌛ Сложность (Effort)',
-                      progress: '◷ Прогресс',
-                      focus: '🍅 Фокус (Pomodoro)',
-                      tags: '🏷️ Теги'
-                    };
-                    return (
-                      <label key={col} className="flex items-center justify-between px-1 py-1 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 cursor-pointer">
-                        <span>{titles[col] || col}</span>
-                        <input
-                          type="checkbox"
-                          checked={visibleColumns[col]}
-                          onChange={() => toggleColumnVisibility(col)}
-                          className="rounded accent-[#2383E2]"
-                        />
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* NOTION ICONIC BLUE NEW BUTTON */}
-            <div className="flex items-center ml-1">
-              <button
-                type="button"
-                onClick={() => handleCreateNewTask()}
-                className="bg-[#2383E2] hover:bg-[#1A73E8] text-white text-xs font-semibold px-3 py-1 rounded-md flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
-                title="Создать новую задачу"
-              >
-                <span>New</span>
-                <ChevronDown className="w-3 h-3 opacity-80" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Expandable Filter / Sort Bar */}
-        <AnimatePresence>
-          {(isFilterOpen || isSortOpen) && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="overflow-hidden border-b border-[#E9E9E7] dark:border-[#2F2F2F] py-2"
-            >
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                {isFilterOpen && (
-                  <>
-                    <div className="flex items-center gap-1 px-2 py-1 rounded bg-[#F7F7F5] dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F]">
-                      <span className="text-[#787774] text-[11px]">Статус:</span>
-                      <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value as any)}
-                        className="bg-transparent border-0 text-[#37352F] dark:text-[#E3E2E0] font-medium focus:outline-none cursor-pointer"
-                      >
-                        <option value="all" className="dark:bg-[#202020]">Все</option>
-                        <option value="active" className="dark:bg-[#202020]">Активные</option>
-                        <option value="todo" className="dark:bg-[#202020]">План</option>
-                        <option value="progress" className="dark:bg-[#202020]">В работе</option>
-                        <option value="waiting" className="dark:bg-[#202020]">В ожидании</option>
-                        <option value="done" className="dark:bg-[#202020]">Завершенные</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-1 px-2 py-1 rounded bg-[#F7F7F5] dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F]">
-                      <span className="text-[#787774] text-[11px]">Область:</span>
-                      <select
-                        value={containerFilter}
-                        onChange={(e) => setContainerFilter(e.target.value)}
-                        className="bg-transparent border-0 text-[#37352F] dark:text-[#E3E2E0] font-medium focus:outline-none cursor-pointer max-w-[140px] truncate"
-                      >
-                        <option value="all" className="dark:bg-[#202020]">Все области</option>
-                        <option value="no-container" className="dark:bg-[#202020]">Вне областей</option>
-                        {allContainers.map(c => (
-                          <option key={c.id} value={c.id} className="dark:bg-[#202020]">{c.text}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </>
-                )}
-
-                {isSortOpen && (
-                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-[#F7F7F5] dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F]">
-                    <span className="text-[#787774] text-[11px]">Сортировать по:</span>
-                    <select
-                      value={sortField}
-                      onChange={(e) => handleSort(e.target.value as SortField)}
-                      className="bg-transparent border-0 text-[#37352F] dark:text-[#E3E2E0] font-medium focus:outline-none cursor-pointer"
-                    >
-                      <option value="text" className="dark:bg-[#202020]">Имени (Aa)</option>
-                      <option value="startDate" className="dark:bg-[#202020]">Дате начала</option>
-                      <option value="dueDate" className="dark:bg-[#202020]">Сроку</option>
-                      <option value="priority" className="dark:bg-[#202020]">Сложности</option>
-                      <option value="progress" className="dark:bg-[#202020]">Прогрессу</option>
-                      <option value="completed" className="dark:bg-[#202020]">Статусу</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                      className="ml-1 text-[11px] font-semibold text-[#2383E2] cursor-pointer"
-                    >
-                      {sortOrder === 'asc' ? '↑ Возр' : '↓ Убыв'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* 3. NOTION TABLE SPREADSHEET CONTAINER */}
-      <div className="flex-1 overflow-auto custom-scrollbar px-6 sm:px-10 pb-16">
+      {/* NOTION TABLE SPREADSHEET CONTAINER */}
+      <div className="flex-1 overflow-auto custom-scrollbar px-6 sm:px-10 pb-16 pt-4">
         <table className="w-full text-left border-collapse table-fixed">
           {/* Header */}
           <thead>

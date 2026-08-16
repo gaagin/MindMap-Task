@@ -102,11 +102,6 @@ export default function CalendarView({
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [calendarSubMode, setCalendarSubMode] = useState<'month' | 'week' | 'day'>('week');
-  const [calendarSearchQuery, setCalendarSearchQuery] = useState('');
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filterPriority, setFilterPriority] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterTag, setFilterTag] = useState<string>('all');
 
   // Real-time live clock for current time line indicator
   const [nowDate, setNowDate] = useState(() => new Date());
@@ -119,22 +114,6 @@ export default function CalendarView({
 
   const nowMinutes = nowDate.getHours() * 60 + nowDate.getMinutes();
   const realTodayStr = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}-${String(nowDate.getDate()).padStart(2, '0')}`;
-
-  // Title editing state
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [titleInput, setTitleInput] = useState(projectName);
-  const titleInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setTitleInput(projectName);
-  }, [projectName]);
-
-  const handleTitleSubmit = () => {
-    setIsEditingTitle(false);
-    if (titleInput.trim() && onUpdateProjectName && titleInput.trim() !== projectName) {
-      onUpdateProjectName(titleInput.trim());
-    }
-  };
 
   // Quick Modal New Task
   const [isQuickCreateModalOpen, setIsQuickCreateModalOpen] = useState(false);
@@ -536,37 +515,20 @@ export default function CalendarView({
     });
   }, [nodes]);
 
-  const matchesFilters = (n: TaskNode): boolean => {
-    if (calendarSearchQuery.trim()) {
-      const q = calendarSearchQuery.toLowerCase();
-      const textMatches = n.text?.toLowerCase().includes(q);
-      const tagMatches = n.tags?.some(t => t.toLowerCase().includes(q)) || false;
-      const notesMatches = n.notes?.toLowerCase().includes(q) || false;
-      if (!textMatches && !tagMatches && !notesMatches) return false;
-    }
-    if (filterPriority !== 'all' && n.priority !== filterPriority) return false;
-    if (filterStatus === 'completed' && !n.completed) return false;
-    if (filterStatus === 'active' && n.completed) return false;
-    if (filterTag !== 'all' && (!n.tags || !n.tags.includes(filterTag))) return false;
-    return true;
-  };
-
   const scheduledTasks = useMemo(() => {
-    const rawScheduled = projectTasks.filter(n => n.dueDate && matchesFilters(n));
+    const rawScheduled = projectTasks.filter(n => !!n.dueDate);
     return rawScheduled.filter(parent => {
       const hasSubtaskOnSameDate = rawScheduled.some(sub => 
         sub.parentId === parent.id && sub.dueDate === parent.dueDate
       );
       return !hasSubtaskOnSameDate;
     });
-  }, [projectTasks, calendarSearchQuery, filterPriority, filterStatus, filterTag]);
+  }, [projectTasks]);
 
   const rawUnscheduledTasks = projectTasks.filter(n => !n.dueDate);
   const unscheduledTasks = sidebarSearchQuery
     ? rawUnscheduledTasks.filter(t => t.text.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))
     : rawUnscheduledTasks;
-
-  const isAnyFilterActive = filterPriority !== 'all' || filterStatus !== 'all' || filterTag !== 'all';
 
   // Drag and drop handlers
   const handleTaskDrop = (taskId: string, targetDate: string | null) => {
@@ -804,247 +766,7 @@ export default function CalendarView({
         isFullScreen ? 'fixed inset-0 z-[150] w-screen h-screen' : ''
       }`}
     >
-      {/* 1. NOTION TOP HEADER (BANNER + TITLE + VIEW TABS) */}
-      <div className="shrink-0 px-5 pt-3.5 pb-2 border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-white dark:bg-[#191919]">
-        
-        {/* Project Icon & Title */}
-        <div className="flex items-center justify-between gap-3 mb-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            {/* Notion Page Icon */}
-            <div className="w-8 h-8 rounded-lg bg-[#F7F7F5] dark:bg-[#252525] border border-[#EDEDEB] dark:border-[#333] flex items-center justify-center text-lg shrink-0 cursor-pointer shadow-3xs">
-              {projectIcon || '📅'}
-            </div>
-
-            {/* Notion Editable Title */}
-            <div className="min-w-0 flex-1">
-              {isEditingTitle ? (
-                <input
-                  ref={titleInputRef}
-                  type="text"
-                  value={titleInput}
-                  onChange={(e) => setTitleInput(e.target.value)}
-                  onBlur={handleTitleSubmit}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleTitleSubmit();
-                    if (e.key === 'Escape') setIsEditingTitle(false);
-                  }}
-                  className="text-lg sm:text-xl font-bold text-[#111] dark:text-[#FFF] bg-transparent border-b border-[#2383E2] outline-none px-0 py-0 w-full"
-                  autoFocus
-                />
-              ) : (
-                <div className="flex items-center gap-2">
-                  <h1 
-                    onClick={() => setIsEditingTitle(true)}
-                    className="text-lg sm:text-xl font-bold tracking-tight text-[#111] dark:text-[#FFF] truncate cursor-pointer hover:bg-[#F0F0EE] dark:hover:bg-[#252525] px-1 py-0.5 -ml-1 rounded transition-colors"
-                    title="Нажмите, чтобы переименовать"
-                  >
-                    {projectName || 'Календарь'}
-                  </h1>
-                  <span className="text-[11px] font-normal text-[#9B9A97] dark:text-[#787774] px-1.5 py-0.5 rounded bg-[#F7F7F5] dark:bg-[#252525] border border-[#EDEDEB] dark:border-[#333]">
-                    {scheduledTasks.length} {scheduledTasks.length === 1 ? 'задача' : 'задач'}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right Top Action Controls (Search, Fullscreen, New Task Button) */}
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Search Input in Notion style */}
-            <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 text-[#9B9A97] pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Поиск..."
-                value={calendarSearchQuery}
-                onChange={(e) => setCalendarSearchQuery(e.target.value)}
-                className="w-24 sm:w-36 focus:w-44 transition-all pl-8 pr-6 py-1 text-[12px] rounded-md bg-[#F7F7F5] dark:bg-[#252525] border border-transparent focus:border-[#2383E2] focus:bg-white dark:focus:bg-[#1E1E1E] text-[#37352F] dark:text-[#FFF] outline-none placeholder-[#9B9A97]"
-              />
-              {calendarSearchQuery && (
-                <button
-                  onClick={() => setCalendarSearchQuery('')}
-                  className="absolute right-2 text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] text-xs"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {/* Fullscreen Button */}
-            <button
-              type="button"
-              onClick={() => setIsFullScreen(!isFullScreen)}
-              className={`p-1.5 rounded-md text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] transition-colors cursor-pointer ${
-                isFullScreen ? 'bg-[#EFEFED] dark:bg-[#2A2A2A] text-[#2383E2]' : ''
-              }`}
-              title={isFullScreen ? "Свернуть (Esc)" : "На весь экран"}
-            >
-              {isFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
-
-            {/* Primary Notion Blue New Task Button */}
-            <button
-              type="button"
-              onClick={() => {
-                setQuickModalDate(currentDateStr);
-                setQuickModalStartTime('');
-                setQuickModalDueTime('');
-                setIsQuickCreateModalOpen(true);
-              }}
-              className="flex items-center gap-1.5 bg-[#2383E2] hover:bg-[#1D74C6] text-white px-2.5 py-1 rounded-md text-[12.5px] font-medium transition-colors shadow-3xs cursor-pointer active:scale-98"
-            >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span className="hidden sm:inline">Новая</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Notion Database Views Tab Switcher Bar */}
-        <div className="flex items-center justify-between gap-3 text-xs overflow-x-auto custom-scrollbar pt-0.5">
-          <div className="flex items-center gap-1 shrink-0">
-            {setViewMode && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('table')}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
-                >
-                  <TableIcon className="w-3.5 h-3.5" />
-                  <span>Таблица</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setViewMode('kanban')}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
-                >
-                  <KanbanIcon className="w-3.5 h-3.5" />
-                  <span>Доска</span>
-                </button>
-
-                {/* Active Calendar View Tab */}
-                <button
-                  type="button"
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium text-[#37352F] dark:text-[#FFF] bg-[#EFEFED] dark:bg-[#2A2A2A] transition-colors cursor-pointer shadow-3xs"
-                >
-                  <CalendarIcon className="w-3.5 h-3.5 text-[#2383E2]" />
-                  <span>Календарь</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setViewMode('gantt')}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
-                >
-                  <GanttChart className="w-3.5 h-3.5" />
-                  <span>График</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setViewMode('canvas')}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] hover:text-[#37352F] dark:hover:text-[#E3E2E0] transition-colors cursor-pointer"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Холст</span>
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Right Action Icons Toolbar (Filter toggle) */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsFilterOpen(!isFilterOpen)}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[12px] transition-colors cursor-pointer ${
-                isAnyFilterActive || isFilterOpen
-                  ? 'bg-[#2383E2]/10 text-[#2383E2] font-medium'
-                  : 'text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'
-              }`}
-              title="Фильтрация"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Фильтр</span>
-              {isAnyFilterActive && (
-                <span className="w-1.5 h-1.5 rounded-full bg-[#2383E2]" />
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Notion Filter Popover Bar */}
-      {isFilterOpen && (
-        <div className="shrink-0 px-5 py-2 border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-[#F7F7F5] dark:bg-[#202020] flex items-center gap-3 text-xs flex-wrap animate-fadeIn">
-          <div className="flex items-center gap-1 text-[#787774] dark:text-[#9B9A97]">
-            <span>Фильтры:</span>
-          </div>
-
-          {/* Priority filter */}
-          <div className="flex items-center gap-1">
-            <span className="text-[#9B9A97]">Приоритет:</span>
-            <select
-              value={filterPriority}
-              onChange={(e) => setFilterPriority(e.target.value)}
-              className="bg-white dark:bg-[#2A2A2A] border border-[#E3E2E0] dark:border-[#333] rounded px-1.5 py-0.5 text-xs text-[#37352F] dark:text-[#D4D4D4] outline-none"
-            >
-              <option value="all">Все</option>
-              <option value="urgent">⚡ Urgent</option>
-              <option value="high">🔥 High</option>
-              <option value="medium">⏳ Medium</option>
-              <option value="low">💤 Low</option>
-              <option value="none">None</option>
-            </select>
-          </div>
-
-          {/* Status filter */}
-          <div className="flex items-center gap-1">
-            <span className="text-[#9B9A97]">Статус:</span>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="bg-white dark:bg-[#2A2A2A] border border-[#E3E2E0] dark:border-[#333] rounded px-1.5 py-0.5 text-xs text-[#37352F] dark:text-[#D4D4D4] outline-none"
-            >
-              <option value="all">Все</option>
-              <option value="active">В работе</option>
-              <option value="completed">Выполненные</option>
-            </select>
-          </div>
-
-          {/* Tag filter */}
-          {tagCategories && tagCategories.length > 0 && (
-            <div className="flex items-center gap-1">
-              <span className="text-[#9B9A97]">Тег:</span>
-              <select
-                value={filterTag}
-                onChange={(e) => setFilterTag(e.target.value)}
-                className="bg-white dark:bg-[#2A2A2A] border border-[#E3E2E0] dark:border-[#333] rounded px-1.5 py-0.5 text-xs text-[#37352F] dark:text-[#D4D4D4] outline-none"
-              >
-                <option value="all">Все теги</option>
-                {tagCategories.map(cat => (
-                  <option key={cat.id} value={cat.name}>#{cat.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {isAnyFilterActive && (
-            <button
-              onClick={() => {
-                setFilterPriority('all');
-                setFilterStatus('all');
-                setFilterTag('all');
-              }}
-              className="text-[11px] text-[#2383E2] hover:underline ml-auto"
-            >
-              Сбросить фильтры
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* 2. NOTION CALENDAR HEADER & TIME PERIOD CONTROL */}
+      {/* CALENDAR HEADER & TIME PERIOD CONTROL */}
       <div className="shrink-0 px-5 py-2.5 bg-white dark:bg-[#191919] flex items-center justify-between gap-3 border-b border-[#EDEDEB] dark:border-[#2D2D2D] flex-wrap">
         
         {/* Left: Navigation arrows, Today button & Formatted Title */}

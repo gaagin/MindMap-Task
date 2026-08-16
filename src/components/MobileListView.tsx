@@ -250,30 +250,6 @@ export default function MobileListView({
   setViewMode,
   onOpenSidebar
 }: MobileListViewProps) {
-  // Tabs & filters
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'today' | 'overdue' | 'completed'>('all');
-  const [priorityFilter, setPriorityFilter] = useState<string>('all');
-  const [tagFilter, setTagFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searchMatchIndex, setSearchMatchIndex] = useState(0);
-  const [isFullScreen, setIsFullScreen] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
-
-  // Popover menus state
-  const [showViewMenu, setShowViewMenu] = useState(false);
-  const [showPropertiesMenu, setShowPropertiesMenu] = useState(false);
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [showSortMenu, setShowSortMenu] = useState(false);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [showNewTemplateMenu, setShowNewTemplateMenu] = useState(false);
-  const [showProjectEmojiPicker, setShowProjectEmojiPicker] = useState(false);
-
-  // Active sort state
-  const [sortBy, setSortBy] = useState<'manual' | 'title' | 'priority' | 'tag' | 'date' | 'completed'>('manual');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-
   // Visible column properties toggles
   const [visibleProps, setVisibleProps] = useState({
     tag: true,
@@ -289,8 +265,6 @@ export default function MobileListView({
   // Inline editing state
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingTitleText, setEditingTitleText] = useState('');
-  const [isEditingProjectName, setIsEditingProjectName] = useState(false);
-  const [projectNameInput, setProjectNameInput] = useState(projectName);
 
   // Inline quick item addition row
   const [isInlineAdding, setIsInlineAdding] = useState(false);
@@ -314,19 +288,8 @@ export default function MobileListView({
   const [dragOverPosition, setDragOverPosition] = useState<'above' | 'below' | 'inside' | null>(null);
 
   useEffect(() => {
-    setProjectNameInput(projectName);
-  }, [projectName]);
-
-  useEffect(() => {
-    if (onFullScreenChange) {
-      onFullScreenChange(isFullScreen);
-    }
-  }, [isFullScreen, onFullScreenChange]);
-
-  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (isFullScreen) setIsFullScreen(false);
         setEditingNodeId(null);
         setIsInlineAdding(false);
         setActiveEmojiPickerTaskId(null);
@@ -334,19 +297,11 @@ export default function MobileListView({
         setActivePriorityPickerTaskId(null);
         setActiveAssigneePickerTaskId(null);
         setActiveTaskMenuId(null);
-        setShowViewMenu(false);
-        setShowPropertiesMenu(false);
-        setShowFilterMenu(false);
-        setShowSortMenu(false);
-        setShowMoreMenu(false);
-        setShowShareModal(false);
-        setShowNewTemplateMenu(false);
-        setShowProjectEmojiPicker(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullScreen]);
+  }, []);
 
   // Focus inline input when triggered
   useEffect(() => {
@@ -354,34 +309,6 @@ export default function MobileListView({
       inlineInputRef.current.focus();
     }
   }, [isInlineAdding]);
-
-  // Search results calculation
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const query = searchQuery.toLowerCase();
-    return nodes.filter(n => {
-      if (n.isContainer || n.isWorkflowRectangle || n.isNotTask) return false;
-      const matchTitle = (n.text || '').toLowerCase().includes(query);
-      const matchNotes = (n.notes || '').toLowerCase().includes(query);
-      const matchTags = (n.tags || []).some(t => t.toLowerCase().includes(query));
-      return matchTitle || matchNotes || matchTags;
-    });
-  }, [nodes, searchQuery]);
-
-  const highlightText = (text: string, query: string) => {
-    if (!query.trim()) return <span>{text}</span>;
-    const cleanQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-    const parts = text.split(new RegExp(`(${cleanQuery})`, 'gi'));
-    return (
-      <span>
-        {parts.map((part, i) => 
-          part.toLowerCase() === query.toLowerCase() 
-            ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800/80 dark:text-yellow-100 px-0.5 rounded font-medium">{part}</mark> 
-            : <span key={i}>{part}</span>
-        )}
-      </span>
-    );
-  };
 
   // Clean task title & get icon
   const getTaskDisplayIcon = (task: TaskNode) => {
@@ -429,90 +356,16 @@ export default function MobileListView({
     return { text: dateStr, shortText: dateStr, isOverdue: false, isToday: false };
   };
 
-  // Filter tasks based on view tab & criteria
-  const filteredNodes = useMemo(() => {
-    return nodes.filter(n => {
-      if (n.isContainer || n.isWorkflowRectangle || n.isNotTask) return false;
-
-      // Tab filter
-      if (activeTab === 'active' && n.completed) return false;
-      if (activeTab === 'completed' && !n.completed) return false;
-      if (activeTab === 'today') {
-        if (n.completed) return false;
-        if (n.dueDate !== todayStr) return false;
-      }
-      if (activeTab === 'overdue') {
-        if (n.completed) return false;
-        if (!n.dueDate || n.dueDate >= todayStr) return false;
-      }
-
-      // Priority filter
-      if (priorityFilter !== 'all') {
-        if (priorityFilter === 'urgent' && n.priority !== 'urgent') return false;
-        if (priorityFilter === 'high' && n.priority !== 'high' && n.priority !== 'urgent') return false;
-        if (priorityFilter === 'medium' && n.priority !== 'medium') return false;
-        if (priorityFilter === 'low' && n.priority !== 'low') return false;
-        if (priorityFilter === 'none' && n.priority !== 'none' && n.priority) return false;
-      }
-
-      // Tag filter
-      if (tagFilter !== 'all') {
-        if (!n.tags || !n.tags.includes(tagFilter)) return false;
-      }
-
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle = (n.text || '').toLowerCase().includes(q);
-        const matchNotes = (n.notes || '').toLowerCase().includes(q);
-        const matchTags = (n.tags || []).some(t => t.toLowerCase().includes(q));
-        if (!matchTitle && !matchNotes && !matchTags) return false;
-      }
-
-      return true;
-    });
-  }, [nodes, activeTab, priorityFilter, tagFilter, searchQuery, todayStr]);
-
-  // Sort tasks
-  const sortedNodes = useMemo(() => {
-    const list = [...filteredNodes];
-    if (sortBy === 'title') {
-      list.sort((a, b) => {
-        const tA = getTaskCleanText(a).toLowerCase();
-        const tB = getTaskCleanText(b).toLowerCase();
-        return sortOrder === 'asc' ? tA.localeCompare(tB) : tB.localeCompare(tA);
-      });
-    } else if (sortBy === 'priority') {
-      const pOrder: Record<Priority, number> = { urgent: 4, high: 3, medium: 2, low: 1, none: 0 };
-      list.sort((a, b) => {
-        const diff = (pOrder[b.priority || 'none'] || 0) - (pOrder[a.priority || 'none'] || 0);
-        return sortOrder === 'asc' ? diff : -diff;
-      });
-    } else if (sortBy === 'date') {
-      list.sort((a, b) => {
-        const dA = a.dueDate || '9999-99-99';
-        const dB = b.dueDate || '9999-99-99';
-        return sortOrder === 'asc' ? dA.localeCompare(dB) : dB.localeCompare(dA);
-      });
-    } else if (sortBy === 'completed') {
-      list.sort((a, b) => {
-        const cA = a.completed ? 1 : 0;
-        const cB = b.completed ? 1 : 0;
-        return sortOrder === 'asc' ? cA - cB : cB - cA;
-      });
-    }
-    return list;
-  }, [filteredNodes, sortBy, sortOrder]);
-
   // Build hierarchical task tree
   const taskTreeRoots = useMemo(() => {
+    const list = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.isNotTask);
     const nodeMap = new Map<string, TaskTreeItem>();
-    sortedNodes.forEach(node => {
+    list.forEach(node => {
       nodeMap.set(node.id, { node, children: [] });
     });
 
     const roots: TaskTreeItem[] = [];
-    sortedNodes.forEach(node => {
+    list.forEach(node => {
       const item = nodeMap.get(node.id)!;
       if (node.parentId && nodeMap.has(node.parentId)) {
         nodeMap.get(node.parentId)!.children.push(item);
@@ -522,7 +375,7 @@ export default function MobileListView({
     });
 
     return roots;
-  }, [sortedNodes]);
+  }, [nodes]);
 
   // Statistics
   const totalCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.isNotTask).length;
@@ -604,11 +457,6 @@ export default function MobileListView({
     setTimeout(() => {
       if (inlineInputRef.current) inlineInputRef.current.focus();
     }, 50);
-  };
-
-  const handleCreateTemplateTask = (template: { title: string; tag: string; priority: Priority; emoji: string }) => {
-    onCreateTask(`${template.emoji} ${template.title}`, [template.tag], template.priority, undefined, null);
-    setShowNewTemplateMenu(false);
   };
 
   const handleDuplicateTask = (task: TaskNode) => {
@@ -863,7 +711,7 @@ export default function MobileListView({
                   }`}
                   title={cleanTitle}
                 >
-                  {highlightText(cleanTitle, searchQuery)}
+                  {cleanTitle}
                 </span>
               )}
 
@@ -1208,591 +1056,12 @@ export default function MobileListView({
   return (
     <div 
       id="notion-list-view-container"
-      className={`flex flex-col bg-white dark:bg-[#191919] text-[#37352F] dark:text-[#D4D4D4] font-sans h-full w-full overflow-hidden select-none ${
-        isFullScreen ? 'fixed inset-0 z-[150] w-screen h-screen' : 'relative'
-      }`}
+      className="flex flex-col bg-white dark:bg-[#191919] text-[#37352F] dark:text-[#D4D4D4] font-sans h-full w-full overflow-hidden select-none relative"
     >
-      {/* 1. Top Bar / Notion Navigation (Matching macOS + Notion window header in SS_List.png) */}
-      <header className="h-11 px-3 sm:px-5 border-b border-[#E9E9E7] dark:border-[#2F2F2F] flex items-center justify-between shrink-0 bg-white/95 dark:bg-[#191919]/95 backdrop-blur-sm z-30">
+      {/* Main Scrollable Content */}
+      <div className="flex-1 overflow-y-auto px-2.5 sm:px-12 lg:px-20 pt-4 pb-24 max-w-5xl mx-auto w-full">
         
-        {/* Left: Window Controls, Sidebar toggle, Nav arrows, Breadcrumb */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          {/* macOS traffic light dots */}
-          <div className="hidden sm:flex items-center gap-1.5 pr-1">
-            <span className="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E]/50 hover:opacity-80 transition-opacity" />
-            <span className="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123]/50 hover:opacity-80 transition-opacity" />
-            <span className="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29]/50 hover:opacity-80 transition-opacity" />
-          </div>
-
-          {/* Sidebar Hamburger Menu toggle */}
-          {onOpenSidebar && (
-            <button
-              type="button"
-              onClick={onOpenSidebar}
-              className="p-1 rounded text-[#787774] hover:text-[#37352F] dark:hover:text-[#EBEBEB] hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] transition-colors cursor-pointer"
-              title="Открыть боковую панель"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-          )}
-
-          {/* Navigation Arrows */}
-          <div className="flex items-center gap-0.5 text-[#9B9A97]">
-            <button 
-              type="button"
-              className="p-1 rounded hover:text-[#37352F] dark:hover:text-[#EBEBEB] hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] transition-colors cursor-pointer"
-              title="Назад"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button 
-              type="button"
-              className="p-1 rounded hover:text-[#37352F] dark:hover:text-[#EBEBEB] hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] transition-colors cursor-pointer"
-              title="Вперед"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Breadcrumb Title Item */}
-          <div className="flex items-center gap-1.5 text-xs font-medium text-[#37352F] dark:text-[#D4D4D4] truncate">
-            <span className="text-sm">{projectIcon || '📎'}</span>
-            <span className="truncate">{projectName}</span>
-          </div>
-        </div>
-
-        {/* Right: Share, Updates, Favorite, More Menu */}
-        <div className="flex items-center gap-1 sm:gap-2 text-xs font-medium text-[#787774] dark:text-[#9B9A97]">
-          
-          {/* Share Button */}
-          <button
-            type="button"
-            onClick={() => setShowShareModal(true)}
-            className="px-2.5 py-1 rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB] transition-colors cursor-pointer flex items-center gap-1"
-          >
-            <Share2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Share</span>
-          </button>
-
-          {/* Updates (Activity Log) Button */}
-          <button
-            type="button"
-            className="px-2.5 py-1 rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB] transition-colors cursor-pointer flex items-center gap-1"
-            title="История обновлений"
-          >
-            <Check className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="hidden sm:inline">Updates</span>
-          </button>
-
-          {/* Favorite Star Toggle */}
-          <button
-            type="button"
-            onClick={() => setIsFavorite(!isFavorite)}
-            className={`p-1.5 rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] transition-colors cursor-pointer ${
-              isFavorite ? 'text-amber-500 fill-amber-500' : 'hover:text-[#37352F] dark:hover:text-[#EBEBEB]'
-            }`}
-            title={isFavorite ? "Удалить из избранного" : "Добавить в избранное"}
-          >
-            <Star className={`w-3.5 h-3.5 ${isFavorite ? 'fill-amber-500' : ''}`} />
-          </button>
-
-          {/* More Database Options */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowMoreMenu(!showMoreMenu)}
-              className="p-1.5 rounded hover:bg-[#EAEAEA] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB] transition-colors cursor-pointer"
-              title="Дополнительные действия"
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-
-            {showMoreMenu && (
-              <div 
-                className="absolute right-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-1.5 w-48 animate-in fade-in zoom-in-95 duration-150 select-text"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsFullScreen(!isFullScreen);
-                    setShowMoreMenu(false);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded text-xs hover:bg-[#F7F7F5] dark:hover:bg-[#252525] flex items-center justify-between"
-                >
-                  <span>Полноэкранный режим</span>
-                  {isFullScreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCollapsedParentIds({});
-                    setShowMoreMenu(false);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded text-xs hover:bg-[#F7F7F5] dark:hover:bg-[#252525] flex items-center justify-between"
-                >
-                  <span>Развернуть все подзадачи</span>
-                </button>
-                <div className="h-px bg-[#E9E9E7] dark:bg-[#373737] my-1" />
-                <div className="px-2.5 py-1 text-[10px] text-[#9B9A97]">
-                  Всего записей: {totalCount}
-                </div>
-              </div>
-            )}
-          </div>
-
-        </div>
-      </header>
-
-      {/* Main Scrollable Canvas Body */}
-      <div className="flex-1 overflow-y-auto px-2.5 sm:px-12 lg:px-20 pt-3 sm:pt-6 pb-24 max-w-5xl mx-auto w-full">
-        
-        {/* 2. Notion Page Title Header (Icon + Large H1 Title matching SS_List.png) */}
-        <div className="mb-6 select-text group/header">
-          
-          {/* Large Notion Page Icon */}
-          <div className="relative inline-block mb-3">
-            <button
-              type="button"
-              onClick={() => setShowProjectEmojiPicker(!showProjectEmojiPicker)}
-              className="text-5xl sm:text-6xl p-1 rounded-xl hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] transition-all cursor-pointer block leading-none hover:scale-105"
-              title="Нажмите, чтобы сменить иконку проекта"
-            >
-              {projectIcon || '📎'}
-            </button>
-
-            {/* Project Emoji Picker Popover */}
-            {showProjectEmojiPicker && (
-              <div 
-                className="absolute left-0 top-16 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-2xl shadow-2xl p-3 w-72 animate-in fade-in zoom-in-95 duration-150 select-text"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#E9E9E7] dark:border-[#373737]">
-                  <span className="text-xs font-semibold text-[#787774] dark:text-[#9B9A97]">Иконка проекта</span>
-                  <button onClick={() => setShowProjectEmojiPicker(false)}>
-                    <X className="w-4 h-4 text-[#9B9A97]" />
-                  </button>
-                </div>
-                <div className="grid grid-cols-7 gap-1.5 max-h-52 overflow-y-auto">
-                  {NOTION_SAMPLE_EMOJIS.map(emoji => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => {
-                        if (onUpdateProjectIcon) onUpdateProjectIcon(emoji);
-                        setShowProjectEmojiPicker(false);
-                      }}
-                      className="w-8 h-8 flex items-center justify-center text-xl rounded-lg hover:bg-[#F0EEEB] dark:hover:bg-[#2F2F2F] transition-all hover:scale-120 cursor-pointer"
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Large Bold H1 Title */}
-          {isEditingProjectName ? (
-            <input
-              type="text"
-              value={projectNameInput}
-              autoFocus
-              onChange={(e) => setProjectNameInput(e.target.value)}
-              onBlur={() => {
-                if (projectNameInput.trim() && onUpdateProjectName) {
-                  onUpdateProjectName(projectNameInput.trim());
-                }
-                setIsEditingProjectName(false);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  if (projectNameInput.trim() && onUpdateProjectName) {
-                    onUpdateProjectName(projectNameInput.trim());
-                  }
-                  setIsEditingProjectName(false);
-                }
-                if (e.key === 'Escape') {
-                  setIsEditingProjectName(false);
-                }
-              }}
-              className="text-3xl sm:text-4xl font-extrabold text-[#37352F] dark:text-[#EBEBEB] bg-transparent border-b-2 border-[#2383e2] focus:outline-none w-full tracking-tight"
-            />
-          ) : (
-            <h1 
-              onClick={() => setIsEditingProjectName(true)}
-              className="text-3xl sm:text-4xl font-extrabold text-[#37352F] dark:text-[#EBEBEB] tracking-tight hover:bg-[#F7F7F5] dark:hover:bg-[#202020] px-1 py-0.5 rounded-lg -ml-1 transition-colors cursor-text inline-block"
-              title="Кликните для переименования"
-            >
-              {projectName || 'Docs'}
-            </h1>
-          )}
-
-          {/* Page Subtitle / Metadata Stats */}
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-[#787774] dark:text-[#8F8F8F]">
-            <span>{totalCount} страниц</span>
-            <span>·</span>
-            <span>{activeCount} в работе</span>
-            {overdueCount > 0 && (
-              <>
-                <span>·</span>
-                <span className="text-rose-600 dark:text-rose-400 font-semibold">{overdueCount} просрочено</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* 3. Database View Control Bar (Matching SS_List.png: "All docs ⌄" | Properties | Filter | Sort | Search | ••• | New ⌄) */}
-        <div className="border-b border-[#E9E9E7] dark:border-[#2F2F2F] pb-2 mb-3 flex items-center justify-between gap-2 flex-wrap">
-          
-          {/* Left: View selector dropdown tab */}
-          <div className="flex items-center gap-1">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowViewMenu(!showViewMenu)}
-                className="flex items-center gap-1.5 text-xs font-bold text-[#37352F] dark:text-[#EBEBEB] hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] px-2 py-1 rounded transition-colors cursor-pointer"
-              >
-                <FileText className="w-3.5 h-3.5 text-[#787774]" />
-                <span>All docs</span>
-                <ChevronDown className="w-3 h-3 text-[#9B9A97]" />
-              </button>
-
-              {/* View Switcher Menu */}
-              {showViewMenu && setViewMode && (
-                <div 
-                  className="absolute left-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-1.5 w-48 animate-in fade-in duration-150 select-text"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="text-[10px] font-bold text-[#9B9A97] px-2 py-1 uppercase tracking-wider">
-                    Виды базы данных
-                  </div>
-                  {[
-                    { id: 'mobile-list', name: 'Список (List)', icon: FileText, active: true },
-                    { id: 'kanban', name: 'Канбан (Board)', icon: Layers, active: false },
-                    { id: 'calendar', name: 'Календарь', icon: Calendar, active: false },
-                    { id: 'table', name: 'Таблица (Table)', icon: CheckSquare, active: false },
-                    { id: 'gantt', name: 'Ганнт (Timeline)', icon: Clock, active: false },
-                    { id: 'canvas', name: 'Холст (Mindmap)', icon: Sparkles, active: false },
-                  ].map(view => (
-                    <button
-                      key={view.id}
-                      type="button"
-                      onClick={() => {
-                        setViewMode(view.id as ViewMode);
-                        setShowViewMenu(false);
-                      }}
-                      className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between ${
-                        view.active 
-                          ? 'bg-[#F0F7FF] dark:bg-[#1C2D42] text-[#2383e2] font-semibold' 
-                          : 'hover:bg-[#F7F7F5] dark:hover:bg-[#252525] text-[#37352F] dark:text-[#EBEBEB]'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <view.icon className="w-3.5 h-3.5" />
-                        <span>{view.name}</span>
-                      </div>
-                      {view.active && <Check className="w-3 h-3 text-[#2383e2]" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Quick Status Tabs: All / Active / Today / Completed */}
-            <div className="hidden md:flex items-center gap-0.5 ml-2 border-l border-[#E9E9E7] dark:border-[#2F2F2F] pl-2">
-              {[
-                { id: 'all', label: 'Все', count: totalCount },
-                { id: 'active', label: 'В работе', count: activeCount },
-                { id: 'today', label: 'Сегодня', count: nodes.filter(n => n.dueDate === todayStr && !n.completed).length },
-                { id: 'completed', label: 'Готово', count: completedCount },
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
-                    activeTab === tab.id
-                      ? 'bg-[#EAEAEA] dark:bg-[#2F2F2F] text-[#37352F] dark:text-[#EBEBEB] font-semibold'
-                      : 'text-[#787774] dark:text-[#9B9A97] hover:bg-[#F7F7F5] dark:hover:bg-[#202020]'
-                  }`}
-                >
-                  {tab.label}
-                  <span className="ml-1 text-[10px] opacity-70 font-mono">({tab.count})</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Right Controls: Properties | Filter | Sort | Search | ••• | New ⌄ (Matching SS_List.png) */}
-          <div className="flex items-center gap-1 sm:gap-2 text-xs text-[#787774] dark:text-[#9B9A97]">
-            
-            {/* Properties Popover Button */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowPropertiesMenu(!showPropertiesMenu)}
-                className="px-2 py-1 rounded hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB] transition-colors cursor-pointer"
-              >
-                Properties
-              </button>
-
-              {showPropertiesMenu && (
-                <div 
-                  className="absolute right-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-2 w-52 animate-in fade-in duration-150 select-text"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="text-[11px] font-semibold text-[#787774] dark:text-[#9B9A97] pb-1 mb-1.5 border-b border-[#E9E9E7] dark:border-[#373737] flex items-center justify-between">
-                    <span>Отображение свойств</span>
-                    <button onClick={() => setShowPropertiesMenu(false)}>
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <div className="space-y-1">
-                    {[
-                      { key: 'tag', label: 'Тег / Категория' },
-                      { key: 'priority', label: 'Приоритет (P1-P4)' },
-                      { key: 'assignee', label: 'Исполнитель' },
-                      { key: 'dueDate', label: 'Срок / Дедлайн' },
-                      { key: 'checkbox', label: 'Чекбокс выполнения' },
-                      { key: 'subtasks', label: 'Счетчик подзадач' },
-                      { key: 'comments', label: 'Комментарии' },
-                    ].map(prop => (
-                      <label 
-                        key={prop.key}
-                        className="flex items-center justify-between px-2 py-1 rounded hover:bg-[#F7F7F5] dark:hover:bg-[#252525] cursor-pointer text-xs"
-                      >
-                        <span className="text-[#37352F] dark:text-[#EBEBEB]">{prop.label}</span>
-                        <input
-                          type="checkbox"
-                          checked={(visibleProps as any)[prop.key]}
-                          onChange={(e) => setVisibleProps(prev => ({ ...prev, [prop.key]: e.target.checked }))}
-                          className="accent-[#2383e2] rounded cursor-pointer"
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Filter Popover Button */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowFilterMenu(!showFilterMenu)}
-                className={`px-2 py-1 rounded transition-colors cursor-pointer flex items-center gap-1 ${
-                  priorityFilter !== 'all' || tagFilter !== 'all'
-                    ? 'text-[#2383e2] font-semibold bg-[#F0F7FF] dark:bg-[#1C2D42]'
-                    : 'hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB]'
-                }`}
-              >
-                <span>Filter</span>
-                {(priorityFilter !== 'all' || tagFilter !== 'all') && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#2383e2]" />
-                )}
-              </button>
-
-              {showFilterMenu && (
-                <div 
-                  className="absolute right-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-3 w-60 animate-in fade-in duration-150 select-text"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#E9E9E7] dark:border-[#373737]">
-                    <span className="text-xs font-semibold text-[#787774] dark:text-[#9B9A97]">Фильтры</span>
-                    {(priorityFilter !== 'all' || tagFilter !== 'all') && (
-                      <button 
-                        onClick={() => {
-                          setPriorityFilter('all');
-                          setTagFilter('all');
-                        }}
-                        className="text-[10px] text-rose-600 hover:underline"
-                      >
-                        Сбросить
-                      </button>
-                    )}
-                  </div>
-                  <div className="space-y-2.5">
-                    <div>
-                      <label className="text-[10px] font-bold text-[#9B9A97] block mb-1 uppercase">Приоритет</label>
-                      <select
-                        value={priorityFilter}
-                        onChange={(e) => setPriorityFilter(e.target.value)}
-                        className="w-full bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#E9E9E7] dark:border-[#373737] rounded-lg px-2 py-1 text-xs text-[#37352F] dark:text-[#EBEBEB] focus:outline-none"
-                      >
-                        <option value="all">Все приоритеты</option>
-                        <option value="urgent">P1 (Критический)</option>
-                        <option value="high">P1 (Высокий)</option>
-                        <option value="medium">P2 (Средний)</option>
-                        <option value="low">P3 (Низкий)</option>
-                        <option value="none">P4 (Без приоритета)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#9B9A97] block mb-1 uppercase">Тег / Категория</label>
-                      <select
-                        value={tagFilter}
-                        onChange={(e) => setTagFilter(e.target.value)}
-                        className="w-full bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#E9E9E7] dark:border-[#373737] rounded-lg px-2 py-1 text-xs text-[#37352F] dark:text-[#EBEBEB] focus:outline-none"
-                      >
-                        <option value="all">Все теги</option>
-                        {allAvailableTags.map(t => (
-                          <option key={t} value={t}>#{t}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Sort Popover Button (Notion styled blue when active) */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowSortMenu(!showSortMenu)}
-                className={`px-2 py-1 rounded transition-colors cursor-pointer flex items-center gap-1 ${
-                  sortBy !== 'manual'
-                    ? 'text-[#2383e2] font-semibold bg-[#F0F7FF] dark:bg-[#1C2D42]'
-                    : 'hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB]'
-                }`}
-              >
-                <span>Sort</span>
-                {sortBy !== 'manual' && (
-                  <span className="text-[10px]">({sortBy})</span>
-                )}
-              </button>
-
-              {showSortMenu && (
-                <div 
-                  className="absolute right-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-2 w-48 animate-in fade-in duration-150 select-text"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="text-[11px] font-semibold text-[#787774] dark:text-[#9B9A97] pb-1 mb-1 border-b border-[#E9E9E7] dark:border-[#373737] flex items-center justify-between">
-                    <span>Сортировка</span>
-                    <button onClick={() => setShowSortMenu(false)}>
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <div className="space-y-0.5">
-                    {[
-                      { id: 'manual', label: 'По порядку (Drag & Drop)' },
-                      { id: 'title', label: 'По названию (А-Я)' },
-                      { id: 'priority', label: 'По приоритету (P1 -> P4)' },
-                      { id: 'date', label: 'По дате дедлайна' },
-                      { id: 'completed', label: 'По статусу выполнения' },
-                    ].map(s => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => {
-                          setSortBy(s.id as any);
-                          setShowSortMenu(false);
-                        }}
-                        className={`w-full text-left px-2 py-1 rounded text-xs flex items-center justify-between ${
-                          sortBy === s.id
-                            ? 'bg-[#F0F7FF] dark:bg-[#1C2D42] text-[#2383e2] font-semibold'
-                            : 'hover:bg-[#F7F7F5] dark:hover:bg-[#252525] text-[#37352F] dark:text-[#EBEBEB]'
-                        }`}
-                      >
-                        <span>{s.label}</span>
-                        {sortBy === s.id && <Check className="w-3 h-3 text-[#2383e2]" />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Search Input / Button */}
-            <div className="relative flex items-center">
-              {isSearchOpen ? (
-                <div className="flex items-center bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#2383e2] rounded-md px-2 py-0.5">
-                  <Search className="w-3.5 h-3.5 text-[#9B9A97] mr-1.5 shrink-0" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    autoFocus
-                    placeholder="Search docs..."
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-28 sm:w-36 bg-transparent text-xs text-[#37352F] dark:text-[#EBEBEB] focus:outline-none"
-                  />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} className="text-[#9B9A97] hover:text-[#37352F]">
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsSearchOpen(true)}
-                  className="px-2 py-1 rounded hover:bg-[#F0EEEB] dark:hover:bg-[#2B2B2B] hover:text-[#37352F] dark:hover:text-[#EBEBEB] transition-colors cursor-pointer flex items-center gap-1"
-                >
-                  <Search className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Search</span>
-                </button>
-              )}
-            </div>
-
-            {/* Notion's Iconic Solid Blue "New ⌄" Button (Matching SS_List.png) */}
-            <div className="relative flex items-center ml-1">
-              <div className="inline-flex rounded-md shadow-xs overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setIsInlineAdding(true)}
-                  className="bg-[#2383e2] hover:bg-[#1d6fc2] text-white font-semibold text-xs px-3 py-1 flex items-center gap-1 transition-colors cursor-pointer"
-                >
-                  <span>New</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowNewTemplateMenu(!showNewTemplateMenu)}
-                  className="bg-[#2383e2] hover:bg-[#1d6fc2] text-white text-xs px-1.5 py-1 border-l border-white/20 transition-colors cursor-pointer"
-                  title="Шаблоны новых страниц"
-                >
-                  <ChevronDown className="w-3 h-3" />
-                </button>
-              </div>
-
-              {/* New Template Choice Popover */}
-              {showNewTemplateMenu && (
-                <div 
-                  className="absolute right-0 top-8 z-50 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-xl shadow-2xl p-2 w-56 animate-in fade-in duration-150 select-text"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="text-[10px] font-bold text-[#9B9A97] px-2 py-1 uppercase tracking-wider">
-                    Быстрые шаблоны
-                  </div>
-                  {[
-                    { title: 'Project Kickoff Plan', tag: 'Project Kickoff', priority: 'urgent' as Priority, emoji: '🐵' },
-                    { title: 'Request for Comment (RFC)', tag: 'Request for Comment', priority: 'high' as Priority, emoji: '🤝' },
-                    { title: 'Technical Specification', tag: 'Technical Spec', priority: 'high' as Priority, emoji: '🚂' },
-                    { title: 'Data Analysis Report', tag: 'Data Analysis', priority: 'medium' as Priority, emoji: '🏗️' },
-                    { title: 'Architecture Overview', tag: 'Architecture Overview', priority: 'medium' as Priority, emoji: '🛢️' },
-                    { title: 'User Research & Feedback', tag: 'Research', priority: 'low' as Priority, emoji: '🦜' },
-                  ].map(tmpl => (
-                    <button
-                      key={tmpl.title}
-                      type="button"
-                      onClick={() => handleCreateTemplateTask(tmpl)}
-                      className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-[#F7F7F5] dark:hover:bg-[#252525] flex items-center gap-2"
-                    >
-                      <span className="text-sm">{tmpl.emoji}</span>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-[#37352F] dark:text-[#EBEBEB] font-medium truncate">{tmpl.title}</span>
-                        <span className="text-[10px] text-[#9B9A97]">{tmpl.tag}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-          </div>
-        </div>
-
-        {/* 4. Notion List Rows (The Core View Content matching SS_List.png) */}
+        {/* Notion List Rows */}
         <div className="space-y-0.5">
           {taskTreeRoots.length === 0 ? (
             <div className="py-16 text-center text-[#9B9A97]">
@@ -1813,7 +1082,7 @@ export default function MobileListView({
           )}
         </div>
 
-        {/* 5. Inline "+ New page" Row at the bottom of the list */}
+        {/* Inline "+ New page" Row at the bottom of the list */}
         {isInlineAdding ? (
           <form 
             onSubmit={handleCreateInlineTask}
@@ -1851,7 +1120,7 @@ export default function MobileListView({
 
       </div>
 
-      {/* 6. Multi-Select Bottom Floating Action Bar */}
+      {/* Multi-Select Bottom Floating Action Bar */}
       {isMultiSelectMode && selectedNodeIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#202020] text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 z-[140] animate-in slide-in-from-bottom-4 duration-200 border border-[#373737]">
           <span className="text-xs font-semibold text-[#D4D4D4]">
@@ -1890,62 +1159,6 @@ export default function MobileListView({
           >
             <X className="w-4 h-4" />
           </button>
-        </div>
-      )}
-
-      {/* Share Modal Dialog */}
-      {showShareModal && (
-        <div 
-          className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setShowShareModal(false)}
-        >
-          <div 
-            className="bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#373737] rounded-2xl shadow-2xl p-5 w-full max-w-md animate-in zoom-in-95 duration-150 select-text"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#E9E9E7] dark:border-[#373737]">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{projectIcon || '📎'}</span>
-                <h3 className="text-sm font-bold text-[#37352F] dark:text-[#EBEBEB]">Поделиться базой «{projectName}»</h3>
-              </div>
-              <button 
-                onClick={() => setShowShareModal(false)}
-                className="p-1 rounded text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#EBEBEB]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <p className="text-xs text-[#787774] dark:text-[#9B9A97] mb-4 leading-relaxed">
-              Все страницы в этом представлении синхронизируются в реальном времени с вашей базой данных и картой задач.
-            </p>
-            <div className="flex items-center gap-2 bg-[#F7F7F5] dark:bg-[#2A2A2A] border border-[#E9E9E7] dark:border-[#373737] rounded-xl p-2 mb-4">
-              <input
-                type="text"
-                readOnly
-                value={window.location.href}
-                className="flex-1 bg-transparent text-xs text-[#37352F] dark:text-[#EBEBEB] focus:outline-none select-all font-mono"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(window.location.href);
-                  alert('Ссылка скопирована в буфер обмена!');
-                }}
-                className="px-3 py-1 bg-[#2383e2] hover:bg-[#1d6fc2] text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0"
-              >
-                Копировать
-              </button>
-            </div>
-            <div className="text-right">
-              <button
-                type="button"
-                onClick={() => setShowShareModal(false)}
-                className="px-4 py-1.5 rounded-lg border border-[#E9E9E7] dark:border-[#373737] text-xs font-medium text-[#787774] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] transition-colors"
-              >
-                Закрыть
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

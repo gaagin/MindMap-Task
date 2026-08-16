@@ -66,9 +66,9 @@ export default function AnyDoView({
   onFullScreenChange,
   onFocusedTaskIdChange,
   selectedNodeIds = [],
-  onToggleSelectNode
-}: AnyDoViewProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+  onToggleSelectNode,
+  searchQuery = ''
+}: AnyDoViewProps & { searchQuery?: string }) {
   const [expandedContainerId, setExpandedContainerId] = useState<string | null>(null);
   const [expandedFilter, setExpandedFilter] = useState<'all' | 'active' | 'completed'>('all');
   
@@ -246,20 +246,8 @@ export default function AnyDoView({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
             transition={{ duration: 0.25 }}
-            className="max-w-5xl mx-auto space-y-6"
+            className="max-w-5xl mx-auto space-y-6 pt-2"
           >
-            {/* Any.do Style Search Header */}
-            <div className="relative w-full">
-              <Search className="absolute left-4.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Поиск задач, событий и т.д. ..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-[0_4px_16px_rgba(0,0,0,0.02)] rounded-2xl py-3.5 pl-12 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30 text-slate-800 dark:text-slate-100 font-sans transition-all"
-              />
-            </div>
-
             {/* Grid of Lists/Containers (2 columns on mobile, auto on desktop) */}
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
               
@@ -462,7 +450,6 @@ export default function AnyDoView({
                       <button
                         onClick={() => {
                           setExpandedContainerId(null);
-                          setSearchQuery('');
                         }}
                         className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors cursor-pointer text-white"
                         title="Вернуться к обзору"
@@ -492,7 +479,7 @@ export default function AnyDoView({
                   </div>
 
                   {/* Filter tabs and quick add bar */}
-                  <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row gap-4 items-center justify-between">
+                  <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                     <div className="flex gap-1.5 p-1 bg-slate-50 dark:bg-slate-800 rounded-xl w-full sm:w-auto">
                       {(['all', 'active', 'completed'] as const).map((tab) => (
                         <button
@@ -507,18 +494,6 @@ export default function AnyDoView({
                           {tab === 'all' ? 'Все' : tab === 'active' ? 'Активные' : 'Завершенные'}
                         </button>
                       ))}
-                    </div>
-
-                    {/* Inline search inside expanded container */}
-                    <div className="relative w-full sm:w-64">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Найти в этом списке..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl py-1.5 pl-9 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 font-sans"
-                      />
                     </div>
                   </div>
 
