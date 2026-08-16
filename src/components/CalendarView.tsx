@@ -863,7 +863,7 @@ export default function CalendarView({
           <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-white dark:bg-[#191919]">
             
             {/* Weekdays Sticky Header + All-Day Section */}
-            <div className="shrink-0 flex flex-col border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-white dark:bg-[#191919] z-20">
+            <div className="shrink-0 flex flex-col border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-white dark:bg-[#191919] z-10">
               
               {/* Day Header Row */}
               <div className="flex items-stretch border-b border-[#EDEDEB] dark:border-[#2D2D2D]">

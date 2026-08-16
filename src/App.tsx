@@ -6551,6 +6551,8 @@ export default function App() {
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
         onCreateGtdWorkflow={handleCreateGtdWorkflow}
+        onOpenSyncModal={() => setIsSyncMenuOpen(true)}
+        isSyncing={isSyncingSheets || syncStatus.firebase === 'syncing'}
       />
 
       {/* Main Workspace Frame */}
@@ -6633,231 +6635,13 @@ export default function App() {
             allProjectTags={allProjectTags}
             availableAreas={availableAreas}
             isSyncing={isSyncingSheets || syncStatus.firebase === 'syncing'}
+            onQuickSheetsSync={handleQuickSheetsSync}
+            isSyncingSheets={isSyncingSheets}
             hasSyncError={hasSyncOrAuthError}
             visibleProperties={visibleProperties}
             onTogglePropertyVisibility={handleTogglePropertyVisibility}
           />
         )}
-
-        {/* Floating search panel for mobile when toggled */}
-        {isMobileSearchOpen && (
-          <div className="fixed bottom-28 left-3 right-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-2 z-[120] flex items-center gap-1.5 sm:hidden animate-in slide-in-from-bottom-2 duration-200">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder="Поиск..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full transition-all duration-200 leading-none py-1.5 pl-8 pr-20 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 focus:bg-white text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-100 placeholder-slate-400"
-              />
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
-              {searchQuery.trim().length > 0 && (
-                <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
-                  <span className="text-[10px] text-slate-400/80 font-mono font-medium">
-                    {searchedIds.length > 0 ? `${currentSearchIndex + 1}/${searchedIds.length}` : '0/0'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery("")}
-                    className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                    title="Очистить поиск"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
-            </div>
-            {searchedIds.length > 1 && (
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={handlePrevSearchMatch}
-                  className="p-1.5 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg flex items-center justify-center cursor-pointer"
-                  title="Предыдущее совпадение"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNextSearchMatch}
-                  className="p-1.5 border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg flex items-center justify-center cursor-pointer"
-                  title="Следующее совпадение"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ALWAYS VISIBLE Mobile Bottom Action and Views Bar */}
-        <div className={`fixed bottom-0 left-0 right-0 z-[110] ${(isDrawerOpen || sidebarOpen || isInputFocused) ? 'hidden' : 'flex'} sm:hidden flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_12px_rgba(0,0,0,0.08)] border-t border-slate-200 dark:border-slate-800 shrink-0 select-none`}>
-          {/* Row 2: Action controls */}
-          <header className="h-14 flex items-center justify-between px-3 w-full">
-            {/* Left: Hamburger menu & Undo/Cancel */}
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(true)}
-                className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-850 cursor-pointer"
-                title="Меню"
-              >
-                <Menu className="w-4 h-4" />
-              </button>
-
-              {state.activeProjectId && (undoStack[state.activeProjectId] || []).length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  title="Отменить (Ctrl+Z)"
-                  className="p-2 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-center cursor-pointer"
-                >
-                  <Undo2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                </button>
-              )}
-            </div>
-
-            {/* Center: Views Picker / Switcher */}
-            {state.activeProjectId && (
-              <div className="flex-1 flex justify-center relative">
-                {/* Backdrop overlay for click-away */}
-                {isMobileViewSwitcherOpen && (
-                  <div 
-                    className="fixed inset-0 z-[115]" 
-                    onClick={() => setIsMobileViewSwitcherOpen(false)}
-                  />
-                )}
-
-                {(() => {
-                  const activeOption = viewsList.find(o => o.id === viewMode);
-                  if (!activeOption) return null;
-                  const OptionIcon = activeOption.icon;
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => setIsMobileViewSwitcherOpen(!isMobileViewSwitcherOpen)}
-                      className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl flex items-center gap-1.5 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750 cursor-pointer transition-colors shadow-xs relative z-[120]"
-                    >
-                      <OptionIcon className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>{activeOption.name}</span>
-                      <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isMobileViewSwitcherOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                  );
-                })()}
-
-                {/* Mobile views dropdown popover */}
-                {isMobileViewSwitcherOpen && (
-                  <div className="fixed bottom-16 left-1/2 -translate-x-1/2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-2 w-56 z-[120] flex flex-col gap-1 select-text animate-in slide-in-from-bottom-2 duration-200">
-                    <div className="px-2.5 py-1.5 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 tracking-wider uppercase flex items-center justify-between">
-                      <span>Режим просмотра</span>
-                      {focusedNode && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleDefaultView();
-                          }}
-                          className={`p-1 rounded-lg transition-colors cursor-pointer border ${
-                            focusedNode.defaultView === viewMode
-                              ? 'bg-amber-500/10 text-amber-600 border-amber-300'
-                              : 'text-slate-400 hover:text-slate-600 border-transparent hover:bg-slate-50 dark:hover:bg-slate-850'
-                          }`}
-                          title="Сделать по умолчанию"
-                        >
-                          <Star className={`w-3.5 h-3.5 ${focusedNode.defaultView === viewMode ? 'fill-amber-500 text-amber-500' : ''}`} />
-                        </button>
-                      )}
-                    </div>
-                    {viewsList.map(option => {
-                      const OptionIcon = option.icon;
-                      const isSelected = viewMode === option.id;
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => {
-                            setViewMode(option.id as any);
-                            setIsMobileViewSwitcherOpen(false);
-                          }}
-                          className={`w-full text-left font-bold px-3 py-2 rounded-xl flex items-center justify-between transition-colors cursor-pointer text-xs ${
-                            isSelected
-                              ? 'bg-indigo-50 dark:bg-indigo-950/45 text-indigo-600 dark:text-indigo-400'
-                              : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <OptionIcon className={`w-4 h-4 ${isSelected ? 'text-indigo-500' : 'text-slate-400'}`} />
-                            <span>{option.name}</span>
-                          </div>
-                          {focusedNode && focusedNode.defaultView === option.id && (
-                            <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Right: Search, Filters, Sync, Sheets */}
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
-                className={`p-2 rounded-lg border cursor-pointer transition-all ${
-                  searchQuery.trim().length > 0 || isMobileSearchOpen
-                    ? 'border-indigo-200/60 bg-indigo-55/40 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
-                    : 'border-transparent text-slate-500 hover:bg-slate-100/75 dark:hover:bg-slate-800/60'
-                }`}
-                title="Поиск"
-              >
-                <Search className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
-                className={`p-2 border rounded-lg cursor-pointer transition-all ${
-                  isAnyFilterActive
-                    ? 'border-indigo-200/60 bg-indigo-55/40 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400'
-                    : isFilterPanelOpen
-                      ? 'border-transparent bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100'
-                      : 'border-transparent text-slate-500 hover:bg-slate-100/75 dark:hover:bg-slate-800/60'
-                }`}
-                title="Фильтры"
-              >
-                <SlidersHorizontal className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsSyncMenuOpen(true)}
-                className={`p-2 border rounded-lg cursor-pointer transition-all ${
-                  isSyncingSheets || syncStatus.firebase === 'syncing'
-                    ? 'border-indigo-200/60 bg-indigo-55/50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 animate-pulse'
-                    : 'border-transparent text-slate-500 hover:bg-slate-100/75 dark:hover:bg-slate-800/60'
-                }`}
-                title="Синхронизация"
-              >
-                <Database className="w-4 h-4 text-indigo-555" />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleQuickSheetsSync}
-                className={`p-2 border rounded-lg cursor-pointer transition-all ${
-                  isSyncingSheets
-                    ? 'border-emerald-200 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 animate-pulse'
-                    : 'border-transparent text-emerald-600 dark:text-emerald-400 hover:bg-slate-100/75 dark:hover:bg-slate-800/60'
-                }`}
-                title="Google Sheets"
-              >
-                <FileSpreadsheet className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-          </header>
-        </div>
 
 
 
@@ -7027,7 +6811,7 @@ export default function App() {
 
         {/* The Mind Map Interactive Canvas Frame. Occupies 100% space! */}
         <div 
-          className="flex-1 w-full min-h-0 relative bg-[#F9FAFC] dark:bg-slate-950/20 pb-14 sm:pb-0 flex flex-col"
+          className="flex-1 w-full min-h-0 relative bg-[#F9FAFC] dark:bg-slate-950/20 pb-0 flex flex-col"
           onMouseDown={handleGlobalMouseDown}
           onMouseMove={handleGlobalMouseMove}
           onMouseUp={handleGlobalMouseUp}
@@ -7114,126 +6898,6 @@ export default function App() {
               </div>
             </div>
           )}
-
-          {/* Universal Focus Mode Banner for all non-canvas views */}
-          {state.activeProjectId && viewMode !== 'canvas' && (focusedTaskId || focusedContainerId) && (() => {
-            const focusId = focusedTaskId || focusedContainerId;
-            const focusedNode = activeNodes.find(n => n.id === focusId);
-            const hasSavedFilters = focusedNode && !!focusedNode.savedFilters;
-            
-            return (
-              <div className="mx-4 sm:mx-6 mt-3 mb-1 p-2 px-3 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs flex items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top-2 z-30 shrink-0 pointer-events-auto">
-                <div className="flex items-center gap-2 min-w-0">
-                  {focusedContainerId ? (
-                    <>
-                      <span className="flex h-2 w-2 relative shrink-0">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                      </span>
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5 min-w-0">
-                        <span className="shrink-0">📦 Контейнер:</span>
-                        <strong className="font-extrabold text-amber-600 dark:text-amber-400 truncate">
-                          {focusedNode?.text || 'Без названия'}
-                        </strong>
-                        {hasSavedFilters && (
-                          <span className="shrink-0 text-[9px] font-extrabold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20" title="Применены фильтры по умолчанию">
-                            ★ по умолчанию
-                          </span>
-                        )}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="flex h-2 w-2 relative shrink-0">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-450 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                      </span>
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5 min-w-0">
-                        <span className="shrink-0">🎯 Задача:</span>
-                        <strong className="font-extrabold text-rose-600 dark:text-rose-400 truncate">
-                          {focusedNode?.text || 'Без названия'}
-                        </strong>
-                        {hasSavedFilters && (
-                          <span className="shrink-0 text-[9px] font-extrabold text-rose-500 bg-rose-500/10 px-1.5 py-0.5 rounded-full border border-rose-500/20" title="Применены фильтры по умолчанию">
-                            ★ по умолчанию
-                          </span>
-                        )}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Remember/Reset Filters default configuration buttons */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={handleSaveFiltersForFocusedNode}
-                      className={`p-1.5 rounded-lg border shadow-3xs cursor-pointer transition-colors flex items-center gap-1 ${
-                        hasSavedFilters
-                          ? 'border-amber-300 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
-                          : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900'
-                      }`}
-                      title={hasSavedFilters ? 'Фильтры сохранены по умолчанию. Кликните, чтобы обновить их текущими.' : 'Сохранить текущие фильтры как настройки по умолчанию для этого элемента'}
-                    >
-                      <Star className={`w-3.5 h-3.5 ${hasSavedFilters ? 'fill-amber-500 text-amber-500' : ''}`} />
-                      <span className="text-[10px] font-bold hidden md:inline">
-                        {hasSavedFilters ? 'Фильтры сохранены' : 'Запомнить фильтры'}
-                      </span>
-                    </button>
-                    {hasSavedFilters && (
-                      <button
-                        onClick={handleClearSavedFiltersForFocusedNode}
-                        className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
-                        title="Удалить сохраненные фильтры по умолчанию"
-                      >
-                        <Trash className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {focusedTaskId && (() => {
-                    const focusedTask = activeNodes.find(n => n.id === focusedTaskId);
-                    if (focusedTask && focusedTask.parentId) {
-                      const parentTask = activeNodes.find(n => n.id === focusedTask.parentId);
-                      return (
-                        <button
-                          onClick={() => setFocusedTaskId(focusedTask.parentId)}
-                          className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
-                          title={`Вернуться к родителю: ${parentTask?.text || 'Без названия'}`}
-                        >
-                          <ChevronLeft className="w-4 h-4" />
-                        </button>
-                      );
-                    }
-                    return null;
-                  })()}
-                  <button
-                    onClick={handleGoBackOneFocusLevel}
-                    className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-450 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors"
-                    title={
-                      (focusedContainerId && activeNodes.find(n => n.id === focusedContainerId)?.parentId) ||
-                      (focusedTaskId && activeNodes.find(n => n.id === focusedTaskId)?.parentId)
-                        ? "Назад на один уровень выше"
-                        : "Выйти из режима фокуса (назад к общему списку)"
-                    }
-                  >
-                    <Undo2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setFocusedContainerId(null);
-                      setFocusedTaskId(null);
-                      focusStackRef.current = [];
-                    }}
-                    className="p-1.5 px-2.5 hover:bg-amber-50 dark:hover:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-slate-900 shadow-3xs cursor-pointer transition-colors flex items-center gap-1.5"
-                    title="Выйти из режима фокуса на главный экран"
-                  >
-                    <Home className="w-4 h-4" />
-                    <span className="text-[10px] font-extrabold hidden sm:inline">Главный экран</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })()}
           
           {isSplitScreen ? (
             <div 
@@ -7531,6 +7195,8 @@ export default function App() {
               initialFullscreen={detailsPanelFullscreen}
               lastCreatedNodeId={lastCreatedNodeId}
               onDuplicateEquipment={handleDuplicateEquipment}
+              onOpenSyncModal={() => setIsSyncMenuOpen(true)}
+              isSyncing={isSyncingSheets || syncStatus.firebase === 'syncing'}
             />
           </>
         )}

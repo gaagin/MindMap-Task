@@ -896,64 +896,7 @@ export default function KanbanView({
 
   return (
     <div className="w-full h-full flex flex-col bg-white dark:bg-[#191919] text-[#37352F] dark:text-[#D3D3D0] overflow-hidden select-none font-sans">
-      {/* KANBAN GROUPING TABS */}
-      <div className="shrink-0 px-6 pt-3 pb-2 border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-white dark:bg-[#191919] flex items-center justify-between">
-        <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
-          <button
-            type="button"
-            onClick={() => setGroupBy('status')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              groupBy === 'status'
-                ? 'border-[#37352F] dark:border-[#FFF] text-[#37352F] dark:text-[#FFF]'
-                : 'border-transparent text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] hover:bg-[#F7F7F5] dark:hover:bg-[#222] rounded-t-md'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Flow</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setGroupBy('priority')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              groupBy === 'priority'
-                ? 'border-[#37352F] dark:border-[#FFF] text-[#37352F] dark:text-[#FFF]'
-                : 'border-transparent text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] hover:bg-[#F7F7F5] dark:hover:bg-[#222] rounded-t-md'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>Priority</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setGroupBy('category')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              groupBy === 'category'
-                ? 'border-[#37352F] dark:border-[#FFF] text-[#37352F] dark:text-[#FFF]'
-                : 'border-transparent text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] hover:bg-[#F7F7F5] dark:hover:bg-[#222] rounded-t-md'
-            }`}
-          >
-            <Tag className="w-3.5 h-3.5" />
-            <span>Tags & Categories</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setGroupBy('container')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              groupBy === 'container'
-                ? 'border-[#37352F] dark:border-[#FFF] text-[#37352F] dark:text-[#FFF]'
-                : 'border-transparent text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] hover:bg-[#F7F7F5] dark:hover:bg-[#222] rounded-t-md'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Areas</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 2. NOTION KANBAN COLUMNS BOARD */}
+      {/* NOTION KANBAN COLUMNS BOARD */}
       <div 
         id="kanban-columns-container" 
         className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar bg-white dark:bg-[#191919] p-6"

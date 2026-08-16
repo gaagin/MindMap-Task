@@ -52,7 +52,8 @@ import {
   Smile,
   CornerDownLeft,
   MoreHorizontal,
-  CheckCheck
+  CheckCheck,
+  Database
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
@@ -140,6 +141,8 @@ interface TaskDetailsPanelProps {
   initialFullscreen?: boolean;
   lastCreatedNodeId?: string | null;
   onDuplicateEquipment?: (id: string) => void;
+  onOpenSyncModal?: () => void;
+  isSyncing?: boolean;
 }
 
 interface ContainerSearchSelectorProps {
@@ -550,7 +553,9 @@ export default function TaskDetailsPanel({
   initialTab = 'details',
   initialFullscreen = false,
   lastCreatedNodeId = null,
-  onDuplicateEquipment
+  onDuplicateEquipment,
+  onOpenSyncModal,
+  isSyncing = false
 }: TaskDetailsPanelProps) {
   const [tagInput, setTagInput] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);

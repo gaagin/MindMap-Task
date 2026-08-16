@@ -20,7 +20,8 @@ import {
   Moon,
   Bell,
   Network,
-  Copy
+  Copy,
+  Database
 } from 'lucide-react';
 import { Folder, Project, TagCategory, WorkspaceState } from '../types';
 import { playNotificationChime } from '../utils';
@@ -54,6 +55,8 @@ interface SidebarProps {
   darkMode: boolean;
   onToggleDarkMode: () => void;
   onCreateGtdWorkflow?: () => void;
+  onOpenSyncModal?: () => void;
+  isSyncing?: boolean;
 }
 
 export default function Sidebar({
@@ -83,7 +86,9 @@ export default function Sidebar({
   version = "2.5.0",
   darkMode,
   onToggleDarkMode,
-  onCreateGtdWorkflow
+  onCreateGtdWorkflow,
+  onOpenSyncModal,
+  isSyncing = false
 }: SidebarProps) {
   // Folder tree expansion state, loaded and persisted in localStorage
   const [notificationPermission, setNotificationPermission] = useState<string>(() => {
@@ -584,6 +589,21 @@ export default function Sidebar({
           </div>
           {/* Theme toggle and Close buttons */}
           <div className="flex items-center gap-0.5 shrink-0">
+            {onOpenSyncModal && (
+              <button
+                type="button"
+                id="sidebar-database-sync-btn"
+                onClick={onOpenSyncModal}
+                className={`p-1.5 rounded-md hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)] cursor-pointer transition-colors ${
+                  isSyncing
+                    ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 animate-pulse'
+                    : 'text-[rgba(55,53,47,0.65)] hover:text-[#37352F] dark:text-[rgba(255,255,255,0.65)] dark:hover:text-white'
+                }`}
+                title="База данных и синхронизация (Notion / Firebase / Cloud)"
+              >
+                <Database className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={onToggleDarkMode}
               className="p-1.5 rounded-md hover:bg-[rgba(55,53,47,0.08)] dark:hover:bg-[rgba(255,255,255,0.08)] text-[rgba(55,53,47,0.65)] hover:text-[#37352F] dark:text-[rgba(255,255,255,0.65)] dark:hover:text-white cursor-pointer transition-colors"
@@ -612,6 +632,18 @@ export default function Sidebar({
 
         {/* Notion Quick Actions */}
         <div className="px-3 pt-3 pb-2 space-y-0.5 border-b border-[rgba(55,53,47,0.07)] dark:border-[rgba(255,255,255,0.07)]">
+          {onOpenSyncModal && (
+            <button
+              onClick={onOpenSyncModal}
+              className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-[rgba(55,53,47,0.75)] dark:text-[rgba(255,255,255,0.75)] hover:bg-[rgba(55,53,47,0.06)] dark:hover:bg-[rgba(255,255,255,0.055)] rounded-md transition-colors font-medium cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Database className={`w-3.5 h-3.5 ${isSyncing ? 'text-indigo-500 animate-spin' : 'text-[rgba(55,53,47,0.65)] dark:text-[rgba(255,255,255,0.65)]'}`} />
+                <span>База данных & Синхронизация</span>
+              </div>
+              <span className="text-[10px] text-[rgba(55,53,47,0.4)] dark:text-[rgba(255,255,255,0.4)] font-mono">Sync</span>
+            </button>
+          )}
           <button
             onClick={() => setShowNewProjectInput('root')}
             className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-[rgba(55,53,47,0.75)] dark:text-[rgba(255,255,255,0.75)] hover:bg-[rgba(55,53,47,0.06)] dark:hover:bg-[rgba(255,255,255,0.055)] rounded-md transition-colors font-medium cursor-pointer"
@@ -1118,6 +1150,19 @@ export default function Sidebar({
 
         {/* Footer (Sync, Export/Import, Reset) */}
         <div className="border-t border-slate-150/50 dark:border-slate-800/80 p-4 space-y-2 bg-[#F9FAFC]/30 dark:bg-slate-900/30">
+          {onOpenSyncModal && (
+            <button
+              type="button"
+              id="sidebar-footer-sync-btn"
+              onClick={onOpenSyncModal}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-indigo-50/80 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-lg border border-indigo-200/60 dark:border-indigo-800/60 cursor-pointer transition-all shadow-xs"
+              title="Открыть панель базы данных и синхронизации"
+            >
+              <Database className={`w-3.5 h-3.5 ${isSyncing ? 'animate-pulse text-indigo-500' : 'text-indigo-600 dark:text-indigo-400'}`} />
+              <span>База данных и синхронизация</span>
+            </button>
+          )}
+
           <div className="flex items-center justify-between text-xs text-slate-400 py-1 font-mono">
             <span>Локальное хранилище</span>
             <span className="text-indigo-500 font-semibold">Активно</span>
