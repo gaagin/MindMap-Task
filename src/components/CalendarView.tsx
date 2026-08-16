@@ -20,7 +20,8 @@ import {
   Minimize2,
   X,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Check
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority, ViewMode } from '../types';
 
@@ -102,6 +103,22 @@ export default function CalendarView({
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [calendarSubMode, setCalendarSubMode] = useState<'month' | 'week' | 'day'>('week');
+  const [isViewDropdownOpen, setIsViewDropdownOpen] = useState(false);
+  const viewDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (viewDropdownRef.current && !viewDropdownRef.current.contains(e.target as Node)) {
+        setIsViewDropdownOpen(false);
+      }
+    };
+    if (isViewDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isViewDropdownOpen]);
 
   // Real-time live clock for current time line indicator
   const [nowDate, setNowDate] = useState(() => new Date());
@@ -759,6 +776,14 @@ export default function CalendarView({
     }
   };
 
+  const VIEW_MODE_OPTIONS: { id: 'day' | 'week' | 'month'; label: string; shortcut: string }[] = [
+    { id: 'day', label: 'День', shortcut: 'D' },
+    { id: 'week', label: 'Неделя', shortcut: 'W' },
+    { id: 'month', label: 'Месяц', shortcut: 'M' },
+  ];
+
+  const currentModeLabel = VIEW_MODE_OPTIONS.find(o => o.id === calendarSubMode)?.label || 'Неделя';
+
   return (
     <div 
       id="calendar-workspace-view" 
@@ -767,11 +792,11 @@ export default function CalendarView({
       }`}
     >
       {/* CALENDAR HEADER & TIME PERIOD CONTROL */}
-      <div className="shrink-0 px-5 py-2.5 bg-white dark:bg-[#191919] flex items-center justify-between gap-3 border-b border-[#EDEDEB] dark:border-[#2D2D2D] flex-wrap">
+      <div className="shrink-0 px-3 sm:px-5 py-2 bg-white dark:bg-[#191919] flex items-center justify-between gap-2 sm:gap-4 border-b border-[#EDEDEB] dark:border-[#2D2D2D]">
         
         {/* Left: Navigation arrows, Today button & Formatted Title */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
+          <div className="flex items-center gap-0.5 shrink-0">
             <button
               type="button"
               onClick={handlePrev}
@@ -794,62 +819,66 @@ export default function CalendarView({
           <button
             type="button"
             onClick={setToday}
-            className="px-2.5 py-1 text-xs font-medium text-[#37352F] dark:text-[#D4D4D4] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] rounded-md border border-[#EDEDEB] dark:border-[#333] transition-colors cursor-pointer flex items-center gap-1 shadow-3xs"
+            className="shrink-0 px-2 sm:px-2.5 py-1 text-xs font-medium text-[#37352F] dark:text-[#D4D4D4] hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] rounded-md border border-[#EDEDEB] dark:border-[#333] transition-colors cursor-pointer flex items-center gap-1 shadow-3xs"
             title="Перейти к сегодняшнему дню (T)"
           >
             <span>Сегодня</span>
-            <span className="text-[10px] text-[#9B9A97] font-mono ml-0.5">T</span>
+            <span className="hidden sm:inline-block text-[10px] text-[#9B9A97] font-mono ml-0.5">T</span>
           </button>
 
           {/* Formatted Period Heading */}
-          <h2 className="text-base sm:text-lg font-semibold text-[#111] dark:text-[#FFF] tracking-tight ml-1">
+          <h2 className="text-xs sm:text-base font-semibold text-[#111] dark:text-[#FFF] tracking-tight truncate min-w-0 ml-0.5 sm:ml-1">
             {getHeaderTitle()}
           </h2>
         </div>
 
-        {/* Right: Sub-mode Switchers (Day [D] | Week [W] | Month [M]) */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-[#F7F7F5] dark:bg-[#252525] p-0.5 rounded-lg border border-[#EDEDEB] dark:border-[#333] text-xs">
-            <button
-              type="button"
-              onClick={() => setCalendarSubMode('day')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                calendarSubMode === 'day'
-                  ? 'bg-white dark:bg-[#333] text-[#111] dark:text-[#FFF] shadow-3xs font-medium'
-                  : 'text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97]'
-              }`}
-              title="Вид на 1 день (D)"
-            >
-              <span>День</span>
-              <span className="text-[9px] text-[#9B9A97] font-mono">D</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCalendarSubMode('week')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                calendarSubMode === 'week'
-                  ? 'bg-white dark:bg-[#333] text-[#111] dark:text-[#FFF] shadow-3xs font-medium'
-                  : 'text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97]'
-              }`}
-              title="Вид на неделю (W)"
-            >
-              <span>Неделя</span>
-              <span className="text-[9px] text-[#9B9A97] font-mono">W</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCalendarSubMode('month')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                calendarSubMode === 'month'
-                  ? 'bg-white dark:bg-[#333] text-[#111] dark:text-[#FFF] shadow-3xs font-medium'
-                  : 'text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97]'
-              }`}
-              title="Вид на месяц (M)"
-            >
-              <span>Месяц</span>
-              <span className="text-[9px] text-[#9B9A97] font-mono">M</span>
-            </button>
-          </div>
+        {/* Right: Dropdown for Day | Week | Month */}
+        <div className="relative shrink-0" ref={viewDropdownRef}>
+          <button
+            type="button"
+            onClick={() => setIsViewDropdownOpen(prev => !prev)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-[#EDEDEB] dark:border-[#333] bg-[#F7F7F5] dark:bg-[#252525] text-[#37352F] dark:text-[#E0E0E0] hover:bg-[#EFEFED] dark:hover:bg-[#2D2D2D] transition-colors cursor-pointer shadow-3xs ${
+              isViewDropdownOpen ? 'ring-1.5 ring-[#2383E2]/50 border-[#2383E2]' : ''
+            }`}
+            title="Выбрать масштаб календаря (День, Неделя, Месяц)"
+          >
+            <span>{currentModeLabel}</span>
+            <ChevronDown className={`w-3.5 h-3.5 text-[#787774] dark:text-[#9B9A97] transition-transform duration-150 ${isViewDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {/* Dropdown Menu Popup */}
+          {isViewDropdownOpen && (
+            <div className="absolute right-0 top-full mt-1.5 w-36 py-1 bg-white dark:bg-[#202020] rounded-lg shadow-lg border border-[#EDEDEB] dark:border-[#333] z-[60]">
+              {VIEW_MODE_OPTIONS.map(opt => {
+                const isSelected = calendarSubMode === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setCalendarSubMode(opt.id);
+                      setIsViewDropdownOpen(false);
+                    }}
+                    className={`w-full px-2.5 py-1.5 text-xs flex items-center justify-between text-left transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#F2F2F0] dark:bg-[#2A2A2A] text-[#111] dark:text-[#FFF] font-semibold'
+                        : 'text-[#37352F] dark:text-[#CCCCCC] hover:bg-[#F7F7F5] dark:hover:bg-[#262626]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-3.5 flex items-center justify-center">
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                      </span>
+                      <span>{opt.label}</span>
+                    </div>
+                    <span className="text-[10px] text-[#9B9A97] dark:text-[#777] font-mono px-1 py-0.5 rounded bg-[#EFEFED] dark:bg-[#333]">
+                      {opt.shortcut}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1239,60 +1268,13 @@ export default function CalendarView({
         {/* ============================================================ */}
         {/* B. DAILY VIEW (AUTHENTIC NOTION CALENDAR SINGLE DAY) */}
         {/* ============================================================ */}
+        {/* B. DAY VIEW (HOURLY TIMELINE) */}
+        {/* ============================================================ */}
         {calendarSubMode === 'day' && (
           <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-white dark:bg-[#191919]">
             
-            {/* Day Header Bar with quick navigation pills */}
-            <div className="shrink-0 flex flex-col border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-white dark:bg-[#191919] z-20 px-6 py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {/* Today Circle or Day Number */}
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-base font-bold shadow-2xs ${
-                    currentDateStr === realTodayStr
-                      ? 'bg-[#2383E2] text-white'
-                      : 'bg-[#EDEDEB] dark:bg-[#2D2D2D] text-[#111] dark:text-[#FFF]'
-                  }`}>
-                    {currentDate.getDate()}
-                  </div>
-
-                  <div>
-                    <h3 className="text-base sm:text-lg font-bold text-[#111] dark:text-[#FFF] tracking-tight">
-                      {WEEKDAYS_FULL_RU[(currentDate.getDay() + 6) % 7]}
-                    </h3>
-                    <p className="text-xs text-[#787774] dark:text-[#9B9A97]">
-                      {currentDate.getDate()} {MONTH_NAMES_GENITIVE_RU[currentDate.getMonth()]} {year}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Day switcher pills */}
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={prevDay}
-                    className="px-2.5 py-1 text-xs rounded-md border border-[#EDEDEB] dark:border-[#333] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] text-[#787774] dark:text-[#9B9A97] transition-colors"
-                  >
-                    Вчера
-                  </button>
-                  <button
-                    onClick={setToday}
-                    className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
-                      currentDateStr === realTodayStr
-                        ? 'bg-[#2383E2] text-white border-[#2383E2]'
-                        : 'border-[#EDEDEB] dark:border-[#333] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] text-[#37352F] dark:text-[#FFF]'
-                    }`}
-                  >
-                    Сегодня
-                  </button>
-                  <button
-                    onClick={nextDay}
-                    className="px-2.5 py-1 text-xs rounded-md border border-[#EDEDEB] dark:border-[#333] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] text-[#787774] dark:text-[#9B9A97] transition-colors"
-                  >
-                    Завтра
-                  </button>
-                </div>
-              </div>
-
-              {/* All-Day Tasks Row for Day View */}
+            {/* All-Day Tasks Row for Day View */}
+            <div className="shrink-0 flex flex-col border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-white dark:bg-[#191919] z-20 px-4 sm:px-6 py-2.5">
               <div 
                 onDragOver={(e) => e.preventDefault()}
                 onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
@@ -1315,7 +1297,7 @@ export default function CalendarView({
                   }
                   setDraggedOverDate(null);
                 }}
-                className={`mt-3 p-2 rounded-lg border transition-all ${
+                className={`p-2 rounded-lg border transition-all ${
                   draggedOverDate === `allday-${currentDateStr}`
                     ? 'bg-[#2383E2]/15 border-[#2383E2]'
                     : 'bg-[#FAFAF9] dark:bg-[#202020] border-[#EDEDEB] dark:border-[#2D2D2D]'
