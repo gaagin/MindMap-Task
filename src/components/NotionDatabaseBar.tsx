@@ -251,8 +251,14 @@ export default function NotionDatabaseBar({
   const viewSettingsRef = useRef<HTMLDivElement>(null);
   const newMenuRef = useRef<HTMLDivElement>(null);
   const sortMenuRef = useRef<HTMLDivElement>(null);
-  const filterPopoverRef = useRef<HTMLDivElement>(null);
   const mobileViewsMenuRef = useRef<HTMLDivElement>(null);
+  const desktopViewsMenuRef = useRef<HTMLDivElement>(null);
+  const areaFilterRef = useRef<HTMLDivElement>(null);
+  const tagFilterRef = useRef<HTMLDivElement>(null);
+  const statusFilterRef = useRef<HTMLDivElement>(null);
+  const priorityFilterRef = useRef<HTMLDivElement>(null);
+  const dueFilterRef = useRef<HTMLDivElement>(null);
+  const addFilterRef = useRef<HTMLDivElement>(null);
 
   // Count active filters
   const activeFiltersCount = [
@@ -275,29 +281,76 @@ export default function NotionDatabaseBar({
     }
   }, [isAnyFilterActive, isSortingActive]);
 
-  // Click away listeners for menus
+  // Click away and Escape key listeners for menus and dropdowns
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
+    function handleClickOutside(e: MouseEvent | TouchEvent) {
       const target = e.target as HTMLElement;
-      if (viewSettingsRef.current && !viewSettingsRef.current.contains(target) && !target.closest('#notion-settings-btn')) {
+      if (!target) return;
+
+      if (isViewSettingsOpen && viewSettingsRef.current && !viewSettingsRef.current.contains(target) && !target.closest('#notion-settings-btn')) {
         setIsViewSettingsOpen(false);
       }
-      if (newMenuRef.current && !newMenuRef.current.contains(target) && !target.closest('#notion-new-btn')) {
+      if (isNewMenuOpen && newMenuRef.current && !newMenuRef.current.contains(target) && !target.closest('#notion-new-btn')) {
         setIsNewMenuOpen(false);
       }
-      if (sortMenuRef.current && !sortMenuRef.current.contains(target) && !target.closest('#notion-sort-btn')) {
+      if (isSortMenuOpen && sortMenuRef.current && !sortMenuRef.current.contains(target) && !target.closest('#notion-sort-btn')) {
         setIsSortMenuOpen(false);
       }
-      if (mobileViewsMenuRef.current && !mobileViewsMenuRef.current.contains(target) && !target.closest('#mobile-view-dropdown-btn')) {
+      if (isMobileViewsMenuOpen && mobileViewsMenuRef.current && !mobileViewsMenuRef.current.contains(target) && !target.closest('#mobile-view-dropdown-btn')) {
         setIsMobileViewsMenuOpen(false);
       }
-      if (filterPopoverRef.current && !filterPopoverRef.current.contains(target) && !target.closest('.notion-filter-pill')) {
+      if (isViewsMenuOpen && desktopViewsMenuRef.current && !desktopViewsMenuRef.current.contains(target)) {
+        setIsViewsMenuOpen(false);
+      }
+      if (isAddFilterMenuOpen && addFilterRef.current && !addFilterRef.current.contains(target)) {
+        setIsAddFilterMenuOpen(false);
+      }
+      if (activeFilterPopover === 'area' && areaFilterRef.current && !areaFilterRef.current.contains(target)) {
+        setActiveFilterPopover(null);
+      }
+      if (activeFilterPopover === 'tags' && tagFilterRef.current && !tagFilterRef.current.contains(target)) {
+        setActiveFilterPopover(null);
+      }
+      if (activeFilterPopover === 'status' && statusFilterRef.current && !statusFilterRef.current.contains(target)) {
+        setActiveFilterPopover(null);
+      }
+      if (activeFilterPopover === 'priority' && priorityFilterRef.current && !priorityFilterRef.current.contains(target)) {
+        setActiveFilterPopover(null);
+      }
+      if (activeFilterPopover === 'dueDate' && dueFilterRef.current && !dueFilterRef.current.contains(target)) {
         setActiveFilterPopover(null);
       }
     }
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setIsViewSettingsOpen(false);
+        setIsNewMenuOpen(false);
+        setIsSortMenuOpen(false);
+        setIsMobileViewsMenuOpen(false);
+        setIsViewsMenuOpen(false);
+        setIsAddFilterMenuOpen(false);
+        setActiveFilterPopover(null);
+      }
+    }
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    document.addEventListener('touchstart', handleClickOutside, { passive: true });
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [
+    isViewSettingsOpen,
+    isNewMenuOpen,
+    isSortMenuOpen,
+    isMobileViewsMenuOpen,
+    isViewsMenuOpen,
+    isAddFilterMenuOpen,
+    activeFilterPopover
+  ]);
 
   const handleClearAllFiltersAndSort = () => {
     onFilterStatusChange('all');
@@ -522,14 +575,6 @@ export default function NotionDatabaseBar({
               <ChevronDown className={`w-3.5 h-3.5 text-[#787774] dark:text-[#9B9A97] transition-transform duration-200 shrink-0 ${isMobileViewsMenuOpen ? 'rotate-180 text-[#2383E2]' : ''}`} />
             </button>
 
-            {/* Mobile Dropdown Backdrop */}
-            {isMobileViewsMenuOpen && (
-              <div 
-                className="fixed inset-0 z-[150]" 
-                onClick={() => setIsMobileViewsMenuOpen(false)} 
-              />
-            )}
-
             {/* Mobile Dropdown Popover */}
             {isMobileViewsMenuOpen && (
               <div 
@@ -596,7 +641,7 @@ export default function NotionDatabaseBar({
             })}
 
             {/* Plus button to add / switch view */}
-            <div className="relative">
+            <div className="relative" ref={desktopViewsMenuRef}>
               <button
                 type="button"
                 onClick={() => setIsViewsMenuOpen(!isViewsMenuOpen)}
@@ -607,39 +652,33 @@ export default function NotionDatabaseBar({
               </button>
 
               {isViewsMenuOpen && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-[150]" 
-                    onClick={() => setIsViewsMenuOpen(false)} 
-                  />
-                  <div 
-                    className="absolute top-8 left-0 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1 z-[160] animate-in fade-in zoom-in-95 duration-150"
-                  >
-                    <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider">
-                      Режим отображения
-                    </div>
-                    {ALL_VIEW_MODES.map(v => {
-                      const Icon = v.icon;
-                      return (
-                        <button
-                          key={v.id}
-                          type="button"
-                          onClick={() => {
-                            onViewModeChange(v.id);
-                            setIsViewsMenuOpen(false);
-                          }}
-                          className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between text-xs cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Icon className="w-3.5 h-3.5 text-[#787774]" />
-                            <span>{v.name}</span>
-                          </div>
-                          {viewMode === v.id && <Check className="w-3 h-3 text-[#2383E2]" />}
-                        </button>
-                      );
-                    })}
+                <div 
+                  className="absolute top-8 left-0 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1 z-[160] animate-in fade-in zoom-in-95 duration-150"
+                >
+                  <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider">
+                    Режим отображения
                   </div>
-                </>
+                  {ALL_VIEW_MODES.map(v => {
+                    const Icon = v.icon;
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => {
+                          onViewModeChange(v.id);
+                          setIsViewsMenuOpen(false);
+                        }}
+                        className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between text-xs cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Icon className="w-3.5 h-3.5 text-[#787774]" />
+                          <span>{v.name}</span>
+                        </div>
+                        {viewMode === v.id && <Check className="w-3 h-3 text-[#2383E2]" />}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
@@ -695,78 +734,72 @@ export default function NotionDatabaseBar({
 
             {/* Quick Sort Popover with Search */}
             {isSortMenuOpen && (
-              <>
-                <div 
-                  className="fixed inset-0 z-[150]" 
-                  onClick={() => setIsSortMenuOpen(false)} 
-                />
-                <div className="absolute right-0 top-8 w-60 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1.5 z-[160] text-xs animate-in fade-in zoom-in-95 duration-150">
-                  <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider flex items-center justify-between border-b border-[#E9E9E7] dark:border-[#2F2F2F] pb-1.5">
-                    <span>Сортировка</span>
-                    {isSortingActive && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onSortFieldChange('none');
-                          setIsSortMenuOpen(false);
-                        }}
-                        className="text-rose-500 hover:underline cursor-pointer text-[10px]"
-                      >
-                        Сбросить
+              <div className="absolute right-0 top-8 w-60 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1.5 z-[160] text-xs animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider flex items-center justify-between border-b border-[#E9E9E7] dark:border-[#2F2F2F] pb-1.5">
+                  <span>Сортировка</span>
+                  {isSortingActive && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSortFieldChange('none');
+                        setIsSortMenuOpen(false);
+                      }}
+                      className="text-rose-500 hover:underline cursor-pointer text-[10px]"
+                    >
+                      Сбросить
+                    </button>
+                  )}
+                </div>
+
+                {/* Instant Search inside Sort popover */}
+                <div className="p-1 my-1">
+                  <div className="relative flex items-center">
+                    <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={sortSearchQuery}
+                      onChange={(e) => setSortSearchQuery(e.target.value)}
+                      placeholder="Поиск поля..."
+                      className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                    />
+                    {sortSearchQuery && (
+                      <button onClick={() => setSortSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                        <X className="w-3 h-3" />
                       </button>
                     )}
                   </div>
-
-                  {/* Instant Search inside Sort popover */}
-                  <div className="p-1 my-1">
-                    <div className="relative flex items-center">
-                      <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
-                      <input
-                        type="text"
-                        autoFocus
-                        value={sortSearchQuery}
-                        onChange={(e) => setSortSearchQuery(e.target.value)}
-                        placeholder="Поиск поля..."
-                        className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
-                      />
-                      {sortSearchQuery && (
-                        <button onClick={() => setSortSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-0.5 mt-1 max-h-48 overflow-y-auto">
-                    {filteredSortOptions.map(f => {
-                      const isCur = sortField === f.id;
-                      return (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => {
-                            if (isCur) {
-                              onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc');
-                            } else {
-                              onSortFieldChange(f.id as SortField);
-                              onSortOrderChange('asc');
-                            }
-                            setIsSortMenuOpen(false);
-                          }}
-                          className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                        >
-                          <span className={isCur ? 'font-semibold text-[#2383E2]' : ''}>{f.label}</span>
-                          {isCur && (
-                            <span className="text-[10px] font-bold text-[#2383E2] bg-[#2383E2]/10 px-1 rounded">
-                              {sortOrder === 'asc' ? 'А → Я / Возр.' : 'Я → А / Убыв.'}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
                 </div>
-              </>
+                
+                <div className="space-y-0.5 mt-1 max-h-48 overflow-y-auto">
+                  {filteredSortOptions.map(f => {
+                    const isCur = sortField === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => {
+                          if (isCur) {
+                            onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            onSortFieldChange(f.id as SortField);
+                            onSortOrderChange('asc');
+                          }
+                          setIsSortMenuOpen(false);
+                        }}
+                        className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                      >
+                        <span className={isCur ? 'font-semibold text-[#2383E2]' : ''}>{f.label}</span>
+                        {isCur && (
+                          <span className="text-[10px] font-bold text-[#2383E2] bg-[#2383E2]/10 px-1 rounded">
+                            {sortOrder === 'asc' ? 'А → Я / Возр.' : 'Я → А / Убыв.'}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
 
@@ -848,51 +881,45 @@ export default function NotionDatabaseBar({
 
             {/* Template creation menu */}
             {isNewMenuOpen && (
-              <>
-                <div 
-                  className="fixed inset-0 z-[150]" 
-                  onClick={() => setIsNewMenuOpen(false)} 
-                />
-                <div className="absolute right-0 top-8 w-56 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1.5 z-[160] text-xs animate-in fade-in zoom-in-95 duration-150">
-                  <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider">
-                    Создать элемент
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onCreateTask('Новая задача', 'none');
-                      setIsNewMenuOpen(false);
-                    }}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-[#2383E2]" />
-                    <span>Обычная задача</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onCreateTask('Срочная цель', 'urgent');
-                      setIsNewMenuOpen(false);
-                    }}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
-                  >
-                    <Zap className="w-3.5 h-3.5 text-rose-500" />
-                    <span>Срочная задача (⚡)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const todayStr = new Date().toISOString().split('T')[0];
-                      onCreateTask('Задача на сегодня', 'medium', [], todayStr);
-                      setIsNewMenuOpen(false);
-                    }}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
-                  >
-                    <Calendar className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Задача на сегодня (📅)</span>
-                  </button>
+              <div className="absolute right-0 top-8 w-56 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-xl p-1.5 z-[160] text-xs animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-2 py-1 text-[10px] font-bold text-[#787774] uppercase tracking-wider">
+                  Создать элемент
                 </div>
-              </>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCreateTask('Новая задача', 'none');
+                    setIsNewMenuOpen(false);
+                  }}
+                  className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#2383E2]" />
+                  <span>Обычная задача</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCreateTask('Срочная цель', 'urgent');
+                    setIsNewMenuOpen(false);
+                  }}
+                  className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
+                >
+                  <Zap className="w-3.5 h-3.5 text-rose-500" />
+                  <span>Срочная задача (⚡)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    onCreateTask('Задача на сегодня', 'medium', [], todayStr);
+                    setIsNewMenuOpen(false);
+                  }}
+                  className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center gap-2 cursor-pointer"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Задача на сегодня (📅)</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -941,7 +968,7 @@ export default function NotionDatabaseBar({
 
           {/* Filter: Areas / Containers Pill ("Фильтр по областям") */}
           {onFilterAreaChange && (
-            <div className="relative">
+            <div className="relative" ref={areaFilterRef}>
               <button
                 type="button"
                 onClick={() => {
@@ -965,100 +992,93 @@ export default function NotionDatabaseBar({
 
               {/* Area Filter Popover with Instant Search */}
               {activeFilterPopover === 'area' && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-[150]" 
-                    onClick={() => setActiveFilterPopover(null)} 
-                  />
-                  <div 
-                    ref={filterPopoverRef}
-                    className="absolute left-0 top-7 w-64 max-h-72 overflow-y-auto bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
-                  >
-                    <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] sticky top-0 bg-white dark:bg-[#202020] z-10">
-                      <div className="relative flex items-center">
-                        <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
-                        <input
-                          type="text"
-                          autoFocus
-                          value={areaSearchQuery}
-                          onChange={(e) => setAreaSearchQuery(e.target.value)}
-                          placeholder="Поиск области / контейнера..."
-                          className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
-                        />
-                        {areaSearchQuery && (
-                          <button onClick={() => setAreaSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-0.5 mt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onFilterAreaChange('all');
-                          setActiveFilterPopover(null);
-                        }}
-                        className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                      >
-                        <div className="flex items-center gap-1.5 font-semibold">
-                          <Boxes className="w-3.5 h-3.5 text-[#787774]" />
-                          <span>Все области</span>
-                        </div>
-                        {filterArea === 'all' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onFilterAreaChange('root');
-                          setActiveFilterPopover(null);
-                        }}
-                        className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-slate-400">🌐</span>
-                          <span>Корень (без области/контейнера)</span>
-                        </div>
-                        {filterArea === 'root' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
-                      </button>
-
-                      {filteredAreas.length > 0 ? (
-                        filteredAreas.map(a => (
-                          <button
-                            key={a.id}
-                            type="button"
-                            onClick={() => {
-                              onFilterAreaChange(a.id);
-                              setActiveFilterPopover(null);
-                            }}
-                            className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                          >
-                            <div className="flex items-center gap-1.5 min-w-0 pr-1">
-                              <span className="shrink-0">{a.isContainer ? '📦' : a.isWorkflow ? '📐' : a.isEquipment ? '⚙️' : '📁'}</span>
-                              <span className="truncate">{a.name}</span>
-                              {a.count !== undefined && (
-                                <span className="text-[10px] text-[#787774] font-mono shrink-0">({a.count})</span>
-                              )}
-                            </div>
-                            {filterArea === a.id && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
-                          </button>
-                        ))
-                      ) : (
-                        <div className="text-center py-2 text-xs text-[#787774] italic">
-                          Области не найдены
-                        </div>
+                <div 
+                  className="absolute left-0 top-7 w-64 max-h-72 overflow-y-auto bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
+                >
+                  <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] sticky top-0 bg-white dark:bg-[#202020] z-10">
+                    <div className="relative flex items-center">
+                      <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
+                      <input
+                        type="text"
+                        autoFocus
+                        value={areaSearchQuery}
+                        onChange={(e) => setAreaSearchQuery(e.target.value)}
+                        placeholder="Поиск области / контейнера..."
+                        className="w-full pl-6 pr-5 py-1 text-xs bg-[#F7F7F5] dark:bg-[#191919] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded focus:outline-none focus:ring-1 focus:ring-[#2383E2]"
+                      />
+                      {areaSearchQuery && (
+                        <button onClick={() => setAreaSearchQuery('')} className="absolute right-1.5 p-0.5 text-[#787774] hover:text-[#37352F]">
+                          <X className="w-3 h-3" />
+                        </button>
                       )}
                     </div>
                   </div>
-                </>
+
+                  <div className="space-y-0.5 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onFilterAreaChange('all');
+                        setActiveFilterPopover(null);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                    >
+                      <div className="flex items-center gap-1.5 font-semibold">
+                        <Boxes className="w-3.5 h-3.5 text-[#787774]" />
+                        <span>Все области</span>
+                      </div>
+                      {filterArea === 'all' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onFilterAreaChange('root');
+                        setActiveFilterPopover(null);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400">🌐</span>
+                        <span>Корень (без области/контейнера)</span>
+                      </div>
+                      {filterArea === 'root' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                    </button>
+
+                    {filteredAreas.length > 0 ? (
+                      filteredAreas.map(a => (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => {
+                            onFilterAreaChange(a.id);
+                            setActiveFilterPopover(null);
+                          }}
+                          className="w-full text-left px-2 py-1.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                            <span className="shrink-0">{a.isContainer ? '📦' : a.isWorkflow ? '📐' : a.isEquipment ? '⚙️' : '📁'}</span>
+                            <span className="truncate">{a.name}</span>
+                            {a.count !== undefined && (
+                              <span className="text-[10px] text-[#787774] font-mono shrink-0">({a.count})</span>
+                            )}
+                          </div>
+                          {filterArea === a.id && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="text-center py-2 text-xs text-[#787774] italic">
+                        Области не найдены
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           )}
 
           {/* Filter: Tags Pill (With ALL tags + Instant Search) */}
-          <div className="relative">
+          <div className="relative" ref={tagFilterRef}>
             <button
               type="button"
               onClick={() => {
@@ -1078,15 +1098,9 @@ export default function NotionDatabaseBar({
 
             {/* Tags Filter Popover with Instant Search & All Tags */}
             {activeFilterPopover === 'tags' && (
-              <>
-                <div 
-                  className="fixed inset-0 z-[150]" 
-                  onClick={() => setActiveFilterPopover(null)} 
-                />
-                <div 
-                  ref={filterPopoverRef}
-                  className="absolute left-0 top-7 w-64 max-h-72 overflow-y-auto bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
-                >
+              <div 
+                className="absolute left-0 top-7 w-64 max-h-72 overflow-y-auto bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
+              >
                 <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] sticky top-0 bg-white dark:bg-[#202020] z-10">
                   <div className="relative flex items-center">
                     <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
@@ -1177,12 +1191,11 @@ export default function NotionDatabaseBar({
                   )}
                 </div>
               </div>
-            </>
-          )}
-        </div>
+            )}
+          </div>
 
           {/* Filter: Status Pill */}
-          <div className="relative">
+          <div className="relative" ref={statusFilterRef}>
             <button
               type="button"
               onClick={() => {
@@ -1207,15 +1220,9 @@ export default function NotionDatabaseBar({
             </button>
 
             {activeFilterPopover === 'status' && (
-              <>
-                <div 
-                  className="fixed inset-0 z-[150]" 
-                  onClick={() => setActiveFilterPopover(null)} 
-                />
-                <div 
-                  ref={filterPopoverRef}
-                  className="absolute left-0 top-7 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
-                >
+              <div 
+                className="absolute left-0 top-7 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
+              >
                 <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
                   <div className="relative flex items-center">
                     <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
@@ -1252,12 +1259,11 @@ export default function NotionDatabaseBar({
                   ))}
                 </div>
               </div>
-            </>
-          )}
-        </div>
+            )}
+          </div>
 
           {/* Filter: Priority Pill */}
-          <div className="relative">
+          <div className="relative" ref={priorityFilterRef}>
             <button
               type="button"
               onClick={() => {
@@ -1283,15 +1289,9 @@ export default function NotionDatabaseBar({
             </button>
 
             {activeFilterPopover === 'priority' && (
-              <>
-                <div 
-                  className="fixed inset-0 z-[150]" 
-                  onClick={() => setActiveFilterPopover(null)} 
-                />
-                <div 
-                  ref={filterPopoverRef}
-                  className="absolute left-0 top-7 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
-                >
+              <div 
+                className="absolute left-0 top-7 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
+              >
                 <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
                   <div className="relative flex items-center">
                     <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
@@ -1328,12 +1328,11 @@ export default function NotionDatabaseBar({
                   ))}
                 </div>
               </div>
-            </>
-          )}
-        </div>
+            )}
+          </div>
 
           {/* Filter: Due Date Pill */}
-          <div className="relative">
+          <div className="relative" ref={dueFilterRef}>
             <button
               type="button"
               onClick={() => {
@@ -1359,15 +1358,9 @@ export default function NotionDatabaseBar({
             </button>
 
             {activeFilterPopover === 'dueDate' && (
-              <>
-                <div 
-                  className="fixed inset-0 z-[150]" 
-                  onClick={() => setActiveFilterPopover(null)} 
-                />
-                <div 
-                  ref={filterPopoverRef}
-                  className="absolute left-0 top-7 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
-                >
+              <div 
+                className="absolute left-0 top-7 w-52 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
+              >
                 <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
                   <div className="relative flex items-center">
                     <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
@@ -1404,12 +1397,11 @@ export default function NotionDatabaseBar({
                   ))}
                 </div>
               </div>
-            </>
-          )}
-        </div>
+            )}
+          </div>
 
           {/* Add Filter / More Filters Pill with Instant Search */}
-          <div className="relative">
+          <div className="relative" ref={addFilterRef}>
             <button
               type="button"
               onClick={() => {
@@ -1423,15 +1415,9 @@ export default function NotionDatabaseBar({
             </button>
 
             {isAddFilterMenuOpen && (
-              <>
-                <div 
-                  className="fixed inset-0 z-[150]" 
-                  onClick={() => setIsAddFilterMenuOpen(false)} 
-                />
-                <div 
-                  ref={filterPopoverRef}
-                  className="absolute left-0 top-7 w-56 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
-                >
+              <div 
+                className="absolute left-0 top-7 w-56 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-lg shadow-2xl p-1 z-[160] text-xs animate-in fade-in zoom-in-95 duration-100"
+              >
                 <div className="p-1 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
                   <div className="relative flex items-center">
                     <Search className="w-3 h-3 text-[#787774] absolute left-2 pointer-events-none" />
@@ -1477,9 +1463,8 @@ export default function NotionDatabaseBar({
                   })}
                 </div>
               </div>
-            </>
-          )}
-        </div>
+            )}
+          </div>
 
           {/* Inline Search Input Bar */}
           <div className="flex items-center gap-1.5 ml-auto">
@@ -1523,15 +1508,10 @@ export default function NotionDatabaseBar({
 
       {/* 4. NOTION "VIEW SETTINGS" POPUP MODAL / DRAWER */}
       {isViewSettingsOpen && (
-        <>
-          <div 
-            className="fixed inset-0 z-[150]" 
-            onClick={() => setIsViewSettingsOpen(false)} 
-          />
-          <div 
-            ref={viewSettingsRef}
-            className="absolute right-3 sm:right-6 top-12 w-80 max-h-[85vh] overflow-y-auto bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-xl shadow-2xl z-[160] text-xs text-[#37352F] dark:text-[#E3E2E0] animate-in fade-in zoom-in-95 duration-150 p-2 select-none"
-          >
+        <div 
+          ref={viewSettingsRef}
+          className="absolute right-3 sm:right-6 top-12 w-80 max-h-[85vh] overflow-y-auto bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-xl shadow-2xl z-[160] text-xs text-[#37352F] dark:text-[#E3E2E0] animate-in fade-in zoom-in-95 duration-150 p-2 select-none"
+        >
           {/* Modal Header */}
           <div className="flex items-center justify-between px-2 py-1.5 border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
             <span className="font-semibold text-xs text-[#37352F] dark:text-[#E3E2E0]">
@@ -1960,7 +1940,6 @@ export default function NotionDatabaseBar({
           )}
 
         </div>
-      </>
       )}
 
     </div>
