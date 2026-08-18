@@ -198,7 +198,7 @@ export default function KanbanView({
   };
 
   // Grouping state ('status' | 'category' | 'priority' | 'container')
-  const [internalGroupBy, setInternalGroupBy] = useState<'status' | 'category' | 'priority' | 'container'>(() => 'status');
+  const [internalGroupBy, setInternalGroupBy] = useState<'status' | 'category' | 'priority' | 'container'>(() => 'category');
   const groupBy = propsKanbanGroupBy !== undefined && propsKanbanGroupBy !== null ? propsKanbanGroupBy : internalGroupBy;
   const setGroupBy = (g: 'status' | 'category' | 'priority' | 'container') => {
     setInternalGroupBy(g);

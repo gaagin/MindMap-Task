@@ -116,6 +116,7 @@ export interface TaskNode {
   customProperties?: { id: string; name: string; value: string }[]; // Dynamic custom key-value properties
   blockedBy?: string[]; // Optional array of node IDs that block this node
   defaultView?: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'; // Optional view mode to display by default when focused
+  containerViewMode?: 'list' | 'kanban' | 'calendar' | 'gantt' | 'table' | 'canvas'; // Optional default nested view inside container
   useExactCoordinates?: boolean; // Special flag to skip radial placement and use click coordinates
   mirrorGroupId?: string; // Optional ID linking mirrored/synchronized tasks
   mirrorParentId?: string; // Optional ID of the original parent task of a mirrored subtask

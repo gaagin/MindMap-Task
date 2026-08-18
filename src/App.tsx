@@ -1409,7 +1409,7 @@ export default function App() {
   const [filterAttachments, setFilterAttachments] = useState<string>('all');
   const [filterNotes, setFilterNotes] = useState<string>('all');
   const [filterCategoryId, setFilterCategoryId] = useState<string | null>(null);
-  const [kanbanGroupBy, setKanbanGroupBy] = useState<'status' | 'category' | 'priority' | 'container' | null>('status');
+  const [kanbanGroupBy, setKanbanGroupBy] = useState<'status' | 'category' | 'priority' | 'container' | null>('category');
   const [kanbanContainerFilterId, setKanbanContainerFilterId] = useState<string | null>('all');
 
   // Notion-style Sort and Properties state
@@ -1773,10 +1773,81 @@ export default function App() {
               });
             }
 
-            if (searchQuery.trim() !== "" && (viewMode === 'canvas' || (!lastAppliedFocusIdRef.current && viewMode === 'canvas'))) {
+            let savedContainerMode: string | null = node.containerViewMode || (node.defaultView as string) || null;
+            if (!savedContainerMode && typeof window !== 'undefined') {
+              try {
+                const raw = localStorage.getItem('task_mindmap_container_views');
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  if (parsed && parsed[node.id]) {
+                    savedContainerMode = parsed[node.id];
+                  }
+                }
+              } catch (e) {
+                // ignore
+              }
+            }
+
+            const isDelegate = !!node.isContainer && (
+              node.text.toLowerCase().includes('delegate') || 
+              node.text.toLowerCase().includes('делегир') ||
+              node.id.startsWith('gtd-delegate-')
+            );
+
+            const isCalendar = !!node.isContainer && (
+              node.text.toLowerCase().includes('calendar') || 
+              node.text.toLowerCase().includes('календарь') ||
+              node.text.toLowerCase().includes('расписание') ||
+              node.text.toLowerCase().includes('график') ||
+              node.id.startsWith('gtd-calendar-')
+            );
+
+            const isTable = !!node.isContainer && (
+              node.text.toLowerCase().includes('table') ||
+              node.text.toLowerCase().includes('таблиц')
+            );
+
+            const isGantt = !!node.isContainer && (
+              node.text.toLowerCase().includes('gantt') ||
+              node.text.toLowerCase().includes('гант')
+            );
+
+            const isList = !!node.isContainer && (
+              node.text.toLowerCase().includes('list') ||
+              node.text.toLowerCase().includes('список')
+            );
+
+            if (savedContainerMode) {
+              if (savedContainerMode === 'list' || savedContainerMode === 'mobile-list') {
+                setViewMode('mobile-list');
+              } else if (savedContainerMode === 'kanban') {
+                setViewMode('kanban');
+              } else if (savedContainerMode === 'calendar') {
+                setViewMode('calendar');
+              } else if (savedContainerMode === 'gantt') {
+                setViewMode('gantt');
+              } else if (savedContainerMode === 'table') {
+                setViewMode('table');
+              } else if (savedContainerMode === 'canvas') {
+                setViewMode('canvas');
+              } else if (savedContainerMode === 'eisenhower') {
+                setViewMode('eisenhower');
+              } else {
+                setViewMode(savedContainerMode as ViewMode);
+              }
+            } else if (isDelegate) {
+              setViewMode('kanban');
+              setKanbanGroupBy('category');
+            } else if (isCalendar) {
+              setViewMode('calendar');
+            } else if (isTable) {
+              setViewMode('table');
+            } else if (isGantt) {
+              setViewMode('gantt');
+            } else if (isList) {
+              setViewMode('mobile-list');
+            } else if (searchQuery.trim() !== "" && (viewMode === 'canvas' || (!lastAppliedFocusIdRef.current && viewMode === 'canvas'))) {
               setViewMode('canvas');
-            } else if (node.defaultView) {
-              setViewMode(node.defaultView);
             } else {
               if (viewMode !== 'canvas') {
                 // Keep the current view mode if we focused a node from outside the canvas (e.g. from GanttView zoom-focus)
@@ -4956,13 +5027,17 @@ export default function App() {
     const projCats = project?.tagCategories || [];
     const allCats = [...rootCats, ...projCats];
     const personalCats = allCats.filter(cat => cat && cat.name && cat.name.toLowerCase() === 'personal');
-    return Array.from(new Set(personalCats.flatMap(cat => cat.tags || [])));
+    const catTags = Array.from(new Set(personalCats.flatMap(cat => cat.tags || [])));
+    if (!catTags.includes('personal')) {
+      catTags.push('personal');
+    }
+    return catTags;
   };
 
   const findDelegateContainer = (nodesList: TaskNode[]): TaskNode | null => {
     return nodesList.find(n => 
       !!n.isContainer && 
-      (n.text.toLowerCase().includes('delegate') || n.text.toLowerCase().includes('делегир'))
+      (n.text.toLowerCase().includes('delegate') || n.text.toLowerCase().includes('делегир') || n.id.startsWith('gtd-delegate-'))
     ) || null;
   };
 
@@ -4987,6 +5062,10 @@ export default function App() {
       color: '#f59e0b',
       width: 320,
       height: 300,
+      defaultView: 'kanban',
+      savedFilters: {
+        kanbanGroupBy: 'category'
+      },
       updatedAt: new Date().toISOString()
     };
   };
@@ -5084,6 +5163,11 @@ export default function App() {
       }
     }
 
+    // Default tag is 'personal' if no tags are provided
+    if (finalTags.length === 0) {
+      finalTags.push('personal');
+    }
+
     // Auto-populate due date based on active due date filters if not explicitly provided
     const getLocalDateString = (offsetDays = 0) => {
       const d = new Date();
@@ -5145,7 +5229,7 @@ export default function App() {
     };
 
     const personalTags = getPersonalTags(state, pid || '');
-    const hasPersonalTag = (newTargetNode.tags || []).some(tag => personalTags.includes(tag));
+    const hasPersonalTag = (newTargetNode.tags || []).some(tag => personalTags.includes(tag) || tag.toLowerCase() === 'personal');
 
     const hemkarlarTags = getHemkarlarTags(state, pid || '');
     const hasHemkarlarTag = (newTargetNode.tags || []).some(tag => hemkarlarTags.includes(tag));
@@ -5789,7 +5873,7 @@ export default function App() {
     setFilterAttachments("all");
     setFilterNotes("all");
     setFilterCategoryId(null);
-    setKanbanGroupBy("status");
+    setKanbanGroupBy("category");
     setKanbanContainerFilterId("all");
     setSearchQuery("");
   };

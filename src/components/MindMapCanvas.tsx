@@ -53,7 +53,10 @@ import {
   CornerUpLeft,
   Package,
   Undo2,
-  Home
+  Home,
+  ArrowLeft,
+  ListTodo,
+  LayoutGrid
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, hasContainerNonOverdueTasks, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
@@ -1481,6 +1484,60 @@ export default function MindMapCanvas({
       }
       return updated;
     });
+
+    const targetNode = nodes.find(n => n.id === containerId);
+    if (targetNode) {
+      const mappedDefaultView = mode === 'list' ? 'mobile-list' : mode;
+      onUpdateNode({
+        ...targetNode,
+        containerViewMode: mode,
+        defaultView: mappedDefaultView as any
+      });
+    }
+  };
+
+  // Helper to determine the effective view mode for a container
+  const getContainerViewMode = (node: TaskNode): 'list' | 'kanban' | 'calendar' | 'gantt' | 'table' | 'canvas' => {
+    if (containerViewModes[node.id]) {
+      return containerViewModes[node.id];
+    }
+    if (node.containerViewMode) {
+      return node.containerViewMode as any;
+    }
+    if (node.defaultView) {
+      if (node.defaultView === 'mobile-list') return 'list';
+      return node.defaultView as any;
+    }
+    const text = (node.text || '').toLowerCase().trim();
+    if (
+      text.includes('календарь') ||
+      text.includes('calendar') ||
+      text.includes('расписание') ||
+      text.includes('график') ||
+      node.id.startsWith('gtd-calendar-')
+    ) {
+      return 'calendar';
+    }
+    if (
+      text.includes('канбан') ||
+      text.includes('kanban') ||
+      text.includes('доска') ||
+      text.includes('board') ||
+      text.includes('делегир') ||
+      node.id.startsWith('gtd-delegate-')
+    ) {
+      return 'kanban';
+    }
+    if (text.includes('таблиц') || text.includes('table')) {
+      return 'table';
+    }
+    if (text.includes('список') || text.includes('list')) {
+      return 'list';
+    }
+    if (text.includes('гант') || text.includes('gantt')) {
+      return 'gantt';
+    }
+    return 'canvas';
   };
 
   const [inlineAddTexts, setInlineAddTexts] = useState<Record<string, string>>({});
@@ -1554,7 +1611,7 @@ export default function MindMapCanvas({
   };
 
   const renderContainerBody = (node: TaskNode, rawChildren: TaskNode[], isFullScreen = false) => {
-    const viewMode = containerViewModes[node.id] || 'canvas';
+    const viewMode = getContainerViewMode(node);
     const containerChildren = viewMode === 'canvas' ? rawChildren : rawChildren.filter(n => !n.isWorkflowRectangle);
 
     if (viewMode === 'canvas') {
@@ -1914,7 +1971,7 @@ export default function MindMapCanvas({
     }
 
     if (viewMode === 'kanban') {
-      const currentGroupBy = containerKanbanGroupBy[node.id] || 'status';
+      const currentGroupBy = containerKanbanGroupBy[node.id] || (node.savedFilters?.kanbanGroupBy as any) || 'category';
       const containerSavedCatId = node.savedFilters?.filterCategoryId;
       const currentActiveCategoryId = containerKanbanActiveCategory[node.id] || containerSavedCatId || (tagCategories.length > 0 ? tagCategories[0].id : '');
       const activeCategory = tagCategories.find(c => c.id === currentActiveCategoryId) || tagCategories[0];
@@ -2335,7 +2392,7 @@ export default function MindMapCanvas({
     }
 
     if (viewMode === 'calendar') {
-      const currentSubMode = containerCalendarSubModes[node.id] || 'month';
+      const currentSubMode = containerCalendarSubModes[node.id] || 'day';
       const currentDateStr = containerCalendarDates[node.id] || new Date().toISOString().split('T')[0];
 
       // Safe Gregorian parser avoiding timezone distortion
@@ -6017,17 +6074,17 @@ export default function MindMapCanvas({
       onTouchEnd={handleTouchEnd}
       onDoubleClick={handleDoubleClick}
     >
-      {/* Immersive Task Focus Banner */}
-      {focusedTaskId && (() => {
-        const focusedTask = nodes.find(n => n.id === focusedTaskId);
+      {/* Immersive Task/Container Focus Banner */}
+      {(focusedTaskId || focusedContainerId) && (() => {
+        const focusedNode = nodes.find(n => n.id === (focusedTaskId || focusedContainerId));
         return (
           <div className="absolute top-4 left-4 z-50 flex items-center gap-2 bg-white/95 dark:bg-[#202020]/95 backdrop-blur-md px-3 py-1.5 border border-[#e9e9e8] dark:border-[#2e2e2e] rounded-md shadow-sm select-none animate-in fade-in slide-in-from-top-2">
             <span className="flex h-2 w-2 relative shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#eb5757] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#eb5757]"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2383e2] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2383e2]"></span>
             </span>
             <span className="text-[12px] font-medium text-[#37352f] dark:text-[#d4d4d4] truncate max-w-[200px]">
-              Фокус: <strong className="font-semibold text-[#eb5757] dark:text-[#ff7b72]">{focusedTask?.text || 'Задача'}</strong>
+              Фокус: <strong className="font-semibold text-[#2383e2] dark:text-[#529cca]">{focusedNode?.text || 'Элемент'}</strong>
             </span>
             <button
               onClick={handleGoBackFocus}
@@ -6056,26 +6113,6 @@ export default function MindMapCanvas({
           </button>
         </div>
       )}
-
-      {/* Immersive Fullscreen View Content for Focused Container */}
-      {focusedContainerId && (() => {
-        const focusedContainer = nodes.find(n => n.id === focusedContainerId);
-        if (!focusedContainer) return null;
-        const viewMode = containerViewModes[focusedContainer.id] || 'canvas';
-        if (viewMode === 'canvas') return null;
-
-        const containerChildren = nodes.filter(n => n.parentId === focusedContainerId);
-        
-        return (
-          <div className="absolute inset-0 bg-slate-550/10 dark:bg-slate-950/40 backdrop-blur-xs z-30 flex items-center justify-center p-2 sm:p-4 md:p-6">
-            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-200 dark:border-amber-900/50 rounded-3xl shadow-2xl w-full max-w-[98vw] md:max-w-[96vw] h-full flex flex-col p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-30 animate-duration-200">
-              <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden z-30">
-                {renderContainerBody(focusedContainer, containerChildren, true)}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
       {/* Floating Canvas UI Controls */}
       <div className="absolute top-3 left-3 z-10 flex gap-2">
         <div className="hidden lg:flex items-center gap-1.5 bg-white/90 dark:bg-[#202020]/90 backdrop-blur-md px-2.5 py-1 border border-[#e9e9e8] dark:border-[#2e2e2e] rounded-md shadow-xs">
@@ -7139,7 +7176,7 @@ export default function MindMapCanvas({
                 </div>
 
                 {/* Header of Container Canvas */}
-                <div className={`px-3 py-2 flex items-center justify-between border-b ${
+                <div className={`px-3 py-1.5 flex items-center justify-between border-b ${
                   isOverdueCont
                     ? 'border-rose-200 dark:border-rose-900/50 bg-rose-50/20 dark:bg-rose-950/20'
                     : hasNonOverdueCont
@@ -7152,6 +7189,40 @@ export default function MindMapCanvas({
                     <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate font-sans tracking-wide">
                       {node.text || 'Контейнер'}
                     </span>
+                  </div>
+
+                  {/* View Mode Switcher on Container Header */}
+                  <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-md shrink-0">
+                    {[
+                      { id: 'canvas', label: 'Холст', icon: LayoutGrid },
+                      { id: 'calendar', label: 'Календарь', icon: Calendar },
+                      { id: 'kanban', label: 'Канбан', icon: Kanban },
+                      { id: 'list', label: 'Список', icon: ListTodo },
+                      { id: 'table', label: 'Таблица', icon: Table },
+                      { id: 'gantt', label: 'Гант', icon: GanttChart },
+                    ].map(v => {
+                      const effectiveMode = getContainerViewMode(node);
+                      const isCurr = effectiveMode === v.id;
+                      const VIcon = v.icon;
+                      return (
+                        <button
+                          key={v.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setContainerViewMode(node.id, v.id as any);
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          title={v.label}
+                          className={`p-1 rounded text-[10px] transition-colors cursor-pointer ${
+                            isCurr
+                              ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold'
+                              : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
+                          }`}
+                        >
+                          <VIcon className="w-3 h-3" />
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

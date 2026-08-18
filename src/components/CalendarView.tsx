@@ -102,7 +102,7 @@ export default function CalendarView({
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [calendarSubMode, setCalendarSubMode] = useState<'month' | 'week' | 'day'>('week');
+  const [calendarSubMode, setCalendarSubMode] = useState<'month' | 'week' | 'day'>('day');
   const [isViewDropdownOpen, setIsViewDropdownOpen] = useState(false);
   const viewDropdownRef = useRef<HTMLDivElement>(null);
 
