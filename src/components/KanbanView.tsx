@@ -334,6 +334,25 @@ export default function KanbanView({
     } catch {}
   }, [collapsedColumns]);
 
+  // Collapsed / Expanded Completed Tasks in columns
+  const [expandedCompletedCols, setExpandedCompletedCols] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_kanban_expanded_completed_cols');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
+
+  const toggleCompletedCol = (colId: string) => {
+    setExpandedCompletedCols(prev => {
+      const next = { ...prev, [colId]: !prev[colId] };
+      try {
+        localStorage.setItem('task_mindmap_kanban_expanded_completed_cols', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
   // Container filter
   const [selectedContainerFilterId, setSelectedContainerFilterId] = useState<string>(() => {
     if (propsKanbanContainerFilterId) return propsKanbanContainerFilterId;
@@ -654,6 +673,28 @@ export default function KanbanView({
     return cols;
   }, [groupBy, filteredNodes, activeTags, nodes]);
 
+  const totalCompletedInView = useMemo(() => {
+    return filteredNodes.filter(n => n.completed).length;
+  }, [filteredNodes]);
+
+  const areAllCompletedExpanded = useMemo(() => {
+    if (totalCompletedInView === 0) return false;
+    const colsWithCompleted = columns.filter(c => c.items.some(n => n.completed));
+    return colsWithCompleted.length > 0 && colsWithCompleted.every(c => !!expandedCompletedCols[c.id]);
+  }, [columns, expandedCompletedCols, totalCompletedInView]);
+
+  const toggleAllCompleted = () => {
+    const nextState = !areAllCompletedExpanded;
+    const next: Record<string, boolean> = {};
+    columns.forEach(col => {
+      next[col.id] = nextState;
+    });
+    setExpandedCompletedCols(next);
+    try {
+      localStorage.setItem('task_mindmap_kanban_expanded_completed_cols', JSON.stringify(next));
+    } catch {}
+  };
+
   // Handle Drag and Drop
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggedCardId(id);
@@ -809,8 +850,11 @@ export default function KanbanView({
             onToggleSelectNode && onToggleSelectNode(node.id);
           } else {
             onSelectNode(node.id, e);
-            if (onFocusedTaskIdChange) onFocusedTaskIdChange(node.id);
           }
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          if (onFocusedTaskIdChange) onFocusedTaskIdChange(node.id);
         }}
         className={`group select-none bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] rounded-md p-3.5 shadow-2xs hover:shadow-xs hover:border-[#D3D3D0] dark:hover:border-[#484848] transition-all cursor-grab active:cursor-grabbing relative flex flex-col gap-2.5 ${
           isDragging ? 'opacity-30 scale-95' : 'opacity-100 scale-100'
@@ -842,10 +886,9 @@ export default function KanbanView({
             onClick={(e) => {
               e.stopPropagation();
               onSelectNode(node.id, e);
-              if (onFocusedTaskIdChange) onFocusedTaskIdChange(node.id);
             }}
             className="opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-[11px] font-medium text-[#787774] dark:text-[#9B9A97] hover:bg-[#EFEFED] dark:hover:bg-[#333] hover:text-[#37352F] dark:hover:text-[#FFF] shrink-0 uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-            title="Open in sidebar"
+            title="Открыть панель свойств задачи"
           >
             <span>OPEN</span>
           </button>
@@ -920,10 +963,18 @@ export default function KanbanView({
         {(subtasks.length > 0 || node.files.length > 0 || (node.comments && node.comments.length > 0) || activePomodoroNodeId === node.id) && (
           <div className="flex items-center gap-2 pt-0.5 text-[11px] text-[#9B9A97] dark:text-[#787774] flex-wrap">
             {subtasks.length > 0 && (
-              <span className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onFocusedTaskIdChange) onFocusedTaskIdChange(node.id);
+                }}
+                className="flex items-center gap-1 hover:text-[#2383E2] transition-colors cursor-pointer"
+                title="Войти в подзадачи (фокус)"
+              >
                 <CheckCircle2 className="w-3 h-3 text-[#27AE60]" />
                 <span>{completedSubtasksCount}/{subtasks.length}</span>
-              </span>
+              </button>
             )}
 
             {node.files.length > 0 && (
@@ -1252,6 +1303,23 @@ export default function KanbanView({
               </button>
             </div>
           )}
+
+          {/* Right side of toolbar: Completed Tasks Bulk Toggle & Summary */}
+          {totalCompletedInView > 0 && (
+            <div className="flex items-center gap-1.5 shrink-0 pl-2 border-l border-[#E2E1DE] dark:border-[#383838]">
+              <button
+                type="button"
+                onClick={toggleAllCompleted}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11.5px] font-medium bg-white dark:bg-[#2A2A2A] hover:bg-[#F7F7F5] dark:hover:bg-[#333333] text-[#37352F] dark:text-[#E3E2E0] border border-[#E0E0DE] dark:border-[#383838] transition-colors cursor-pointer shadow-2xs"
+                title={areAllCompletedExpanded ? "Свернуть все выполненные задачи во всех колонках" : "Развернуть все выполненные задачи во всех колонках"}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#27AE60]" />
+                <span className="hidden sm:inline text-[#787774] dark:text-[#9B9A97] font-normal">Выполненные:</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400 font-mono">{totalCompletedInView}</span>
+                <ChevronDown className={`w-3 h-3 text-[#787774] transition-transform ${areAllCompletedExpanded ? 'rotate-180 text-[#2383E2]' : ''}`} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1275,6 +1343,9 @@ export default function KanbanView({
           {columns.map(col => {
             const isAddActive = activeAddInColumn === col.id;
             const isDraggedOver = draggedOverColumn === col.id;
+            const activeItems = col.items.filter(n => !n.completed);
+            const completedItems = col.items.filter(n => n.completed);
+            const isCompletedExpanded = !!expandedCompletedCols[col.id];
 
             return (
               <div
@@ -1340,9 +1411,17 @@ export default function KanbanView({
                 {/* Vertical scrollable cards container */}
                 <div
                   id={`kanban-column-cards-${col.id}`}
-                  className="flex-1 overflow-y-auto space-y-2.5 pr-1 min-h-[50px] scrollbar-thin"
+                  className="flex-1 overflow-y-auto space-y-2.5 pr-1 min-h-[50px] scrollbar-thin flex flex-col justify-start"
                 >
-                  {col.items.map(node => renderCard(node))}
+                  {/* Active cards */}
+                  {activeItems.map(node => renderCard(node))}
+
+                  {/* Empty state if no active tasks and no completed tasks */}
+                  {activeItems.length === 0 && completedItems.length === 0 && !isAddActive && (
+                    <div className="py-6 px-3 border border-dashed border-[#E5E5E3] dark:border-[#2F2F2F] rounded-lg text-center text-[#9B9A97] dark:text-[#666] text-xs select-none">
+                      Нет задач
+                    </div>
+                  )}
 
                   {/* Inline Add input if active */}
                   {isAddActive && (
@@ -1388,7 +1467,7 @@ export default function KanbanView({
                     </div>
                   )}
 
-                  {/* Notion "+ New" Button at the bottom of the column */}
+                  {/* Notion "+ New" Button at the bottom of the active list */}
                   {!isAddActive && (
                     <button
                       type="button"
@@ -1405,6 +1484,45 @@ export default function KanbanView({
                       <Plus className="w-3.5 h-3.5" />
                       <span>New</span>
                     </button>
+                  )}
+
+                  {/* Collapsible Completed Tasks Group */}
+                  {completedItems.length > 0 && (
+                    <div className="pt-2 mt-auto border-t border-[#EDEDEB] dark:border-[#2C2C2C]">
+                      <button
+                        type="button"
+                        onClick={() => toggleCompletedCol(col.id)}
+                        className="w-full flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-[#F0F0EE] dark:hover:bg-[#252525] text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#FFF] transition-colors cursor-pointer group text-[12px] font-medium select-none"
+                        title={isCompletedExpanded ? "Свернуть выполненные задачи" : "Развернуть выполненные задачи"}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <ChevronRight 
+                            className={`w-3.5 h-3.5 transition-transform duration-200 text-[#9B9A97] group-hover:text-[#37352F] dark:group-hover:text-[#FFF] ${
+                              isCompletedExpanded ? 'rotate-90 text-[#37352F] dark:text-[#FFF]' : ''
+                            }`} 
+                          />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-[#27AE60] shrink-0" />
+                          <span className="truncate">Выполненные</span>
+                        </div>
+                        <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-[#EAEAEA] dark:bg-[#333] text-[#787774] dark:text-[#9B9A97] font-mono font-normal">
+                          {completedItems.length}
+                        </span>
+                      </button>
+
+                      <AnimatePresence initial={false}>
+                        {isCompletedExpanded && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2, ease: 'easeInOut' }}
+                            className="overflow-hidden space-y-2.5 pt-2"
+                          >
+                            {completedItems.map(node => renderCard(node))}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                   )}
                 </div>
               </div>

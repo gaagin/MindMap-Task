@@ -29,7 +29,8 @@ import {
   Hourglass,
   ExternalLink,
   Check,
-  Eye
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { TaskNode, TagCategory, Priority, ViewMode } from '../types';
 import { getPomoStatsForNode, formatTotalPomoTime, getTaskExternalLinks } from '../utils';
@@ -49,6 +50,8 @@ interface TableViewProps {
   onToggleSelectAll?: (ids: string[]) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
   onFocusedTaskIdChange?: (id: string | null) => void;
+  collapseCompleted?: boolean;
+  onCollapseCompletedChange?: (val: boolean) => void;
   projectName?: string;
   projectIcon?: string;
   onUpdateProjectName?: (name: string) => void;
@@ -73,6 +76,38 @@ function formatNotionDate(dateStr?: string): string {
     return dateStr;
   }
 }
+
+function isOverdue(dueDate?: string): boolean {
+  if (!dueDate) return false;
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDate);
+    due.setHours(0, 0, 0, 0);
+    return due < today;
+  } catch {
+    return false;
+  }
+}
+
+const getNotionTagColor = (tagName: string) => {
+  const notionPalettes = [
+    { bg: 'bg-[#E3E2E0] dark:bg-[#2C2C2C]', text: 'text-[#32302C] dark:text-[#D4D4D4]' },
+    { bg: 'bg-[#EEE0DA] dark:bg-[#432A1C]', text: 'text-[#64473A] dark:text-[#D4A373]' },
+    { bg: 'bg-[#FADEC9] dark:bg-[#4A2D13]', text: 'text-[#8A480B] dark:text-[#E89943]' },
+    { bg: 'bg-[#FDECC8] dark:bg-[#4D3A1B]', text: 'text-[#8A6700] dark:text-[#F3CE63]' },
+    { bg: 'bg-[#DBEDDB] dark:bg-[#1E3B29]', text: 'text-[#1E7242] dark:text-[#8EE6A5]' },
+    { bg: 'bg-[#D3E5EF] dark:bg-[#1C354A]', text: 'text-[#0B6E99] dark:text-[#7EBDE6]' },
+    { bg: 'bg-[#E8DEEE] dark:bg-[#3C254C]', text: 'text-[#6940A5] dark:text-[#D5B8F6]' },
+    { bg: 'bg-[#F5E0E9] dark:bg-[#4E2439]', text: 'text-[#961964] dark:text-[#EE85B5]' },
+    { bg: 'bg-[#FFE2DD] dark:bg-[#4D2420]', text: 'text-[#C23C32] dark:text-[#FFAAA0]' },
+  ];
+  let hash = 0;
+  for (let i = 0; i < tagName.length; i++) {
+    hash = tagName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return notionPalettes[Math.abs(hash) % notionPalettes.length];
+};
 
 // Extract or generate a clean Notion icon for each task item
 function getTaskPageIcon(task: TaskNode): string {
@@ -114,11 +149,30 @@ export default function TableView({
   onToggleSelectAll,
   onFullScreenChange,
   onFocusedTaskIdChange,
+  collapseCompleted: propsCollapseCompleted,
+  onCollapseCompletedChange,
   projectName = 'Проекты',
   projectIcon = '📁',
   onUpdateProjectName,
   setViewMode
 }: TableViewProps) {
+  const [localCollapseCompleted, setLocalCollapseCompleted] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('notion_table_collapse_completed');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return false;
+  });
+  const collapseCompleted = propsCollapseCompleted !== undefined ? propsCollapseCompleted : localCollapseCompleted;
+  const setCollapseCompleted = (val: boolean) => {
+    setLocalCollapseCompleted(val);
+    try {
+      localStorage.setItem('notion_table_collapse_completed', String(val));
+    } catch {}
+    if (onCollapseCompletedChange) onCollapseCompletedChange(val);
+  };
+
+  const [isCompletedSectionOpen, setIsCompletedSectionOpen] = useState(false);
   const [sortField, setSortField] = useState<SortField>('text');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -271,7 +325,7 @@ export default function TableView({
     return nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle);
   }, [nodes]);
 
-  const hierarchicalTasks = useMemo(() => {
+  const { activeHierarchicalTasks, completedHierarchicalTasks, allHierarchicalTasks } = useMemo(() => {
     const tasksMap = new Map<string, TaskNode>();
     rawTasks.forEach(t => tasksMap.set(t.id, t));
 
@@ -301,7 +355,7 @@ export default function TableView({
       return sorted;
     };
 
-    const result: { node: TaskNode; depth: number; hasChildren: boolean }[] = [];
+    const allResult: { node: TaskNode; depth: number; hasChildren: boolean }[] = [];
 
     const traverse = (siblings: TaskNode[], depth: number, parentCollapsed: boolean) => {
       const sortedSiblings = sortSiblings(siblings);
@@ -311,7 +365,7 @@ export default function TableView({
         const hasChildren = children.length > 0;
 
         if (!parentCollapsed) {
-          result.push({
+          allResult.push({
             node: task,
             depth,
             hasChildren
@@ -326,8 +380,22 @@ export default function TableView({
 
     const roots = rawTasks.filter(t => !t.parentId || !tasksMap.has(t.parentId));
     traverse(roots, 0, false);
-    return result;
-  }, [rawTasks, sortField, sortOrder, nodes]);
+
+    if (!collapseCompleted) {
+      return { activeHierarchicalTasks: allResult, completedHierarchicalTasks: [], allHierarchicalTasks: allResult };
+    }
+
+    const activeList = allResult.filter(item => !item.node.completed);
+    const completedList = allResult.filter(item => item.node.completed);
+
+    return { activeHierarchicalTasks: activeList, completedHierarchicalTasks: completedList, allHierarchicalTasks: allResult };
+  }, [rawTasks, sortField, sortOrder, nodes, collapseCompleted]);
+
+  const completedTasksCount = useMemo(() => {
+    return rawTasks.filter(t => t.completed).length;
+  }, [rawTasks]);
+
+  const activeTasksCount = rawTasks.length - completedTasksCount;
 
   const handleCreateNewTask = (textToCreate?: string) => {
     const defaultText = textToCreate?.trim() || 'Новая запись';
@@ -441,6 +509,194 @@ export default function TableView({
     );
   };
 
+  const renderRowItem = (item: { node: TaskNode; depth: number; hasChildren: boolean }) => {
+    const task = item.node;
+    const isSelected = selectedNodeId === task.id;
+    const pomoStats = getPomoStatsForNode(task, nodes);
+    const overdue = isOverdue(task.dueDate);
+    const dateFormatted = formatNotionDate(task.dueDate);
+    const startDateFormatted = formatNotionDate(task.startDate || task.createdAt);
+
+    return (
+      <tr
+        key={task.id}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectNode(task.id, e);
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          if (onFocusedTaskIdChange) onFocusedTaskIdChange(task.id);
+        }}
+        className={`group border-b border-[#E9E9E7] dark:border-[#2F2F2F] text-[13px] h-8.5 hover:bg-[#F7F7F5] dark:hover:bg-[#202020] transition-colors cursor-pointer ${
+          isSelected ? 'bg-[#EBF5FB] dark:bg-[#203040]' : ''
+        }`}
+      >
+        {/* Name Column */}
+        <td 
+          className="px-2 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F] relative"
+          style={{ width: widths.name, paddingLeft: `${item.depth * 18 + 8}px` }}
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            {/* Collapse toggle for parent nodes */}
+            {item.hasChildren ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUpdateNode({ ...task, collapsed: !task.collapsed });
+                }}
+                className="p-0.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-neutral-700 cursor-pointer"
+              >
+                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${task.collapsed ? '' : 'rotate-90'}`} />
+              </button>
+            ) : (
+              <span className="w-4.5" />
+            )}
+
+            {/* Checkbox */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onUpdateNode({ ...task, completed: !task.completed, updatedAt: new Date().toISOString() });
+              }}
+              className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                task.completed
+                  ? 'bg-[#1E7242] border-[#1E7242] text-white'
+                  : 'border-[#C4C3BE] dark:border-[#555555] hover:border-slate-500 bg-white dark:bg-[#202020]'
+              }`}
+            >
+              {task.completed && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+            </button>
+
+            {/* Title */}
+            <span className={`truncate font-normal flex-1 ${task.completed ? 'line-through text-[#9B9A97] dark:text-[#6F6E6B]' : 'text-[#37352F] dark:text-[#E3E2E0]'}`}>
+              {task.text}
+            </span>
+
+            {/* Hover details / delete actions */}
+            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectNode(task.id);
+                }}
+                className="p-1 rounded text-[#9B9A97] hover:text-[#37352F] dark:hover:text-white"
+                title="Подробнее"
+              >
+                <FileText className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteNode(task.id);
+                }}
+                className="p-1 rounded text-[#9B9A97] hover:text-rose-500"
+                title="Удалить"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        </td>
+
+        {/* Start Date Column */}
+        {visibleColumns.startDate && (
+          <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F]" style={{ width: widths.startDate }}>
+            <span className="text-[12px] text-[#787774] dark:text-[#9B9A97]">{startDateFormatted}</span>
+          </td>
+        )}
+
+        {/* Due Date Column */}
+        {visibleColumns.dueDate && (
+          <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F]" style={{ width: widths.dueDate }}>
+            {task.dueDate ? (
+              <span className={`text-[12px] font-medium ${overdue && !task.completed ? 'text-[#EB5757]' : 'text-[#787774] dark:text-[#9B9A97]'}`}>
+                {dateFormatted}
+              </span>
+            ) : (
+              <span className="text-[12px] text-[#C4C3BE] dark:text-[#555555]">Empty</span>
+            )}
+          </td>
+        )}
+
+        {/* Effort Column */}
+        {visibleColumns.effort && (
+          <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F]" style={{ width: widths.effort }}>
+            {renderEffortBadge(task.priority, task.id)}
+          </td>
+        )}
+
+        {/* Progress Column */}
+        {visibleColumns.progress && (
+          <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F]" style={{ width: widths.progress }}>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 bg-slate-200 dark:bg-neutral-700 h-1.5 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${task.completed ? 'bg-[#1E7242]' : 'bg-[#2383E2]'}`}
+                  style={{ width: `${task.completed ? 100 : (task.progress || 0)}%` }}
+                />
+              </div>
+              <span className="text-[11px] font-mono text-[#787774] dark:text-[#9B9A97]">
+                {task.completed ? 100 : (task.progress || 0)}%
+              </span>
+            </div>
+          </td>
+        )}
+
+        {/* Focus Column */}
+        {visibleColumns.focus && (
+          <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F]" style={{ width: widths.focus }}>
+            {pomoStats.pomodoroTotalTime > 0 ? (
+              <span className="text-[11.5px] font-mono text-rose-600 dark:text-rose-400 font-medium">
+                🍅 {formatTotalPomoTime(pomoStats.pomodoroTotalTime)}
+              </span>
+            ) : (
+              <span className="text-[12px] text-[#C4C3BE] dark:text-[#555555]">—</span>
+            )}
+          </td>
+        )}
+
+        {/* Tags Column */}
+        {visibleColumns.tags && (
+          <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F]" style={{ width: widths.tags }}>
+            <div className="flex flex-wrap items-center gap-1 overflow-hidden">
+              {task.tags && task.tags.length > 0 ? (
+                task.tags.map((tag, tIdx) => {
+                  const style = getNotionTagColor(tag);
+                  return (
+                    <span key={tIdx} className={`px-1.5 py-0.5 rounded text-[10.5px] font-normal ${style.bg} ${style.text}`}>
+                      {tag}
+                    </span>
+                  );
+                })
+              ) : (
+                <span className="text-[12px] text-[#C4C3BE] dark:text-[#555555]">Empty</span>
+              )}
+            </div>
+          </td>
+        )}
+
+        {/* Actions Column */}
+        <td className="px-2 py-1 text-center" style={{ width: widths.actions }}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectNode(task.id);
+            }}
+            className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            <MoreHorizontal className="w-3.5 h-3.5 mx-auto" />
+          </button>
+        </td>
+      </tr>
+    );
+  };
+
   return (
     <div 
       id="notion-database-table-view"
@@ -451,15 +707,53 @@ export default function TableView({
           : 'w-full h-full'
       }`}
     >
+      {/* Table Top Filter & Action Bar */}
+      <div className="px-6 sm:px-10 py-2 border-b border-[#E9E9E7] dark:border-[#2F2F2F] bg-[#FAF9F6] dark:bg-[#1E1E1E] flex items-center justify-between gap-2 text-xs shrink-0">
+        <div className="flex items-center gap-2 text-[#787774] dark:text-[#9B9A97]">
+          <span className="font-semibold text-[#37352F] dark:text-[#EBEBEB]">Таблица</span>
+          <span className="bg-[#E9E9E7] dark:bg-[#2C2C2C] px-1.5 py-0.5 rounded-full text-[11px] font-mono">
+            {activeTasksCount}/{rawTasks.length}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {/* Hide/Collapse Completed Toggle */}
+          {completedTasksCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setCollapseCompleted(!collapseCompleted)}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                collapseCompleted
+                  ? 'bg-[#2383E2]/15 text-[#2383E2] dark:bg-[#2383E2]/25 font-semibold'
+                  : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-white hover:bg-[#EAEAEA] dark:hover:bg-[#2C2C2C]'
+              }`}
+              title={collapseCompleted ? "Показать все записи" : "Скрыть выполненные записи"}
+            >
+              {collapseCompleted ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              <span>{collapseCompleted ? `Скрыто: ${completedTasksCount}` : 'Скрыть выполненные'}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setIsAddingInline(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#2383E2] hover:bg-[#1d6fc2] text-white text-xs font-semibold rounded-md shadow-2xs transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Новая запись</span>
+          </button>
+        </div>
+      </div>
+
       {/* NOTION TABLE SPREADSHEET CONTAINER */}
       <div className="flex-1 overflow-auto custom-scrollbar px-6 sm:px-10 pb-16 pt-4">
         <table className="w-full text-left border-collapse table-fixed">
           {/* Header */}
-          <thead>
+          <thead className="sticky top-0 z-20 bg-white dark:bg-[#191919]">
             <tr className="border-b border-[#E9E9E7] dark:border-[#2F2F2F] text-[13px] font-normal text-[#787774] dark:text-[#9B9A97] h-8">
               {/* Name Column */}
               <th 
-                className="relative group select-none font-normal px-2 py-1.5 border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
+                className="sticky top-0 z-20 bg-white dark:bg-[#191919] relative group select-none font-normal px-2 py-1.5 border-b border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
                 style={{ width: widths.name }}
                 onClick={() => handleSort('text')}
               >
@@ -476,7 +770,7 @@ export default function TableView({
               {/* Start Date Column */}
               {visibleColumns.startDate && (
                 <th 
-                  className="relative group select-none font-normal px-2 py-1.5 border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
+                  className="sticky top-0 z-20 bg-white dark:bg-[#191919] relative group select-none font-normal px-2 py-1.5 border-b border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
                   style={{ width: widths.startDate }}
                   onClick={() => handleSort('startDate')}
                 >
@@ -494,7 +788,7 @@ export default function TableView({
               {/* Due Date Column */}
               {visibleColumns.dueDate && (
                 <th 
-                  className="relative group select-none font-normal px-2 py-1.5 border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
+                  className="sticky top-0 z-20 bg-white dark:bg-[#191919] relative group select-none font-normal px-2 py-1.5 border-b border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
                   style={{ width: widths.dueDate }}
                   onClick={() => handleSort('dueDate')}
                 >
@@ -512,7 +806,7 @@ export default function TableView({
               {/* Effort Level Column */}
               {visibleColumns.effort && (
                 <th 
-                  className="relative group select-none font-normal px-2 py-1.5 border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
+                  className="sticky top-0 z-20 bg-white dark:bg-[#191919] relative group select-none font-normal px-2 py-1.5 border-b border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
                   style={{ width: widths.effort }}
                   onClick={() => handleSort('priority')}
                 >
@@ -531,7 +825,7 @@ export default function TableView({
               {/* Progress Column */}
               {visibleColumns.progress && (
                 <th 
-                  className="relative group select-none font-normal px-2 py-1.5 border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
+                  className="sticky top-0 z-20 bg-white dark:bg-[#191919] relative group select-none font-normal px-2 py-1.5 border-b border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
                   style={{ width: widths.progress }}
                   onClick={() => handleSort('progress')}
                 >
@@ -549,7 +843,7 @@ export default function TableView({
               {/* Pomodoro Focus Time */}
               {visibleColumns.focus && (
                 <th 
-                  className="relative group select-none font-normal px-2 py-1.5 border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
+                  className="sticky top-0 z-20 bg-white dark:bg-[#191919] relative group select-none font-normal px-2 py-1.5 border-b border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer"
                   style={{ width: widths.focus }}
                   onClick={() => handleSort('pomodoroTotalTime')}
                 >
@@ -564,7 +858,7 @@ export default function TableView({
               {/* Tags Column */}
               {visibleColumns.tags && (
                 <th 
-                  className="relative group select-none font-normal px-2 py-1.5 border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020]"
+                  className="sticky top-0 z-20 bg-white dark:bg-[#191919] relative group select-none font-normal px-2 py-1.5 border-b border-r border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020]"
                   style={{ width: widths.tags }}
                 >
                   <div className="flex items-center gap-1.5">
@@ -576,7 +870,10 @@ export default function TableView({
               )}
 
               {/* Actions Column */}
-              <th className="font-normal px-2 py-1.5 text-center text-slate-400" style={{ width: widths.actions }}>
+              <th 
+                className="sticky top-0 z-20 bg-white dark:bg-[#191919] font-normal px-2 py-1.5 border-b border-[#E9E9E7] dark:border-[#2F2F2F] text-center text-slate-400" 
+                style={{ width: widths.actions }}
+              >
                 <MoreHorizontal className="w-3.5 h-3.5 mx-auto" />
               </th>
             </tr>
@@ -584,7 +881,7 @@ export default function TableView({
 
           {/* Rows */}
           <tbody>
-            {hierarchicalTasks.length === 0 ? (
+            {allHierarchicalTasks.length === 0 ? (
               <tr>
                 <td 
                   colSpan={8} 
@@ -593,228 +890,41 @@ export default function TableView({
                   Задачи не найдены. Нажмите «+ New» чтобы добавить страницу.
                 </td>
               </tr>
+            ) : activeHierarchicalTasks.length === 0 && completedHierarchicalTasks.length > 0 ? (
+              <tr>
+                <td 
+                  colSpan={8} 
+                  className="py-10 text-center text-xs text-[#787774] dark:text-[#9B9A97]"
+                >
+                  <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-[#2383E2] opacity-80" />
+                  <span className="font-semibold text-[#37352F] dark:text-[#EBEBEB]">Все задачи выполнены! 🎉</span>
+                  <p className="mt-1 text-[11px]">Выполненные задачи свернуты в секцию ниже ({completedTasksCount})</p>
+                </td>
+              </tr>
             ) : (
-              hierarchicalTasks.map(({ node: task, depth, hasChildren }) => {
-                const isSelected = selectedNodeId === task.id;
-                const pageIcon = getTaskPageIcon(task);
-                const cleanTitle = cleanTaskTitle(task.text);
+              activeHierarchicalTasks.map(item => renderRowItem(item))
+            )}
 
-                return (
-                  <tr
-                    key={task.id}
-                    onClick={(e) => onSelectNode(task.id, e)}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      if (onFocusedTaskIdChange) onFocusedTaskIdChange(task.id);
-                    }}
-                    className={`group/row transition-colors h-[38px] text-[13.5px] border-b border-[#E9E9E7] dark:border-[#2F2F2F] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] cursor-pointer ${
-                      isSelected ? 'bg-[#EFEFED]/80 dark:bg-[#2A2A2A]/80' : ''
-                    } ${task.archived ? 'opacity-50' : ''}`}
-                  >
-                    {/* 1. Name Cell */}
-                    <td 
-                      className="px-2 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F] relative"
-                      style={{ paddingLeft: `${depth * 18 + 8}px` }}
+            {/* Collapsible Completed Rows Section */}
+            {collapseCompleted && completedHierarchicalTasks.length > 0 && (
+              <>
+                <tr className="bg-[#FAF9F6] dark:bg-[#202020] border-t-2 border-b border-[#E9E9E7] dark:border-[#2F2F2F]">
+                  <td colSpan={8} className="px-2.5 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsCompletedSectionOpen(prev => !prev)}
+                      className="flex items-center gap-2 text-xs font-semibold text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#EBEBEB] cursor-pointer"
                     >
-                      <div className="flex items-center justify-between gap-1.5 overflow-hidden w-full">
-                        <div className="flex items-center gap-1.5 overflow-hidden flex-1">
-                          {/* Tree expand toggle if task has subtasks */}
-                          {hasChildren ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateNode({ ...task, collapsed: !task.collapsed });
-                              }}
-                              className="p-0.5 hover:bg-slate-200 dark:hover:bg-neutral-700 text-slate-500 rounded cursor-pointer shrink-0 transition-colors"
-                            >
-                              {task.collapsed ? (
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              ) : (
-                                <ChevronDown className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          ) : (
-                            <div className="w-3.5 shrink-0" />
-                          )}
-
-                          {/* Completion Toggle */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const nextCompleted = !task.completed;
-                              onUpdateNode({
-                                ...task,
-                                completed: nextCompleted,
-                                progress: nextCompleted ? 100 : 0,
-                                status: nextCompleted ? 'done' : 'todo'
-                              });
-                            }}
-                            className={`p-0.5 rounded cursor-pointer shrink-0 text-[#9B9A97] hover:text-[#2383E2] transition-colors ${
-                              task.completed ? 'text-[#2383E2]' : ''
-                            }`}
-                            title={task.completed ? "Отметить невыполненной" : "Отметить выполненной"}
-                          >
-                            {task.completed ? (
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                            ) : (
-                              <Circle className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-
-                          {/* Page Emoji / Icon */}
-                          <span className="text-sm shrink-0">{pageIcon}</span>
-
-                          {/* Inline Task Text Input */}
-                          <input
-                            type="text"
-                            value={cleanTitle}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectNode(task.id);
-                            }}
-                            onChange={(e) => {
-                              onUpdateNode({ ...task, text: e.target.value });
-                            }}
-                            className={`w-full bg-transparent border-0 p-0 focus:outline-none text-[#37352F] dark:text-[#E3E2E0] font-normal truncate ${
-                              task.completed ? 'line-through text-[#9B9A97]' : ''
-                            }`}
-                          />
-                        </div>
-
-                        {/* NOTION OPEN BUTTON (Appears on row hover) */}
-                        <div className="opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0 flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectNode(task.id);
-                            }}
-                            className="px-1.5 py-0.5 text-[11px] uppercase tracking-wider font-semibold text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#E3E2E0] bg-white dark:bg-[#2F2F2F] border border-[#E9E9E7] dark:border-[#383838] shadow-2xs rounded hover:shadow-xs transition-all cursor-pointer"
-                            title="Открыть свойства страницы"
-                          >
-                            OPEN
-                          </button>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* 2. Start Date Cell */}
-                    {visibleColumns.startDate && (
-                      <td className="px-2.5 py-1 text-[13px] border-r border-[#E9E9E7] dark:border-[#2F2F2F] text-[#37352F] dark:text-[#E3E2E0]">
-                        <div className="relative group/date">
-                          <span className="text-[#37352F] dark:text-[#E3E2E0]">
-                            {formatNotionDate(task.startDate || task.createdAt)}
-                          </span>
-                          <input
-                            type="date"
-                            value={task.startDate || (task.createdAt ? task.createdAt.split('T')[0] : '')}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              onUpdateNode({ ...task, startDate: e.target.value || undefined });
-                            }}
-                            className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                            title="Изменить дату начала"
-                          />
-                        </div>
-                      </td>
-                    )}
-
-                    {/* 3. Due Date Cell */}
-                    {visibleColumns.dueDate && (
-                      <td className="px-2.5 py-1 text-[13px] border-r border-[#E9E9E7] dark:border-[#2F2F2F] text-[#37352F] dark:text-[#E3E2E0]">
-                        <div className="relative group/date">
-                          <span className={task.dueDate ? "text-[#37352F] dark:text-[#E3E2E0]" : "text-[#9B9A97]"}>
-                            {formatNotionDate(task.dueDate)}
-                          </span>
-                          <input
-                            type="date"
-                            value={task.dueDate || ''}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              onUpdateNode({ ...task, dueDate: e.target.value || undefined });
-                            }}
-                            className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                            title="Изменить срок выполнения"
-                          />
-                        </div>
-                      </td>
-                    )}
-
-                    {/* 4. Effort Level Cell */}
-                    {visibleColumns.effort && (
-                      <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F]">
-                        {renderEffortBadge(task.priority, task.id)}
-                      </td>
-                    )}
-
-                    {/* 5. Progress Bar Cell */}
-                    {visibleColumns.progress && (
-                      <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F]">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-[#EFEFED] dark:bg-[#2A2A2A] rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-[#2383E2] transition-all rounded-full" 
-                              style={{ width: `${task.progress || 0}%` }}
-                            />
-                          </div>
-                          <span className="font-mono text-[11px] text-[#787774] dark:text-[#9B9A97]">
-                            {task.progress || 0}%
-                          </span>
-                        </div>
-                      </td>
-                    )}
-
-                    {/* 6. Pomodoro Focus Cell */}
-                    {visibleColumns.focus && (
-                      <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F] text-xs">
-                        <div className="flex items-center gap-1 font-mono text-[11px] text-[#787774] dark:text-[#9B9A97]">
-                          <span>🍅</span>
-                          <span>{formatTotalPomoTime(getPomoStatsForNode(task, nodes).pomodoroTotalTime)}</span>
-                        </div>
-                      </td>
-                    )}
-
-                    {/* 7. Tags Cell */}
-                    {visibleColumns.tags && (
-                      <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F]">
-                        <div className="flex flex-wrap gap-1">
-                          {task.tags && task.tags.length > 0 ? (
-                            task.tags.map(t => (
-                              <span
-                                key={t}
-                                className="px-1.5 py-0.2 rounded text-[11px] notion-tag-gray"
-                              >
-                                {t}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-[#9B9A97] text-xs">—</span>
-                          )}
-                        </div>
-                      </td>
-                    )}
-
-                    {/* 8. Quick Actions Cell */}
-                    <td className="px-2 py-1 text-center">
-                      <div className="opacity-0 group-hover/row:opacity-100 transition-opacity flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteNode(task.id);
-                          }}
-                          className="p-1 text-slate-400 hover:text-rose-500 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
-                          title="Удалить"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
+                      <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-150 ${isCompletedSectionOpen ? 'rotate-90' : ''}`} />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#2383E2]" />
+                      <span>Выполненные задачи ({completedTasksCount})</span>
+                    </button>
+                  </td>
+                </tr>
+                {isCompletedSectionOpen && (
+                  completedHierarchicalTasks.map(item => renderRowItem(item))
+                )}
+              </>
             )}
 
             {/* NOTION "+ New page" ROW */}
@@ -854,7 +964,7 @@ export default function TableView({
             <tr className="text-[12px] text-[#9B9A97] h-8">
               <td className="px-2.5 py-1 border-r border-[#E9E9E7] dark:border-[#2F2F2F]">
                 <div className="flex items-center justify-between text-[#9B9A97]">
-                  <span>Count {hierarchicalTasks.length}</span>
+                  <span>Count {allHierarchicalTasks.length}</span>
                 </div>
               </td>
               {visibleColumns.startDate && (

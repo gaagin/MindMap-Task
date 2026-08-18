@@ -120,12 +120,12 @@ export default function GanttView({
   onUpdateProjectIcon,
   onOpenSidebar
 }: GanttViewProps) {
-  // Dropdown states
+  // Scale selector dropdown options
   const [showScaleDropdown, setShowScaleDropdown] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
-  // Timeline Scale: 'Days' (Quarters / Weeks / Months)
-  const [scaleMode, setScaleMode] = useState<'Days' | 'Weeks' | 'Bi-weeks' | 'Months' | 'Quarters'>('Days');
+  // Timeline Scale: 'Minutes' | 'Hours' | 'Days' | 'Weeks' | 'Bi-weeks' | 'Months' | 'Quarters'
+  const [scaleMode, setScaleMode] = useState<'Minutes' | 'Hours' | 'Days' | 'Weeks' | 'Bi-weeks' | 'Months' | 'Quarters'>('Days');
 
   // Properties visibility toggle
   const [visibleProps, setVisibleProps] = useState({
@@ -145,8 +145,11 @@ export default function GanttView({
   const [newInlineTaskText, setNewInlineTaskText] = useState('');
   const [showNewTaskInline, setShowNewTaskInline] = useState(false);
 
-  // Timeline Date Range Configuration
-  // 35 days total viewport, starting 10 days before today
+  // Real today
+  const realToday = useMemo(() => new Date(), []);
+  const realTodayStr = useMemo(() => realToday.toISOString().split('T')[0], [realToday]);
+
+  // Timeline Base Date Configuration
   const [baseDate, setBaseDate] = useState(() => {
     const today = new Date();
     today.setDate(today.getDate() - 10);
@@ -156,54 +159,226 @@ export default function GanttView({
   const timelineContainerRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
 
-  // Real today
-  const realToday = new Date();
-  const realTodayStr = realToday.toISOString().split('T')[0];
-  const realTodayDayNumber = realToday.getDate();
-
-  // Generate continuous timeline days (35 days)
-  const totalDaysCount = 35;
-  const timelineDays = useMemo(() => {
-    const days: { 
-      date: Date; 
-      dateString: string; 
-      dayNumber: number; 
-      isToday: boolean; 
-      isWeekend: boolean;
-      monthName: string;
-      year: number;
-      monthIndex: number;
-    }[] = [];
-    const ref = new Date(baseDate);
-
-    for (let i = 0; i < totalDaysCount; i++) {
-      const d = new Date(ref);
-      d.setDate(ref.getDate() + i);
-      const dStr = d.toISOString().split('T')[0];
-      const dow = d.getDay();
-      days.push({
-        date: d,
-        dateString: dStr,
-        dayNumber: d.getDate(),
-        isToday: dStr === realTodayStr,
-        isWeekend: dow === 0 || dow === 6,
-        monthName: MONTHS_FULL_EN[d.getMonth()],
-        year: d.getFullYear(),
-        monthIndex: d.getMonth()
-      });
+  // Column width & unit count based on scale
+  const colWidth = useMemo(() => {
+    switch (scaleMode) {
+      case 'Minutes': return 52;
+      case 'Hours': return 56;
+      case 'Days': return 54;
+      case 'Weeks': return 68;
+      case 'Bi-weeks': return 78;
+      case 'Months': return 84;
+      case 'Quarters': return 100;
+      default: return 54;
     }
-    return days;
-  }, [baseDate, realTodayStr]);
+  }, [scaleMode]);
 
-  // Distinct months in current timeline for the header
-  const headerMonths = useMemo(() => {
-    const months: { name: string; year: number; startIndex: number; count: number }[] = [];
-    timelineDays.forEach((day, index) => {
-      const last = months[months.length - 1];
-      if (!last || last.name !== day.monthName || last.year !== day.year) {
-        months.push({
-          name: day.monthName,
-          year: day.year,
+  // Generate timeline columns according to the selected scale mode
+  const timelineColumns = useMemo(() => {
+    interface ColData {
+      id: string;
+      label: string;
+      subLabel?: string;
+      startDate: Date;
+      endDate: Date;
+      isCurrent: boolean;
+      isWeekend?: boolean;
+      parentGroupKey: string;
+      parentGroupTitle: string;
+    }
+    const cols: ColData[] = [];
+
+    if (scaleMode === 'Minutes') {
+      // 15-minute steps across 36 columns (9 hours total)
+      const totalSteps = 36;
+      const ref = new Date(baseDate);
+      const minRemainder = ref.getMinutes() % 15;
+      ref.setMinutes(ref.getMinutes() - minRemainder, 0, 0);
+
+      for (let i = 0; i < totalSteps; i++) {
+        const stepStart = new Date(ref.getTime() + i * 15 * 60 * 1000);
+        const stepEnd = new Date(stepStart.getTime() + 15 * 60 * 1000 - 1);
+        const isCurrent = realToday >= stepStart && realToday <= stepEnd;
+        const hoursStr = String(stepStart.getHours()).padStart(2, '0');
+        const minsStr = String(stepStart.getMinutes()).padStart(2, '0');
+        const dayNumber = stepStart.getDate();
+        const monthName = MONTHS_FULL_EN[stepStart.getMonth()];
+        const year = stepStart.getFullYear();
+
+        cols.push({
+          id: `min-${stepStart.getTime()}`,
+          label: `${hoursStr}:${minsStr}`,
+          startDate: stepStart,
+          endDate: stepEnd,
+          isCurrent,
+          parentGroupKey: `${year}-${stepStart.getMonth()}-${dayNumber}`,
+          parentGroupTitle: `${dayNumber} ${monthName} ${year}`
+        });
+      }
+    } else if (scaleMode === 'Hours') {
+      // 1-hour steps across 36 columns (36 hours)
+      const totalHours = 36;
+      const ref = new Date(baseDate);
+      ref.setMinutes(0, 0, 0);
+
+      for (let i = 0; i < totalHours; i++) {
+        const hStart = new Date(ref.getTime() + i * 60 * 60 * 1000);
+        const hEnd = new Date(hStart.getTime() + 60 * 60 * 1000 - 1);
+        const isCurrent = realToday >= hStart && realToday <= hEnd;
+        const hoursStr = String(hStart.getHours()).padStart(2, '0');
+        const dayNumber = hStart.getDate();
+        const monthName = MONTHS_FULL_EN[hStart.getMonth()];
+        const year = hStart.getFullYear();
+
+        cols.push({
+          id: `hour-${hStart.getTime()}`,
+          label: `${hoursStr}:00`,
+          startDate: hStart,
+          endDate: hEnd,
+          isCurrent,
+          parentGroupKey: `${year}-${hStart.getMonth()}-${dayNumber}`,
+          parentGroupTitle: `${dayNumber} ${monthName} ${year}`
+        });
+      }
+    } else if (scaleMode === 'Days') {
+      const totalDays = 35;
+      const ref = new Date(baseDate);
+      ref.setHours(0, 0, 0, 0);
+
+      for (let i = 0; i < totalDays; i++) {
+        const d = new Date(ref);
+        d.setDate(ref.getDate() + i);
+        const dEnd = new Date(d);
+        dEnd.setHours(23, 59, 59, 999);
+        const dStr = d.toISOString().split('T')[0];
+        const dow = d.getDay();
+        const monthName = MONTHS_FULL_EN[d.getMonth()];
+        const year = d.getFullYear();
+
+        cols.push({
+          id: `day-${dStr}`,
+          label: `${d.getDate()}`,
+          startDate: d,
+          endDate: dEnd,
+          isCurrent: dStr === realTodayStr,
+          isWeekend: dow === 0 || dow === 6,
+          parentGroupKey: `${year}-${d.getMonth()}`,
+          parentGroupTitle: `${monthName} ${year}`
+        });
+      }
+    } else if (scaleMode === 'Weeks') {
+      const totalWeeks = 24;
+      const ref = new Date(baseDate);
+      ref.setHours(0, 0, 0, 0);
+      // Align to Monday of the week
+      const dow = (ref.getDay() + 6) % 7;
+      ref.setDate(ref.getDate() - dow);
+
+      for (let i = 0; i < totalWeeks; i++) {
+        const wStart = new Date(ref);
+        wStart.setDate(ref.getDate() + i * 7);
+        const wEnd = new Date(wStart);
+        wEnd.setDate(wStart.getDate() + 6);
+        wEnd.setHours(23, 59, 59, 999);
+
+        const isCurrent = realToday >= wStart && realToday <= wEnd;
+        const monthName = MONTHS_FULL_EN[wStart.getMonth()];
+        const year = wStart.getFullYear();
+
+        cols.push({
+          id: `week-${wStart.toISOString().split('T')[0]}`,
+          label: `${wStart.getDate()}`,
+          subLabel: MONTHS_FULL_EN[wStart.getMonth()].slice(0, 3),
+          startDate: wStart,
+          endDate: wEnd,
+          isCurrent,
+          parentGroupKey: `${year}-${wStart.getMonth()}`,
+          parentGroupTitle: `${monthName} ${year}`
+        });
+      }
+    } else if (scaleMode === 'Bi-weeks') {
+      const totalBiWeeks = 20;
+      const ref = new Date(baseDate);
+      ref.setHours(0, 0, 0, 0);
+      const dow = (ref.getDay() + 6) % 7;
+      ref.setDate(ref.getDate() - dow);
+
+      for (let i = 0; i < totalBiWeeks; i++) {
+        const bwStart = new Date(ref);
+        bwStart.setDate(ref.getDate() + i * 14);
+        const bwEnd = new Date(bwStart);
+        bwEnd.setDate(bwStart.getDate() + 13);
+        bwEnd.setHours(23, 59, 59, 999);
+
+        const isCurrent = realToday >= bwStart && realToday <= bwEnd;
+        const monthName = MONTHS_FULL_EN[bwStart.getMonth()];
+        const year = bwStart.getFullYear();
+
+        cols.push({
+          id: `biweek-${bwStart.toISOString().split('T')[0]}`,
+          label: `${MONTHS_FULL_EN[bwStart.getMonth()].slice(0, 3)} ${bwStart.getDate()}`,
+          startDate: bwStart,
+          endDate: bwEnd,
+          isCurrent,
+          parentGroupKey: `${year}-${bwStart.getMonth()}`,
+          parentGroupTitle: `${monthName} ${year}`
+        });
+      }
+    } else if (scaleMode === 'Months') {
+      const totalMonths = 24;
+      const ref = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1, 0, 0, 0, 0);
+
+      for (let i = 0; i < totalMonths; i++) {
+        const mStart = new Date(ref.getFullYear(), ref.getMonth() + i, 1, 0, 0, 0, 0);
+        const mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0, 23, 59, 59, 999);
+        const isCurrent = realToday >= mStart && realToday <= mEnd;
+        const year = mStart.getFullYear();
+
+        cols.push({
+          id: `month-${year}-${mStart.getMonth()}`,
+          label: MONTHS_FULL_EN[mStart.getMonth()].slice(0, 3),
+          startDate: mStart,
+          endDate: mEnd,
+          isCurrent,
+          parentGroupKey: `${year}`,
+          parentGroupTitle: `${year}`
+        });
+      }
+    } else if (scaleMode === 'Quarters') {
+      const totalQuarters = 16;
+      const curQ = Math.floor(baseDate.getMonth() / 3);
+      const ref = new Date(baseDate.getFullYear(), curQ * 3, 1, 0, 0, 0, 0);
+
+      for (let i = 0; i < totalQuarters; i++) {
+        const qStart = new Date(ref.getFullYear(), ref.getMonth() + i * 3, 1, 0, 0, 0, 0);
+        const qEnd = new Date(qStart.getFullYear(), qStart.getMonth() + 3, 0, 23, 59, 59, 999);
+        const isCurrent = realToday >= qStart && realToday <= qEnd;
+        const qNum = Math.floor(qStart.getMonth() / 3) + 1;
+        const year = qStart.getFullYear();
+
+        cols.push({
+          id: `quarter-${year}-Q${qNum}`,
+          label: `Q${qNum}`,
+          startDate: qStart,
+          endDate: qEnd,
+          isCurrent,
+          parentGroupKey: `${year}`,
+          parentGroupTitle: `${year}`
+        });
+      }
+    }
+
+    return cols;
+  }, [scaleMode, baseDate, realToday, realTodayStr]);
+
+  // Distinct parent groups in current timeline for the header
+  const headerGroups = useMemo(() => {
+    const groups: { title: string; startIndex: number; count: number }[] = [];
+    timelineColumns.forEach((col, index) => {
+      const last = groups[groups.length - 1];
+      if (!last || last.title !== col.parentGroupTitle) {
+        groups.push({
+          title: col.parentGroupTitle,
           startIndex: index,
           count: 1
         });
@@ -211,11 +386,30 @@ export default function GanttView({
         last.count += 1;
       }
     });
-    return months;
-  }, [timelineDays]);
+    return groups;
+  }, [timelineColumns]);
 
-  // Day width in px
-  const dayColWidth = scaleMode === 'Days' ? 56 : 42;
+  // Full timeline pixel width and date bounds
+  const totalTimelinePxWidth = useMemo(() => {
+    return timelineColumns.length * colWidth;
+  }, [timelineColumns.length, colWidth]);
+
+  const timelineStartMs = useMemo(() => {
+    return timelineColumns[0]?.startDate.getTime() || 0;
+  }, [timelineColumns]);
+
+  const timelineEndMs = useMemo(() => {
+    return timelineColumns[timelineColumns.length - 1]?.endDate.getTime() || 0;
+  }, [timelineColumns]);
+
+  // Today position in px
+  const todayPosPx = useMemo(() => {
+    if (!timelineStartMs || !timelineEndMs || timelineEndMs === timelineStartMs) return null;
+    const nowMs = realToday.getTime();
+    if (nowMs < timelineStartMs || nowMs > timelineEndMs) return null;
+    const fraction = (nowMs - timelineStartMs) / (timelineEndMs - timelineStartMs);
+    return fraction * totalTimelinePxWidth;
+  }, [realToday, timelineStartMs, timelineEndMs, totalTimelinePxWidth]);
 
   // Filter tasks
   const tasks = useMemo(() => {
@@ -225,7 +419,6 @@ export default function GanttView({
   // Stable emoji for task
   const getTaskEmoji = (task: TaskNode) => {
     if (task.icon) return task.icon;
-    // Hash string to pick deterministic emoji
     let hash = 0;
     for (let i = 0; i < task.id.length; i++) {
       hash = (hash << 5) - hash + task.id.charCodeAt(i);
@@ -254,7 +447,6 @@ export default function GanttView({
     if (task.progress !== undefined && task.progress >= 40) return NOTION_STATUS_TAGS[4]; // In Progress
     if (task.priority === 'urgent' || task.priority === 'high') return NOTION_STATUS_TAGS[2]; // Needs proofreading
     
-    // Hash to assign realistic Notion tag from template
     let hash = 0;
     for (let i = 0; i < task.text.length; i++) {
       hash = (hash << 5) - hash + task.text.charCodeAt(i);
@@ -264,12 +456,11 @@ export default function GanttView({
     return NOTION_STATUS_TAGS[idx];
   };
 
-  // Pre-calculate date range column positions for each task bar
+  // Pre-calculate date range and px position for each task bar
   const getTaskRange = (task: TaskNode) => {
     let startStr = task.startDate;
     let endStr = task.dueDate;
 
-    // If neither exists, generate deterministic offset around today so all tasks show beautifully
     if (!startStr && !endStr) {
       let hash = 0;
       for (let i = 0; i < task.id.length; i++) {
@@ -298,75 +489,86 @@ export default function GanttView({
       startStr = s.toISOString().split('T')[0];
     }
 
-    const firstDateStr = timelineDays[0].dateString;
-    const lastDateStr = timelineDays[timelineDays.length - 1].dateString;
+    const sDate = new Date(startStr!);
+    sDate.setHours(0, 0, 0, 0);
+    const eDate = new Date(endStr!);
+    eDate.setHours(23, 59, 59, 999);
 
-    const startIdx = timelineDays.findIndex(d => d.dateString === startStr);
-    const endIdx = timelineDays.findIndex(d => d.dateString === endStr);
+    const sMs = sDate.getTime();
+    const eMs = eDate.getTime();
 
-    const isBeforeViewport = endStr! < firstDateStr;
-    const isAfterViewport = startStr! > lastDateStr;
-    const startsBeforeViewport = startStr! < firstDateStr;
+    const totalMs = timelineEndMs - timelineStartMs;
+    const startPx = totalMs > 0 ? ((sMs - timelineStartMs) / totalMs) * totalTimelinePxWidth : 0;
+    const endPx = totalMs > 0 ? ((eMs - timelineStartMs) / totalMs) * totalTimelinePxWidth : 100;
 
-    let computedStart = startIdx;
-    let computedEnd = endIdx;
+    const isOffscreenLeft = eMs < timelineStartMs;
+    const isOffscreenRight = sMs > timelineEndMs;
 
-    if (startIdx === -1 && !isBeforeViewport && !isAfterViewport) {
-      computedStart = 0;
-    }
-    if (endIdx === -1 && !isBeforeViewport && !isAfterViewport) {
-      computedEnd = totalDaysCount - 1;
-    }
-
-    if (computedStart === -1 || computedEnd === -1 || computedStart > computedEnd) {
-      return {
-        start: 0,
-        end: 2,
-        span: 3,
-        isOffscreenLeft: isBeforeViewport || startsBeforeViewport,
-        isOffscreenRight: isAfterViewport
-      };
-    }
+    // Minimum bar card width per scale
+    const minCardWidth = scaleMode === 'Minutes' ? 65 : scaleMode === 'Hours' ? 80 : scaleMode === 'Quarters' ? 95 : scaleMode === 'Months' ? 120 : scaleMode === 'Bi-weeks' ? 150 : scaleMode === 'Weeks' ? 170 : 210;
+    const computedWidth = Math.max(minCardWidth, endPx - startPx);
 
     return {
-      start: computedStart,
-      end: computedEnd,
-      span: Math.max(1, computedEnd - computedStart + 1),
-      isOffscreenLeft: startsBeforeViewport,
-      isOffscreenRight: isAfterViewport
+      startMs: sMs,
+      endMs: eMs,
+      startPx,
+      endPx,
+      computedLeft: Math.max(0, startPx),
+      computedWidth,
+      isOffscreenLeft,
+      isOffscreenRight,
+      startStr: sDate.toISOString().split('T')[0],
+      endStr: eDate.toISOString().split('T')[0]
     };
   };
 
   // Drag-to-move and drag-to-resize handlers
-  const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
-  const activeDragRef = useRef<{ drag: ActiveDrag; startX: number; colWidth: number } | null>(null);
+  const [activeDrag, setActiveDrag] = useState<{
+    taskId: string;
+    type: 'move' | 'resize-start' | 'resize-end';
+    initialStartMs: number;
+    initialEndMs: number;
+    currentStartMs: number;
+    currentEndMs: number;
+  } | null>(null);
+
+  const activeDragRef = useRef<{
+    drag: {
+      taskId: string;
+      type: 'move' | 'resize-start' | 'resize-end';
+      initialStartMs: number;
+      initialEndMs: number;
+      currentStartMs: number;
+      currentEndMs: number;
+    };
+    startX: number;
+  } | null>(null);
   const dragHasMovedRef = useRef(false);
 
   const handleBarMouseDown = (
     e: React.MouseEvent,
     taskId: string,
     type: 'move' | 'resize-start' | 'resize-end',
-    startIdx: number,
-    endIdx: number
+    startMs: number,
+    endMs: number
   ) => {
     if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
 
     dragHasMovedRef.current = false;
-    const dragData: ActiveDrag = {
+    const dragData = {
       taskId,
       type,
-      initialStart: startIdx,
-      initialEnd: endIdx,
-      currentStart: startIdx,
-      currentEnd: endIdx
+      initialStartMs: startMs,
+      initialEndMs: endMs,
+      currentStartMs: startMs,
+      currentEndMs: endMs
     };
 
     activeDragRef.current = {
       drag: dragData,
-      startX: e.clientX,
-      colWidth: dayColWidth
+      startX: e.clientX
     };
     setActiveDrag(dragData);
   };
@@ -379,43 +581,50 @@ export default function GanttView({
       if (!info) return;
 
       const dx = e.clientX - info.startX;
-      if (Math.abs(dx) > 4) {
+      if (Math.abs(dx) > 3) {
         dragHasMovedRef.current = true;
       }
 
       if (dragHasMovedRef.current) {
-        const dayDiff = Math.round(dx / info.colWidth);
-        let newStart = info.drag.initialStart;
-        let newEnd = info.drag.initialEnd;
+        const totalMs = timelineEndMs - timelineStartMs;
+        const msPerPx = totalTimelinePxWidth > 0 ? totalMs / totalTimelinePxWidth : 86400000;
+        const deltaMsRaw = dx * msPerPx;
+        // Snap step according to scale mode
+        const snapMs = scaleMode === 'Minutes' ? 15 * 60 * 1000 : scaleMode === 'Hours' ? 60 * 60 * 1000 : 86400000;
+        const deltaMs = Math.round(deltaMsRaw / snapMs) * snapMs;
+
+        let newStartMs = info.drag.initialStartMs;
+        let newEndMs = info.drag.initialEndMs;
 
         if (info.drag.type === 'move') {
-          const span = info.drag.initialEnd - info.drag.initialStart;
-          newStart = Math.max(0, Math.min(totalDaysCount - 1 - span, info.drag.initialStart + dayDiff));
-          newEnd = newStart + span;
+          const duration = info.drag.initialEndMs - info.drag.initialStartMs;
+          newStartMs = info.drag.initialStartMs + deltaMs;
+          newEndMs = newStartMs + duration;
         } else if (info.drag.type === 'resize-start') {
-          newStart = Math.max(0, Math.min(info.drag.initialEnd, info.drag.initialStart + dayDiff));
+          newStartMs = Math.min(info.drag.initialEndMs - snapMs, info.drag.initialStartMs + deltaMs);
         } else if (info.drag.type === 'resize-end') {
-          newEnd = Math.max(info.drag.initialStart, Math.min(totalDaysCount - 1, info.drag.initialEnd + dayDiff));
+          newEndMs = Math.max(info.drag.initialStartMs + snapMs, info.drag.initialEndMs + deltaMs);
         }
 
-        setActiveDrag(prev => prev ? { ...prev, currentStart: newStart, currentEnd: newEnd } : null);
+        setActiveDrag(prev => prev ? { ...prev, currentStartMs: newStartMs, currentEndMs: newEndMs } : null);
       }
     };
 
     const handleMouseUp = () => {
       const info = activeDragRef.current;
       activeDragRef.current = null;
+      const currentDrag = activeDrag;
       setActiveDrag(null);
 
-      if (info && dragHasMovedRef.current) {
+      if (info && dragHasMovedRef.current && currentDrag) {
         const task = tasks.find(t => t.id === info.drag.taskId);
         if (task) {
-          const newStartStr = timelineDays[Math.max(0, Math.min(totalDaysCount - 1, activeDrag.currentStart))].dateString;
-          const newEndStr = timelineDays[Math.max(0, Math.min(totalDaysCount - 1, activeDrag.currentEnd))].dateString;
+          const sDate = new Date(currentDrag.currentStartMs);
+          const eDate = new Date(currentDrag.currentEndMs);
           onUpdateNode({
             ...task,
-            startDate: newStartStr,
-            dueDate: newEndStr
+            startDate: sDate.toISOString().split('T')[0],
+            dueDate: eDate.toISOString().split('T')[0]
           });
         }
       }
@@ -427,20 +636,74 @@ export default function GanttView({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [activeDrag, timelineDays, tasks, onUpdateNode, dayColWidth]);
+  }, [activeDrag, timelineStartMs, timelineEndMs, totalTimelinePxWidth, scaleMode, tasks, onUpdateNode]);
 
-  // Navigate timeline
-  const shiftDays = (count: number) => {
+  // Navigate timeline with proportional step according to current scale
+  const shiftTimeline = (direction: -1 | 1) => {
     setBaseDate(prev => {
       const n = new Date(prev);
-      n.setDate(n.getDate() + count);
+      if (scaleMode === 'Minutes') {
+        n.setTime(n.getTime() + direction * 2 * 60 * 60 * 1000);
+      } else if (scaleMode === 'Hours') {
+        n.setTime(n.getTime() + direction * 12 * 60 * 60 * 1000);
+      } else if (scaleMode === 'Days') {
+        n.setDate(n.getDate() + direction * 7);
+      } else if (scaleMode === 'Weeks') {
+        n.setDate(n.getDate() + direction * 28);
+      } else if (scaleMode === 'Bi-weeks') {
+        n.setDate(n.getDate() + direction * 56);
+      } else if (scaleMode === 'Months') {
+        n.setMonth(n.getMonth() + direction * 6);
+      } else if (scaleMode === 'Quarters') {
+        n.setFullYear(n.getFullYear() + direction * 1);
+      }
       return n;
     });
   };
 
+  const handleScaleChange = (mode: 'Minutes' | 'Hours' | 'Days' | 'Weeks' | 'Bi-weeks' | 'Months' | 'Quarters') => {
+    setScaleMode(mode);
+    setShowScaleDropdown(false);
+    const today = new Date();
+    if (mode === 'Minutes') {
+      today.setMinutes(today.getMinutes() - 45);
+      today.setSeconds(0, 0);
+    } else if (mode === 'Hours') {
+      today.setHours(today.getHours() - 6);
+      today.setMinutes(0, 0, 0);
+    } else if (mode === 'Days') {
+      today.setDate(today.getDate() - 10);
+    } else if (mode === 'Weeks') {
+      today.setDate(today.getDate() - 28);
+    } else if (mode === 'Bi-weeks') {
+      today.setDate(today.getDate() - 56);
+    } else if (mode === 'Months') {
+      today.setMonth(today.getMonth() - 6);
+    } else if (mode === 'Quarters') {
+      today.setFullYear(today.getFullYear() - 1);
+    }
+    setBaseDate(today);
+  };
+
   const jumpToToday = () => {
     const today = new Date();
-    today.setDate(today.getDate() - 10);
+    if (scaleMode === 'Minutes') {
+      today.setMinutes(today.getMinutes() - 45);
+      today.setSeconds(0, 0);
+    } else if (scaleMode === 'Hours') {
+      today.setHours(today.getHours() - 6);
+      today.setMinutes(0, 0, 0);
+    } else if (scaleMode === 'Days') {
+      today.setDate(today.getDate() - 10);
+    } else if (scaleMode === 'Weeks') {
+      today.setDate(today.getDate() - 28);
+    } else if (scaleMode === 'Bi-weeks') {
+      today.setDate(today.getDate() - 56);
+    } else if (scaleMode === 'Months') {
+      today.setMonth(today.getMonth() - 6);
+    } else if (scaleMode === 'Quarters') {
+      today.setFullYear(today.getFullYear() - 1);
+    }
     setBaseDate(today);
   };
 
@@ -477,15 +740,15 @@ export default function GanttView({
         isFullScreen ? 'fixed inset-0 z-[150] w-screen h-screen' : ''
       }`}
     >
-      {/* TIMELINE CONTROLS SUB-HEADER (» November 2026 ... December, [Quarters ⌄], < Today >) */}
-      <div className="border-b border-[#EDEDEB] dark:border-[#2F2F2F] bg-white dark:bg-[#191919] flex items-center justify-between px-4 sm:px-12 py-1.5 shrink-0 text-[13px] z-10">
+      {/* TIMELINE CONTROLS SUB-HEADER (» Month Year ... [Days/Weeks/Months ⌄], < Today >) */}
+      <div className="border-b border-[#EDEDEB] dark:border-[#2F2F2F] bg-white dark:bg-[#191919] flex items-center justify-between px-4 sm:px-12 py-1.5 shrink-0 text-[13px] relative z-40">
         
-        {/* Left: Month Indicators with Notion chevrons » Month Year */}
+        {/* Left: Parent Group Indicators (Month Year or Year) */}
         <div className="flex items-center gap-6 overflow-hidden">
-          {headerMonths.map((m, idx) => (
-            <div key={`${m.name}-${m.year}`} className="flex items-center gap-1.5 font-medium text-[#37352F] dark:text-[#EBEBEB]">
+          {headerGroups.map((g, idx) => (
+            <div key={`${g.title}-${idx}`} className="flex items-center gap-1.5 font-medium text-[#37352F] dark:text-[#EBEBEB] shrink-0">
               {idx === 0 && <span className="text-[#9B9A97] font-bold">»</span>}
-              <span>{m.name} {m.year}</span>
+              <span>{g.title}</span>
             </div>
           ))}
         </div>
@@ -500,10 +763,10 @@ export default function GanttView({
                 e.stopPropagation();
                 setShowScaleDropdown(!showScaleDropdown);
               }}
-              className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] text-[#787774] dark:text-[#9B9A97] cursor-pointer transition-colors text-[12.5px]"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md hover:bg-[#EFEFED] dark:hover:bg-[#2B2B2B] text-[#37352F] dark:text-[#EBEBEB] border border-[#EDEDEB] dark:border-[#383838] bg-[#F7F7F5] dark:bg-[#252525] cursor-pointer transition-colors text-[12.5px] font-medium"
             >
               <span>{scaleMode}</span>
-              <ChevronDown className="w-3 h-3 text-[#9B9A97]" />
+              <ChevronDown className="w-3.5 h-3.5 text-[#9B9A97]" />
             </button>
 
             {showScaleDropdown && (
@@ -511,13 +774,10 @@ export default function GanttView({
                 onClick={(e) => e.stopPropagation()}
                 className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-lg py-1 w-36 text-[12.5px]"
               >
-                {(['Days', 'Weeks', 'Bi-weeks', 'Months', 'Quarters'] as const).map(mode => (
+                {(['Minutes', 'Hours', 'Days', 'Weeks', 'Bi-weeks', 'Months', 'Quarters'] as const).map(mode => (
                   <button
                     key={mode}
-                    onClick={() => {
-                      setScaleMode(mode);
-                      setShowScaleDropdown(false);
-                    }}
+                    onClick={() => handleScaleChange(mode)}
                     className={`w-full px-3 py-1.5 text-left flex items-center justify-between hover:bg-[#F1F1EF] dark:hover:bg-[#303030] cursor-pointer ${
                       scaleMode === mode ? 'font-semibold text-[#2383E2]' : ''
                     }`}
@@ -533,9 +793,9 @@ export default function GanttView({
           {/* < Today > navigation block */}
           <div className="flex items-center text-[#787774] dark:text-[#9B9A97] bg-[#F7F7F5] dark:bg-[#252525] rounded p-0.5 border border-[#EDEDEB] dark:border-[#383838]">
             <button
-              onClick={() => shiftDays(-7)}
+              onClick={() => shiftTimeline(-1)}
               className="p-1 hover:bg-white dark:hover:bg-[#303030] rounded cursor-pointer transition-colors"
-              title="-1 неделя"
+              title="Назад во времени"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
@@ -546,9 +806,9 @@ export default function GanttView({
               Today
             </button>
             <button
-              onClick={() => shiftDays(7)}
+              onClick={() => shiftTimeline(1)}
               className="p-1 hover:bg-white dark:hover:bg-[#303030] rounded cursor-pointer transition-colors"
-              title="+1 неделя"
+              title="Вперед во времени"
             >
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
@@ -601,29 +861,28 @@ export default function GanttView({
           className="flex-1 overflow-x-auto overflow-y-auto custom-scrollbar relative"
         >
           <div 
-            style={{ width: `${totalDaysCount * dayColWidth}px` }}
+            style={{ width: `${Math.max(1000, totalTimelinePxWidth)}px` }}
             className="min-h-full flex flex-col relative"
           >
             
-            {/* Timeline Header Row (Date tick numbers: 1, 8, [10], 15, 22, 29...) */}
+            {/* Timeline Header Row (Date tick units: Day numbers, Week starts, Months, or Quarters) */}
             <div className="h-8 border-b border-[#EDEDEB] dark:border-[#2F2F2F] flex sticky top-0 bg-white/95 dark:bg-[#191919]/95 backdrop-blur-xs z-30 select-none">
-              {timelineDays.map((day) => {
+              {timelineColumns.map((col) => {
                 return (
                   <div
-                    key={`header-${day.dateString}`}
-                    style={{ width: `${dayColWidth}px` }}
+                    key={col.id}
+                    style={{ width: `${colWidth}px` }}
                     className={`h-full border-r border-[#EDEDEB]/50 dark:border-[#2F2F2F]/50 flex items-center justify-center relative shrink-0 ${
-                      day.isWeekend ? 'bg-[#FAFAF9]/40 dark:bg-[#1C1C1C]/40' : ''
+                      col.isWeekend ? 'bg-[#FAFAF9]/40 dark:bg-[#1C1C1C]/40' : ''
                     }`}
                   >
-                    {day.isToday ? (
-                      /* Red solid circle for Today matching screenshot: e.g. 🔴 10 */
-                      <div className="w-5 h-5 rounded-full bg-[#EB5757] text-white text-[11px] font-bold flex items-center justify-center shadow-xs">
-                        {day.dayNumber}
+                    {col.isCurrent ? (
+                      <div className="px-1.5 py-0.5 min-w-[20px] h-5 rounded-full bg-[#EB5757] text-white text-[11px] font-bold flex items-center justify-center shadow-xs">
+                        {col.label}
                       </div>
                     ) : (
-                      <span className="text-[12px] font-normal text-[#9B9A97] dark:text-[#7A7A7A]">
-                        {day.dayNumber}
+                      <span className="text-[12px] font-normal text-[#9B9A97] dark:text-[#7A7A7A] truncate px-0.5">
+                        {col.label}
                       </span>
                     )}
                   </div>
@@ -631,32 +890,35 @@ export default function GanttView({
               })}
             </div>
 
-            {/* Vertical Red Line for Today & Grid Lines */}
+            {/* Vertical Columns Grid */}
             <div className="absolute inset-0 pointer-events-none flex z-0">
-              {timelineDays.map((day, idx) => (
+              {timelineColumns.map((col) => (
                 <div
-                  key={`grid-${day.dateString}`}
-                  style={{ width: `${dayColWidth}px` }}
+                  key={`grid-${col.id}`}
+                  style={{ width: `${colWidth}px` }}
                   className={`h-full border-r border-[#EDEDEB]/30 dark:border-[#2F2F2F]/30 shrink-0 relative ${
-                    day.isWeekend ? 'bg-[#FAFAF9]/20 dark:bg-[#1C1C1C]/20' : ''
+                    col.isWeekend ? 'bg-[#FAFAF9]/20 dark:bg-[#1C1C1C]/20' : ''
                   }`}
-                >
-                  {/* Vertical Red Today Line */}
-                  {day.isToday && (
-                    <div className="absolute left-1/2 -translate-x-1/2 top-8 bottom-0 w-px bg-[#EB5757] z-10" />
-                  )}
-                </div>
+                />
               ))}
             </div>
 
-            {/* Month Vertical Dividers */}
+            {/* Vertical Red Line for Today */}
+            {todayPosPx !== null && (
+              <div 
+                style={{ left: `${todayPosPx}px` }}
+                className="absolute top-8 bottom-0 w-px bg-[#EB5757] z-20 pointer-events-none"
+              />
+            )}
+
+            {/* Parent Group Vertical Dividers */}
             <div className="absolute inset-0 pointer-events-none flex z-0">
-              {headerMonths.map((m) => (
+              {headerGroups.map((g, idx) => (
                 <div
-                  key={`month-divider-${m.name}`}
+                  key={`group-divider-${g.title}-${idx}`}
                   style={{ 
-                    left: `${m.startIndex * dayColWidth}px`,
-                    width: `${m.count * dayColWidth}px`
+                    left: `${g.startIndex * colWidth}px`,
+                    width: `${g.count * colWidth}px`
                   }}
                   className="absolute top-0 bottom-0 border-l border-[#D9D9D7] dark:border-[#383838]"
                 />
@@ -677,7 +939,7 @@ export default function GanttView({
                   </button>
                 </div>
               ) : (
-                tasks.map((task, rowIndex) => {
+                tasks.map((task) => {
                   const range = getTaskRange(task);
                   const isSelected = selectedNodeId === task.id;
                   const isBeingDragged = activeDrag && activeDrag.taskId === task.id;
@@ -685,12 +947,18 @@ export default function GanttView({
                   const tag = getTaskTag(task);
                   const cleanTitle = getCleanTitle(task.text);
 
-                  const displayStart = isBeingDragged ? activeDrag.currentStart : range.start;
-                  const displayEnd = isBeingDragged ? activeDrag.currentEnd : range.end;
-                  const displaySpan = Math.max(1, displayEnd - displayStart + 1);
+                  let cardLeftPx = range.computedLeft;
+                  let cardWidthPx = range.computedWidth;
 
-                  const cardLeftPx = displayStart * dayColWidth;
-                  const cardWidthPx = Math.max(210, displaySpan * dayColWidth);
+                  if (isBeingDragged) {
+                    const totalMs = timelineEndMs - timelineStartMs;
+                    if (totalMs > 0) {
+                      const dStartPx = ((activeDrag.currentStartMs - timelineStartMs) / totalMs) * totalTimelinePxWidth;
+                      const dEndPx = ((activeDrag.currentEndMs - timelineStartMs) / totalMs) * totalTimelinePxWidth;
+                      cardLeftPx = Math.max(0, dStartPx);
+                      cardWidthPx = Math.max(range.computedWidth, dEndPx - dStartPx);
+                    }
+                  }
 
                   return (
                     <div
@@ -702,7 +970,7 @@ export default function GanttView({
                         <div
                           onClick={(e) => {
                             e.stopPropagation();
-                            shiftDays(-7);
+                            shiftTimeline(-1);
                           }}
                           className="sticky left-2 z-20 flex items-center gap-1.5 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#333333] shadow-xs px-2 py-1 rounded text-[12px] font-medium text-[#37352F] dark:text-[#EBEBEB] hover:bg-[#F7F7F5] dark:hover:bg-[#303030] cursor-pointer"
                           title="Пост начался раньше — нажмите чтобы прокрутить назад"
@@ -716,7 +984,7 @@ export default function GanttView({
                       {/* Floating Card Item matching Notion screenshot */}
                       <div
                         onClick={(e) => onSelectNode(task.id, e)}
-                        onMouseDown={(e) => handleBarMouseDown(e, task.id, 'move', range.start, range.end)}
+                        onMouseDown={(e) => handleBarMouseDown(e, task.id, 'move', range.startMs, range.endMs)}
                         style={{
                           left: `${cardLeftPx}px`,
                           width: `${cardWidthPx}px`
@@ -730,12 +998,12 @@ export default function GanttView({
                                 ? 'bg-[#FAFAF9] dark:bg-[#202020] border-[#E9E9E7] dark:border-[#2F2F2F] opacity-75'
                                 : 'bg-white dark:bg-[#222222] border-[#E9E9E7] dark:border-[#2F2F2F] hover:border-[#D0D0CE] dark:hover:border-[#3F3F3F]'
                         }`}
-                        title={`${cleanTitle}\nСтатус: ${tag.label}`}
+                        title={`${cleanTitle}\nПериод: ${range.startStr} - ${range.endStr}\nСтатус: ${tag.label}`}
                       >
                         
                         {/* Left Resize Handle */}
                         <div
-                          onMouseDown={(e) => handleBarMouseDown(e, task.id, 'resize-start', range.start, range.end)}
+                          onMouseDown={(e) => handleBarMouseDown(e, task.id, 'resize-start', range.startMs, range.endMs)}
                           className="absolute left-0 top-0 bottom-0 w-2 hover:bg-[#2383E2]/30 cursor-ew-resize rounded-l group-hover/row:opacity-100 opacity-0 transition-opacity z-20"
                           title="Изменить дату начала"
                         />
@@ -868,7 +1136,7 @@ export default function GanttView({
 
                         {/* Right Resize Handle */}
                         <div
-                          onMouseDown={(e) => handleBarMouseDown(e, task.id, 'resize-end', range.start, range.end)}
+                          onMouseDown={(e) => handleBarMouseDown(e, task.id, 'resize-end', range.startMs, range.endMs)}
                           className="absolute right-0 top-0 bottom-0 w-2 hover:bg-[#2383E2]/30 cursor-ew-resize rounded-r group-hover/row:opacity-100 opacity-0 transition-opacity z-20"
                           title="Изменить дату окончания"
                         />

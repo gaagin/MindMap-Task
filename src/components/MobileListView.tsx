@@ -9,7 +9,7 @@ import {
   Calendar, 
   ChevronUp, 
   ChevronDown, 
-  ChevronRight,
+  ChevronRight, 
   ChevronLeft,
   SlidersHorizontal, 
   ArrowUpDown, 
@@ -25,6 +25,7 @@ import {
   ExternalLink, 
   Check, 
   Eye,
+  EyeOff,
   GripVertical,
   Star,
   Share2,
@@ -63,6 +64,8 @@ interface MobileListViewProps {
   onFullScreenChange?: (isFullScreen: boolean) => void;
   onFocusTaskOnCanvas?: (id: string) => void;
   onFocusedTaskIdChange?: (id: string | null) => void;
+  collapseCompleted?: boolean;
+  onCollapseCompletedChange?: (val: boolean) => void;
   
   // Multi-select properties
   selectedNodeIds?: string[];
@@ -232,6 +235,8 @@ export default function MobileListView({
   onFullScreenChange,
   onFocusTaskOnCanvas,
   onFocusedTaskIdChange,
+  collapseCompleted: propsCollapseCompleted,
+  onCollapseCompletedChange,
   
   // Multi-select properties
   selectedNodeIds = [],
@@ -250,6 +255,27 @@ export default function MobileListView({
   setViewMode,
   onOpenSidebar
 }: MobileListViewProps) {
+  // Collapse completed cards state
+  const [localCollapseCompleted, setLocalCollapseCompleted] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('task_mindmap_list_collapse_completed');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return false;
+  });
+  const collapseCompleted = propsCollapseCompleted !== undefined ? propsCollapseCompleted : localCollapseCompleted;
+  const setCollapseCompleted = (val: boolean) => {
+    setLocalCollapseCompleted(val);
+    try {
+      localStorage.setItem('task_mindmap_list_collapse_completed', String(val));
+    } catch {}
+    if (onCollapseCompletedChange) {
+      onCollapseCompletedChange(val);
+    }
+  };
+
+  const [isCompletedSectionOpen, setIsCompletedSectionOpen] = useState(false);
+
   // Visible column properties toggles
   const [visibleProps, setVisibleProps] = useState({
     tag: true,
@@ -357,7 +383,7 @@ export default function MobileListView({
   };
 
   // Build hierarchical task tree
-  const taskTreeRoots = useMemo(() => {
+  const { activeTreeRoots, completedTreeRoots, allTreeRoots } = useMemo(() => {
     const list = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.isNotTask);
     const nodeMap = new Map<string, TaskTreeItem>();
     list.forEach(node => {
@@ -374,8 +400,23 @@ export default function MobileListView({
       }
     });
 
-    return roots;
-  }, [nodes]);
+    if (!collapseCompleted) {
+      return { activeTreeRoots: roots, completedTreeRoots: [], allTreeRoots: roots };
+    }
+
+    const active: TaskTreeItem[] = [];
+    const completed: TaskTreeItem[] = [];
+
+    roots.forEach(root => {
+      if (root.node.completed) {
+        completed.push(root);
+      } else {
+        active.push(root);
+      }
+    });
+
+    return { activeTreeRoots: active, completedTreeRoots: completed, allTreeRoots: roots };
+  }, [nodes, collapseCompleted]);
 
   // Statistics
   const totalCount = nodes.filter(n => !n.isContainer && !n.isWorkflowRectangle && !n.isNotTask).length;
@@ -1058,12 +1099,55 @@ export default function MobileListView({
       id="notion-list-view-container"
       className="flex flex-col bg-white dark:bg-[#191919] text-[#37352F] dark:text-[#D4D4D4] font-sans h-full w-full overflow-hidden select-none relative"
     >
+      {/* List Header Toolbar */}
+      <div className="px-3 sm:px-12 lg:px-20 py-2 border-b border-[#E9E9E7] dark:border-[#2C2C2C] bg-[#FAF9F6] dark:bg-[#1E1E1E] flex items-center justify-between gap-2 text-xs shrink-0">
+        <div className="flex items-center gap-2 text-[#787774] dark:text-[#9B9A97]">
+          <span className="font-semibold text-[#37352F] dark:text-[#EBEBEB]">Задачи</span>
+          <span className="bg-[#E9E9E7] dark:bg-[#2C2C2C] px-1.5 py-0.5 rounded-full text-[11px] font-mono">
+            {activeCount}/{totalCount}
+          </span>
+          {overdueCount > 0 && (
+            <span className="bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 rounded-full text-[11px] font-medium">
+              Просрочено: {overdueCount}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {/* Hide/Collapse Completed Toggle Button */}
+          {completedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setCollapseCompleted(!collapseCompleted)}
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                collapseCompleted
+                  ? 'bg-[#2383e2]/15 text-[#2383e2] dark:bg-[#2383e2]/25 font-semibold'
+                  : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-white hover:bg-[#EAEAEA] dark:hover:bg-[#2C2C2C]'
+              }`}
+              title={collapseCompleted ? "Показать все задачи" : "Скрыть выполненные задачи"}
+            >
+              {collapseCompleted ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              <span>{collapseCompleted ? `Скрыто: ${completedCount}` : 'Скрыть выполненные'}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setIsInlineAdding(true)}
+            className="inline-flex items-center gap-1 px-2 py-1 bg-[#2383e2] hover:bg-[#1d6fc2] text-white text-xs font-semibold rounded-md shadow-2xs transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Новая страница</span>
+          </button>
+        </div>
+      </div>
+
       {/* Main Scrollable Content */}
       <div className="flex-1 overflow-y-auto px-2.5 sm:px-12 lg:px-20 pt-4 pb-24 max-w-5xl mx-auto w-full">
         
         {/* Notion List Rows */}
         <div className="space-y-0.5">
-          {taskTreeRoots.length === 0 ? (
+          {allTreeRoots.length === 0 ? (
             <div className="py-16 text-center text-[#9B9A97]">
               <FileText className="w-10 h-10 mx-auto mb-2 opacity-40" />
               <p className="text-sm font-medium text-[#787774] dark:text-[#9B9A97]">Список документов пуст</p>
@@ -1077,10 +1161,39 @@ export default function MobileListView({
                 <span>Создать страницу</span>
               </button>
             </div>
+          ) : activeTreeRoots.length === 0 && completedTreeRoots.length > 0 ? (
+            <div className="py-8 text-center text-[#9B9A97]">
+              <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-[#2383e2] opacity-80" />
+              <p className="text-sm font-semibold text-[#37352F] dark:text-[#EBEBEB]">Все задачи выполнены! 🎉</p>
+              <p className="text-xs mt-1 text-[#787774] dark:text-[#9B9A97]">
+                Выполненные задачи свернуты ниже ({completedCount})
+              </p>
+            </div>
           ) : (
-            taskTreeRoots.map(item => renderNotionRow(item, 0))
+            activeTreeRoots.map(item => renderNotionRow(item, 0))
           )}
         </div>
+
+        {/* Collapsible Completed Section when collapseCompleted is active */}
+        {collapseCompleted && completedTreeRoots.length > 0 && (
+          <div className="mt-4 pt-2 border-t border-[#E9E9E7] dark:border-[#2C2C2C]">
+            <button
+              type="button"
+              onClick={() => setIsCompletedSectionOpen(prev => !prev)}
+              className="flex items-center gap-2 py-1.5 px-2 text-xs font-semibold text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#EBEBEB] hover:bg-[#F7F7F5] dark:hover:bg-[#202020] rounded-md transition-colors cursor-pointer w-full text-left"
+            >
+              <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-150 ${isCompletedSectionOpen ? 'rotate-90' : ''}`} />
+              <CheckCircle2 className="w-3.5 h-3.5 text-[#2383e2]" />
+              <span>Выполненные задачи ({completedCount})</span>
+            </button>
+
+            {isCompletedSectionOpen && (
+              <div className="mt-1 space-y-0.5 opacity-70">
+                {completedTreeRoots.map(item => renderNotionRow(item, 0))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Inline "+ New page" Row at the bottom of the list */}
         {isInlineAdding ? (

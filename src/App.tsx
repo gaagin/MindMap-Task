@@ -51,10 +51,8 @@ import {
   Grid,
   Tag,
   Home,
-  Columns,
   ArrowRight,
-  ArrowLeft,
-  Split
+  ArrowLeft
 } from 'lucide-react';
 import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime, getTaskExternalLinks } from './utils';
@@ -67,7 +65,6 @@ import CalendarView from './components/CalendarView';
 import GanttView from './components/GanttView';
 import TableView from './components/TableView';
 import EisenhowerMatrixView from './components/EisenhowerMatrixView';
-import AnyDoView from './components/AnyDoView';
 import GeminiAiConsole from './components/GeminiAiConsole';
 import NotionSync from './components/NotionSync';
 import NotionDatabaseBar, { SortField, SortOrder } from './components/NotionDatabaseBar';
@@ -1061,15 +1058,20 @@ export default function App() {
     }));
   };
 
-  const handleKanbanCollapseCompletedChange = (val: boolean) => {
+  const handleCollapseCompletedChange = (val: boolean) => {
     setState(prev => ({
       ...prev,
       globalSettings: {
         ...(prev.globalSettings || {}),
+        collapseCompleted: val,
         kanbanCollapseCompleted: val,
         updatedAt: new Date().toISOString()
       }
     }));
+  };
+
+  const handleKanbanCollapseCompletedChange = (val: boolean) => {
+    handleCollapseCompletedChange(val);
   };
 
   const handleKanbanShowSubtasksChange = (val: boolean) => {
@@ -1454,7 +1456,7 @@ export default function App() {
     filterCategoryId: string | null;
     kanbanGroupBy: 'status' | 'category' | 'priority' | 'container' | null;
     kanbanContainerFilterId: string | null;
-    viewMode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo';
+    viewMode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
   } | null>(null);
 
   const filtersRef = React.useRef({
@@ -1485,119 +1487,10 @@ export default function App() {
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
 
-  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo'
-  type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo';
+  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'
+  type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
 
-  // Split Screen Dual-View Mode States (Desktop Split View)
-  const [isSplitScreen, setIsSplitScreen] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('milli_split_screen_active') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  const [leftViewMode, setLeftViewMode] = useState<ViewMode>(() => {
-    try {
-      const saved = localStorage.getItem('milli_left_view_mode') as ViewMode;
-      if (saved) return saved;
-    } catch {}
-    return 'canvas';
-  });
-
-  const [rightViewMode, setRightViewMode] = useState<ViewMode>(() => {
-    try {
-      const saved = localStorage.getItem('milli_right_view_mode') as ViewMode;
-      if (saved) return saved;
-    } catch {}
-    return 'kanban';
-  });
-
-  const [splitRatio, setSplitRatio] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('milli_split_ratio');
-      if (saved) return Number(saved) || 50;
-    } catch {}
-    return 50;
-  });
-
-  // Canvas pan/zoom states for Right Pane when Right Pane is Canvas
-  const [rightPanX, setRightPanX] = useState(0);
-  const [rightPanY, setRightPanY] = useState(0);
-  const [rightZoom, setRightZoom] = useState(1);
-
-  // Dragging state for resizable divider & drop indicators
-  const [isResizingSplit, setIsResizingSplit] = useState(false);
-  const [isDraggingOverLeftPane, setIsDraggingOverLeftPane] = useState(false);
-  const [isDraggingOverRightPane, setIsDraggingOverRightPane] = useState(false);
-  const splitContainerRef = React.useRef<HTMLDivElement>(null);
-
-  // Persist split screen configuration
-  useEffect(() => {
-    try {
-      localStorage.setItem('milli_split_screen_active', String(isSplitScreen));
-      localStorage.setItem('milli_left_view_mode', leftViewMode);
-      localStorage.setItem('milli_right_view_mode', rightViewMode);
-      localStorage.setItem('milli_split_ratio', String(splitRatio));
-    } catch {}
-  }, [isSplitScreen, leftViewMode, rightViewMode, splitRatio]);
-
-  // Handle splitter dragging to resize left & right panes
-  const handleSplitterMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingSplit(true);
-  };
-
-  useEffect(() => {
-    if (!isResizingSplit) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!splitContainerRef.current) return;
-      const rect = splitContainerRef.current.getBoundingClientRect();
-      const relativeX = e.clientX - rect.left;
-      const percentage = (relativeX / rect.width) * 100;
-      // Constrain ratio between 20% and 80%
-      const clamped = Math.max(20, Math.min(80, percentage));
-      setSplitRatio(clamped);
-    };
-
-    const handleMouseUp = () => {
-      setIsResizingSplit(false);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizingSplit]);
-
-  // Transfer element between screens in split screen mode
-  const handleMoveTaskToPane = (
-    taskId: string, 
-    targetPane: 'left' | 'right', 
-    overrideFields?: Partial<TaskNode>
-  ) => {
-    if (!state.activeProjectId) return;
-    const currentNodes = state.nodes[state.activeProjectId] || [];
-    const targetNode = currentNodes.find(n => n.id === taskId);
-    if (!targetNode) return;
-
-    const targetParentId = overrideFields?.parentId !== undefined 
-      ? overrideFields.parentId 
-      : (focusedContainerId || focusedTaskId || targetNode.parentId);
-
-    const updatedNode: TaskNode = {
-      ...targetNode,
-      parentId: targetParentId,
-      ...overrideFields,
-      updatedAt: new Date().toISOString()
-    };
-
-    handleUpdateNode(updatedNode);
-  };
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(() => {
     try {
       return localStorage.getItem('milli_focused_task_id') || null;
@@ -6181,7 +6074,6 @@ export default function App() {
     { id: 'gantt', name: 'Ганнт', icon: GanttChart },
     { id: 'table', name: 'Таблица', icon: Table },
     { id: 'eisenhower', name: 'Матрица', icon: LayoutGrid },
-    { id: 'anydo', name: 'Any.do', icon: Grid },
   ];
 
   const selectedNode = activeNodes.find(n => n.id === selectedNodeId) || null;
@@ -6189,7 +6081,7 @@ export default function App() {
   const isNetworkFailure = sheetsError?.includes('Failed to fetch') || sheetsError?.includes('NetworkError');
   const hasSyncOrAuthError = !!authError || (!!sheetsError && !isNetworkFailure) || (syncStatus.sheets === 'error' && !isNetworkFailure) || syncStatus.local === 'error';
 
-  const renderViewComponent = (mode: ViewMode, paneSide: 'left' | 'right' | 'single' = 'single') => {
+  const renderViewComponent = (mode: ViewMode) => {
     if (!state.activeProjectId) {
       return (
         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
@@ -6221,9 +6113,7 @@ export default function App() {
             onFullScreenChange={setIsViewFullScreen}
             onFocusTaskOnCanvas={(taskId) => {
               setFocusedTaskId(taskId);
-              if (paneSide === 'right') setRightViewMode('canvas');
-              else if (paneSide === 'left') setLeftViewMode('canvas');
-              else setViewMode('canvas');
+              setViewMode('canvas');
             }}
             onFocusedTaskIdChange={setFocusedTaskId}
             selectedNodeIds={selectedNodeIds}
@@ -6238,6 +6128,8 @@ export default function App() {
             setIsMultiSelectMode={setIsMultiSelectMode}
             projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Docs'}
             projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '📎'}
+            collapseCompleted={state.globalSettings?.collapseCompleted ?? state.globalSettings?.kanbanCollapseCompleted}
+            onCollapseCompletedChange={handleCollapseCompletedChange}
             onUpdateProjectName={(name) => {
               if (state.activeProjectId) {
                 handleRenameProject(state.activeProjectId, name);
@@ -6248,11 +6140,7 @@ export default function App() {
                 handleUpdateProjectIcon(state.activeProjectId, icon);
               }
             }}
-            setViewMode={(newMode) => {
-              if (paneSide === 'right') setRightViewMode(newMode);
-              else if (paneSide === 'left') setLeftViewMode(newMode);
-              else setViewMode(newMode);
-            }}
+            setViewMode={(newMode) => setViewMode(newMode)}
             onOpenSidebar={() => setSidebarOpen(true)}
           />
         );
@@ -6283,8 +6171,8 @@ export default function App() {
             onKanbanContainerFilterIdChange={setKanbanContainerFilterId}
             sortBy={state.globalSettings?.kanbanSortBy}
             onSortByChange={handleKanbanSortByChange}
-            collapseCompleted={state.globalSettings?.kanbanCollapseCompleted}
-            onCollapseCompletedChange={handleKanbanCollapseCompletedChange}
+            collapseCompleted={state.globalSettings?.collapseCompleted ?? state.globalSettings?.kanbanCollapseCompleted}
+            onCollapseCompletedChange={handleCollapseCompletedChange}
             showSubtasks={state.globalSettings?.kanbanShowSubtasks}
             onShowSubtasksChange={handleKanbanShowSubtasksChange}
             isFiltersCollapsed={state.globalSettings?.kanbanFiltersCollapsed}
@@ -6305,11 +6193,7 @@ export default function App() {
                 handleRenameProject(state.activeProjectId, name);
               }
             }}
-            setViewMode={(newMode) => {
-              if (paneSide === 'right') setRightViewMode(newMode);
-              else if (paneSide === 'left') setLeftViewMode(newMode);
-              else setViewMode(newMode);
-            }}
+            setViewMode={(newMode) => setViewMode(newMode)}
           />
         );
 
@@ -6327,11 +6211,7 @@ export default function App() {
             onCreateTask={(text, initialTags, dueDate, dueTime) => {
               handleCreateMobileTask(text, initialTags || [], 'none', dueDate, null, dueTime);
             }}
-            setViewMode={(newMode) => {
-              if (paneSide === 'right') setRightViewMode(newMode);
-              else if (paneSide === 'left') setLeftViewMode(newMode);
-              else setViewMode(newMode);
-            }}
+            setViewMode={(newMode) => setViewMode(newMode)}
             onFullScreenChange={setIsViewFullScreen}
             onFocusedTaskIdChange={setFocusedTaskId}
             projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Календарь'}
@@ -6349,11 +6229,7 @@ export default function App() {
           <GanttView
             nodes={displayedNodesForViews}
             allNodes={activeNodes}
-            setViewMode={(newMode) => {
-              if (paneSide === 'right') setRightViewMode(newMode);
-              else if (paneSide === 'left') setLeftViewMode(newMode);
-              else setViewMode(newMode);
-            }}
+            setViewMode={(newMode) => setViewMode(newMode)}
             tagCategories={activeProjectTags}
             activeProjectId={state.activeProjectId}
             selectedNodeId={selectedNodeId}
@@ -6404,16 +6280,14 @@ export default function App() {
             onFocusedTaskIdChange={setFocusedTaskId}
             projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Проекты'}
             projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '📁'}
+            collapseCompleted={state.globalSettings?.collapseCompleted ?? state.globalSettings?.kanbanCollapseCompleted}
+            onCollapseCompletedChange={handleCollapseCompletedChange}
             onUpdateProjectName={(name) => {
               if (state.activeProjectId) {
                 handleRenameProject(state.activeProjectId, name);
               }
             }}
-            setViewMode={(newMode) => {
-              if (paneSide === 'right') setRightViewMode(newMode);
-              else if (paneSide === 'left') setLeftViewMode(newMode);
-              else setViewMode(newMode);
-            }}
+            setViewMode={(newMode) => setViewMode(newMode)}
           />
         );
 
@@ -6431,25 +6305,10 @@ export default function App() {
             onCreateTask={handleCreateKanbanTask}
             selectedNodeIds={selectedNodeIds}
             searchQuery={searchQuery}
+            collapseCompleted={state.globalSettings?.collapseCompleted ?? state.globalSettings?.kanbanCollapseCompleted}
+            onCollapseCompletedChange={handleCollapseCompletedChange}
             onFullScreenChange={setIsViewFullScreen}
             onFocusedTaskIdChange={setFocusedTaskId}
-          />
-        );
-
-      case 'anydo':
-        return (
-          <AnyDoView
-            nodes={activeNodes}
-            tagCategories={activeProjectTags}
-            activeProjectId={state.activeProjectId}
-            selectedNodeId={selectedNodeId}
-            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-            onSelectNode={handleSelectNode}
-            onUpdateNode={handleUpdateNode}
-            onDeleteNode={handleDeleteNode}
-            onCreateTask={handleCreateKanbanTask}
-            selectedNodeIds={selectedNodeIds}
-            onToggleSelectNode={handleToggleSelectNode}
           />
         );
 
@@ -6489,12 +6348,12 @@ export default function App() {
             onToggleNodeCompleted={handleToggleNodeCompleted}
             onToggleNodeCollapse={handleToggleNodeCollapse}
             onUpdateNode={handleUpdateNode}
-            panX={paneSide === 'right' ? rightPanX : panX}
-            panY={paneSide === 'right' ? rightPanY : panY}
-            zoom={paneSide === 'right' ? rightZoom : zoom}
-            setPanX={paneSide === 'right' ? setRightPanX : setPanX}
-            setPanY={paneSide === 'right' ? setRightPanY : setPanY}
-            setZoom={paneSide === 'right' ? setRightZoom : setZoom}
+            panX={panX}
+            panY={panY}
+            zoom={zoom}
+            setPanX={setPanX}
+            setPanY={setPanY}
+            setZoom={setZoom}
             onOpenSidebar={() => setSidebarOpen(true)}
             onOpenDrawer={(initialFullscreen) => {
               setIsDrawerOpen(true);
@@ -6620,8 +6479,6 @@ export default function App() {
             isSidebarOpen={sidebarOpen}
             onOpenSidebar={() => setSidebarOpen(true)}
             onToggleSidebar={() => setSidebarOpen(prev => !prev)}
-            isSplitScreen={isSplitScreen}
-            onToggleSplitScreen={() => setIsSplitScreen(!isSplitScreen)}
             focusedTaskId={focusedTaskId}
             focusedContainerId={focusedContainerId}
             focusedNode={focusedNode}
@@ -6902,155 +6759,7 @@ export default function App() {
             </div>
           )}
           
-          {isSplitScreen ? (
-            <div 
-              ref={splitContainerRef}
-              className="flex-1 w-full h-full flex flex-col md:flex-row overflow-hidden relative select-none"
-            >
-              {/* Left Pane (Screen 1) */}
-              <div 
-                style={{ width: `${splitRatio}%` }}
-                className={`relative flex flex-col h-full overflow-hidden border-r border-slate-200 dark:border-slate-800 transition-all ${
-                  isDraggingOverLeftPane ? 'ring-4 ring-indigo-500/40 bg-indigo-50/20 dark:bg-indigo-950/20' : ''
-                }`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  if (!isDraggingOverLeftPane) setIsDraggingOverLeftPane(true);
-                }}
-                onDragLeave={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                    setIsDraggingOverLeftPane(false);
-                  }
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDraggingOverLeftPane(false);
-                  let taskId = '';
-                  try {
-                    const dataStr = e.dataTransfer.getData('application/json');
-                    if (dataStr) {
-                      const parsed = JSON.parse(dataStr);
-                      taskId = parsed.taskId || '';
-                    }
-                  } catch {}
-                  if (!taskId) taskId = e.dataTransfer.getData('text/plain');
-                  if (taskId) {
-                    handleMoveTaskToPane(taskId, 'left');
-                  }
-                }}
-              >
-                {/* Header for Left Pane */}
-                <div className="h-9 px-3 bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 z-20">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-900/60 shrink-0">
-                      Экран 1
-                    </span>
-                    <select
-                      value={leftViewMode}
-                      onChange={(e) => setLeftViewMode(e.target.value as ViewMode)}
-                      className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold px-2 py-0.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-3xs"
-                    >
-                      {viewsList.map(v => (
-                        <option key={v.id} value={v.id}>{v.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium hidden lg:inline truncate">
-                    Перетащите элементы сюда
-                  </div>
-                </div>
-
-                {/* Left Pane View Content */}
-                <div className="flex-1 w-full h-full min-h-0 relative overflow-hidden">
-                  {renderViewComponent(leftViewMode, 'left')}
-                </div>
-              </div>
-
-              {/* Resizable Splitter Divider */}
-              <div
-                onMouseDown={handleSplitterMouseDown}
-                className="hidden md:flex w-2 hover:w-3 bg-slate-200 hover:bg-indigo-500 dark:bg-slate-800 dark:hover:bg-indigo-500 transition-all cursor-col-resize z-30 select-none items-center justify-center group shrink-0 relative active:bg-indigo-600"
-                title="Перетащите мышью для изменения ширины экранов"
-              >
-                <div className="w-1 h-8 rounded-full bg-slate-400 dark:bg-slate-600 group-hover:bg-white transition-colors" />
-              </div>
-
-              {/* Right Pane (Screen 2) */}
-              <div 
-                style={{ width: `${100 - splitRatio}%` }}
-                className={`relative flex flex-col h-full overflow-hidden transition-all ${
-                  isDraggingOverRightPane ? 'ring-4 ring-indigo-500/40 bg-indigo-50/20 dark:bg-indigo-950/20' : ''
-                }`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  if (!isDraggingOverRightPane) setIsDraggingOverRightPane(true);
-                }}
-                onDragLeave={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                    setIsDraggingOverRightPane(false);
-                  }
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDraggingOverRightPane(false);
-                  let taskId = '';
-                  try {
-                    const dataStr = e.dataTransfer.getData('application/json');
-                    if (dataStr) {
-                      const parsed = JSON.parse(dataStr);
-                      taskId = parsed.taskId || '';
-                    }
-                  } catch {}
-                  if (!taskId) taskId = e.dataTransfer.getData('text/plain');
-                  if (taskId) {
-                    handleMoveTaskToPane(taskId, 'right');
-                  }
-                }}
-              >
-                {/* Header for Right Pane */}
-                <div className="h-9 px-3 bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 z-20">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-900/60 shrink-0">
-                      Экран 2
-                    </span>
-                    <select
-                      value={rightViewMode}
-                      onChange={(e) => setRightViewMode(e.target.value as ViewMode)}
-                      className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold px-2 py-0.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-3xs"
-                    >
-                      {viewsList.map(v => (
-                        <option key={v.id} value={v.id}>{v.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium hidden lg:inline truncate">
-                      Перетащите элементы сюда
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsSplitScreen(false)}
-                      className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                      title="Выйти из раздельного режима (1 экран)"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Right Pane View Content */}
-                <div className="flex-1 w-full h-full min-h-0 relative overflow-hidden">
-                  {renderViewComponent(rightViewMode, 'right')}
-                </div>
-              </div>
-            </div>
-          ) : (
-            renderViewComponent(viewMode, 'single')
-          )}
+          {renderViewComponent(viewMode)}
 
 
         </div>
@@ -7100,22 +6809,6 @@ export default function App() {
                       </button>
                     );
                   })}
-
-                  {/* Split Screen Quick Toggle in Bottom Views Bar */}
-                  <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1 hidden md:block shrink-0" />
-                  <button
-                    type="button"
-                    onClick={() => setIsSplitScreen(!isSplitScreen)}
-                    className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-extrabold transition-all shrink-0 cursor-pointer border ${
-                      isSplitScreen
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20'
-                        : 'text-indigo-600 dark:text-indigo-400 border-indigo-200/80 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60'
-                    }`}
-                    title={isSplitScreen ? "Вернуться к 1 экрану" : "Разделить на 2 экрана"}
-                  >
-                    <Columns className="w-3.5 h-3.5" />
-                    <span>{isSplitScreen ? '1 Экран' : '2 Экрана'}</span>
-                  </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">

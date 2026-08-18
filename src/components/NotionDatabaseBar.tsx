@@ -27,7 +27,6 @@ import {
   Database, 
   FileSpreadsheet, 
   Archive, 
-  Columns, 
   ChevronLeft,
   ArrowUp,
   ArrowDown,
@@ -116,10 +115,6 @@ export interface NotionDatabaseBarProps {
   onQuickSheetsSync?: () => void;
   isSyncingSheets?: boolean;
   
-  // Split screen
-  isSplitScreen?: boolean;
-  onToggleSplitScreen?: () => void;
-  
   // Focus states
   focusedTaskId?: string | null;
   focusedContainerId?: string | null;
@@ -149,7 +144,6 @@ export const ALL_VIEW_MODES: { id: ViewMode; name: string; icon: any; notionType
   { id: 'gantt', name: 'График', icon: GanttChart, notionType: 'Timeline' },
   { id: 'canvas', name: 'Холст', icon: Network, notionType: 'MindMap' },
   { id: 'eisenhower', name: 'Матрица', icon: LayoutGrid, notionType: 'Matrix' },
-  { id: 'anydo', name: 'Any.do', icon: Grid, notionType: 'AnyDo' },
   { id: 'mobile-list', name: 'Списки', icon: Smartphone, notionType: 'List' },
 ];
 
@@ -211,8 +205,6 @@ export default function NotionDatabaseBar({
   onOpenAiConsole,
   onQuickSheetsSync,
   isSyncingSheets = false,
-  isSplitScreen = false,
-  onToggleSplitScreen,
   focusedTaskId,
   focusedContainerId,
   focusedNode,
@@ -1732,23 +1724,6 @@ export default function NotionDatabaseBar({
                 </div>
                 <ChevronRight className="w-3.5 h-3.5 text-[#787774]" />
               </button>
-
-              {/* Split Screen Toggle */}
-              {onToggleSplitScreen && (
-                <button
-                  type="button"
-                  onClick={onToggleSplitScreen}
-                  className="w-full text-left px-2 py-2 rounded hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] flex items-center justify-between cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <Columns className="w-4 h-4 text-[#787774]" />
-                    <span>Split Screen</span>
-                  </div>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isSplitScreen ? 'bg-indigo-600 text-white' : 'bg-[#EFEFED] dark:bg-[#2A2A2A] text-[#787774]'}`}>
-                    {isSplitScreen ? '2 Screens' : '1 Screen'}
-                  </span>
-                </button>
-              )}
 
               {/* View Archived Pages */}
               <button

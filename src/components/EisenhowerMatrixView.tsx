@@ -24,6 +24,9 @@ import {
   ArrowRight,
   Filter,
   Eye,
+  EyeOff,
+  ChevronRight,
+  ChevronDown,
   CheckSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -44,6 +47,8 @@ interface EisenhowerMatrixProps {
   searchQuery?: string;
   onFullScreenChange?: (isFullScreen: boolean) => void;
   onFocusedTaskIdChange?: (id: string | null) => void;
+  collapseCompleted?: boolean;
+  onCollapseCompletedChange?: (collapsed: boolean) => void;
 }
 
 interface QuadrantConfig {
@@ -93,7 +98,30 @@ export default function EisenhowerMatrixView({
   searchQuery = '',
   onFullScreenChange,
   onFocusedTaskIdChange,
+  collapseCompleted: propsCollapseCompleted,
+  onCollapseCompletedChange,
 }: EisenhowerMatrixProps) {
+  const [localCollapseCompleted, setLocalCollapseCompleted] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('notion_eisenhower_collapse_completed');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return false;
+  });
+  const collapseCompleted = propsCollapseCompleted !== undefined ? propsCollapseCompleted : localCollapseCompleted;
+  const setCollapseCompleted = (val: boolean) => {
+    setLocalCollapseCompleted(val);
+    try {
+      localStorage.setItem('notion_eisenhower_collapse_completed', String(val));
+    } catch {}
+    if (onCollapseCompletedChange) onCollapseCompletedChange(val);
+  };
+
+  const [openCompletedQuads, setOpenCompletedQuads] = useState<Record<string, boolean>>({});
+  const toggleCompletedQuad = (quadId: string) => {
+    setOpenCompletedQuads(prev => ({ ...prev, [quadId]: !prev[quadId] }));
+  };
+
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [viewLayout, setViewLayout] = useState<'matrix2x2' | 'columns'>('matrix2x2');
   const [showHelp, setShowHelp] = useState(false);
@@ -469,6 +497,156 @@ export default function EisenhowerMatrixView({
   }, [filteredTasks]);
 
   const activeCount = filteredTasks.filter(t => !t.completed).length;
+  const completedCount = filteredTasks.length - activeCount;
+
+  const renderTaskCard = (task: TaskNode) => {
+    const isSelected = selectedNodeId === task.id;
+    const isDraggingTouch = touchDrag?.taskId === task.id;
+    const overdue = isOverdue(task.dueDate);
+    const dateFormatted = formatNotionDate(task.dueDate);
+    const subtasks = nodes.filter(n => n.parentId === task.id && !n.isContainer && !n.isWorkflowRectangle);
+    const completedSubtasks = subtasks.filter(s => s.completed).length;
+    const pomoStats = getPomoStatsForNode(task, nodes);
+
+    return (
+      <div
+        key={task.id}
+        data-task-id={task.id}
+        draggable="true"
+        onDragStart={(e) => handleDragStart(e, task.id)}
+        onTouchStart={(e) => handleTouchStart(e, task.id, task.text)}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectNode(task.id, e);
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          if (onFocusedTaskIdChange) onFocusedTaskIdChange(task.id);
+        }}
+        className={`group relative bg-white dark:bg-[#252525] rounded-md p-2.5 border transition-all cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:shadow-none ${
+          isDraggingTouch
+            ? 'opacity-40 scale-[0.98]'
+            : isSelected
+              ? 'border-indigo-500 ring-1 ring-indigo-500/20'
+              : 'border-[#E9E9E7] dark:border-[#2F2F2F] hover:border-[#C4C3BE] dark:hover:border-[#444444]'
+        }`}
+      >
+        {/* Top Row: Checkbox, Title and Hover Actions */}
+        <div className="flex items-start gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onUpdateNode({
+                ...task,
+                completed: !task.completed,
+                updatedAt: new Date().toISOString()
+              });
+            }}
+            className={`w-4 h-4 rounded mt-0.5 border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+              task.completed 
+                ? 'bg-[#1E7242] border-[#1E7242] text-white' 
+                : 'border-[#C4C3BE] dark:border-[#555555] hover:border-slate-500 bg-white dark:bg-[#202020]'
+            }`}
+            title={task.completed ? "Отметить как невыполненную" : "Отметить как выполненную"}
+          >
+            {task.completed && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+          </button>
+
+          <div className="flex-1 min-w-0">
+            <span className={`text-[12.5px] leading-snug font-medium text-[#37352F] dark:text-[#ECECEC] break-words block ${
+              task.completed ? 'line-through text-[#9B9A97] dark:text-[#6F6E6B]' : ''
+            }`}>
+              {task.text}
+            </span>
+          </div>
+
+          {/* Quick Hover Controls */}
+          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectNode(task.id);
+              }}
+              className="p-1 rounded text-[#9B9A97] hover:text-[#37352F] dark:hover:text-white hover:bg-[#F7F6F3] dark:hover:bg-[#333333] transition-colors"
+              title="Редактировать"
+            >
+              <FileText className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteNode(task.id);
+              }}
+              className="p-1 rounded text-[#9B9A97] hover:text-rose-500 hover:bg-[#F7F6F3] dark:hover:bg-[#333333] transition-colors"
+              title="Удалить"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Properties row */}
+        <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-1 border-t border-[#F2F1ED] dark:border-[#2C2C2C]">
+          
+          {/* Date Badge */}
+          {visibleProps.dueDate && task.dueDate && (
+            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-medium ${
+              overdue && !task.completed
+                ? 'bg-[#FFE2DD] text-[#C23C32] dark:bg-[#4D2420] dark:text-[#FFAAA0]' 
+                : 'bg-[#F7F6F3] text-[#787774] dark:bg-[#2C2C2C] dark:text-[#9B9A97]'
+            }`}>
+              <Calendar className="w-2.5 h-2.5" />
+              <span>{dateFormatted}</span>
+            </span>
+          )}
+
+          {/* Tags Chips */}
+          {visibleProps.tags && task.tags && task.tags.length > 0 && (
+            task.tags.map((tag, tIdx) => {
+              const style = getNotionTagColor(tag);
+              return (
+                <span
+                  key={tIdx}
+                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${style.bg} ${style.text}`}
+                >
+                  #{tag}
+                </span>
+              );
+            })
+          )}
+
+          {/* Subtasks Count */}
+          {visibleProps.subtasks && subtasks.length > 0 && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#E8DEEE]/70 dark:bg-[#3C254C]/70 text-[#6940A5] dark:text-[#D5B8F6]">
+              <ListTree className="w-2.5 h-2.5" />
+              <span>{completedSubtasks}/{subtasks.length}</span>
+            </span>
+          )}
+
+          {/* Pomodoro Focus Time */}
+          {visibleProps.pomodoro && pomoStats.pomodoroTotalTime > 0 && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-mono">
+              <span>🍅</span>
+              <span>{formatTotalPomoTime(pomoStats.pomodoroTotalTime)}</span>
+            </span>
+          )}
+
+          {/* Estimated Time */}
+          {visibleProps.estimatedTime && task.estimatedTime !== undefined && task.estimatedTime !== null && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+              <Timer className="w-2.5 h-2.5" />
+              <span>{task.estimatedTime}м</span>
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div 
@@ -479,6 +657,66 @@ export default function EisenhowerMatrixView({
           : 'w-full h-full'
       }`}
     >
+      {/* Top Toolbar */}
+      <div className="px-3 sm:px-4 py-2 border-b border-[#EBEAE7] dark:border-[#2F2F2F] bg-[#FAF9F6] dark:bg-[#1E1E1E] flex items-center justify-between gap-2 text-xs shrink-0">
+        <div className="flex items-center gap-2 text-[#787774] dark:text-[#9B9A97]">
+          <span className="font-semibold text-[#37352F] dark:text-[#EBEBEB]">Матрица Эйзенхауэра</span>
+          <span className="bg-[#E9E9E7] dark:bg-[#2C2C2C] px-1.5 py-0.5 rounded-full text-[11px] font-mono">
+            {activeCount}/{filteredTasks.length}
+          </span>
+          <span className="hidden sm:inline-block text-[11px] text-[#9B9A97] dark:text-[#787774]">
+            • Важное время: {totalImportantText}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {/* Hide/Collapse Completed Toggle */}
+          {completedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setCollapseCompleted(!collapseCompleted)}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                collapseCompleted
+                  ? 'bg-[#2383E2]/15 text-[#2383E2] dark:bg-[#2383E2]/25 font-semibold'
+                  : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-white hover:bg-[#EAEAEA] dark:hover:bg-[#2C2C2C]'
+              }`}
+              title={collapseCompleted ? "Показать все задачи" : "Скрыть выполненные задачи"}
+            >
+              {collapseCompleted ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              <span>{collapseCompleted ? `Скрыто: ${completedCount}` : 'Скрыть выполненные'}</span>
+            </button>
+          )}
+
+          {/* View layout toggle: 2x2 vs Columns */}
+          <div className="flex items-center bg-[#EAE9E5] dark:bg-[#2B2B2B] p-0.5 rounded-md">
+            <button
+              type="button"
+              onClick={() => setViewLayout('matrix2x2')}
+              className={`p-1 rounded text-xs transition-colors cursor-pointer ${
+                viewLayout === 'matrix2x2' 
+                  ? 'bg-white dark:bg-[#383838] text-[#37352F] dark:text-white shadow-2xs font-medium' 
+                  : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F]'
+              }`}
+              title="Сетка 2x2"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewLayout('columns')}
+              className={`p-1 rounded text-xs transition-colors cursor-pointer ${
+                viewLayout === 'columns' 
+                  ? 'bg-white dark:bg-[#383838] text-[#37352F] dark:text-white shadow-2xs font-medium' 
+                  : 'text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F]'
+              }`}
+              title="Колонки"
+            >
+              <List className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Main Canvas Area */}
       <div className="flex-1 p-3 md:p-4 overflow-y-auto custom-scrollbar flex flex-col min-h-0 bg-[#FAFAFA] dark:bg-[#191919]">
         <div className={`grid gap-3 flex-1 min-h-[500px] ${
@@ -487,9 +725,13 @@ export default function EisenhowerMatrixView({
             : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
         }`}>
           {quadrants.map(quad => {
-            const quadTasks = getTasksForQuadrant(quad);
+            const allQuadTasks = getTasksForQuadrant(quad);
+            const activeQuadTasks = allQuadTasks.filter(t => !t.completed);
+            const completedQuadTasks = allQuadTasks.filter(t => t.completed);
+            const displayedTasks = collapseCompleted ? activeQuadTasks : allQuadTasks;
             const isOver = draggedOverQuadrant === quad.id;
             const isCreating = inlineCreateQuadId === quad.id;
+            const isCompletedExpanded = !!openCompletedQuads[quad.id];
 
             return (
               <div
@@ -511,7 +753,7 @@ export default function EisenhowerMatrixView({
                       {quad.roman}. {quad.title}
                     </span>
                     <span className="text-[11px] font-medium text-[#787774] dark:text-[#9B9A97]">
-                      {quadTasks.length}
+                      {activeQuadTasks.length}{completedQuadTasks.length > 0 ? `/${allQuadTasks.length}` : ''}
                     </span>
                   </div>
 
@@ -539,7 +781,7 @@ export default function EisenhowerMatrixView({
 
                 {/* Task Cards Container */}
                 <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar min-h-0 pt-1">
-                  {quadTasks.length === 0 && !isCreating ? (
+                  {displayedTasks.length === 0 && completedQuadTasks.length === 0 && !isCreating ? (
                     <div className="h-28 flex flex-col items-center justify-center text-center p-3 select-none">
                       <span className="text-xs text-[#9B9A97] dark:text-[#6F6E6B]">
                         Нет задач
@@ -554,154 +796,33 @@ export default function EisenhowerMatrixView({
                       </button>
                     </div>
                   ) : (
-                    quadTasks.map(task => {
-                      const isSelected = selectedNodeId === task.id;
-                      const isDraggingTouch = touchDrag?.taskId === task.id;
-                      const overdue = isOverdue(task.dueDate);
-                      const dateFormatted = formatNotionDate(task.dueDate);
-                      const subtasks = nodes.filter(n => n.parentId === task.id && !n.isContainer && !n.isWorkflowRectangle);
-                      const completedSubtasks = subtasks.filter(s => s.completed).length;
-                      const pomoStats = getPomoStatsForNode(task, nodes);
+                    displayedTasks.map(task => renderTaskCard(task))
+                  )}
 
-                      return (
-                        <div
-                          key={task.id}
-                          data-task-id={task.id}
-                          draggable="true"
-                          onDragStart={(e) => handleDragStart(e, task.id)}
-                          onTouchStart={(e) => handleTouchStart(e, task.id, task.text)}
-                          onTouchMove={handleTouchMove}
-                          onTouchEnd={handleTouchEnd}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectNode(task.id, e);
-                          }}
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            if (onFocusedTaskIdChange) onFocusedTaskIdChange(task.id);
-                          }}
-                          className={`group relative bg-white dark:bg-[#252525] rounded-md p-2.5 border transition-all cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:shadow-none ${
-                            isDraggingTouch
-                              ? 'opacity-40 scale-[0.98]'
-                              : isSelected
-                                ? 'border-indigo-500 ring-1 ring-indigo-500/20'
-                                : 'border-[#E9E9E7] dark:border-[#2F2F2F] hover:border-[#C4C3BE] dark:hover:border-[#444444]'
-                          }`}
-                        >
-                          {/* Top Row: Checkbox, Title and Hover Actions */}
-                          <div className="flex items-start gap-2">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateNode({
-                                  ...task,
-                                  completed: !task.completed,
-                                  updatedAt: new Date().toISOString()
-                                });
-                              }}
-                              className={`w-4 h-4 rounded mt-0.5 border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
-                                task.completed 
-                                  ? 'bg-[#1E7242] border-[#1E7242] text-white' 
-                                  : 'border-[#C4C3BE] dark:border-[#555555] hover:border-slate-500 bg-white dark:bg-[#202020]'
-                              }`}
-                              title={task.completed ? "Отметить как невыполненную" : "Отметить как выполненную"}
-                            >
-                              {task.completed && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                            </button>
-
-                            <div className="flex-1 min-w-0">
-                              <span className={`text-[12.5px] leading-snug font-medium text-[#37352F] dark:text-[#ECECEC] break-words block ${
-                                task.completed ? 'line-through text-[#9B9A97] dark:text-[#6F6E6B]' : ''
-                              }`}>
-                                {task.text}
-                              </span>
-                            </div>
-
-                            {/* Quick Hover Controls */}
-                            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onSelectNode(task.id);
-                                }}
-                                className="p-1 rounded text-[#9B9A97] hover:text-[#37352F] dark:hover:text-white hover:bg-[#F7F6F3] dark:hover:bg-[#333333] transition-colors"
-                                title="Редактировать"
-                              >
-                                <FileText className="w-3 h-3" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeleteNode(task.id);
-                                }}
-                                className="p-1 rounded text-[#9B9A97] hover:text-rose-500 hover:bg-[#F7F6F3] dark:hover:bg-[#333333] transition-colors"
-                                title="Удалить"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Properties row */}
-                          <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-1 border-t border-[#F2F1ED] dark:border-[#2C2C2C]">
-                            
-                            {/* Date Badge */}
-                            {visibleProps.dueDate && task.dueDate && (
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-medium ${
-                                overdue && !task.completed
-                                  ? 'bg-[#FFE2DD] text-[#C23C32] dark:bg-[#4D2420] dark:text-[#FFAAA0]' 
-                                  : 'bg-[#F7F6F3] text-[#787774] dark:bg-[#2C2C2C] dark:text-[#9B9A97]'
-                              }`}>
-                                <Calendar className="w-2.5 h-2.5" />
-                                <span>{dateFormatted}</span>
-                              </span>
-                            )}
-
-                            {/* Tags Chips */}
-                            {visibleProps.tags && task.tags && task.tags.length > 0 && (
-                              task.tags.map((tag, tIdx) => {
-                                const style = getNotionTagColor(tag);
-                                return (
-                                  <span
-                                    key={tIdx}
-                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${style.bg} ${style.text}`}
-                                  >
-                                    #{tag}
-                                  </span>
-                                );
-                              })
-                            )}
-
-                            {/* Subtasks Count */}
-                            {visibleProps.subtasks && subtasks.length > 0 && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#E8DEEE]/70 dark:bg-[#3C254C]/70 text-[#6940A5] dark:text-[#D5B8F6]">
-                                <ListTree className="w-2.5 h-2.5" />
-                                <span>{completedSubtasks}/{subtasks.length}</span>
-                              </span>
-                            )}
-
-                            {/* Pomodoro Focus Time */}
-                            {visibleProps.pomodoro && pomoStats.pomodoroTotalTime > 0 && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-mono">
-                                <span>🍅</span>
-                                <span>{formatTotalPomoTime(pomoStats.pomodoroTotalTime)}</span>
-                              </span>
-                            )}
-
-                            {/* Estimated Time */}
-                            {visibleProps.estimatedTime && task.estimatedTime !== undefined && task.estimatedTime !== null && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                <Timer className="w-2.5 h-2.5" />
-                                <span>{task.estimatedTime}м</span>
-                              </span>
-                            )}
-                          </div>
+                  {/* Collapsible Completed section per quadrant when collapseCompleted is active */}
+                  {collapseCompleted && completedQuadTasks.length > 0 && (
+                    <div className="pt-2 border-t border-[#EBEAE7] dark:border-[#2C2C2C] mt-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleCompletedQuad(quad.id)}
+                        className="w-full flex items-center justify-between px-2 py-1 rounded text-[11px] font-medium text-[#787774] dark:text-[#9B9A97] hover:bg-[#EAE9E5] dark:hover:bg-[#2A2A2A] transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <ChevronRight className={`w-3 h-3 transition-transform ${isCompletedExpanded ? 'rotate-90' : ''}`} />
+                          <CheckCircle2 className="w-3 h-3 text-[#1E7242]" />
+                          <span>Выполненные</span>
                         </div>
-                      );
-                    })
+                        <span className="font-mono text-[10px] bg-slate-200 dark:bg-neutral-700 px-1 rounded">
+                          {completedQuadTasks.length}
+                        </span>
+                      </button>
+
+                      {isCompletedExpanded && (
+                        <div className="mt-1.5 space-y-1.5 pl-1">
+                          {completedQuadTasks.map(task => renderTaskCard(task))}
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {/* Inline creation input */}

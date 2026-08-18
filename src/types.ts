@@ -1,6 +1,6 @@
 export type Priority = 'low' | 'medium' | 'high' | 'urgent' | 'none';
 
-export type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo';
+export type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
 
 export interface AttachmentFile {
   id: string;
@@ -115,7 +115,7 @@ export interface TaskNode {
   stage?: 'ideation' | 'planning' | 'execution' | 'refinement' | 'review' | 'done'; // Optional workflow stage
   customProperties?: { id: string; name: string; value: string }[]; // Dynamic custom key-value properties
   blockedBy?: string[]; // Optional array of node IDs that block this node
-  defaultView?: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'anydo'; // Optional view mode to display by default when focused
+  defaultView?: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'; // Optional view mode to display by default when focused
   useExactCoordinates?: boolean; // Special flag to skip radial placement and use click coordinates
   mirrorGroupId?: string; // Optional ID linking mirrored/synchronized tasks
   mirrorParentId?: string; // Optional ID of the original parent task of a mirrored subtask
