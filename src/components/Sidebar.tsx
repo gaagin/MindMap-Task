@@ -577,12 +577,14 @@ export default function Sidebar({
         {/* Notion Workspace Header */}
         <div className="h-14 px-4 border-b border-[rgba(55,53,47,0.07)] dark:border-[rgba(255,255,255,0.07)] flex items-center justify-between hover:bg-[rgba(55,53,47,0.03)] dark:hover:bg-[rgba(255,255,255,0.03)] transition-colors">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 rounded-md bg-[#37352F] dark:bg-white text-white dark:text-[#202020] flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-              N
-            </div>
+            <img 
+              src="/icon.svg" 
+              alt="MindFlow" 
+              className="w-7 h-7 rounded-lg shadow-2xs shrink-0 object-cover" 
+            />
             <div className="truncate flex items-center gap-1.5">
               <h1 className="text-xs font-semibold tracking-tight text-[#37352F] dark:text-[#E6E6E6] truncate">
-                Интеллект-Карты
+                MindFlow
               </h1>
               <ChevronDown className="w-3 h-3 text-[rgba(55,53,47,0.45)] dark:text-[rgba(255,255,255,0.45)] shrink-0" />
             </div>

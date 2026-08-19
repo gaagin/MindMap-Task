@@ -1,10 +1,10 @@
 {
-  "name": "Mind Map Tasks",
-  "short_name": "MindMapTasks",
-  "description": "An interactive mind map and task manager designed to organize projects with task priorities, tags, rich notes, file attachments, and hierarchical folders.",
+  "name": "MindFlow",
+  "short_name": "MindFlow",
+  "description": "Интеллект-карты, планировщик задач, календарь и AI Co-pilot в едином стильном пространстве.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
+  "background_color": "#ffffff",
   "theme_color": "#4f46e5",
   "orientation": "any",
   "icons": [

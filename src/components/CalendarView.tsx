@@ -34,7 +34,7 @@ interface CalendarViewProps {
   onSelectNode: (id: string | null, eOrIsMulti?: any) => void;
   onUpdateNode: (node: TaskNode) => void;
   onDeleteNode: (id: string) => void;
-  onCreateTask?: (text: string, initialTags: string[], dueDate?: string, dueTime?: string) => void;
+  onCreateTask?: (text: string, initialTags: string[], dueDate?: string, dueTime?: string, priority?: Priority, startTime?: string) => void;
   setViewMode?: (mode: ViewMode) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
   onFocusedTaskIdChange?: (id: string | null) => void;
@@ -533,13 +533,7 @@ export default function CalendarView({
   }, [nodes]);
 
   const scheduledTasks = useMemo(() => {
-    const rawScheduled = projectTasks.filter(n => !!n.dueDate);
-    return rawScheduled.filter(parent => {
-      const hasSubtaskOnSameDate = rawScheduled.some(sub => 
-        sub.parentId === parent.id && sub.dueDate === parent.dueDate
-      );
-      return !hasSubtaskOnSameDate;
-    });
+    return projectTasks.filter(n => !!n.dueDate);
   }, [projectTasks]);
 
   const rawUnscheduledTasks = projectTasks.filter(n => !n.dueDate);
@@ -733,7 +727,14 @@ export default function CalendarView({
     e.preventDefault();
     if (!quickModalText.trim()) return;
     if (onCreateTask) {
-      onCreateTask(quickModalText.trim(), [], quickModalDate || undefined, quickModalDueTime || quickModalStartTime || undefined);
+      onCreateTask(
+        quickModalText.trim(),
+        [],
+        quickModalDate || undefined,
+        quickModalDueTime || undefined,
+        quickModalPriority || 'none',
+        quickModalStartTime || undefined
+      );
     } else {
       const fallbackNode: TaskNode = {
         id: 'node-' + Math.random().toString(36).substring(2, 9),
@@ -756,6 +757,7 @@ export default function CalendarView({
     setQuickModalText('');
     setQuickModalStartTime('');
     setQuickModalDueTime('');
+    setQuickModalPriority('medium');
     setIsQuickCreateModalOpen(false);
   };
 

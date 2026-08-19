@@ -5150,11 +5150,6 @@ export default function App() {
       }
     }
 
-    // Default tag is 'personal' if no tags are provided
-    if (finalTags.length === 0) {
-      finalTags.push('personal');
-    }
-
     // Auto-populate due date based on active due date filters if not explicitly provided
     const getLocalDateString = (offsetDays = 0) => {
       const d = new Date();
@@ -5375,6 +5370,53 @@ export default function App() {
 
     setSelectedNodeId(finalNewNode.id);
     setIsDrawerOpen(true);
+    setLastCreatedNodeId(finalNewNode.id);
+  };
+
+  // Create a new task originating from the Calendar View
+  const handleCreateCalendarTask = (
+    text: string,
+    tags: string[] = [],
+    dueDate?: string,
+    dueTime?: string,
+    priority: Priority = 'none',
+    startTime?: string
+  ) => {
+    const pid = state.activeProjectId;
+    if (!pid) return;
+
+    const currentNodes = state.nodes[pid] || [];
+    pushToUndo(pid, currentNodes);
+
+    const extraFields: Partial<TaskNode> = {};
+    if (startTime) extraFields.startTime = startTime;
+    if (dueTime) extraFields.dueTime = dueTime;
+
+    const { finalNewNode, mirrorCloneNode, extraNodesToAdd } = processNewTaskForPersonalTags(
+      text,
+      tags,
+      priority,
+      null,
+      dueDate,
+      extraFields
+    );
+
+    setState(prev => {
+      const current = prev.nodes[pid] || [];
+      const nodesToAdd = [finalNewNode];
+      if (mirrorCloneNode) {
+        nodesToAdd.push(mirrorCloneNode);
+      }
+      return {
+        ...prev,
+        nodes: {
+          ...prev.nodes,
+          [pid]: syncCompletion([...current, ...extraNodesToAdd, ...nodesToAdd])
+        }
+      };
+    });
+
+    setSelectedNodeId(finalNewNode.id);
     setLastCreatedNodeId(finalNewNode.id);
   };
 
@@ -5607,7 +5649,9 @@ export default function App() {
         }
       }
 
-      let updatedList = currentNodes.map(n => n.id === adjustedUpdatedNode.id ? nodeWithTimeStamp : n);
+      let updatedList = currentNodes.some(n => n.id === adjustedUpdatedNode.id)
+        ? currentNodes.map(n => n.id === adjustedUpdatedNode.id ? nodeWithTimeStamp : n)
+        : [...currentNodes, nodeWithTimeStamp];
       if (mirrorCloneNode) {
         updatedList = [...updatedList, mirrorCloneNode];
       }
@@ -6279,8 +6323,8 @@ export default function App() {
             onSelectNode={handleSelectNode}
             onUpdateNode={handleUpdateNode}
             onDeleteNode={handleDeleteNode}
-            onCreateTask={(text, initialTags, dueDate, dueTime) => {
-              handleCreateMobileTask(text, initialTags || [], 'none', dueDate, null, dueTime);
+            onCreateTask={(text, initialTags, dueDate, dueTime, priority, startTime) => {
+              handleCreateCalendarTask(text, initialTags || [], dueDate, dueTime, priority, startTime);
             }}
             setViewMode={(newMode) => setViewMode(newMode)}
             onFullScreenChange={setIsViewFullScreen}
