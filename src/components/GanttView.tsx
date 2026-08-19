@@ -144,6 +144,7 @@ export default function GanttView({
   const [editingTaskTitle, setEditingTaskTitle] = useState('');
   const [newInlineTaskText, setNewInlineTaskText] = useState('');
   const [showNewTaskInline, setShowNewTaskInline] = useState(false);
+  const [showUnscheduledDrawer, setShowUnscheduledDrawer] = useState(false);
 
   // Real today
   const realToday = useMemo(() => new Date(), []);
@@ -412,20 +413,26 @@ export default function GanttView({
   }, [realToday, timelineStartMs, timelineEndMs, totalTimelinePxWidth]);
 
   // Filter tasks
-  const tasks = useMemo(() => {
+  const allTasks = useMemo(() => {
     return (nodes || []).filter(n => !n.isContainer && !n.isWorkflowRectangle);
   }, [nodes]);
 
-  // Stable emoji for task
+  // Tasks that have dates assigned (startDate or dueDate)
+  const scheduledTasks = useMemo(() => {
+    return allTasks.filter(n => Boolean(n.startDate || n.dueDate));
+  }, [allTasks]);
+
+  // Tasks without dates (Unscheduled / Без даты)
+  const unscheduledTasks = useMemo(() => {
+    return allTasks.filter(n => !n.startDate && !n.dueDate);
+  }, [allTasks]);
+
+  // Icon for task
   const getTaskEmoji = (task: TaskNode) => {
     if (task.icon) return task.icon;
-    let hash = 0;
-    for (let i = 0; i < task.id.length; i++) {
-      hash = (hash << 5) - hash + task.id.charCodeAt(i);
-      hash |= 0;
-    }
-    const idx = Math.abs(hash) % NOTION_EMOJIS.length;
-    return NOTION_EMOJIS[idx];
+    const match = task.text.match(/^[\p{Emoji}\u200d\uFE0F\uFE0E]+/u);
+    if (match) return match[0];
+    return '📌';
   };
 
   // Helper to get clean title without emoji prefix
@@ -433,27 +440,30 @@ export default function GanttView({
     return text.replace(/^[\p{Emoji}\u200d\uFE0F\uFE0E]+\s*/u, '').trim() || text;
   };
 
-  // Helper to determine status tag for task
+  // Helper to determine real status tag for task (No fake random data)
   const getTaskTag = (task: TaskNode) => {
-    if (task.completed) {
-      return NOTION_STATUS_TAGS[0]; // Posted
+    if (task.completed || task.status === 'done') {
+      return { id: 'done', label: 'Готово', bg: 'bg-[#DBEDDB]', text: 'text-[#1C3829]', darkBg: 'dark:bg-[#1C3829]', darkText: 'dark:text-[#DBEDDB]' };
+    }
+    if (task.status === 'progress') {
+      return { id: 'progress', label: 'В процессе', bg: 'bg-[#D3E5EF]', text: 'text-[#183347]', darkBg: 'dark:bg-[#183347]', darkText: 'dark:text-[#D3E5EF]' };
+    }
+    if (task.status === 'waiting') {
+      return { id: 'waiting', label: 'Ожидание', bg: 'bg-[#FDECC8]', text: 'text-[#402C1B]', darkBg: 'dark:bg-[#402C1B]', darkText: 'dark:text-[#FDECC8]' };
+    }
+    if (task.status === 'todo') {
+      return { id: 'todo', label: 'К выполнению', bg: 'bg-[#F1F0EF]', text: 'text-[#5A5A5A]', darkBg: 'dark:bg-[#2F2F2F]', darkText: 'dark:text-[#D4D4D4]' };
     }
     if (task.tags && task.tags.length > 0) {
-      const firstTag = task.tags[0].toLowerCase();
-      const match = NOTION_STATUS_TAGS.find(t => t.label.toLowerCase() === firstTag || t.id === firstTag);
-      if (match) return match;
+      return { id: 'tag', label: task.tags[0], bg: 'bg-[#E8DEEE]', text: 'text-[#412454]', darkBg: 'dark:bg-[#412454]', darkText: 'dark:text-[#E8DEEE]' };
     }
-    if (task.progress !== undefined && task.progress >= 80) return NOTION_STATUS_TAGS[1]; // Ready to post
-    if (task.progress !== undefined && task.progress >= 40) return NOTION_STATUS_TAGS[4]; // In Progress
-    if (task.priority === 'urgent' || task.priority === 'high') return NOTION_STATUS_TAGS[2]; // Needs proofreading
-    
-    let hash = 0;
-    for (let i = 0; i < task.text.length; i++) {
-      hash = (hash << 5) - hash + task.text.charCodeAt(i);
-      hash |= 0;
+    if (task.priority === 'urgent') {
+      return { id: 'urgent', label: 'Срочно', bg: 'bg-[#FFE2DD]', text: 'text-[#5D1715]', darkBg: 'dark:bg-[#5D1715]', darkText: 'dark:text-[#FFE2DD]' };
     }
-    const idx = Math.abs(hash) % NOTION_STATUS_TAGS.length;
-    return NOTION_STATUS_TAGS[idx];
+    if (task.priority === 'high') {
+      return { id: 'high', label: 'Высокий', bg: 'bg-[#FFE2DD]', text: 'text-[#5D1715]', darkBg: 'dark:bg-[#5D1715]', darkText: 'dark:text-[#FFE2DD]' };
+    }
+    return null;
   };
 
   // Pre-calculate date range and px position for each task bar
@@ -462,31 +472,12 @@ export default function GanttView({
     let endStr = task.dueDate;
 
     if (!startStr && !endStr) {
-      let hash = 0;
-      for (let i = 0; i < task.id.length; i++) {
-        hash = (hash << 5) - hash + task.id.charCodeAt(i);
-        hash |= 0;
-      }
-      const offsetDays = (Math.abs(hash) % 18) - 4;
-      const duration = 2 + (Math.abs(hash >> 2) % 4);
-      
-      const s = new Date(realToday);
-      s.setDate(realToday.getDate() + offsetDays);
-      startStr = s.toISOString().split('T')[0];
-      
-      const e = new Date(s);
-      e.setDate(s.getDate() + duration);
-      endStr = e.toISOString().split('T')[0];
+      startStr = realTodayStr;
+      endStr = realTodayStr;
     } else if (startStr && !endStr) {
-      const s = new Date(startStr);
-      const e = new Date(s);
-      e.setDate(s.getDate() + 2);
-      endStr = e.toISOString().split('T')[0];
+      endStr = startStr;
     } else if (!startStr && endStr) {
-      const e = new Date(endStr);
-      const s = new Date(e);
-      s.setDate(e.getDate() - 2);
-      startStr = s.toISOString().split('T')[0];
+      startStr = endStr;
     }
 
     const sDate = new Date(startStr!);
@@ -617,7 +608,7 @@ export default function GanttView({
       setActiveDrag(null);
 
       if (info && dragHasMovedRef.current && currentDrag) {
-        const task = tasks.find(t => t.id === info.drag.taskId);
+        const task = allTasks.find(t => t.id === info.drag.taskId);
         if (task) {
           const sDate = new Date(currentDrag.currentStartMs);
           const eDate = new Date(currentDrag.currentEndMs);
@@ -636,7 +627,7 @@ export default function GanttView({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [activeDrag, timelineStartMs, timelineEndMs, totalTimelinePxWidth, scaleMode, tasks, onUpdateNode]);
+  }, [activeDrag, timelineStartMs, timelineEndMs, totalTimelinePxWidth, scaleMode, allTasks, onUpdateNode]);
 
   // Navigate timeline with proportional step according to current scale
   const shiftTimeline = (direction: -1 | 1) => {
@@ -756,6 +747,23 @@ export default function GanttView({
         {/* Right: Scale Dropdown ([Quarters ⌄] / Days) and < Today > navigation */}
         <div className="flex items-center gap-2 shrink-0">
           
+          {/* Unscheduled Tasks Button */}
+          {unscheduledTasks.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowUnscheduledDrawer(!showUnscheduledDrawer)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium border transition-colors cursor-pointer ${
+                showUnscheduledDrawer
+                  ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700 ring-1 ring-amber-400/40'
+                  : 'bg-[#F7F7F5] dark:bg-[#252525] text-[#787774] dark:text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#EBEBEB] border-[#EDEDEB] dark:border-[#383838]'
+              }`}
+              title="Задачи без даты (нажмите, чтобы открыть)"
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-500" />
+              <span>Без даты ({unscheduledTasks.length})</span>
+            </button>
+          )}
+
           {/* Scale selector */}
           <div className="relative">
             <button
@@ -831,7 +839,7 @@ export default function GanttView({
               <span>Status</span>
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-[#F1F1EF] dark:divide-[#252525]">
-              {tasks.map(task => {
+              {scheduledTasks.map(task => {
                 const emoji = getTaskEmoji(task);
                 const tag = getTaskTag(task);
                 const clean = getCleanTitle(task.text);
@@ -845,9 +853,11 @@ export default function GanttView({
                       <span>{emoji}</span>
                       <span className="truncate text-[#37352F] dark:text-[#EBEBEB]">{clean}</span>
                     </div>
-                    <span className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 font-medium ${tag.bg} ${tag.text} ${tag.darkBg} ${tag.darkText}`}>
-                      {tag.label}
-                    </span>
+                    {tag && (
+                      <span className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 font-medium ${tag.bg} ${tag.text} ${tag.darkBg} ${tag.darkText}`}>
+                        {tag.label}
+                      </span>
+                    )}
                   </div>
                 );
               })}
@@ -928,18 +938,25 @@ export default function GanttView({
             {/* TIMELINE ROWS (Card items) */}
             <div className="flex-1 py-3 flex flex-col gap-2 relative z-10">
               
-              {tasks.length === 0 ? (
-                <div className="py-20 text-center text-[#9B9A97]">
-                  <p className="text-sm">Нет задач на таймлайне.</p>
+              {scheduledTasks.length === 0 ? (
+                <div className="py-20 text-center text-[#9B9A97] px-4 max-w-md mx-auto select-none">
+                  <Clock className="w-8 h-8 mx-auto text-[#9B9A97]/60 mb-2" />
+                  <p className="text-sm font-medium text-[#37352F] dark:text-[#EBEBEB]">Нет задач с датами на таймлайне</p>
+                  <p className="text-xs text-[#787774] dark:text-[#9B9A97] mt-1">
+                    {unscheduledTasks.length > 0
+                      ? `В проекте ${unscheduledTasks.length} задач(и) без дат. Нажмите «Без даты» вверху, чтобы распределить их.`
+                      : 'Задайте дату начала или срок выполнения в карточке задачи.'}
+                  </p>
                   <button 
                     onClick={() => handleCreateNewTask()}
-                    className="mt-3 text-[#2383E2] hover:underline text-xs font-medium"
+                    className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2383E2] text-white text-xs font-semibold hover:bg-[#1f73c6] transition-colors cursor-pointer"
                   >
-                    + Добавить первый пост
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Создать задачу на сегодня</span>
                   </button>
                 </div>
               ) : (
-                tasks.map((task) => {
+                scheduledTasks.map((task) => {
                   const range = getTaskRange(task);
                   const isSelected = selectedNodeId === task.id;
                   const isBeingDragged = activeDrag && activeDrag.taskId === task.id;
@@ -998,7 +1015,7 @@ export default function GanttView({
                                 ? 'bg-[#FAFAF9] dark:bg-[#202020] border-[#E9E9E7] dark:border-[#2F2F2F] opacity-75'
                                 : 'bg-white dark:bg-[#222222] border-[#E9E9E7] dark:border-[#2F2F2F] hover:border-[#D0D0CE] dark:hover:border-[#3F3F3F]'
                         }`}
-                        title={`${cleanTitle}\nПериод: ${range.startStr} - ${range.endStr}\nСтатус: ${tag.label}`}
+                        title={`${cleanTitle}\nПериод: ${range.startStr} - ${range.endStr}${tag ? `\nСтатус: ${tag.label}` : ''}`}
                       >
                         
                         {/* Left Resize Handle */}
@@ -1087,7 +1104,7 @@ export default function GanttView({
                         </div>
 
                         {/* Status Tag Pill in Notion Pastel Color */}
-                        {visibleProps.tag && (
+                        {visibleProps.tag && tag && (
                           <div className="relative shrink-0 ml-1">
                             <button
                               type="button"
@@ -1119,7 +1136,7 @@ export default function GanttView({
                                     className={`px-2 py-1 rounded text-left font-medium ${t.bg} ${t.text} ${t.darkBg} ${t.darkText} hover:opacity-85 flex items-center justify-between cursor-pointer`}
                                   >
                                     <span>{t.label}</span>
-                                    {tag.id === t.id && <Check className="w-3.5 h-3.5" />}
+                                    {tag.label === t.label && <Check className="w-3.5 h-3.5" />}
                                   </button>
                                 ))}
                               </div>
@@ -1191,6 +1208,94 @@ export default function GanttView({
 
           </div>
         </div>
+
+        {/* Unscheduled Tasks Drawer Slideover Panel */}
+        {showUnscheduledDrawer && (
+          <div className="w-80 border-l border-[#EDEDEB] dark:border-[#2F2F2F] bg-white dark:bg-[#1C1C1C] flex flex-col shrink-0 z-40 shadow-xl">
+            <div className="p-3 border-b border-[#EDEDEB] dark:border-[#2F2F2F] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-500" />
+                <span className="font-semibold text-[13px] text-[#37352F] dark:text-[#EBEBEB]">Задачи без даты ({unscheduledTasks.length})</span>
+              </div>
+              <button
+                onClick={() => setShowUnscheduledDrawer(false)}
+                className="p-1 hover:bg-[#F1F1EF] dark:hover:bg-[#2B2B2B] rounded text-[#9B9A97] hover:text-[#37352F] dark:hover:text-[#EBEBEB] cursor-pointer text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5 custom-scrollbar">
+              {unscheduledTasks.length === 0 ? (
+                <div className="py-12 text-center text-[#9B9A97] text-xs">
+                  Все задачи распределены по датам!
+                </div>
+              ) : (
+                unscheduledTasks.map(task => {
+                  const emoji = getTaskEmoji(task);
+                  const clean = getCleanTitle(task.text);
+                  return (
+                    <div 
+                      key={`unscheduled-${task.id}`}
+                      className="p-2.5 rounded-lg border border-[#EDEDEB] dark:border-[#2E2E2E] bg-[#FAFAF9] dark:bg-[#232323] hover:border-[#2383E2]/50 transition-all flex flex-col gap-2 group"
+                    >
+                      <div 
+                        onClick={(e) => onSelectNode(task.id, e)}
+                        className="flex items-start gap-2 cursor-pointer"
+                      >
+                        <span className="text-base shrink-0">{emoji}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium text-[#37352F] dark:text-[#EBEBEB] truncate">{clean}</p>
+                          {task.description && (
+                            <p className="text-[11px] text-[#787774] dark:text-[#9B9A97] truncate mt-0.5">{task.description}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-[#EDEDEB]/60 dark:border-[#2E2E2E]">
+                        <button
+                          onClick={() => {
+                            const today = new Date().toISOString().split('T')[0];
+                            onUpdateNode({
+                              ...task,
+                              startDate: today,
+                              dueDate: today
+                            });
+                          }}
+                          className="flex-1 py-1 px-2 rounded bg-white dark:bg-[#2A2A2A] border border-[#EDEDEB] dark:border-[#383838] hover:bg-[#2383E2] hover:text-white dark:hover:bg-[#2383E2] text-[#37352F] dark:text-[#D4D4D4] text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          + Сегодня
+                        </button>
+                        <button
+                          onClick={() => {
+                            const tomorrow = new Date();
+                            tomorrow.setDate(tomorrow.getDate() + 1);
+                            const tStr = tomorrow.toISOString().split('T')[0];
+                            onUpdateNode({
+                              ...task,
+                              startDate: tStr,
+                              dueDate: tStr
+                            });
+                          }}
+                          className="flex-1 py-1 px-2 rounded bg-white dark:bg-[#2A2A2A] border border-[#EDEDEB] dark:border-[#383838] hover:bg-[#2383E2] hover:text-white dark:hover:bg-[#2383E2] text-[#37352F] dark:text-[#D4D4D4] text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          + Завтра
+                        </button>
+                        <button
+                          onClick={(e) => onSelectNode(task.id, e)}
+                          className="py-1 px-2 rounded bg-white dark:bg-[#2A2A2A] border border-[#EDEDEB] dark:border-[#383838] hover:bg-[#F1F1EF] dark:hover:bg-[#333333] text-[#787774] dark:text-[#9B9A97] text-[11px] font-medium transition-colors cursor-pointer"
+                          title="Открыть задачу и выбрать дату"
+                        >
+                          Выбрать
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
 
       </div>
 

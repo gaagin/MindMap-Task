@@ -1620,19 +1620,6 @@ export default function App() {
     }
   }, [focusedContainerId]);
 
-  const [isBottomViewsExpanded, setIsBottomViewsExpanded] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('task_mindmap_views_expanded');
-      return saved !== null ? saved === 'true' : true;
-    } catch {
-      return true;
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('task_mindmap_views_expanded', String(isBottomViewsExpanded));
-  }, [isBottomViewsExpanded]);
-
   // Track focus transitions to restore/apply filters
   const lastAppliedFocusIdRef = React.useRef<string | null>(null);
   const prevFocusedContainerIdRef = React.useRef<string | null>(null);
@@ -6845,109 +6832,7 @@ export default function App() {
           
           {renderViewComponent(viewMode)}
 
-
         </div>
-
-        {/* Unified Gorgeous Collapsible Bottom Views Panel */}
-        {state.activeProjectId && (
-          <div 
-            className="hidden sm:block fixed z-[110] bottom-4 left-1/2 -translate-x-1/2"
-          >
-            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-2 flex flex-col md:flex-row items-center gap-2 select-none">
-              
-              {/* Toggle Expand/Collapse Button (Header on mobile when expanded) */}
-              <div className="flex items-center justify-between w-full md:w-auto shrink-0 gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-extrabold text-indigo-600 dark:text-indigo-400 pl-1">
-                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                  <span>Виды</span>
-                </div>
-                
-                <button
-                  type="button"
-                  onClick={() => setIsBottomViewsExpanded(!isBottomViewsExpanded)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                  title={isBottomViewsExpanded ? "Свернуть панель" : "Развернуть панель"}
-                >
-                  {isBottomViewsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-                </button>
-              </div>
-
-              {isBottomViewsExpanded ? (
-                <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5 w-full md:w-auto">
-                  {viewsList.map(option => {
-                    const OptionIcon = option.icon;
-                    const isSelected = viewMode === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => setViewMode(option.id as any)}
-                        className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold transition-all shrink-0 cursor-pointer border ${
-                          isSelected
-                            ? 'bg-indigo-50/70 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 border-indigo-200/50 dark:border-indigo-900/40 shadow-xs'
-                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 border-transparent hover:bg-slate-50 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        <OptionIcon className="w-3.5 h-3.5" />
-                        <span>{option.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  {/* Compact Mode View Label */}
-                  {(() => {
-                    const activeOption = viewsList.find(o => o.id === viewMode);
-                    if (!activeOption) return null;
-                    const OptionIcon = activeOption.icon;
-                    return (
-                      <div className="px-3 py-1 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center gap-1.5 text-xs font-bold border border-indigo-200 dark:border-indigo-900/40">
-                        <OptionIcon className="w-3.5 h-3.5 animate-bounce" style={{ animationDuration: '3s' }} />
-                        <span>{activeOption.name}</span>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* Focus Default View Controls */}
-              {focusedNode && (
-                <div className={`flex items-center gap-2 border-slate-200 dark:border-slate-800 shrink-0 ${
-                  isBottomViewsExpanded ? 'w-full md:w-auto border-t md:border-t-0 md:border-l pt-2 md:pt-0 md:pl-3' : 'border-l pl-2'
-                }`}>
-                  <button
-                    type="button"
-                    onClick={handleToggleDefaultView}
-                    className={`px-2.5 py-1 rounded-xl flex items-center gap-1.5 text-[11px] font-extrabold transition-all border shrink-0 cursor-pointer ${
-                      focusedNode.defaultView === viewMode
-                        ? 'bg-amber-500/10 dark:bg-amber-500/25 text-amber-600 dark:text-amber-450 border-amber-300 dark:border-amber-800 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300 border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800/50'
-                    }`}
-                    title={
-                      focusedNode.defaultView === viewMode
-                        ? "Этот вид установлен по умолчанию для текущего фокуса. Нажмите, чтобы сбросить."
-                        : "Сделать этот вид по умолчанию при открывании текущего контейнера/задачи в фокусе."
-                    }
-                  >
-                    <Star className={`w-3.5 h-3.5 ${focusedNode.defaultView === viewMode ? 'fill-amber-500 text-amber-500' : 'text-slate-400'}`} />
-                    <span className={isBottomViewsExpanded ? 'inline' : 'hidden md:inline'}>
-                      {focusedNode.defaultView === viewMode ? 'По умолчанию' : 'Сделать по умолчанию'}
-                    </span>
-                  </button>
-                  
-                  {/* Tiny Indicator / Text showing current default view */}
-                  {isBottomViewsExpanded && focusedNode.defaultView && (
-                    <span className="text-[10px] text-amber-600 dark:text-amber-400 italic font-bold truncate max-w-[150px]">
-                      (дефолт: {viewsList.find(v => v.id === focusedNode.defaultView)?.name})
-                    </span>
-                  )}
-                </div>
-              )}
-              
-            </div>
-          </div>
-        )}
 
         {/* Task Properties slide-out drawer displays only on explicit open clicking Eye button */}
         {isDrawerOpen && selectedNode && (
@@ -8242,87 +8127,6 @@ export default function App() {
           </div>
         );
       })()}
-
-      {/* Floating Global Bulk Action Panel for Desktop */}
-      <AnimatePresence>
-        {selectedNodeIds.length > 0 && viewMode !== 'mobile-list' && viewMode !== 'canvas' && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.95 }}
-            transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[9999] flex flex-row items-center gap-3 px-4 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl shadow-[0_12px_40px_-6px_rgba(0,0,0,0.15)] dark:shadow-[0_12px_40px_-6px_rgba(0,0,0,0.5)] select-none text-slate-800 dark:text-slate-100 max-w-xl shrink-0"
-          >
-            <div className="flex items-center gap-2 px-1 shrink-0">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-[10px] font-black text-indigo-600 dark:text-indigo-400 font-mono">
-                {selectedNodeIds.length}
-              </span>
-              <span className="text-xs font-bold tracking-tight text-slate-700 dark:text-slate-300">Выделено</span>
-            </div>
-            
-            <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-800" />
-            
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleBulkToggleCompleted(true);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all cursor-pointer"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Выполнить</span>
-              </button>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleBulkToggleCompleted(false);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
-              >
-                <Circle className="w-3.5 h-3.5 text-slate-400" />
-                <span>Сбросить статус</span>
-              </button>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleBulkDelete();
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-rose-500 hover:bg-rose-600 text-white shadow-sm transition-all cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Удалить</span>
-              </button>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCopySourceNodeIds(selectedNodeIds);
-                  setIsCopyModalOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-tight bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-indigo-650 dark:hover:text-indigo-400 transition-all cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Копировать</span>
-              </button>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedNodeIds([]);
-                  setIsMultiSelectMode(false);
-                }}
-                className="flex items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-                title="Сбросить выделение"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

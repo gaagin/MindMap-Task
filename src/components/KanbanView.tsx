@@ -134,9 +134,6 @@ function cleanTaskTitle(text: string): string {
   return text.replace(emojiRegex, '');
 }
 
-// Sample assignees generator if not set
-const DEFAULT_ASSIGNEES = ['Mr.Pugo', 'Gillde', 'Alex', 'Elena', 'Mark'];
-
 export default function KanbanView({
   nodes,
   tagCategories,
@@ -377,35 +374,45 @@ export default function KanbanView({
     if (propsSelectedCategoryId !== undefined && propsSelectedCategoryId !== null) {
       return propsSelectedCategoryId;
     }
-    return tagCategories.length > 0 ? tagCategories[0].id : 'all';
+    return 'all';
   });
 
   useEffect(() => {
-    if (propsSelectedCategoryId !== undefined) {
+    if (propsSelectedCategoryId !== undefined && propsSelectedCategoryId !== null) {
       setSelectedCategoryId(propsSelectedCategoryId);
+    } else if (propsSelectedCategoryId === null) {
+      setSelectedCategoryId('all');
     }
   }, [propsSelectedCategoryId]);
 
   const handleSelectCategory = (catId: string | null) => {
-    setSelectedCategoryId(catId);
+    const targetId = !catId || catId === 'all' ? 'all' : catId;
+    setSelectedCategoryId(targetId);
     if (onSelectCategoryId) {
-      onSelectCategoryId(catId);
+      onSelectCategoryId(targetId === 'all' ? null : targetId);
     }
   };
 
-  const isAllCategories = selectedCategoryId === 'all' || (!selectedCategoryId && tagCategories.length === 0);
+  const isAllCategories = selectedCategoryId === 'all' || !selectedCategoryId;
   const activeCategory = isAllCategories 
     ? null 
-    : (tagCategories.find(c => c.id === selectedCategoryId) || tagCategories[0] || null);
+    : (tagCategories.find(c => c.id === selectedCategoryId) || null);
 
   const activeTags = useMemo(() => {
-    if (isAllCategories) {
+    if (isAllCategories || !activeCategory) {
       const allTags = new Set<string>();
       tagCategories.forEach(c => (c.tags || []).forEach(t => allTags.add(t)));
       nodes.forEach(n => (n.tags || []).forEach(t => allTags.add(t)));
       return Array.from(allTags).filter(Boolean);
     }
-    return activeCategory?.tags || [];
+    const catTags = new Set<string>(activeCategory.tags || []);
+    nodes.forEach(n => {
+      const matchCat = n.tagCategories?.some(tc => tc.id === activeCategory.id || tc.name.toLowerCase() === activeCategory.name.toLowerCase());
+      if (matchCat && n.tags) {
+        n.tags.forEach(t => catTags.add(t));
+      }
+    });
+    return Array.from(catTags).filter(Boolean);
   }, [isAllCategories, tagCategories, nodes, activeCategory]);
 
   // Inline creation states
@@ -624,29 +631,58 @@ export default function KanbanView({
         }
       );
     } else if (groupBy === 'category') {
-      cols.push({
-        id: 'uncategorized',
-        title: 'Без тега',
-        bgBadge: 'bg-[#E3E2E0] dark:bg-[#333333]',
-        textBadge: 'text-[#5A5A58] dark:text-[#B8B7B5]',
-        borderBadge: 'border-[#D1D0CE] dark:border-[#444444]',
-        items: filteredNodes.filter(n => !n.tags || n.tags.length === 0 || !n.tags.some(t => activeTags.includes(t)))
-      });
-
-      activeTags.forEach(tag => {
-        const parentCat = tagCategories.find(c => (c.tags || []).includes(tag)) || activeCategory;
-        const catColor = parentCat?.color;
-
+      if (activeCategory && activeTags.length === 0) {
+        // If a specific category was chosen and has no sub-tags yet, show the category column directly!
+        cols.push(
+          {
+            id: activeCategory.id,
+            title: activeCategory.name,
+            bgBadge: activeCategory.color ? '' : 'bg-[#EAE4F2] dark:bg-[#382352]/40',
+            textBadge: activeCategory.color ? '' : 'text-[#5B3D7D] dark:text-[#D2BFEC]',
+            borderBadge: activeCategory.color ? '' : 'border-[#D9CFE6] dark:border-[#4B2F6E]',
+            color: activeCategory.color,
+            items: filteredNodes.filter(n => 
+              n.tagCategories?.some(tc => tc.id === activeCategory.id || tc.name.toLowerCase() === activeCategory.name.toLowerCase()) ||
+              (n.tags && n.tags.some(t => t.toLowerCase() === activeCategory.name.toLowerCase()))
+            )
+          },
+          {
+            id: 'uncategorized',
+            title: 'Остальные задачи',
+            bgBadge: 'bg-[#E3E2E0] dark:bg-[#333333]',
+            textBadge: 'text-[#5A5A58] dark:text-[#B8B7B5]',
+            borderBadge: 'border-[#D1D0CE] dark:border-[#444444]',
+            items: filteredNodes.filter(n => 
+              !n.tagCategories?.some(tc => tc.id === activeCategory.id || tc.name.toLowerCase() === activeCategory.name.toLowerCase()) &&
+              !(n.tags && n.tags.some(t => t.toLowerCase() === activeCategory.name.toLowerCase()))
+            )
+          }
+        );
+      } else {
         cols.push({
-          id: tag,
-          title: `#${tag}`,
-          bgBadge: catColor ? '' : 'bg-[#EAE4F2] dark:bg-[#382352]/40',
-          textBadge: catColor ? '' : 'text-[#5B3D7D] dark:text-[#D2BFEC]',
-          borderBadge: catColor ? '' : 'border-[#D9CFE6] dark:border-[#4B2F6E]',
-          color: catColor,
-          items: filteredNodes.filter(n => n.tags && n.tags.includes(tag))
+          id: 'uncategorized',
+          title: 'Без тега',
+          bgBadge: 'bg-[#E3E2E0] dark:bg-[#333333]',
+          textBadge: 'text-[#5A5A58] dark:text-[#B8B7B5]',
+          borderBadge: 'border-[#D1D0CE] dark:border-[#444444]',
+          items: filteredNodes.filter(n => !n.tags || n.tags.length === 0 || !n.tags.some(t => activeTags.includes(t)))
         });
-      });
+
+        activeTags.forEach(tag => {
+          const parentCat = tagCategories.find(c => (c.tags || []).includes(tag)) || activeCategory;
+          const catColor = parentCat?.color;
+
+          cols.push({
+            id: tag,
+            title: `#${tag}`,
+            bgBadge: catColor ? '' : 'bg-[#EAE4F2] dark:bg-[#382352]/40',
+            textBadge: catColor ? '' : 'text-[#5B3D7D] dark:text-[#D2BFEC]',
+            borderBadge: catColor ? '' : 'border-[#D9CFE6] dark:border-[#4B2F6E]',
+            color: catColor,
+            items: filteredNodes.filter(n => n.tags && n.tags.includes(tag))
+          });
+        });
+      }
     } else if (groupBy === 'container') {
       const containerNodes = nodes.filter(n => n.isContainer && !n.archived);
       cols.push({
@@ -817,23 +853,23 @@ export default function KanbanView({
       ? 'bg-[#E3E2E0] text-[#5A5A58] dark:bg-[#333] dark:text-[#B8B7B5]'
       : 'bg-[#FDF3D7] text-[#8F6B10] dark:bg-[#4D3800]/40 dark:text-[#F5D98B]';
 
-    // Health badge representation
-    const healthLabel = health === 'off_track' ? 'Off Track' : health === 'at_risk' ? 'At Risk' : 'On Track';
-    const healthBadgeStyle = health === 'off_track'
+    // Health badge representation (only if explicitly set on node)
+    const healthLabel = node.health === 'off_track' ? 'Off Track' : node.health === 'at_risk' ? 'At Risk' : node.health === 'on_track' ? 'On Track' : null;
+    const healthBadgeStyle = node.health === 'off_track'
       ? 'bg-[#FAECE7] text-[#A8382B] dark:bg-[#5C231B]/40 dark:text-[#F7A89E]'
-      : health === 'at_risk'
+      : node.health === 'at_risk'
       ? 'bg-[#FDF3D7] text-[#8F6B10] dark:bg-[#4D3800]/40 dark:text-[#F5D98B]'
       : 'bg-[#DDEDE0] text-[#2B6E44] dark:bg-[#1C472A]/40 dark:text-[#A3D9B1]';
 
-    // Assignee
-    const assignee = node.assignee || (node.id.charCodeAt(0) % 2 === 0 ? 'Mr.Pugo' : 'Gillde');
+    // Assignee (only if explicitly set by user)
+    const assignee = node.assignee && node.assignee.trim() ? node.assignee.trim() : null;
 
     // Due Date
     const formattedDate = formatNotionDate(node.dueDate);
 
-    // Budget or Metrics
-    const budget = node.budget || (node.estimatedTime ? `$${node.estimatedTime * 150}` : node.text.length > 20 ? `$40,000` : node.text.length > 10 ? `$841` : `$9,647`);
-    const progressPercent = node.progress !== undefined ? node.progress : node.completed ? 100 : node.stage === 'review' ? 90 : node.stage === 'refinement' ? 75 : node.stage === 'execution' ? 50 : 25;
+    // Budget (only if explicitly set by user)
+    const budget = node.budget && node.budget.trim() ? node.budget.trim() : null;
+    const progressPercent = node.progress !== undefined ? node.progress : null;
 
     // Subtasks count
     const subtasks = nodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle && !n.archived);
@@ -908,56 +944,69 @@ export default function KanbanView({
           ))}
         </div>
 
-        {/* Assignee / Persona Line */}
-        <div className="flex items-center gap-1.5 text-[12.5px] text-[#37352F] dark:text-[#D3D3D0]">
-          <div className="w-4 h-4 rounded-full bg-[#E3E2E0] dark:bg-[#444] text-[#37352F] dark:text-[#EEE] text-[9px] font-medium flex items-center justify-center shrink-0">
-            {assignee.charAt(0)}
+        {/* Assignee / Persona Line (only if assigned) */}
+        {assignee && (
+          <div className="flex items-center gap-1.5 text-[12.5px] text-[#37352F] dark:text-[#D3D3D0]">
+            <div className="w-4 h-4 rounded-full bg-[#E3E2E0] dark:bg-[#444] text-[#37352F] dark:text-[#EEE] text-[9px] font-medium flex items-center justify-center shrink-0">
+              {assignee.charAt(0).toUpperCase()}
+            </div>
+            <span className="font-normal truncate">{assignee}</span>
           </div>
-          <span className="font-normal truncate">{assignee}</span>
-        </div>
+        )}
 
-        {/* Project Health Badge */}
-        <div className="flex items-center gap-2">
-          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11.5px] font-normal tracking-tight ${healthBadgeStyle}`}>
-            {healthLabel}
-          </span>
+        {/* Project Health / Overdue Alert */}
+        {(healthLabel || isNodeOverdue(node, nodes)) && (
+          <div className="flex items-center gap-2">
+            {healthLabel && (
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11.5px] font-normal tracking-tight ${healthBadgeStyle}`}>
+                {healthLabel}
+              </span>
+            )}
 
-          {/* Overdue alert */}
-          {isNodeOverdue(node, nodes) && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-rose-600 dark:text-rose-400 font-medium">
-              <AlertTriangle className="w-3 h-3" />
-              <span>Overdue</span>
-            </span>
-          )}
-        </div>
+            {/* Overdue alert */}
+            {isNodeOverdue(node, nodes) && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                <AlertTriangle className="w-3 h-3" />
+                <span>Overdue</span>
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Due Date */}
         {formattedDate && (
           <div className="flex items-center gap-1.5 text-[12.5px] text-[#787774] dark:text-[#9B9A97]">
+            <Calendar className="w-3.5 h-3.5" />
             <span>{formattedDate}</span>
           </div>
         )}
 
-        {/* Budget / Progress bar */}
-        <div className="flex items-center justify-between gap-3 pt-1 border-t border-[#F1F1EF] dark:border-[#333]/60">
-          <span className="text-[12px] font-normal text-[#37352F] dark:text-[#D3D3D0] tracking-tight">
-            {budget}
-          </span>
+        {/* Budget / Progress bar (only if set) */}
+        {(budget || progressPercent !== null) && (
+          <div className="flex items-center justify-between gap-3 pt-1 border-t border-[#F1F1EF] dark:border-[#333]/60">
+            {budget ? (
+              <span className="text-[12px] font-normal text-[#37352F] dark:text-[#D3D3D0] tracking-tight">
+                {budget}
+              </span>
+            ) : <span />}
 
-          <div className="flex items-center gap-2 flex-1 max-w-[100px]">
-            <div className="h-1.5 flex-1 bg-[#EAEAEA] dark:bg-[#3B3B3B] rounded-full overflow-hidden">
-              <div 
-                className={`h-full rounded-full transition-all duration-300 ${
-                  health === 'off_track' ? 'bg-[#EB5757]' : health === 'at_risk' ? 'bg-[#F2994A]' : 'bg-[#27AE60]'
-                }`}
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            <span className="text-[10.5px] text-[#9B9A97] dark:text-[#787774] font-mono">
-              {progressPercent}%
-            </span>
+            {progressPercent !== null && (
+              <div className="flex items-center gap-2 flex-1 max-w-[100px] ml-auto">
+                <div className="h-1.5 flex-1 bg-[#EAEAEA] dark:bg-[#3B3B3B] rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      node.health === 'off_track' ? 'bg-[#EB5757]' : node.health === 'at_risk' ? 'bg-[#F2994A]' : 'bg-[#27AE60]'
+                    }`}
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <span className="text-[10.5px] text-[#9B9A97] dark:text-[#787774] font-mono">
+                  {progressPercent}%
+                </span>
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Subtasks / Pomodoro / Chat metrics */}
         {(subtasks.length > 0 || node.files.length > 0 || (node.comments && node.comments.length > 0) || activePomodoroNodeId === node.id) && (
@@ -1080,55 +1129,56 @@ export default function KanbanView({
             </button>
 
             {isGroupDropdownOpen && (
-              <>
-                <div className="fixed inset-0 z-[150]" onClick={() => setIsGroupDropdownOpen(false)} />
-                <div className="absolute left-0 top-full mt-1 w-44 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-xl shadow-xl p-1 z-[160] animate-in fade-in zoom-in-95 duration-150">
-                  <button
-                    type="button"
-                    onClick={() => { setGroupBy('category'); setIsGroupDropdownOpen(false); }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'category' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Tag className="w-3.5 h-3.5 text-purple-500" />
-                      <span>По тегам</span>
-                    </div>
-                    {groupBy === 'category' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setGroupBy('status'); setIsGroupDropdownOpen(false); }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'status' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#2383E2]" />
-                      <span>По статусу</span>
-                    </div>
-                    {groupBy === 'status' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setGroupBy('priority'); setIsGroupDropdownOpen(false); }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'priority' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                      <span>По приоритету</span>
-                    </div>
-                    {groupBy === 'priority' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setGroupBy('container'); setIsGroupDropdownOpen(false); }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'container' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-3.5 h-3.5 text-blue-500" />
-                      <span>По разделам</span>
-                    </div>
-                    {groupBy === 'container' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
-                  </button>
-                </div>
-              </>
+              <div className="absolute left-0 top-full mt-1 w-44 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-xl shadow-2xl p-1 z-[160] animate-in fade-in zoom-in-95 duration-150">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); setGroupBy('category'); setIsGroupDropdownOpen(false); }}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'category' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Tag className="w-3.5 h-3.5 text-purple-500" />
+                    <span>По тегам</span>
+                  </div>
+                  {groupBy === 'category' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); setGroupBy('status'); setIsGroupDropdownOpen(false); }}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'status' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[#2383E2]" />
+                    <span>По статусу</span>
+                  </div>
+                  {groupBy === 'status' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); setGroupBy('priority'); setIsGroupDropdownOpen(false); }}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'priority' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                    <span>По приоритету</span>
+                  </div>
+                  {groupBy === 'priority' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); setGroupBy('container'); setIsGroupDropdownOpen(false); }}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer ${groupBy === 'container' ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold' : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A]'}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-3.5 h-3.5 text-blue-500" />
+                    <span>По разделам</span>
+                  </div>
+                  {groupBy === 'container' && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                </button>
+              </div>
             )}
           </div>
 
@@ -1167,112 +1217,120 @@ export default function KanbanView({
 
                 {/* Category Dropdown Popover */}
                 {isCategoryDropdownOpen && (
-                  <>
-                    <div className="fixed inset-0 z-[150]" onClick={() => setIsCategoryDropdownOpen(false)} />
-                    <div className="absolute left-0 top-full mt-1.5 w-64 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-xl shadow-2xl p-1.5 z-[160] animate-in fade-in zoom-in-95 duration-150">
-                      <div className="px-2 py-1 text-[10px] font-bold text-[#787774] dark:text-[#9B9A97] uppercase tracking-wider flex items-center justify-between border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
-                        <span>Категории тегов</span>
-                        <span className="text-[10px] font-normal text-[#9B9A97]">{tagCategories.length + 1}</span>
-                      </div>
+                  <div 
+                    onMouseDown={(e) => e.stopPropagation()} 
+                    className="absolute left-0 top-full mt-1.5 w-64 bg-white dark:bg-[#202020] border border-[#E9E9E7] dark:border-[#2F2F2F] rounded-xl shadow-2xl p-1.5 z-[160] animate-in fade-in zoom-in-95 duration-150"
+                  >
+                    <div className="px-2 py-1 text-[10px] font-bold text-[#787774] dark:text-[#9B9A97] uppercase tracking-wider flex items-center justify-between border-b border-[#E9E9E7] dark:border-[#2F2F2F] mb-1">
+                      <span>Категории тегов</span>
+                      <span className="text-[10px] font-normal text-[#9B9A97]">{tagCategories.length + 1}</span>
+                    </div>
 
-                      {/* "Все теги" item */}
+                    {/* "Все теги" item */}
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectCategory('all');
+                        setIsCategoryDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                        isAllCategories
+                          ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
+                          : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Tag className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                        <span className="truncate">Все теги</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-black/5 dark:bg-white/10 font-mono">
+                          {tagCategories.reduce((acc, c) => acc + (c.tags || []).length, 0)}
+                        </span>
+                        {isAllCategories && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                      </div>
+                    </button>
+
+                    {/* Category List */}
+                    <div className="space-y-0.5 my-1 max-h-48 overflow-y-auto">
+                      {tagCategories.map(cat => {
+                        const isSelected = !isAllCategories && (selectedCategoryId === cat.id || activeCategory?.id === cat.id);
+                        const tagCount = (cat.tags || []).length;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectCategory(cat.id);
+                              setIsCategoryDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
+                                : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color || '#2383E2' }} />
+                              <span className="truncate">{cat.name}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-black/5 dark:bg-white/10 font-mono">
+                                {tagCount}
+                              </span>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Dropdown Action Footer */}
+                    <div className="border-t border-[#E9E9E7] dark:border-[#2F2F2F] pt-1 mt-1 space-y-0.5">
                       <button
                         type="button"
-                        onClick={() => {
-                          handleSelectCategory('all');
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setIsCategoryDropdownOpen(false);
+                          const name = prompt('Введите название новой категории тегов:');
+                          if (name && name.trim()) {
+                            onCreateTagCategory(name.trim(), '#2383E2');
+                          }
                         }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-colors cursor-pointer ${
-                          isAllCategories
-                            ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
-                            : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0]'
-                        }`}
+                        className="w-full text-left px-2.5 py-1.5 rounded-md text-[11.5px] text-[#2383E2] hover:bg-[#2383E2]/10 flex items-center gap-1.5 cursor-pointer font-medium"
                       >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Tag className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                          <span className="truncate">Все теги</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-black/5 dark:bg-white/10 font-mono">
-                            {tagCategories.reduce((acc, c) => acc + (c.tags || []).length, 0)}
-                          </span>
-                          {isAllCategories && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
-                        </div>
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Создать категорию</span>
                       </button>
 
-                      {/* Category List */}
-                      <div className="space-y-0.5 my-1 max-h-48 overflow-y-auto">
-                        {tagCategories.map(cat => {
-                          const isSelected = selectedCategoryId === cat.id;
-                          const tagCount = (cat.tags || []).length;
-                          return (
-                            <button
-                              key={cat.id}
-                              type="button"
-                              onClick={() => {
-                                handleSelectCategory(cat.id);
-                                setIsCategoryDropdownOpen(false);
-                              }}
-                              className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-colors cursor-pointer ${
-                                isSelected
-                                  ? 'bg-[#2383E2]/10 text-[#2383E2] font-semibold'
-                                  : 'hover:bg-[#EFEFED] dark:hover:bg-[#2A2A2A] text-[#37352F] dark:text-[#E3E2E0]'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color || '#2383E2' }} />
-                                <span className="truncate">{cat.name}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-black/5 dark:bg-white/10 font-mono">
-                                  {tagCount}
-                                </span>
-                                {isSelected && <Check className="w-3.5 h-3.5 text-[#2383E2]" />}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Dropdown Action Footer */}
-                      <div className="border-t border-[#E9E9E7] dark:border-[#2F2F2F] pt-1 mt-1 space-y-0.5">
+                      {activeCategory && onUpdateTagCategory && (
                         <button
                           type="button"
-                          onClick={() => {
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setIsCategoryDropdownOpen(false);
-                            const name = prompt('Введите название новой категории тегов:');
-                            if (name && name.trim()) {
-                              onCreateTagCategory(name.trim(), '#2383E2');
+                            const tagName = prompt(`Добавить новый тег в категорию «${activeCategory.name}»:`);
+                            if (tagName && tagName.trim()) {
+                              const cleanTag = tagName.trim().replace(/^#/, '');
+                              if (!activeCategory.tags.includes(cleanTag)) {
+                                onUpdateTagCategory(activeCategory.id, activeCategory.name, activeCategory.color, [...activeCategory.tags, cleanTag]);
+                              }
                             }
                           }}
-                          className="w-full text-left px-2.5 py-1.5 rounded-md text-[11.5px] text-[#2383E2] hover:bg-[#2383E2]/10 flex items-center gap-1.5 cursor-pointer font-medium"
+                          className="w-full text-left px-2.5 py-1.5 rounded-md text-[11.5px] text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40 flex items-center gap-1.5 cursor-pointer font-medium"
                         >
                           <Plus className="w-3.5 h-3.5" />
-                          <span>Создать категорию</span>
+                          <span className="truncate">Тег в «{activeCategory.name}»</span>
                         </button>
-
-                        {activeCategory && onUpdateTagCategory && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsCategoryDropdownOpen(false);
-                              const tagName = prompt(`Добавить новый тег в категорию «${activeCategory.name}»:`);
-                              if (tagName && tagName.trim()) {
-                                const cleanTag = tagName.trim().replace(/^#/, '');
-                                if (!activeCategory.tags.includes(cleanTag)) {
-                                  onUpdateTagCategory(activeCategory.id, activeCategory.name, activeCategory.color, [...activeCategory.tags, cleanTag]);
-                                }
-                              }
-                            }}
-                            className="w-full text-left px-2.5 py-1.5 rounded-md text-[11.5px] text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40 flex items-center gap-1.5 cursor-pointer font-medium"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span className="truncate">Тег в «{activeCategory.name}»</span>
-                          </button>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
 
