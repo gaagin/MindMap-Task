@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mind-map-tasks-cache-v1';
+const CACHE_NAME = 'mindflow-cache-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -13,27 +13,18 @@ const isDev = self.location.hostname.includes('localhost') ||
 
 // Install Event
 self.addEventListener('install', (event) => {
-  if (isDev) {
-    console.log('[Service Worker] Running in development environment, skipping assets caching.');
-    self.skipWaiting();
-    return;
-  }
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log('[Service Worker] Caching App Shell...');
-      return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
-  );
+  console.log('[Service Worker] Installed MindFlow SW v3');
+  self.skipWaiting();
 });
 
-// Activate Event
+// Activate Event - purge any stale caches immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keyList) => {
       return Promise.all(
         keyList.map((key) => {
           if (key !== CACHE_NAME) {
-            console.log('[Service Worker] Removing old cache', key);
+            console.log('[Service Worker] Purging old cache:', key);
             return caches.delete(key);
           }
         })
