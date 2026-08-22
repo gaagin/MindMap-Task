@@ -2938,6 +2938,23 @@ export default function App() {
         return; // Ignore other shortcuts (like Delete) while typing in inputs
       }
 
+      // Enter to switch active/selected element into focus mode
+      if (e.key === 'Enter') {
+        if (selectedNodeId) {
+          const currentNodes = state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : [];
+          const activeNode = currentNodes.find(n => n.id === selectedNodeId);
+          if (activeNode) {
+            e.preventDefault();
+            if (activeNode.isContainer || activeNode.isEquipment) {
+              setFocusedContainerId(activeNode.id);
+            } else {
+              setFocusedTaskId(activeNode.id);
+            }
+          }
+        }
+        return;
+      }
+
       // Ctrl + Z to Undo last task operation
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
