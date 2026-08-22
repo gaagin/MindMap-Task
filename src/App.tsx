@@ -5667,7 +5667,26 @@ export default function App() {
       }
 
       let updatedList = currentNodes.some(n => n.id === adjustedUpdatedNode.id)
-        ? currentNodes.map(n => n.id === adjustedUpdatedNode.id ? nodeWithTimeStamp : n)
+        ? currentNodes.map(n => {
+            if (n.id === adjustedUpdatedNode.id) return nodeWithTimeStamp;
+            if (nodeWithTimeStamp.mirrorGroupId && n.mirrorGroupId === nodeWithTimeStamp.mirrorGroupId) {
+              return {
+                ...n,
+                text: nodeWithTimeStamp.text,
+                completed: nodeWithTimeStamp.completed,
+                priority: nodeWithTimeStamp.priority,
+                tags: nodeWithTimeStamp.tags,
+                notes: nodeWithTimeStamp.notes,
+                dueDate: nodeWithTimeStamp.dueDate,
+                dueTime: nodeWithTimeStamp.dueTime,
+                startTime: nodeWithTimeStamp.startTime,
+                estimatedTime: nodeWithTimeStamp.estimatedTime,
+                archived: nodeWithTimeStamp.archived,
+                updatedAt: new Date().toISOString()
+              };
+            }
+            return n;
+          })
         : [...currentNodes, nodeWithTimeStamp];
       if (mirrorCloneNode) {
         updatedList = [...updatedList, mirrorCloneNode];
@@ -5881,7 +5900,26 @@ export default function App() {
         }
       }
       
-      let updatedList = currentNodes.map(n => n.id === updatedNode.id ? nodeWithTimeStamp : n);
+      let updatedList = currentNodes.map(n => {
+        if (n.id === updatedNode.id) return nodeWithTimeStamp;
+        if (nodeWithTimeStamp.mirrorGroupId && n.mirrorGroupId === nodeWithTimeStamp.mirrorGroupId) {
+          return {
+            ...n,
+            text: nodeWithTimeStamp.text,
+            completed: nodeWithTimeStamp.completed,
+            priority: nodeWithTimeStamp.priority,
+            tags: nodeWithTimeStamp.tags,
+            notes: nodeWithTimeStamp.notes,
+            dueDate: nodeWithTimeStamp.dueDate,
+            dueTime: nodeWithTimeStamp.dueTime,
+            startTime: nodeWithTimeStamp.startTime,
+            estimatedTime: nodeWithTimeStamp.estimatedTime,
+            archived: nodeWithTimeStamp.archived,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return n;
+      });
       if (targetNode && targetNode.completed !== updatedNode.completed) {
         updatedList = toggleNodeAndDescendants(updatedNode.id, updatedNode.completed, updatedList);
       }

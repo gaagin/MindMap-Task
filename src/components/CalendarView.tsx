@@ -542,12 +542,13 @@ export default function CalendarView({
     : rawUnscheduledTasks;
 
   // Drag and drop handlers
-  const handleTaskDrop = (taskId: string, targetDate: string | null) => {
+  const handleTaskDrop = (taskId: string | null | undefined, targetDate: string | null) => {
+    const idToDrop = taskId || draggingTaskId;
     setDraggedOverDate(null);
     setDraggedOverUnscheduled(false);
     setDraggingTaskId(null);
-    if (!taskId) return;
-    const task = nodes.find(n => n.id === taskId);
+    if (!idToDrop) return;
+    const task = nodes.find(n => n.id === idToDrop);
     if (task) {
       onUpdateNode({
         ...task,
@@ -960,14 +961,22 @@ export default function CalendarView({
                     return (
                       <div
                         key={slot.dateString}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDragEnter={() => setDraggedOverDate(`allday-${slot.dateString}`)}
-                        onDragLeave={() => {
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                        }}
+                        onDragEnter={(e) => {
+                          e.preventDefault();
+                          setDraggedOverDate(`allday-${slot.dateString}`);
+                        }}
+                        onDragLeave={(e) => {
+                          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
                           if (draggedOverDate === `allday-${slot.dateString}`) setDraggedOverDate(null);
                         }}
                         onDrop={(e) => {
+                          e.preventDefault();
                           e.stopPropagation();
-                          const taskId = e.dataTransfer.getData('text/plain');
+                          const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
                           if (taskId) {
                             const task = nodes.find(n => n.id === taskId);
                             if (task) {
@@ -980,9 +989,10 @@ export default function CalendarView({
                             }
                           }
                           setDraggedOverDate(null);
+                          setDraggingTaskId(null);
                         }}
                         className={`p-1 border-r border-[#EDEDEB] dark:border-[#2D2D2D] last:border-r-0 flex flex-col gap-1 min-h-[36px] transition-colors relative group ${
-                          isDragOver ? 'bg-[#2383E2]/15 dark:bg-[#2383E2]/25' : ''
+                          isDragOver ? 'bg-[#2383E2]/15 dark:bg-[#2383E2]/25 ring-1 ring-[#2383E2]' : ''
                         }`}
                       >
                         {isAllDayExpanded && (
@@ -990,6 +1000,7 @@ export default function CalendarView({
                             {allDayTasks.map(task => {
                               const cardStyles = getNotionCardStyles(task);
                               const isTaskSelected = task.id === selectedNodeId;
+                              const isBeingDragged = draggingTaskId === task.id;
 
                               return (
                                 <div
@@ -998,9 +1009,13 @@ export default function CalendarView({
                                   onDragStart={(e) => {
                                     e.stopPropagation();
                                     e.dataTransfer.setData('text/plain', task.id);
+                                    e.dataTransfer.effectAllowed = 'move';
                                     setDraggingTaskId(task.id);
                                   }}
-                                  onDragEnd={() => setDraggingTaskId(null)}
+                                  onDragEnd={() => {
+                                    setDraggingTaskId(null);
+                                    setDraggedOverDate(null);
+                                  }}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     onSelectNode(task.id, e);
@@ -1011,7 +1026,7 @@ export default function CalendarView({
                                   }}
                                   className={`px-1.5 py-0.5 rounded text-[11px] leading-tight flex items-center gap-1.5 transition-all shadow-3xs cursor-grab active:cursor-grabbing border ${cardStyles.card} ${
                                     isTaskSelected ? 'ring-1.5 ring-[#2383E2]' : ''
-                                  }`}
+                                  } ${isBeingDragged ? 'opacity-30 border-dashed' : ''} ${draggingTaskId && !isBeingDragged ? 'pointer-events-none' : ''}`}
                                   title={task.text}
                                 >
                                   <button
@@ -1101,13 +1116,22 @@ export default function CalendarView({
                       <div
                         key={slot.dateString}
                         data-slot-date={slot.dateString}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDragEnter={() => setDraggedOverDate(slot.dateString)}
-                        onDragLeave={() => {
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                        }}
+                        onDragEnter={(e) => {
+                          e.preventDefault();
+                          setDraggedOverDate(slot.dateString);
+                        }}
+                        onDragLeave={(e) => {
+                          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
                           if (draggedOverDate === slot.dateString) setDraggedOverDate(null);
                         }}
                         onDrop={(e) => {
-                          const taskId = e.dataTransfer.getData('text/plain');
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
                           if (taskId) {
                             const rect = e.currentTarget.getBoundingClientRect();
                             const dropY = e.clientY - rect.top;
@@ -1125,6 +1149,7 @@ export default function CalendarView({
                             }
                           }
                           setDraggedOverDate(null);
+                          setDraggingTaskId(null);
                         }}
                         onClick={(e) => {
                           const target = e.target as HTMLElement;
@@ -1278,14 +1303,22 @@ export default function CalendarView({
             {/* All-Day Tasks Row for Day View */}
             <div className="shrink-0 flex flex-col border-b border-[#EDEDEB] dark:border-[#2D2D2D] bg-white dark:bg-[#191919] z-20 px-4 sm:px-6 py-2.5">
               <div 
-                onDragOver={(e) => e.preventDefault()}
-                onDragEnter={() => setDraggedOverDate(`allday-${currentDateStr}`)}
-                onDragLeave={() => {
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  setDraggedOverDate(`allday-${currentDateStr}`);
+                }}
+                onDragLeave={(e) => {
+                  if (e.currentTarget.contains(e.relatedTarget as Node)) return;
                   if (draggedOverDate === `allday-${currentDateStr}`) setDraggedOverDate(null);
                 }}
                 onDrop={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
-                  const taskId = e.dataTransfer.getData('text/plain');
+                  const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
                   if (taskId) {
                     const task = nodes.find(n => n.id === taskId);
                     if (task) {
@@ -1298,10 +1331,11 @@ export default function CalendarView({
                     }
                   }
                   setDraggedOverDate(null);
+                  setDraggingTaskId(null);
                 }}
                 className={`p-2 rounded-lg border transition-all ${
                   draggedOverDate === `allday-${currentDateStr}`
-                    ? 'bg-[#2383E2]/15 border-[#2383E2]'
+                    ? 'bg-[#2383E2]/15 border-[#2383E2] ring-1 ring-[#2383E2]'
                     : 'bg-[#FAFAF9] dark:bg-[#202020] border-[#EDEDEB] dark:border-[#2D2D2D]'
                 }`}
               >
@@ -1316,7 +1350,7 @@ export default function CalendarView({
                       setQuickModalDueTime('');
                       setIsQuickCreateModalOpen(true);
                     }}
-                    className="text-xs text-[#2383E2] hover:underline font-medium"
+                    className="text-xs text-[#2383E2] hover:underline font-medium cursor-pointer"
                   >
                     + Добавить
                   </button>
@@ -1325,6 +1359,7 @@ export default function CalendarView({
                 <div className="flex flex-wrap gap-1.5">
                   {scheduledTasks.filter(t => t.dueDate === currentDateStr && !t.startTime && !t.dueTime).map(task => {
                     const cardStyles = getNotionCardStyles(task);
+                    const isBeingDragged = draggingTaskId === task.id;
                     return (
                       <div
                         key={task.id}
@@ -1332,11 +1367,17 @@ export default function CalendarView({
                         onDragStart={(e) => {
                           e.stopPropagation();
                           e.dataTransfer.setData('text/plain', task.id);
+                          e.dataTransfer.effectAllowed = 'move';
                           setDraggingTaskId(task.id);
                         }}
-                        onDragEnd={() => setDraggingTaskId(null)}
+                        onDragEnd={() => {
+                          setDraggingTaskId(null);
+                          setDraggedOverDate(null);
+                        }}
                         onClick={(e) => onSelectNode(task.id, e)}
-                        className={`px-2 py-1 rounded-md text-xs flex items-center gap-1.5 shadow-3xs cursor-grab active:cursor-grabbing border ${cardStyles.card}`}
+                        className={`px-2 py-1 rounded-md text-xs flex items-center gap-1.5 shadow-3xs cursor-grab active:cursor-grabbing border ${cardStyles.card} ${
+                          isBeingDragged ? 'opacity-30 border-dashed' : ''
+                        } ${draggingTaskId && !isBeingDragged ? 'pointer-events-none' : ''}`}
                       >
                         <button
                           onClick={(e) => {
@@ -1396,13 +1437,22 @@ export default function CalendarView({
 
                   return (
                     <div
-                      onDragOver={(e) => e.preventDefault()}
-                      onDragEnter={() => setDraggedOverDate(currentDateStr)}
-                      onDragLeave={() => {
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDragEnter={(e) => {
+                        e.preventDefault();
+                        setDraggedOverDate(currentDateStr);
+                      }}
+                      onDragLeave={(e) => {
+                        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
                         if (draggedOverDate === currentDateStr) setDraggedOverDate(null);
                       }}
                       onDrop={(e) => {
-                        const taskId = e.dataTransfer.getData('text/plain');
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
                         if (taskId) {
                           const rect = e.currentTarget.getBoundingClientRect();
                           const dropY = e.clientY - rect.top;
@@ -1420,6 +1470,7 @@ export default function CalendarView({
                           }
                         }
                         setDraggedOverDate(null);
+                        setDraggingTaskId(null);
                       }}
                       onClick={(e) => {
                         const target = e.target as HTMLElement;
@@ -1585,13 +1636,22 @@ export default function CalendarView({
                   <div
                     key={`${slot.dateString}-${sIdx}`}
                     data-date={slot.dateString}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDragEnter={() => setDraggedOverDate(slot.dateString)}
-                    onDragLeave={() => {
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDragEnter={(e) => {
+                      e.preventDefault();
+                      setDraggedOverDate(slot.dateString);
+                    }}
+                    onDragLeave={(e) => {
+                      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
                       if (draggedOverDate === slot.dateString) setDraggedOverDate(null);
                     }}
                     onDrop={(e) => {
-                      const taskId = e.dataTransfer.getData('text/plain');
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
                       handleTaskDrop(taskId, slot.dateString);
                     }}
                     onClick={(e) => {
@@ -1607,7 +1667,7 @@ export default function CalendarView({
                         ? 'bg-[#FBFBFA] dark:bg-[#161616]' 
                         : 'bg-white dark:bg-[#191919]'
                     } ${
-                      isDragOver ? 'bg-[#2383E2]/10 dark:bg-[#2383E2]/20' : ''
+                      isDragOver ? 'bg-[#2383E2]/15 dark:bg-[#2383E2]/25 ring-2 ring-[#2383E2] ring-inset z-10' : ''
                     } hover:bg-[#F7F7F5] dark:hover:bg-[#202020]`}
                   >
                     {/* Cell Top Header */}
@@ -1646,6 +1706,7 @@ export default function CalendarView({
                       {dayTasks.map(task => {
                         const cardStyles = getNotionCardStyles(task);
                         const isTaskSelected = task.id === selectedNodeId;
+                        const isBeingDragged = draggingTaskId === task.id;
 
                         return (
                           <div
@@ -1654,9 +1715,13 @@ export default function CalendarView({
                             onDragStart={(e) => {
                               e.stopPropagation();
                               e.dataTransfer.setData('text/plain', task.id);
+                              e.dataTransfer.effectAllowed = 'move';
                               setDraggingTaskId(task.id);
                             }}
-                            onDragEnd={() => setDraggingTaskId(null)}
+                            onDragEnd={() => {
+                              setDraggingTaskId(null);
+                              setDraggedOverDate(null);
+                            }}
                             onClick={(e) => {
                               e.stopPropagation();
                               onSelectNode(task.id, e);
@@ -1667,7 +1732,7 @@ export default function CalendarView({
                             }}
                             className={`task-item px-1.5 py-1 rounded text-[11px] leading-tight flex items-center gap-1.5 transition-all shadow-3xs cursor-grab active:cursor-grabbing border ${cardStyles.card} ${
                               isTaskSelected ? 'ring-1.5 ring-[#2383E2]' : ''
-                            } ${draggingTaskId === task.id ? 'opacity-40 border-dashed' : ''}`}
+                            } ${isBeingDragged ? 'opacity-30 border-dashed' : ''} ${draggingTaskId && !isBeingDragged ? 'pointer-events-none' : ''}`}
                             title={`${task.text} ${task.startTime || task.dueTime ? `(${formatTaskTime(task)})` : ''}`}
                           >
                             <button
@@ -1817,15 +1882,26 @@ export default function CalendarView({
                 {/* Unscheduled Task Items Dropzone */}
                 <div
                   data-unscheduled-drop-zone="true"
-                  onDragOver={(e) => e.preventDefault()}
-                  onDragEnter={() => setDraggedOverUnscheduled(true)}
-                  onDragLeave={() => setDraggedOverUnscheduled(false)}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+                    setDraggedOverUnscheduled(true);
+                  }}
+                  onDragLeave={(e) => {
+                    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                    setDraggedOverUnscheduled(false);
+                  }}
                   onDrop={(e) => {
-                    const taskId = e.dataTransfer.getData('text/plain');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
                     handleTaskDrop(taskId, null);
                   }}
-                  className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar pr-0.5 rounded-md ${
-                    draggedOverUnscheduled ? 'bg-[#2383E2]/10 border-2 border-dashed border-[#2383E2]' : ''
+                  className={`flex-1 overflow-y-auto space-y-1.5 custom-scrollbar pr-0.5 rounded-md transition-colors ${
+                    draggedOverUnscheduled ? 'bg-[#2383E2]/15 border-2 border-dashed border-[#2383E2]' : ''
                   }`}
                 >
                   {unscheduledTasks.length === 0 ? (
@@ -1834,18 +1910,27 @@ export default function CalendarView({
                       <p className="text-[10px] text-[#B8B7B5] mt-1">Перетащите сюда, чтобы убрать срок</p>
                     </div>
                   ) : (
-                    unscheduledTasks.map(task => (
-                      <div
-                        key={task.id}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/plain', task.id);
-                          setDraggingTaskId(task.id);
-                        }}
-                        onDragEnd={() => setDraggingTaskId(null)}
-                        onClick={(e) => onSelectNode(task.id, e)}
-                        className="p-2 bg-white dark:bg-[#222222] border border-[#EDEDEB] dark:border-[#333] hover:border-[#D3D3D0] rounded-md shadow-3xs flex flex-col gap-1 cursor-grab active:cursor-grabbing transition-all group"
-                      >
+                    unscheduledTasks.map(task => {
+                      const isBeingDragged = draggingTaskId === task.id;
+                      return (
+                        <div
+                          key={task.id}
+                          draggable
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            e.dataTransfer.setData('text/plain', task.id);
+                            e.dataTransfer.effectAllowed = 'move';
+                            setDraggingTaskId(task.id);
+                          }}
+                          onDragEnd={() => {
+                            setDraggingTaskId(null);
+                            setDraggedOverUnscheduled(false);
+                          }}
+                          onClick={(e) => onSelectNode(task.id, e)}
+                          className={`p-2 bg-white dark:bg-[#222222] border border-[#EDEDEB] dark:border-[#333] hover:border-[#D3D3D0] rounded-md shadow-3xs flex flex-col gap-1 cursor-grab active:cursor-grabbing transition-all group ${
+                            isBeingDragged ? 'opacity-30 border-dashed' : ''
+                          } ${draggingTaskId && !isBeingDragged ? 'pointer-events-none' : ''}`}
+                        >
                         <div className="flex items-start justify-between gap-1">
                           <div className="flex items-start gap-1.5 flex-1 min-w-0">
                             <span className="text-xs shrink-0">{getTaskPageIcon(task)}</span>
@@ -1882,9 +1967,10 @@ export default function CalendarView({
                           </button>
                         </div>
                       </div>
-                    ))
-                  )}
-                </div>
+                    );
+                  })
+                )}
+              </div>
               </div>
 
             </div>
