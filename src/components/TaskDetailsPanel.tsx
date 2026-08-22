@@ -4235,11 +4235,29 @@ export default function TaskDetailsPanel({
                   {node.files && node.files.length > 0 ? (
                     node.files.map(file => (
                       <div key={file.id} className="flex items-center justify-between p-1.5 bg-slate-50 dark:bg-slate-950/20 rounded-lg text-[11px]">
-                        <span className="truncate font-bold text-slate-700 dark:text-slate-300 max-w-[120px]" title={file.name}>
+                        <span className="truncate font-bold text-slate-700 dark:text-slate-300 max-w-[110px]" title={file.name}>
                           {file.name}
                         </span>
                         <div className="flex gap-1 shrink-0">
-                          <a href={file.dataUrl} target="_blank" rel="noreferrer" className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-indigo-500">
+                          {file.webViewLink && (
+                            <a
+                              href={file.webViewLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-500 hover:text-indigo-600"
+                              title="Открыть на Google Диске"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          <a
+                            href={file.webContentLink || file.dataUrl}
+                            download={!file.googleDriveId ? file.name : undefined}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-indigo-500"
+                            title="Скачать файл"
+                          >
                             <Download className="w-3.5 h-3.5" />
                           </a>
                           <button onClick={() => handleRemoveFile(file.id)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-rose-500">
@@ -9070,11 +9088,34 @@ export default function TaskDetailsPanel({
                       <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-150 dark:border-slate-850 text-xs gap-2">
                         <span className="truncate font-semibold flex-1" title={file.name}>{file.name}</span>
                         <div className="flex gap-1">
-                          <a href={file.webContentLink || file.dataUrl} download={!file.googleDriveId ? file.name : undefined} target="_blank" rel="noreferrer" className="p-1 hover:text-indigo-600 bg-white rounded border border-slate-200">
-                            ↓
+                          {file.webViewLink && (
+                            <a
+                              href={file.webViewLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1 hover:text-indigo-600 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700"
+                              title="Открыть на Google Диске"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          <a
+                            href={file.webContentLink || file.dataUrl}
+                            download={!file.googleDriveId ? file.name : undefined}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1 hover:text-indigo-600 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700"
+                            title="Скачать файл"
+                          >
+                            <Download className="w-3.5 h-3.5" />
                           </a>
-                          <button type="button" onClick={() => handleRemoveFile(file.id)} className="p-1 hover:text-rose-600 bg-white rounded border border-slate-200">
-                            ×
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFile(file.id)}
+                            className="p-1 hover:text-rose-600 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700"
+                            title="Удалить файл"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>

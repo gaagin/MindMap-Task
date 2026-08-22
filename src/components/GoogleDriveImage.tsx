@@ -24,7 +24,7 @@ export default function GoogleDriveImage({
   className = '',
   imgClassName = 'w-full h-full object-cover',
   alt = 'Google Drive Image',
-  sz = 'w300',
+  sz = 'w600',
   onClick,
   fallbackUrl
 }: GoogleDriveImageProps) {
@@ -37,8 +37,24 @@ export default function GoogleDriveImage({
     return `https://lh3.googleusercontent.com/d/${driveId}`;
   });
   const [loading, setLoading] = useState(false);
+  const [errorCount, setErrorCount] = useState(0);
+
+  const handleImageError = () => {
+    setErrorCount(prev => {
+      const nextCount = prev + 1;
+      if (nextCount === 1) {
+        setSrc(`https://drive.google.com/thumbnail?id=${driveId}&sz=${sz}`);
+      } else if (nextCount === 2) {
+        setSrc(`https://drive.google.com/uc?export=view&id=${driveId}`);
+      } else if (nextCount === 3 && fallbackUrl) {
+        setSrc(fallbackUrl);
+      }
+      return nextCount;
+    });
+  };
 
   useEffect(() => {
+    setErrorCount(0);
     // Reset/update src immediately when driveId changes to avoid showing stale image from another card
     if (driveBlobCache[driveId]) {
       setSrc(driveBlobCache[driveId]);
@@ -46,12 +62,12 @@ export default function GoogleDriveImage({
     }
 
     if (!googleToken) {
-      setSrc(fallbackUrl || `https://lh3.googleusercontent.com/d/${driveId}`);
+      setSrc(`https://lh3.googleusercontent.com/d/${driveId}`);
       return;
     }
 
     // Set immediate fallback/loading source
-    setSrc(fallbackUrl || `https://lh3.googleusercontent.com/d/${driveId}`);
+    setSrc(`https://lh3.googleusercontent.com/d/${driveId}`);
 
     let isMounted = true;
     const fetchImageBlob = async () => {
@@ -77,7 +93,7 @@ export default function GoogleDriveImage({
       } catch (err) {
         console.warn('[GoogleDriveImage] Failed to load image via OAuth, falling back to cookieless link:', err);
         if (isMounted) {
-          setSrc(fallbackUrl || `https://lh3.googleusercontent.com/d/${driveId}`);
+          setSrc(`https://lh3.googleusercontent.com/d/${driveId}`);
         }
       } finally {
         if (isMounted) {
@@ -100,10 +116,11 @@ export default function GoogleDriveImage({
         alt={alt}
         className={`${imgClassName} cursor-pointer`}
         onClick={onClick}
+        onError={handleImageError}
         referrerPolicy="no-referrer"
       />
       {loading && (
-        <div className="absolute inset-0 bg-slate-100/10 dark:bg-slate-900/10 flex items-center justify-center backdrop-blur-xs">
+        <div className="absolute inset-0 bg-slate-100/10 dark:bg-slate-900/10 flex items-center justify-center backdrop-blur-xs pointer-events-none">
           <Loader2 className="w-4.5 h-4.5 animate-spin text-indigo-500" />
         </div>
       )}

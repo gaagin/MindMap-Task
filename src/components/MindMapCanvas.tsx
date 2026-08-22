@@ -61,6 +61,7 @@ import {
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, hasContainerNonOverdueTasks, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
+import GoogleDriveImage from './GoogleDriveImage';
 
 interface MindMapCanvasProps {
   nodes: TaskNode[];
@@ -8314,12 +8315,23 @@ export default function MindMapCanvas({
             >
               {/* Image element */}
               <div className="relative w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-950">
-                <img
-                  src={imgUrl}
-                  alt={node.text || 'Изображение'}
-                  className="w-full h-auto select-none pointer-events-none max-h-[500px] object-contain"
-                  referrerPolicy="no-referrer"
-                />
+                {imgFile.googleDriveId ? (
+                  <GoogleDriveImage
+                    driveId={imgFile.googleDriveId}
+                    googleToken={googleToken}
+                    alt={node.text || 'Изображение'}
+                    className="w-full h-auto"
+                    imgClassName="w-full h-auto select-none pointer-events-none max-h-[500px] object-contain"
+                    fallbackUrl={imgFile.dataUrl}
+                  />
+                ) : (
+                  <img
+                    src={imgUrl}
+                    alt={node.text || 'Изображение'}
+                    className="w-full h-auto select-none pointer-events-none max-h-[500px] object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                )}
                 
                 {/* Floating caption overlay at bottom */}
                 {node.text && (
@@ -10159,12 +10171,23 @@ export default function MindMapCanvas({
                             <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
                               {isImg ? (
                                 <div className="w-8 h-8 rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-slate-200/60 dark:border-slate-700 shadow-3xs">
-                                  <img 
-                                    src={imgUrl} 
-                                    alt="" 
-                                    className="w-full h-full object-cover" 
-                                    referrerPolicy="no-referrer"
-                                  />
+                                  {file.googleDriveId ? (
+                                    <GoogleDriveImage
+                                      driveId={file.googleDriveId}
+                                      googleToken={googleToken}
+                                      alt={file.name}
+                                      className="w-full h-full"
+                                      imgClassName="w-full h-full object-cover"
+                                      fallbackUrl={file.dataUrl}
+                                    />
+                                  ) : (
+                                    <img 
+                                      src={imgUrl} 
+                                      alt="" 
+                                      className="w-full h-full object-cover" 
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  )}
                                 </div>
                               ) : (
                                 <Paperclip className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
@@ -10176,10 +10199,25 @@ export default function MindMapCanvas({
                             </div>
 
                           <div className="flex items-center gap-1">
+                            {/* Google Drive Link */}
+                            {file.webViewLink && (
+                              <a
+                                href={file.webViewLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+                                title="Открыть на Google Диске"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+
                             {/* Download */}
                             <a
-                              href={file.dataUrl}
-                              download={file.name}
+                              href={file.webContentLink || file.dataUrl}
+                              download={!file.googleDriveId ? file.name : undefined}
+                              target="_blank"
+                              rel="noreferrer"
                               className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
                               title="Скачать файл"
                             >
