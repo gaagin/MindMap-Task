@@ -60,6 +60,7 @@ import { formatFileSize, generateId, calculateProgress, getDescendants, playNoti
 import { auth, db } from '../lib/firebase';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import GoogleDriveImage from './GoogleDriveImage';
+import { compressImageForSync, isValidRenderableImageUrl } from '../lib/imageOptimizer';
 import { motion } from 'motion/react';
 
 const fetch = proxiedFetch;
@@ -760,111 +761,91 @@ export default function TaskDetailsPanel({
   }, [node?.comments, activeTab]);
 
   const uploadCommentImage = async (file: File) => {
-    // Set local preview
-    const reader = new FileReader();
-    reader.onload = () => {
-      setCommentImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-
     setFileError(null);
     setIsUploadingCommentImage(true);
 
     try {
+      // 1. Optimize image client-side to produce lightweight, instant Base64 preview
+      const optimized = await compressImageForSync(file, { maxWidth: 1280, maxHeight: 1280, quality: 0.82 });
+      setCommentImagePreview(optimized.dataUrl);
+
+      let driveFileId: string | undefined;
+      let driveWebViewLink: string | undefined;
+
+      // 2. If Google OAuth token is active, also upload to Google Drive for persistent cloud storage
       if (googleToken) {
-        // 1. Get or create special folder on Google Drive
-        const folderId = await getOrCreateGoogleDriveFolder(googleToken);
-
-        // 2. Create the file metadata reference on Google Drive
-        const name = file.name || `Pasted_Image_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-        const mimeType = file.type || 'image/png';
-        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            name,
-            mimeType,
-            parents: folderId ? [folderId] : undefined
-          })
-        });
-
-        if (!createRes.ok) {
-          const errText = await createRes.text();
-          throw new Error(`Не удалось создать метаданные на Диске: ${errText}`);
-        }
-
-        const createData = await createRes.json();
-        const driveFileId = createData.id;
-
-        // 3. Upload raw file body as media
-        const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': mimeType
-          },
-          body: file
-        });
-
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text();
-          throw new Error(`Не удалось загрузить тело файла: ${errText}`);
-        }
-
-        // Grant public read permission so other devices can read the file anonymously and automatically
         try {
-          await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
+          const folderId = await getOrCreateGoogleDriveFolder(googleToken);
+          const name = optimized.name || file.name || `Pasted_Image_${new Date().toISOString().replace(/[:.]/g, '-')}.webp`;
+          const mimeType = optimized.type || file.type || 'image/webp';
+
+          const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${googleToken}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              role: 'reader',
-              type: 'anyone'
+              name,
+              mimeType,
+              parents: folderId ? [folderId] : undefined
             })
           });
-        } catch (permissionErr) {
-          console.warn('[Google Drive Auth] Failed to list file permissions as public for comment image:', permissionErr);
-        }
 
-        // 4. Retrieve web links
-        const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
-          headers: {
-            'Authorization': `Bearer ${googleToken}`
+          if (createRes.ok) {
+            const createData = await createRes.json();
+            driveFileId = createData.id;
+
+            // Upload image body
+            await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Bearer ${googleToken}`,
+                'Content-Type': mimeType
+              },
+              body: file
+            });
+
+            // Grant public read permission
+            try {
+              await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${googleToken}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  role: 'reader',
+                  type: 'anyone'
+                })
+              });
+            } catch (permissionErr) {
+              console.warn('[Google Drive Auth] Failed to list file permissions as public for comment image:', permissionErr);
+            }
+
+            // Retrieve web links
+            const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
+              headers: {
+                'Authorization': `Bearer ${googleToken}`
+              }
+            });
+
+            if (finalRes.ok) {
+              const finalData = await finalRes.json();
+              driveWebViewLink = finalData.webViewLink;
+            }
           }
-        });
-
-        if (!finalRes.ok) {
-          throw new Error('Не удалось получить ссылки на файл с Диска');
+        } catch (driveErr) {
+          console.warn('[Google Drive Comment Upload] Drive upload error, falling back to local compressed image:', driveErr);
         }
-
-        const finalData = await finalRes.json();
-        setUploadedCommentImageInfo({
-          imageUrl: finalData.webViewLink || finalData.webContentLink || '',
-          imageGoogleDriveId: driveFileId,
-          imageWebViewLink: finalData.webViewLink
-        });
-      } else {
-        const MAX_BYTES = 1024 * 1024; // 1MB limit for comments local image
-        if (file.size > MAX_BYTES) {
-          setFileError('Размер изображения для чата превышает 1 МБ. Войдите через Google для хранения без лимитов!');
-          setCommentImagePreview(null);
-          setIsUploadingCommentImage(false);
-          return;
-        }
-
-        const readerLocal = new FileReader();
-        readerLocal.onload = () => {
-          setUploadedCommentImageInfo({
-            imageUrl: readerLocal.result as string
-          });
-        };
-        readerLocal.readAsDataURL(file);
       }
+
+      // Always preserve the valid renderable Base64 dataUrl in imageUrl!
+      setUploadedCommentImageInfo({
+        imageUrl: optimized.dataUrl,
+        imageGoogleDriveId: driveFileId,
+        imageWebViewLink: driveWebViewLink
+      });
     } catch (err: any) {
       console.error(err);
       setFileError(`Не удалось загрузить картинку в чат: ${err.message || err}`);
@@ -2007,7 +1988,6 @@ export default function TaskDetailsPanel({
 
   // Upload attachment either to local base64 or directly to Google Drive
   const uploadFile = async (file: File) => {
-    // If it's a pasted image with generic name, rename it to make it look nicer
     let finalFile = file;
     if (file.name === 'image.png' || !file.name) {
       const extension = file.type ? file.type.split('/')[1] || 'png' : 'png';
@@ -2015,125 +1995,120 @@ export default function TaskDetailsPanel({
       finalFile = new File([file], `Pasted_File_${formattedDate}.${extension}`, { type: file.type });
     }
 
-    if (googleToken) {
-      setIsUploadingFile(true);
-      try {
-        // 1. Get or create special folder on Google Drive
-        const folderId = await getOrCreateGoogleDriveFolder(googleToken);
+    const isImage = finalFile.type?.startsWith('image/') || /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(finalFile.name);
+    setIsUploadingFile(true);
+    setFileError(null);
 
-        // 2. Create the file metadata reference on Google Drive
-        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            name: finalFile.name,
-            mimeType: finalFile.type || 'application/octet-stream',
-            parents: folderId ? [folderId] : undefined
-          })
-        });
+    try {
+      let optimizedDataUrl = '';
+      let effectiveType = finalFile.type || 'application/octet-stream';
+      let effectiveSize = finalFile.size;
+      let effectiveName = finalFile.name;
 
-        if (!createRes.ok) {
-          const errText = await createRes.text();
-          throw new Error(`Не удалось создать метаданные на Диске: ${errText}`);
+      if (isImage) {
+        const optimized = await compressImageForSync(finalFile, { maxWidth: 1280, maxHeight: 1280, quality: 0.82 });
+        optimizedDataUrl = optimized.dataUrl;
+        effectiveType = optimized.type;
+        effectiveSize = optimized.size;
+        effectiveName = optimized.name;
+      } else {
+        if (!googleToken && finalFile.size > 2 * 1024 * 1024) {
+          setFileError('Размер файла превышает 2 МБ. Пожалуйста, авторизуйте Google Drive в шапке для хранения больших файлов!');
+          return;
         }
-
-        const createData = await createRes.json();
-        const driveFileId = createData.id;
-
-        // 3. Upload raw file body as media
-        const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': finalFile.type || 'application/octet-stream'
-          },
-          body: finalFile
+        optimizedDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(finalFile);
         });
+      }
 
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text();
-          throw new Error(`Не удалось загрузить тело файла: ${errText}`);
-        }
+      let driveFileId: string | undefined;
+      let driveWebViewLink: string | undefined;
+      let driveWebContentLink: string | undefined;
 
-        // Grant public read permission so other devices can read the file anonymously and automatically
+      if (googleToken) {
         try {
-          await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
+          const folderId = await getOrCreateGoogleDriveFolder(googleToken);
+
+          const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${googleToken}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              role: 'reader',
-              type: 'anyone'
+              name: effectiveName,
+              mimeType: effectiveType,
+              parents: folderId ? [folderId] : undefined
             })
           });
-        } catch (permissionErr) {
-          console.warn('[Google Drive Auth] Failed to list file permissions as public:', permissionErr);
-        }
 
-        // 4. Retrieve web links
-        const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
-          headers: {
-            'Authorization': `Bearer ${googleToken}`
+          if (createRes.ok) {
+            const createData = await createRes.json();
+            driveFileId = createData.id;
+
+            await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Bearer ${googleToken}`,
+                'Content-Type': effectiveType
+              },
+              body: finalFile
+            });
+
+            try {
+              await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${googleToken}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  role: 'reader',
+                  type: 'anyone'
+                })
+              });
+            } catch (permissionErr) {
+              console.warn('[Google Drive Auth] Failed to list file permissions as public:', permissionErr);
+            }
+
+            const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
+              headers: {
+                'Authorization': `Bearer ${googleToken}`
+              }
+            });
+
+            if (finalRes.ok) {
+              const finalData = await finalRes.json();
+              driveWebViewLink = finalData.webViewLink;
+              driveWebContentLink = finalData.webContentLink;
+            }
           }
-        });
-
-        if (!finalRes.ok) {
-          throw new Error('Не удалось получить ссылки на файл с Диска');
+        } catch (driveErr) {
+          console.warn('[Google Drive Attachment Upload] Drive API error, continuing with local copy:', driveErr);
         }
-
-        const finalData = await finalRes.json();
-
-        // 5. Build and save attachment record
-        const newAttachment: AttachmentFile = {
-          id: generateId(),
-          name: finalFile.name,
-          type: finalFile.type,
-          size: finalFile.size,
-          dataUrl: finalData.webViewLink || finalData.webContentLink || '',
-          googleDriveId: driveFileId,
-          webViewLink: finalData.webViewLink,
-          webContentLink: finalData.webContentLink,
-        };
-
-        const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
-        handlePropChange('files', updatedFiles);
-      } catch (err: any) {
-        console.error(err);
-        setFileError(`Не удалось сохранить на Google Диск: ${err.message || err}`);
-      } finally {
-        setIsUploadingFile(false);
-      }
-    } else {
-      // Local Base64 storage
-      const MAX_BYTES = 1.5 * 1024 * 1024;
-      if (finalFile.size > MAX_BYTES) {
-        setFileError('Размер файла превышает 1.5 МБ. Пожалуйста, авторизуйте Google Sheets в шапке, чтобы разблокировать неограниченные вложения на Google Диск!');
-        return;
       }
 
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64Data = reader.result as string;
-        const newAttachment: AttachmentFile = {
-          id: generateId(),
-          name: finalFile.name,
-          type: finalFile.type,
-          size: finalFile.size,
-          dataUrl: base64Data,
-        };
+      const newAttachment: AttachmentFile = {
+        id: generateId(),
+        name: effectiveName,
+        type: effectiveType,
+        size: effectiveSize,
+        dataUrl: optimizedDataUrl,
+        googleDriveId: driveFileId,
+        webViewLink: driveWebViewLink,
+        webContentLink: driveWebContentLink,
+      };
 
-        const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
-        handlePropChange('files', updatedFiles);
-      };
-      reader.onerror = () => {
-        setFileError('Ошибка считывания файла.');
-      };
-      reader.readAsDataURL(finalFile);
+      const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
+      handlePropChange('files', updatedFiles);
+    } catch (err: any) {
+      console.error(err);
+      setFileError(`Не удалось сохранить файл: ${err.message || err}`);
+    } finally {
+      setIsUploadingFile(false);
     }
   };
 
@@ -8141,6 +8116,7 @@ export default function TaskDetailsPanel({
                               alt={file.name}
                               sz="w150"
                               className="w-full h-full"
+                              fallbackUrl={file.dataUrl}
                             />
                           ) : (
                             <img 
@@ -8445,6 +8421,7 @@ export default function TaskDetailsPanel({
                                   alt="Comment upload"
                                   sz="w400"
                                   className="w-full max-h-56 object-cover"
+                                  fallbackUrl={comment.imageUrl}
                                 />
                               ) : (
                                 <img

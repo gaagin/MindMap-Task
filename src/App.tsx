@@ -167,6 +167,7 @@ function enrichStateWithTimestamps(prev: WorkspaceState, next: WorkspaceState): 
         pn.width !== nn.width ||
         pn.height !== nn.height ||
         JSON.stringify(pn.files) !== JSON.stringify(nn.files) ||
+        JSON.stringify(pn.comments) !== JSON.stringify(nn.comments) ||
         JSON.stringify(pn.tags) !== JSON.stringify(nn.tags) ||
         JSON.stringify(pn.history) !== JSON.stringify(nn.history) ||
         JSON.stringify(pn.tagCategories) !== JSON.stringify(nn.tagCategories) ||
@@ -400,7 +401,28 @@ function getSyncHash(wsState: WorkspaceState | null | undefined): string {
         height: n.height !== undefined ? Math.round(Number(n.height) || 0) : null,
         history: (n.history || []).map(h => ({ id: h.id, text: h.text, notes: h.notes, timestamp: h.timestamp })),
         tagCategories: (n.tagCategories || []).map(t => ({ id: t.id, name: t.name, color: t.color, tags: [...(t.tags || [])].sort() })),
-        files: (n.files || []).map(f => ({ id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl })),
+        files: (n.files || []).map(f => ({
+          id: f.id,
+          name: f.name,
+          type: f.type,
+          size: f.size,
+          dataUrl: f.dataUrl,
+          googleDriveId: f.googleDriveId || null,
+          webViewLink: f.webViewLink || null,
+          webContentLink: f.webContentLink || null
+        })),
+        comments: (n.comments || []).map(c => ({
+          id: c.id,
+          userId: c.userId,
+          userName: c.userName,
+          userPhoto: c.userPhoto || null,
+          text: c.text,
+          createdAt: c.createdAt,
+          imageUrl: c.imageUrl || null,
+          imageGoogleDriveId: c.imageGoogleDriveId || null,
+          imageWebViewLink: c.imageWebViewLink || null,
+          resolved: !!c.resolved
+        })),
         savedFilters: n.savedFilters ? {
           filterStatus: n.savedFilters.filterStatus || null,
           filterPriority: n.savedFilters.filterPriority || null,

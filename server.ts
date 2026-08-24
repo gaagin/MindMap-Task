@@ -77,6 +77,65 @@ app.all('/api/google-proxy', express.raw({ type: '*/*', limit: '50mb' }), async 
   }
 });
 
+// Dedicated Google Drive Image Proxy endpoint to guarantee cross-device image rendering without CORS/auth blocks
+app.get('/api/drive-image/:fileId', async (req, res) => {
+  const { fileId } = req.params;
+  if (!fileId) {
+    return res.status(400).json({ error: 'Missing fileId parameter' });
+  }
+
+  const token = (req.headers.authorization?.replace('Bearer ', '') || (req.query.token as string))?.trim();
+  const sz = (req.query.sz as string) || 'w1600';
+
+  // Strategy 1: If access token is provided, fetch via official Google Drive API
+  if (token && token !== 'null' && token !== 'undefined') {
+    try {
+      const driveRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (driveRes.ok) {
+        const contentType = driveRes.headers.get('content-type') || 'image/jpeg';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+        const arrayBuf = await driveRes.arrayBuffer();
+        return res.send(Buffer.from(arrayBuf));
+      }
+    } catch (e) {
+      console.warn(`[Drive Image Proxy] API fetch with token failed for ${fileId}:`, e);
+    }
+  }
+
+  // Strategy 2: Fetch via lh3.googleusercontent.com
+  try {
+    const lh3Res = await fetch(`https://lh3.googleusercontent.com/d/${fileId}`);
+    if (lh3Res.ok) {
+      const contentType = lh3Res.headers.get('content-type') || 'image/jpeg';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      const arrayBuf = await lh3Res.arrayBuffer();
+      return res.send(Buffer.from(arrayBuf));
+    }
+  } catch (e) {
+    // Continue to next fallback
+  }
+
+  // Strategy 3: Fetch via drive.google.com thumbnail
+  try {
+    const thumbRes = await fetch(`https://drive.google.com/thumbnail?id=${fileId}&sz=${sz}`);
+    if (thumbRes.ok) {
+      const contentType = thumbRes.headers.get('content-type') || 'image/jpeg';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      const arrayBuf = await thumbRes.arrayBuffer();
+      return res.send(Buffer.from(arrayBuf));
+    }
+  } catch (e) {
+    // Fail
+  }
+
+  return res.status(404).json({ error: 'Failed to load drive image' });
+});
+
 app.use(express.json());
 
 // Lazy-initialized Gemini-client to avoid crashing if key is missing on startup

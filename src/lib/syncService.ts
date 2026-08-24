@@ -1,6 +1,6 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport, DeletionRecord } from '../types';
+import { WorkspaceState, TaskNode, Folder, Project, TagCategory, SyncReport, DeletionRecord, Comment, AttachmentFile } from '../types';
 import { proxiedFetch } from '../utils';
 
 const fetch = proxiedFetch;
@@ -258,20 +258,93 @@ export function mergeWorkspaceStates(
       if (remoteTime > localTime && !isLocalEditedInSession) {
         // REMOTE wins! Restore full local base64 dataUrl if Google Sheets or remote cloud has placeholder string
         const mergedFiles = (sn.files || []).map(remoteFile => {
-          if (remoteFile.dataUrl?.startsWith('_OMITTED_DUE_TO_SIZE_')) {
-            const localFile = (existingN.files || []).find(lf => lf.id === remoteFile.id);
-            if (localFile && localFile.dataUrl && !localFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
-              return {
-                ...remoteFile,
-                dataUrl: localFile.dataUrl
-              };
-            }
+          const localFile = (existingN.files || []).find(lf => lf.id === remoteFile.id);
+          const hasLocalData = localFile && localFile.dataUrl && !localFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_');
+          const hasRemoteData = remoteFile.dataUrl && !remoteFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_');
+          
+          let effectiveDataUrl = hasRemoteData ? remoteFile.dataUrl : (hasLocalData ? localFile!.dataUrl : '');
+          const effectiveDriveId = remoteFile.googleDriveId || localFile?.googleDriveId;
+
+          if (!effectiveDataUrl && effectiveDriveId) {
+            effectiveDataUrl = `/api/drive-image/${effectiveDriveId}`;
           }
-          return remoteFile;
+
+          return {
+            ...remoteFile,
+            dataUrl: effectiveDataUrl,
+            googleDriveId: effectiveDriveId || undefined,
+            webViewLink: remoteFile.webViewLink || localFile?.webViewLink || undefined,
+            webContentLink: remoteFile.webContentLink || localFile?.webContentLink || undefined,
+          };
         });
+
+        // Merge comments
+        const localComments = existingN.comments || [];
+        const remoteComments = sn.comments || [];
+        const commentsMap = new Map<string, Comment>();
+        localComments.forEach(c => commentsMap.set(c.id, c));
+        remoteComments.forEach(rc => {
+          const lc = commentsMap.get(rc.id);
+          const effectiveImg = (rc.imageUrl && !rc.imageUrl.startsWith('_OMITTED_')) ? rc.imageUrl : (lc?.imageUrl || '');
+          const effectiveDriveId = rc.imageGoogleDriveId || lc?.imageGoogleDriveId;
+          commentsMap.set(rc.id, {
+            ...rc,
+            imageUrl: effectiveImg || (effectiveDriveId ? `/api/drive-image/${effectiveDriveId}` : undefined),
+            imageGoogleDriveId: effectiveDriveId || undefined,
+            imageWebViewLink: rc.imageWebViewLink || lc?.imageWebViewLink || undefined,
+          });
+        });
+
         mergedNodesMap.set(sn.id, {
           ...sn,
-          files: mergedFiles
+          files: mergedFiles,
+          comments: Array.from(commentsMap.values())
+        });
+      } else {
+        // LOCAL wins! Merge in any missing files or comments that might have been uploaded on remote
+        const mergedFiles: AttachmentFile[] = (existingN.files || []).map(localFile => {
+          const remoteFile = (sn.files || []).find(rf => rf.id === localFile.id);
+          const hasLocalData = localFile.dataUrl && !localFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_');
+          const hasRemoteData = remoteFile && remoteFile.dataUrl && !remoteFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_');
+
+          let effectiveDataUrl = hasLocalData ? localFile.dataUrl : (hasRemoteData ? remoteFile!.dataUrl : '');
+          const effectiveDriveId = localFile.googleDriveId || remoteFile?.googleDriveId;
+
+          if (!effectiveDataUrl && effectiveDriveId) {
+            effectiveDataUrl = `/api/drive-image/${effectiveDriveId}`;
+          }
+
+          return {
+            ...localFile,
+            dataUrl: effectiveDataUrl,
+            googleDriveId: effectiveDriveId || undefined,
+            webViewLink: localFile.webViewLink || remoteFile?.webViewLink || undefined,
+            webContentLink: localFile.webContentLink || remoteFile?.webContentLink || undefined,
+          };
+        });
+
+        // Add any files from remote that local doesn't have yet
+        (sn.files || []).forEach(rf => {
+          if (!mergedFiles.some(mf => mf.id === rf.id)) {
+            mergedFiles.push(rf);
+          }
+        });
+
+        // Merge comments
+        const localComments = existingN.comments || [];
+        const remoteComments = sn.comments || [];
+        const commentsMap = new Map<string, Comment>();
+        localComments.forEach(c => commentsMap.set(c.id, c));
+        remoteComments.forEach(rc => {
+          if (!commentsMap.has(rc.id)) {
+            commentsMap.set(rc.id, rc);
+          }
+        });
+
+        mergedNodesMap.set(existingN.id, {
+          ...existingN,
+          files: mergedFiles,
+          comments: Array.from(commentsMap.values())
         });
       }
     }
@@ -1072,24 +1145,60 @@ export async function syncWithGoogleSheets(
         const localTime = new Date(local.updatedAt || 0).getTime();
         const remoteTime = new Date(sn.updatedAt || 0).getTime();
         if (remoteTime > localTime) {
-          // REMOTE wins! Restore full local base64 dataUrl if Google Sheets has the omitted/placeholder string
+          // REMOTE wins! Reconcile files preserving local base64 if remote was omitted
           const mergedFiles = (sn.files || []).map(remoteFile => {
-            if (remoteFile.dataUrl?.startsWith('_OMITTED_DUE_TO_SIZE_')) {
-              const localFile = (local.files || []).find(lf => lf.id === remoteFile.id);
-              if (localFile && localFile.dataUrl && !localFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_')) {
-                return {
-                  ...remoteFile,
-                  dataUrl: localFile.dataUrl
-                };
-              }
+            const localFile = (local.files || []).find(lf => lf.id === remoteFile.id);
+            const hasLocalData = localFile && localFile.dataUrl && !localFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_');
+            const hasRemoteData = remoteFile.dataUrl && !remoteFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_');
+
+            let effectiveDataUrl = hasRemoteData ? remoteFile.dataUrl : (hasLocalData ? localFile!.dataUrl : '');
+            const effectiveDriveId = remoteFile.googleDriveId || localFile?.googleDriveId;
+
+            if (!effectiveDataUrl && effectiveDriveId) {
+              effectiveDataUrl = `/api/drive-image/${effectiveDriveId}`;
             }
-            return remoteFile;
+
+            return {
+              ...remoteFile,
+              dataUrl: effectiveDataUrl,
+              googleDriveId: effectiveDriveId || undefined,
+              webViewLink: remoteFile.webViewLink || localFile?.webViewLink || undefined,
+              webContentLink: remoteFile.webContentLink || localFile?.webContentLink || undefined,
+            };
           });
+
           mergedNodesMap.set(sn.id, {
             ...sn,
             pomodoroTotalTime: local.pomodoroTotalTime,
             pomodoroSessionsCount: local.pomodoroSessionsCount,
             history: local.history,
+            files: mergedFiles,
+            comments: sn.comments || local.comments || []
+          });
+        } else {
+          // LOCAL wins! Preserve local files and backfill any missing Google Drive IDs
+          const mergedFiles = (local.files || []).map(localFile => {
+            const remoteFile = (sn.files || []).find(rf => rf.id === localFile.id);
+            const effectiveDriveId = localFile.googleDriveId || remoteFile?.googleDriveId;
+            let effectiveDataUrl = (localFile.dataUrl && !localFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_'))
+              ? localFile.dataUrl
+              : (remoteFile?.dataUrl && !remoteFile.dataUrl.startsWith('_OMITTED_DUE_TO_SIZE_') ? remoteFile.dataUrl : '');
+
+            if (!effectiveDataUrl && effectiveDriveId) {
+              effectiveDataUrl = `/api/drive-image/${effectiveDriveId}`;
+            }
+
+            return {
+              ...localFile,
+              dataUrl: effectiveDataUrl,
+              googleDriveId: effectiveDriveId || undefined,
+              webViewLink: localFile.webViewLink || remoteFile?.webViewLink || undefined,
+              webContentLink: localFile.webContentLink || remoteFile?.webContentLink || undefined,
+            };
+          });
+
+          mergedNodesMap.set(local.id, {
+            ...local,
             files: mergedFiles
           });
         }

@@ -62,6 +62,7 @@ import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, hasContainerNonOverdueTasks, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 import GoogleDriveImage from './GoogleDriveImage';
+import { compressImageForSync } from '../lib/imageOptimizer';
 
 interface MindMapCanvasProps {
   nodes: TaskNode[];
@@ -735,118 +736,120 @@ export default function MindMapCanvas({
       finalFile = new File([file], `Pasted_File_${formattedDate}.${extension}`, { type: file.type });
     }
 
-    if (googleToken) {
-      setIsUploadingFile(true);
-      try {
-        const folderId = await getOrCreateGoogleDriveFolder(googleToken);
+    const isImage = finalFile.type?.startsWith('image/') || /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(finalFile.name);
+    setIsUploadingFile(true);
+    setFileError(null);
 
-        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            name: finalFile.name,
-            mimeType: finalFile.type || 'application/octet-stream',
-            parents: folderId ? [folderId] : undefined
-          })
-        });
+    try {
+      let optimizedDataUrl = '';
+      let effectiveType = finalFile.type || 'application/octet-stream';
+      let effectiveSize = finalFile.size;
+      let effectiveName = finalFile.name;
 
-        if (!createRes.ok) {
-          const errText = await createRes.text();
-          throw new Error(`Failed to create metadata on Drive: ${errText}`);
+      if (isImage) {
+        const optimized = await compressImageForSync(finalFile, { maxWidth: 1280, maxHeight: 1280, quality: 0.82 });
+        optimizedDataUrl = optimized.dataUrl;
+        effectiveType = optimized.type;
+        effectiveSize = optimized.size;
+        effectiveName = optimized.name;
+      } else {
+        if (!googleToken && finalFile.size > 2 * 1024 * 1024) {
+          setFileError('Размер файла превышает 2 МБ. Войдите через Google, чтобы разблокировать вложения на Google Диск без ограничений!');
+          setTimeout(() => setFileError(null), 4000);
+          return null;
         }
-
-        const createData = await createRes.json();
-        const driveFileId = createData.id;
-
-        const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': finalFile.type || 'application/octet-stream'
-          },
-          body: finalFile
+        optimizedDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(finalFile);
         });
+      }
 
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text();
-          throw new Error(`Failed to upload file body: ${errText}`);
-        }
+      let driveFileId: string | undefined;
+      let driveWebViewLink: string | undefined;
+      let driveWebContentLink: string | undefined;
 
+      if (googleToken) {
         try {
-          await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
+          const folderId = await getOrCreateGoogleDriveFolder(googleToken);
+
+          const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${googleToken}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              role: 'reader',
-              type: 'anyone'
+              name: effectiveName,
+              mimeType: effectiveType,
+              parents: folderId ? [folderId] : undefined
             })
           });
-        } catch (permissionErr) {
-          console.warn('[Google Drive Auth] Failed to share file:', permissionErr);
-        }
 
-        const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
-          headers: {
-            'Authorization': `Bearer ${googleToken}`
+          if (createRes.ok) {
+            const createData = await createRes.json();
+            driveFileId = createData.id;
+
+            await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Bearer ${googleToken}`,
+                'Content-Type': effectiveType
+              },
+              body: finalFile
+            });
+
+            try {
+              await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}/permissions`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${googleToken}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  role: 'reader',
+                  type: 'anyone'
+                })
+              });
+            } catch (permissionErr) {
+              console.warn('[Google Drive Auth] Failed to share file:', permissionErr);
+            }
+
+            const finalRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,webViewLink,webContentLink,size`, {
+              headers: {
+                'Authorization': `Bearer ${googleToken}`
+              }
+            });
+
+            if (finalRes.ok) {
+              const finalData = await finalRes.json();
+              driveWebViewLink = finalData.webViewLink;
+              driveWebContentLink = finalData.webContentLink;
+            }
           }
-        });
-
-        if (!finalRes.ok) {
-          throw new Error('Failed to retrieve web links');
+        } catch (driveErr) {
+          console.warn('[Google Drive Upload] Drive API error, using local optimized image:', driveErr);
         }
-
-        const finalData = await finalRes.json();
-
-        return {
-          id: generateId(),
-          name: finalFile.name,
-          type: finalFile.type,
-          size: finalFile.size,
-          dataUrl: finalData.webViewLink || finalData.webContentLink || '',
-          googleDriveId: driveFileId,
-          webViewLink: finalData.webViewLink,
-          webContentLink: finalData.webContentLink,
-        };
-      } catch (err: any) {
-        console.error(err);
-        setFileError(`Failed to save to Google Drive: ${err.message || err}`);
-        return null;
-      } finally {
-        setIsUploadingFile(false);
-      }
-    } else {
-      const MAX_BYTES = 1.5 * 1024 * 1024;
-      if (finalFile.size > MAX_BYTES) {
-        setFileError('Размер файла превышает 1.5 МБ. Войдите через Google, чтобы разблокировать вложения на Google Диск без ограничений!');
-        setTimeout(() => setFileError(null), 4000);
-        return null;
       }
 
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64Data = reader.result as string;
-          resolve({
-            id: generateId(),
-            name: finalFile.name,
-            type: finalFile.type,
-            size: finalFile.size,
-            dataUrl: base64Data,
-          });
-        };
-        reader.onerror = () => {
-          setFileError('Ошибка считывания файла.');
-          setTimeout(() => setFileError(null), 4000);
-          resolve(null);
-        };
-        reader.readAsDataURL(finalFile);
-      });
+      return {
+        id: generateId(),
+        name: effectiveName,
+        type: effectiveType,
+        size: effectiveSize,
+        dataUrl: optimizedDataUrl,
+        googleDriveId: driveFileId,
+        webViewLink: driveWebViewLink,
+        webContentLink: driveWebContentLink,
+      };
+    } catch (err: any) {
+      console.error(err);
+      setFileError(`Не удалось сохранить файл: ${err.message || err}`);
+      setTimeout(() => setFileError(null), 4000);
+      return null;
+    } finally {
+      setIsUploadingFile(false);
     }
   };
 
