@@ -3727,7 +3727,7 @@ export default function MindMapCanvas({
 
   // Reset focus mode if the focused container is deleted or project is switched
   useEffect(() => {
-    if (focusedContainerId && !nodes.some(n => n.id === focusedContainerId)) {
+    if (focusedContainerId && nodes.length > 0 && !nodes.some(n => n.id === focusedContainerId)) {
       setFocusedContainerId(null);
     }
   }, [nodes, focusedContainerId]);
@@ -3737,7 +3737,7 @@ export default function MindMapCanvas({
     if (onContainerFocusChange) {
       onContainerFocusChange(!!focusedContainerId);
     }
-  }, [focusedContainerId, onContainerFocusChange]);
+  }, [focusedContainerId]);
 
   const canvasImageFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -7071,17 +7071,17 @@ export default function MindMapCanvas({
                   isDimmed ? 'opacity-20 dark:opacity-15 grayscale-[50%] scale-95 duration-300' : ''
                 } ${
                   draggedOverTagNodeId === node.id
-                    ? 'bg-[#edf3ec]/50 dark:bg-[#1c2c20]/50 border-[#448361] ring-2 ring-[#448361]/30 scale-[1.01]'
+                    ? 'bg-[#edf3ec]/40 dark:bg-[#1c2c20]/40 border-[#448361] ring-2 ring-[#448361]/30 scale-[1.01]'
                     : hoverTargetId === node.id
-                      ? 'bg-[#fbf3db]/50 dark:bg-[#342e1d]/50 border-[#cb912f] ring-2 ring-[#cb912f]/30 scale-[1.01]'
+                      ? 'bg-[#fbf3db]/40 dark:bg-[#342e1d]/40 border-[#cb912f] ring-2 ring-[#cb912f]/30 scale-[1.01]'
                       : isOverdueCont
-                        ? 'bg-white dark:bg-[#202020] border-[#eb5757] dark:border-[#eb5757]/80 shadow-xs ring-2 ring-[#eb5757]/20'
+                        ? 'bg-rose-50/15 dark:bg-rose-950/15 border-[#eb5757] dark:border-[#eb5757]/80 shadow-xs ring-2 ring-[#eb5757]/20'
                         : hasNonOverdueCont
-                          ? 'bg-[#edf5fa]/40 dark:bg-[#1a2634]/40 border-[#2383e2] dark:border-[#529cca]/80 shadow-xs ring-2 ring-[#2383e2]/20'
+                          ? 'bg-sky-50/15 dark:bg-sky-950/15 border-[#2383e2] dark:border-[#529cca]/80 shadow-xs ring-2 ring-[#2383e2]/20'
                           : isContainerSelected
-                            ? 'bg-white dark:bg-[#202020] border-[#2383e2] dark:border-[#529cca] shadow-sm ring-2 ring-[#2383e2]/20'
-                            : 'bg-white dark:bg-[#202020] border-[#e9e9e8] dark:border-[#2e2e2e] shadow-xs hover:border-[#d0d0ce] dark:hover:border-[#3e3e3e]'
-                } flex flex-col`}
+                            ? 'bg-blue-50/15 dark:bg-blue-950/15 border-[#2383e2] dark:border-[#529cca] shadow-sm ring-2 ring-[#2383e2]/20'
+                            : 'bg-white/40 dark:bg-[#202020]/40 border-[#e9e9e8] dark:border-[#2e2e2e] shadow-xs hover:border-[#d0d0ce] dark:hover:border-[#3e3e3e]'
+                } flex flex-col cursor-grab active:cursor-grabbing`}
                 onMouseDown={(e) => {
                   const target = e.target as HTMLElement;
                   if (target.tagName === 'INPUT' || target.closest('button')) return;
@@ -7094,6 +7094,11 @@ export default function MindMapCanvas({
                   if (hasDraggedNode || didDragRef.current) return;
                   e.stopPropagation();
                   onSelectNode(node.id, e);
+                }}
+                onDoubleClick={(e) => {
+                  if (hasDraggedNode || didDragRef.current) return;
+                  e.stopPropagation();
+                  setFocusedContainerId(node.id);
                 }}
               >
                 {/* Floating Figma-like Container Title: Always visible, zoom-independent scale */}
@@ -7179,64 +7184,14 @@ export default function MindMapCanvas({
                   </div>
                 </div>
 
-                {/* Header of Container Canvas */}
-                <div className={`px-3 py-1.5 flex items-center justify-between border-b ${
-                  isOverdueCont
-                    ? 'border-rose-200 dark:border-rose-900/50 bg-rose-50/20 dark:bg-rose-950/20'
-                    : hasNonOverdueCont
-                      ? 'border-sky-200 dark:border-sky-900/50 bg-sky-50/20 dark:bg-sky-950/20'
-                      : isContainerSelected
-                        ? 'border-amber-200 dark:border-amber-900/50'
-                        : 'border-slate-200/80 dark:border-slate-800'
-                } rounded-t-2xl bg-white dark:bg-slate-950 select-none`}>
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate font-sans tracking-wide">
-                      {node.text || 'Контейнер'}
-                    </span>
-                  </div>
-
-                  {/* View Mode Switcher on Container Header */}
-                  <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-md shrink-0">
-                    {[
-                      { id: 'canvas', label: 'Холст', icon: LayoutGrid },
-                      { id: 'calendar', label: 'Календарь', icon: Calendar },
-                      { id: 'kanban', label: 'Канбан', icon: Kanban },
-                      { id: 'list', label: 'Список', icon: ListTodo },
-                      { id: 'table', label: 'Таблица', icon: Table },
-                      { id: 'gantt', label: 'Гант', icon: GanttChart },
-                    ].map(v => {
-                      const effectiveMode = getContainerViewMode(node);
-                      const isCurr = effectiveMode === v.id;
-                      const VIcon = v.icon;
-                      return (
-                        <button
-                          key={v.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setContainerViewMode(node.id, v.id as any);
-                          }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          title={v.label}
-                          className={`p-1 rounded text-[10px] transition-colors cursor-pointer ${
-                            isCurr
-                              ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold'
-                              : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
-                          }`}
-                        >
-                          <VIcon className="w-3 h-3" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Body / Workspace Area */}
-                <div className="relative flex-1 p-2 flex flex-col justify-between min-h-0 bg-transparent rounded-b-2xl">
-                  {isContainerCollapsed ? (
-                    <div className="flex-1 flex flex-col justify-center p-2 select-none bg-slate-50/40 dark:bg-slate-900/10 rounded-b-2xl" />
-                  ) : (
-                    <div className="flex-1 flex flex-col min-h-0 z-10 select-text overflow-hidden">
-                      {renderContainerBody(node, containerChildren)}
+                {/* Clean Container Interior (No miniature view clutter) */}
+                <div className="flex-1 w-full h-full flex flex-col justify-between p-3 select-none pointer-events-none">
+                  {totalChildren > 0 && (
+                    <div className="mt-auto flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-medium select-none pointer-events-none">
+                      <span className="bg-slate-100/90 dark:bg-slate-800/90 backdrop-blur-xs px-2 py-0.5 rounded-full border border-slate-200/50 dark:border-slate-700/50">
+                        {totalChildren} {totalChildren === 1 ? 'задача' : totalChildren < 5 ? 'задачи' : 'задач'}
+                        {completedChildren > 0 && ` • ${completedChildren} выполнено`}
+                      </span>
                     </div>
                   )}
                 </div>

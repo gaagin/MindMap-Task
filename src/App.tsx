@@ -1301,8 +1301,10 @@ export default function App() {
 
   // Auto-clamp active reminder index when items get dismissed
   useEffect(() => {
-    if (activeReminderIndex >= triggeredReminders.length) {
-      setActiveReminderIndex(Math.max(0, triggeredReminders.length - 1));
+    if (triggeredReminders.length > 0 && activeReminderIndex >= triggeredReminders.length) {
+      setActiveReminderIndex(triggeredReminders.length - 1);
+    } else if (triggeredReminders.length === 0 && activeReminderIndex !== 0) {
+      setActiveReminderIndex(0);
     }
   }, [triggeredReminders.length, activeReminderIndex]);
 
@@ -1523,6 +1525,15 @@ export default function App() {
   type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
 
+  const viewModeRef = React.useRef(viewMode);
+  viewModeRef.current = viewMode;
+
+  const preFocusFiltersRef = React.useRef(preFocusFilters);
+  preFocusFiltersRef.current = preFocusFilters;
+
+  const searchQueryRef = React.useRef(searchQuery);
+  searchQueryRef.current = searchQuery;
+
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(() => {
     try {
       return localStorage.getItem('milli_focused_task_id') || null;
@@ -1560,20 +1571,16 @@ export default function App() {
     }
     prevFilterTagRef.current = filterTag;
     prevViewModeRef.current = viewMode;
-  }, [filterTag, viewMode, tagFilteredNodes]);
+  }, [filterTag, viewMode]);
 
   // Keep tagFilterIndex in bounds if nodes change
   useEffect(() => {
     if (filterTag !== 'all' && tagFilteredNodes.length > 0) {
       if (tagFilterIndex >= tagFilteredNodes.length) {
         setTagFilterIndex(0);
-        if (viewMode === 'canvas') {
-          setFocusedTaskId(tagFilteredNodes[0].id);
-          setSelectedNodeId(tagFilteredNodes[0].id);
-        }
       }
     }
-  }, [tagFilteredNodes, filterTag, tagFilterIndex, viewMode]);
+  }, [tagFilteredNodes.length, filterTag, tagFilterIndex]);
 
   const handleNextTagFilteredNode = React.useCallback(() => {
     if (tagFilteredNodes.length === 0) return;
@@ -1788,7 +1795,7 @@ export default function App() {
             if (!lastAppliedFocusIdRef.current) {
               setPreFocusFilters({
                 ...filtersRef.current,
-                viewMode: viewMode
+                viewMode: viewModeRef.current
               });
             }
 
@@ -1865,10 +1872,10 @@ export default function App() {
               setViewMode('gantt');
             } else if (isList) {
               setViewMode('mobile-list');
-            } else if (searchQuery.trim() !== "" && (viewMode === 'canvas' || (!lastAppliedFocusIdRef.current && viewMode === 'canvas'))) {
+            } else if (searchQueryRef.current.trim() !== "" && (viewModeRef.current === 'canvas' || (!lastAppliedFocusIdRef.current && viewModeRef.current === 'canvas'))) {
               setViewMode('canvas');
             } else {
-              if (viewMode !== 'canvas') {
+              if (viewModeRef.current !== 'canvas') {
                 // Keep the current view mode if we focused a node from outside the canvas (e.g. from GanttView zoom-focus)
               } else {
                 setViewMode('canvas');
@@ -1886,43 +1893,45 @@ export default function App() {
               if (node.savedFilters.kanbanGroupBy !== undefined) setKanbanGroupBy(node.savedFilters.kanbanGroupBy);
               if (node.savedFilters.kanbanContainerFilterId !== undefined) setKanbanContainerFilterId(node.savedFilters.kanbanContainerFilterId);
             }
-            
-            lastAppliedFocusIdRef.current = focusId;
           }
+          lastAppliedFocusIdRef.current = focusId;
+        } else {
+          lastAppliedFocusIdRef.current = focusId;
         }
       } else {
         // Exiting focus mode!
         // Restore pre-focus filters if they exist
-        if (preFocusFilters) {
-          setFilterStatus(preFocusFilters.filterStatus);
-          setFilterPriority(preFocusFilters.filterPriority);
-          setFilterTag(preFocusFilters.filterTag);
-          setFilterDueDate(preFocusFilters.filterDueDate);
-          setFilterAttachments(preFocusFilters.filterAttachments);
-          setFilterNotes(preFocusFilters.filterNotes);
-          setFilterCategoryId(preFocusFilters.filterCategoryId);
-          setKanbanGroupBy(preFocusFilters.kanbanGroupBy);
-          setKanbanContainerFilterId(preFocusFilters.kanbanContainerFilterId);
+        const savedFilters = preFocusFiltersRef.current;
+        if (savedFilters) {
+          setFilterStatus(savedFilters.filterStatus);
+          setFilterPriority(savedFilters.filterPriority);
+          setFilterTag(savedFilters.filterTag);
+          setFilterDueDate(savedFilters.filterDueDate);
+          setFilterAttachments(savedFilters.filterAttachments);
+          setFilterNotes(savedFilters.filterNotes);
+          setFilterCategoryId(savedFilters.filterCategoryId);
+          setKanbanGroupBy(savedFilters.kanbanGroupBy);
+          setKanbanContainerFilterId(savedFilters.kanbanContainerFilterId);
           if (exitedContainerFocus) {
-            setViewMode(viewMode === 'gantt' ? 'gantt' : 'canvas');
-          } else if (preFocusFilters.viewMode) {
-            setViewMode(viewMode === 'gantt' ? 'gantt' : preFocusFilters.viewMode);
+            setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'canvas');
+          } else if (savedFilters.viewMode) {
+            setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : savedFilters.viewMode);
           }
           setPreFocusFilters(null);
         } else if (exitedContainerFocus) {
-          setViewMode(viewMode === 'gantt' ? 'gantt' : 'canvas');
+          setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'canvas');
         }
         lastAppliedFocusIdRef.current = null;
       }
     } else {
       // If overall focusId did not change, but we exited container focus mode (e.g. nested transitions)
       if (exitedContainerFocus) {
-        setViewMode(viewMode === 'gantt' ? 'gantt' : 'canvas');
+        setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'canvas');
       }
     }
     
     prevFocusedContainerIdRef.current = focusedContainerId;
-  }, [focusedTaskId, focusedContainerId, state.activeProjectId, state.nodes, preFocusFilters, viewMode, searchQuery]);
+  }, [focusedTaskId, focusedContainerId, state.activeProjectId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1943,32 +1952,35 @@ export default function App() {
         lastProcessedFocusedTaskIdRef.current = focusedTaskId;
         if (state.activeProjectId) {
           const pid = state.activeProjectId;
-          const currentNodes = state.nodes[pid] || [];
-          const node = currentNodes.find(n => n.id === focusedTaskId);
-          if (node && (!node.collapsed || node.isCardCollapsed)) {
-            setState(prev => ({
-              ...prev,
-              nodes: {
-                ...prev.nodes,
-                [pid]: prev.nodes[pid].map(n => n.id === focusedTaskId ? { 
-                  ...n, 
-                  collapsed: true, 
-                  isCardCollapsed: false, 
-                  updatedAt: new Date().toISOString() 
-                } : n)
-              }
-            }));
-          }
+          setState(prev => {
+            const currentNodes = prev.nodes[pid] || [];
+            const node = currentNodes.find(n => n.id === focusedTaskId);
+            if (node && (!node.collapsed || node.isCardCollapsed)) {
+              return {
+                ...prev,
+                nodes: {
+                  ...prev.nodes,
+                  [pid]: prev.nodes[pid].map(n => n.id === focusedTaskId ? { 
+                    ...n, 
+                    collapsed: true, 
+                    isCardCollapsed: false, 
+                    updatedAt: new Date().toISOString() 
+                  } : n)
+                }
+              };
+            }
+            return prev;
+          });
         }
       }
     } else {
       lastProcessedFocusedTaskIdRef.current = null;
     }
-  }, [focusedTaskId, state.activeProjectId, state.nodes]);
+  }, [focusedTaskId, state.activeProjectId]);
 
   // Auto-center on focused task change
   useEffect(() => {
-    if (focusedTaskId && searchQuery.trim().length === 0) {
+    if (focusedTaskId && searchQueryRef.current.trim().length === 0) {
       let targetNode: TaskNode | undefined;
       for (const [projectId, nodeList] of Object.entries(state.nodes)) {
         const found = (nodeList as TaskNode[]).find(n => n.id === focusedTaskId);
@@ -1984,7 +1996,7 @@ export default function App() {
         setZoom(targetZoom);
       }
     }
-  }, [focusedTaskId, state.nodes, searchQuery]);
+  }, [focusedTaskId]);
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(() => {
