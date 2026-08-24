@@ -8804,24 +8804,24 @@ export default function MindMapCanvas({
                     return null;
                   })()}
 
-                  {/* Fullscreen card toggle button for mobile/always */}
+                  {/* Task properties button */}
                   {!node.isContainer && !node.isWorkflowRectangle && (
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         onSelectNode(node.id);
-                        onOpenDrawer(true);
+                        onOpenDrawer();
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      title="Раскрыть на весь экран"
+                      title="Свойства задачи"
                       className={`mt-0.5 p-1 rounded hover:bg-slate-150/50 dark:hover:bg-slate-800 cursor-pointer shrink-0 ${
                         isRoot 
                           ? 'text-indigo-200 hover:text-white hover:bg-indigo-700/50' 
                           : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
                       }`}
                     >
-                      <Maximize2 className="w-3.5 h-3.5" />
+                      <Layers className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>

@@ -4493,7 +4493,7 @@ export default function TaskDetailsPanel({
           className={
             isFullscreen
               ? "w-full h-full bg-white dark:bg-slate-900 md:rounded-2xl border-0 md:border md:border-slate-205/30 md:dark:border-slate-850/30 shadow-2xl flex flex-col overflow-hidden relative font-sans"
-              : "fixed inset-0 md:inset-y-3 md:right-3 w-full h-full md:h-auto md:w-[420px] md:max-w-[420px] bg-white dark:bg-slate-900 border-0 md:border md:border-slate-205/30 md:dark:border-slate-850/30 shadow-2xl rounded-none md:rounded-2xl flex flex-col z-[150] transform translate-x-0 transition-transform duration-300 ease-out font-sans"
+              : "fixed inset-y-0 right-0 left-auto w-full sm:w-[440px] md:w-[460px] lg:w-[480px] xl:w-[500px] h-full bg-white dark:bg-slate-900 border-0 md:border-l md:border-slate-200 md:dark:border-slate-800 shadow-2xl rounded-none flex flex-col z-[150] transform translate-x-0 transition-transform duration-300 ease-out font-sans"
           }
         >
 
