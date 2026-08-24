@@ -1,6 +1,6 @@
 {
   "name": "MindFlow",
   "description": "Интеллект-карты, планировщик задач, календарь и AI Co-pilot в едином стильном рабочем пространстве.",
-  "requestFramePermissions": ["microphone"],
+  "requestFramePermissions": ["microphone", "camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

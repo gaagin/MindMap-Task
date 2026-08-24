@@ -56,13 +56,15 @@ import {
   Home,
   ArrowLeft,
   ListTodo,
-  LayoutGrid
+  LayoutGrid,
+  Camera
 } from 'lucide-react';
 import { TaskNode, Priority, TagCategory } from '../types';
 import { getBezierPath, calculateProgress, getDescendants, generateId, formatFileSize, getPomoStatsForNode, formatTotalPomoTime, isNodeOverdue, isContainerOverdue, hasContainerNonOverdueTasks, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 import GoogleDriveImage from './GoogleDriveImage';
 import { compressImageForSync } from '../lib/imageOptimizer';
+import CameraCaptureModal from './CameraCaptureModal';
 
 interface MindMapCanvasProps {
   nodes: TaskNode[];
@@ -691,6 +693,11 @@ export default function MindMapCanvas({
   const [fileUploadNodeId, setFileUploadNodeId] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
+
+  // Camera capture modal state
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [cameraCaptureTarget, setCameraCaptureTarget] = useState<'canvas' | 'node'>('canvas');
+  const [cameraTargetNodeId, setCameraTargetNodeId] = useState<string | null>(null);
 
   // Helper to get or create a folder on Google Drive
   const getOrCreateGoogleDriveFolder = async (token: string): Promise<string | null> => {
@@ -6401,7 +6408,26 @@ export default function MindMapCanvas({
               </div>
               <div className="flex flex-col min-w-0">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-100 font-sans">Вставить изображение</span>
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Загрузить картинку на холст</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Загрузить картинку из файла</span>
+              </div>
+            </button>
+
+            {/* Take Camera Photo Button */}
+            <button
+              onClick={() => {
+                setCameraCaptureTarget('canvas');
+                setCameraTargetNodeId(null);
+                setIsCameraModalOpen(true);
+                setIsElementDropdownOpen(false);
+              }}
+              className="w-full text-left font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer group"
+            >
+              <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/20 group-hover:scale-105 transition-transform text-xs flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                <Camera className="w-4 h-4" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 font-sans">Сделать снимок камерой</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">Сделать фото и добавить на холст</span>
               </div>
             </button>
           </div>
@@ -10138,21 +10164,34 @@ export default function MindMapCanvas({
                       Прикрепленные файлы
                     </label>
                     
-                    {/* Add file button in modal */}
-                    <button
-                      onClick={() => {
-                        setFileUploadNodeId(node.id);
-                        setTimeout(() => {
-                          if (cardFileInputRef.current) {
-                            cardFileInputRef.current.click();
-                          }
-                        }, 50);
-                      }}
-                      className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Прикрепить файл</span>
-                    </button>
+                    {/* Add file and photo buttons in modal */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setFileUploadNodeId(node.id);
+                          setTimeout(() => {
+                            if (cardFileInputRef.current) {
+                              cardFileInputRef.current.click();
+                            }
+                          }, 50);
+                        }}
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Файл</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCameraCaptureTarget('node');
+                          setCameraTargetNodeId(node.id);
+                          setIsCameraModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      >
+                        <Camera className="w-3 h-3" />
+                        <span>Сделать фото</span>
+                      </button>
+                    </div>
                   </div>
 
                   {fileError && (
@@ -10918,6 +10957,32 @@ export default function MindMapCanvas({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Camera Capture Modal */}
+      <CameraCaptureModal
+        isOpen={isCameraModalOpen}
+        onClose={() => {
+          setIsCameraModalOpen(false);
+          setCameraTargetNodeId(null);
+        }}
+        onCapture={async (capturedFile) => {
+          if (cameraCaptureTarget === 'node' && cameraTargetNodeId) {
+            const node = nodes.find(n => n.id === cameraTargetNodeId);
+            if (!node) return;
+            setFileError(null);
+            const newAttachment = await uploadFileWithToken(capturedFile);
+            if (!newAttachment) return;
+            const updatedFiles = node.files ? [...node.files, newAttachment] : [newAttachment];
+            onUpdateNode({
+              ...node,
+              files: updatedFiles
+            });
+          } else {
+            await handleAddImageToCanvas(capturedFile);
+          }
+        }}
+        title={cameraCaptureTarget === 'node' ? 'Сделать фото для задачи' : 'Сделать фото для холста'}
+      />
     </div>
   );
 }

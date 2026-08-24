@@ -53,7 +53,8 @@ import {
   CornerDownLeft,
   MoreHorizontal,
   CheckCheck,
-  Database
+  Database,
+  Camera
 } from 'lucide-react';
 import { TaskNode, Priority, AttachmentFile, TagCategory } from '../types';
 import { formatFileSize, generateId, calculateProgress, getDescendants, playNotificationChime, getPomoStatsForNode, proxiedFetch, pruneTaskNodeHistory, suggestEstimatedTime, getTaskExternalLinks } from '../utils';
@@ -61,6 +62,7 @@ import { auth, db } from '../lib/firebase';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import GoogleDriveImage from './GoogleDriveImage';
 import { compressImageForSync, isValidRenderableImageUrl } from '../lib/imageOptimizer';
+import CameraCaptureModal from './CameraCaptureModal';
 import { motion } from 'motion/react';
 
 const fetch = proxiedFetch;
@@ -377,7 +379,7 @@ const AsideWrapper = ({ children, isFullscreen, setIsFullscreen }: AsideWrapperP
       >
         <div 
           onClick={e => e.stopPropagation()} 
-          className="w-full max-w-3xl h-full md:h-[92vh] flex flex-col animate-zoom-in"
+          className="w-full max-w-full md:max-w-3xl h-full md:h-[92vh] flex flex-col animate-zoom-in"
         >
           {children}
         </div>
@@ -583,6 +585,10 @@ export default function TaskDetailsPanel({
   const [lightboxImage, setLightboxImage] = useState<AttachmentFile | null>(null);
   const [lightboxScale, setLightboxScale] = useState(1);
   const [lightboxRotation, setLightboxRotation] = useState(0);
+
+  // Camera capture modal state
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [cameraCaptureTarget, setCameraCaptureTarget] = useState<'attachment' | 'comment'>('attachment');
 
   // Reset zoom/rotation when image changes
   React.useEffect(() => {
@@ -4194,11 +4200,25 @@ export default function TaskDetailsPanel({
             </div>
 
             {/* FILES & ATTACHMENTS CARD */}
-            <div className="h-[180px] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 p-4 shadow-xs overflow-hidden flex flex-col shrink-0">
-              <span className="text-xs font-bold text-slate-505 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 shrink-0 mb-2">
-                <Paperclip className="w-4 h-4 text-indigo-500" />
-                Вложения и файлы
-              </span>
+            <div className="h-[195px] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80 p-4 shadow-xs overflow-hidden flex flex-col shrink-0">
+              <div className="flex items-center justify-between shrink-0 mb-2">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Paperclip className="w-4 h-4 text-indigo-500" />
+                  Вложения и файлы
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCameraCaptureTarget('attachment');
+                    setIsCameraModalOpen(true);
+                  }}
+                  className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 rounded-md text-[10px] font-bold flex items-center gap-1 transition cursor-pointer border border-indigo-200/60 dark:border-indigo-800/50"
+                  title="Сделать снимок с камеры"
+                >
+                  <Camera className="w-3 h-3" />
+                  <span>Фото с камеры</span>
+                </button>
+              </div>
 
               <div className="flex-1 overflow-y-auto pr-1 space-y-2 min-h-0">
                 {/* Drag drop files */}
@@ -4492,13 +4512,13 @@ export default function TaskDetailsPanel({
           onPaste={handleAsidePaste}
           className={
             isFullscreen
-              ? "w-full h-full bg-white dark:bg-slate-900 md:rounded-2xl border border-slate-205/30 dark:border-slate-850/30 shadow-2xl flex flex-col overflow-hidden relative font-sans"
-              : "fixed inset-y-3 right-3 w-full max-w-[calc(100%-1.5rem)] md:w-[420px] bg-white dark:bg-slate-900 border border-slate-205/30 dark:border-slate-850/30 shadow-2xl rounded-2xl flex flex-col z-[150] transform translate-x-0 transition-transform duration-300 ease-out font-sans"
+              ? "w-full h-full bg-white dark:bg-slate-900 md:rounded-2xl border-0 md:border md:border-slate-205/30 md:dark:border-slate-850/30 shadow-2xl flex flex-col overflow-hidden relative font-sans"
+              : "fixed inset-0 md:inset-y-3 md:right-3 w-full h-full md:h-auto md:w-[420px] md:max-w-[420px] bg-white dark:bg-slate-900 border-0 md:border md:border-slate-205/30 md:dark:border-slate-850/30 shadow-2xl rounded-none md:rounded-2xl flex flex-col z-[150] transform translate-x-0 transition-transform duration-300 ease-out font-sans"
           }
         >
 
       {/* Header */}
-      <div className="h-16 px-6 border-b border-slate-150/40 dark:border-slate-800/30 flex items-center justify-between gap-3 bg-transparent shrink-0">
+      <div className="h-14 sm:h-16 px-3.5 sm:px-6 border-b border-slate-150/40 dark:border-slate-800/30 flex items-center justify-between gap-2 sm:gap-3 bg-transparent shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Layers className="w-4 h-4 text-indigo-500 shrink-0" />
           <input
@@ -4586,7 +4606,7 @@ export default function TaskDetailsPanel({
       </div>
 
       {/* Tab Switcher - Notion Tab Bar */}
-      <div className="flex border-b border-[#EDEDEB] dark:border-[#2F2F2F] bg-transparent px-4 pt-2 gap-4 shrink-0 font-sans">
+      <div className="flex border-b border-[#EDEDEB] dark:border-[#2F2F2F] bg-transparent px-3.5 sm:px-4 pt-2 gap-3 sm:gap-4 shrink-0 font-sans overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab('details')}
@@ -4628,7 +4648,7 @@ export default function TaskDetailsPanel({
         <div className="flex-1 flex flex-col min-h-0 bg-transparent">
 
 
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+          <div className="flex-1 overflow-y-auto px-3.5 sm:px-6 py-3.5 sm:py-6 space-y-4 sm:space-y-6">
             {node.parentId && (() => {
                const parentNode = allNodes.find(n => n.id === node.parentId);
                if (parentNode && onSelectNode) {
@@ -4704,7 +4724,7 @@ export default function TaskDetailsPanel({
             onClick={() => setActiveModalParam('priority_status')}
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <CircleDot className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0" />
               <span>Статус</span>
             </div>
@@ -4746,7 +4766,7 @@ export default function TaskDetailsPanel({
             onClick={() => setActiveModalParam('priority_status')}
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <Flame className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-500 transition-colors shrink-0" />
               <span>Приоритет</span>
             </div>
@@ -4795,7 +4815,7 @@ export default function TaskDetailsPanel({
             onClick={() => setActiveModalParam('dates')}
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <Calendar className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-500 transition-colors shrink-0" />
               <span>Сроки</span>
             </div>
@@ -4819,7 +4839,7 @@ export default function TaskDetailsPanel({
             onClick={() => setActiveModalParam('tags')}
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <Tag className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-500 transition-colors shrink-0" />
               <span>Теги</span>
             </div>
@@ -4849,7 +4869,7 @@ export default function TaskDetailsPanel({
             onClick={() => setActiveModalParam('subtasks')}
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <ListTree className="w-3.5 h-3.5 text-slate-400 group-hover:text-purple-500 transition-colors shrink-0" />
               <span>Подзадачи</span>
             </div>
@@ -4892,7 +4912,7 @@ export default function TaskDetailsPanel({
             onClick={() => setActiveModalParam('files')}
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <Paperclip className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-500 transition-colors shrink-0" />
               <span>Вложения</span>
             </div>
@@ -4914,7 +4934,7 @@ export default function TaskDetailsPanel({
             onClick={() => setActiveModalParam('container')}
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <FolderTree className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0" />
               <span>Область</span>
             </div>
@@ -4942,7 +4962,7 @@ export default function TaskDetailsPanel({
             onClick={() => setActiveModalParam('pomodoro')}
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <Timer className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-500 transition-colors shrink-0" />
               <span>Помодоро</span>
             </div>
@@ -4963,7 +4983,7 @@ export default function TaskDetailsPanel({
             onClick={() => setActiveModalParam('blockers')}
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <Lock className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-500 transition-colors shrink-0" />
               <span>Блокеры</span>
             </div>
@@ -4985,7 +5005,7 @@ export default function TaskDetailsPanel({
             onClick={() => setActiveModalParam('history')}
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <History className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-colors shrink-0" />
               <span>История</span>
             </div>
@@ -5006,7 +5026,7 @@ export default function TaskDetailsPanel({
           <div 
             className="flex items-center min-h-[30px] px-2 py-1 -mx-1 rounded-md hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors group"
           >
-            <div className="w-28 sm:w-32 shrink-0 flex items-center gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
+            <div className="w-24 sm:w-32 shrink-0 flex items-center gap-1.5 sm:gap-2 text-slate-500 dark:text-slate-400 text-[12px] font-medium">
               <BarChart2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0" />
               <span>Прогресс</span>
             </div>
@@ -5050,36 +5070,36 @@ export default function TaskDetailsPanel({
         <div className={detailsSubTab === 'main' ? 'space-y-6' : 'hidden'}>
           {/* GTD Decision Tree Assistant */}
           {!node.isContainer && !node.isWorkflowRectangle && (
-            <div className="space-y-3 bg-gradient-to-br from-indigo-50/70 to-purple-50/70 dark:from-indigo-950/20 dark:to-purple-950/20 p-4 rounded-xl border border-indigo-100/80 dark:border-indigo-900/50 shadow-xs">
+            <div className="space-y-3 bg-[#F7F6F3]/80 dark:bg-[#252525]/70 p-3.5 rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F] shadow-xs">
               <div 
                 className="flex items-center justify-between cursor-pointer select-none"
                 onClick={() => setIsGTDWizardOpen(!isGTDWizardOpen)}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-base">⚡</span>
-                  <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">
+                  <span className="text-sm">⚡</span>
+                  <span className="text-xs font-semibold text-slate-750 dark:text-slate-200 tracking-wide">
                     GTD Помощник Сортировки
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-slate-400 font-medium">
+                  <span className="text-[11px] text-slate-400 font-medium">
                     {isGTDWizardOpen ? 'Скрыть' : 'Открыть'}
                   </span>
                   {isGTDWizardOpen ? (
-                    <ChevronUp className="w-4 h-4 text-slate-400" />
+                    <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
                   ) : (
-                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                   )}
                 </div>
               </div>
 
               {isGTDWizardOpen && (
-                <div className="pt-2 border-t border-indigo-100/50 dark:border-indigo-900/40 space-y-3 text-xs text-slate-700 dark:text-slate-300">
+                <div className="pt-2.5 border-t border-[#E3E2E0] dark:border-[#2F2F2F] space-y-3 text-xs text-slate-700 dark:text-slate-300">
                   {/* Flow Header with dynamic current place info */}
-                  <div className="bg-white/60 dark:bg-slate-900/40 p-2.5 rounded-lg border border-indigo-50 dark:border-indigo-950/50 flex flex-col gap-1">
+                  <div className="bg-white dark:bg-[#1F1F1F] p-2.5 rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] flex flex-col gap-1">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">Текущий поток:</span>
-                      <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full font-bold uppercase">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Текущий поток:</span>
+                      <span className="text-[10px] bg-slate-100 dark:bg-[#2A2A2A] text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md font-medium border border-slate-200/60 dark:border-slate-700">
                         {gtdFlow === 'inbox' && 'Входящие 📥'}
                         {gtdFlow === 'next_actions' && 'Следующие действия ⚡'}
                         {gtdFlow === 'waiting' && 'В ожидании ⏳'}
@@ -5089,7 +5109,7 @@ export default function TaskDetailsPanel({
                       </span>
                     </div>
                     {node.containerPlace && (
-                      <span className="text-[9px] text-slate-500 font-mono mt-1 block">
+                      <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">
                         📍 Расположение: {node.containerPlace}
                       </span>
                     )}
@@ -5834,23 +5854,26 @@ export default function TaskDetailsPanel({
           )}
 
           {/* Subtasks Section */}
-        <div className="space-y-2 bg-[#FAFBFD]/40 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80">
+        <div className="space-y-2 bg-[#FBFBFA] dark:bg-[#202020] p-3 rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F]">
           <div className="flex items-center justify-between">
             <button
               type="button"
               onClick={() => setIsSubtasksSectionCollapsed(!isSubtasksSectionCollapsed)}
-              className="flex items-center gap-1.5 text-xs font-bold text-slate-400 dark:text-slate-505 uppercase tracking-wider hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             >
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isSubtasksSectionCollapsed ? '-rotate-90' : ''}`} />
-              Подзадачи ({allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length})
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform text-slate-400 ${isSubtasksSectionCollapsed ? '-rotate-90' : ''}`} />
+              <span>Подзадачи</span>
+              <span className="text-[10px] font-medium bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1.5 py-0.2 rounded-md">
+                {allNodes.filter(n => n.parentId === node.id && !n.isContainer && !n.isWorkflowRectangle).length}
+              </span>
             </button>
             {onAddChildNode && (
               <button
                 type="button"
                 onClick={() => onAddChildNode(node.id, true)}
-                className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline flex items-center gap-1 cursor-pointer"
+                className="text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-[#EAE9E5] dark:hover:bg-[#2F2F2F] px-2 py-0.5 rounded transition-colors flex items-center gap-1 cursor-pointer"
               >
-                <Plus className="w-3 h-3" /> Добавить
+                <Plus className="w-3 h-3 text-slate-500" /> Добавить
               </button>
             )}
           </div>
@@ -5987,7 +6010,7 @@ export default function TaskDetailsPanel({
 
             if (sortedSubtasks.length > 0) {
               return (
-                <div className="space-y-1.5 mt-1.5 max-h-48 overflow-y-auto pr-1">
+                <div className="space-y-1 mt-1.5 max-h-56 overflow-y-auto pr-1">
                   {sortedSubtasks.map((child, index) => (
                     <motion.div 
                       key={child.id}
@@ -5996,13 +6019,13 @@ export default function TaskDetailsPanel({
                       data-subtask-index={index}
                       data-subtask-id={child.id}
                       onDragOver={(e) => handleDragOver(e, index)}
-                      className={`flex items-center justify-between gap-1.5 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800/50 group hover:border-slate-200 dark:hover:border-slate-700 transition-colors ${
+                      className={`flex items-center justify-between gap-1.5 px-2 py-1.5 bg-white dark:bg-[#1E1E1E] rounded-md border border-[#EBEAE8] dark:border-[#2D2D2D] group hover:bg-[#F9F9F8] dark:hover:bg-[#252525] transition-colors ${
                         draggedIndex === index || activeTouchIndex === index 
-                          ? 'opacity-40 border-indigo-500 bg-indigo-50/10' 
+                          ? 'opacity-40 border-slate-400 bg-slate-100/50' 
                           : ''
                       }`}
                     >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         {/* Drag Handle for manual sorting */}
                         <div
                           draggable={true}
@@ -6011,14 +6034,14 @@ export default function TaskDetailsPanel({
                           onTouchStart={(e) => handleTouchStart(e, index)}
                           onTouchMove={handleTouchMove}
                           onTouchEnd={handleTouchEnd}
-                          className="p-1 -ml-1 text-slate-300 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-grab active:cursor-grabbing flex-shrink-0 transition-colors rounded hover:bg-slate-50 dark:hover:bg-slate-800"
+                          className="p-0.5 -ml-1 text-slate-300 dark:text-slate-600 hover:text-slate-600 dark:hover:text-slate-300 cursor-grab active:cursor-grabbing flex-shrink-0 transition-colors rounded hover:bg-slate-100 dark:hover:bg-slate-800"
                           title="Перетащить для сортировки"
                         >
                           <GripVertical className="w-3.5 h-3.5" />
                         </div>
 
                         {/* Number indicator */}
-                        <span className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 select-none shrink-0 min-w-[14px]">
+                        <span className="text-[10px] font-semibold text-slate-400 select-none shrink-0 min-w-[14px]">
                           {index + 1}.
                         </span>
 
@@ -6031,17 +6054,17 @@ export default function TaskDetailsPanel({
                               completed: !child.completed
                             });
                           }}
-                          className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex-shrink-0 transition-colors"
+                          className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer flex-shrink-0 transition-colors"
                         >
                           {child.completed ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-455" />
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-500" />
                           ) : pomo.isRunning && pomo.nodeId === child.id ? (
                             <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
                               <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-rose-400 opacity-75"></span>
                               <Loader2 className="w-4 h-4 text-rose-500 animate-spin" />
                             </span>
                           ) : (
-                            <Circle className="w-4 h-4 text-slate-300 dark:text-slate-600" />
+                            <Circle className="w-4 h-4 text-slate-300 dark:text-slate-600 hover:text-slate-400" />
                           )}
                         </button>
 
@@ -6056,8 +6079,8 @@ export default function TaskDetailsPanel({
                               text: e.target.value
                             });
                           }}
-                          className={`text-xs font-medium bg-transparent border-0 focus:ring-0 focus:outline-none p-0 w-full text-slate-700 dark:text-slate-200 ${
-                            child.completed ? 'line-through text-slate-400 dark:text-slate-505 italic' : ''
+                          className={`text-xs font-medium bg-transparent border-0 focus:ring-0 focus:outline-none p-0 w-full text-slate-800 dark:text-slate-200 ${
+                            child.completed ? 'line-through text-slate-400 dark:text-slate-500 italic' : ''
                           }`}
                         />
 
@@ -6079,10 +6102,10 @@ export default function TaskDetailsPanel({
                                   }
                                 }
                             }}
-                            className="text-[9px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-150/40 dark:border-indigo-900/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                            className="text-[9.5px] font-semibold text-[#2383E2] bg-[#EDF5FD] dark:bg-[#1C2C3F] border border-[#D0E5FB] dark:border-[#1E3A5F] px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 cursor-pointer hover:bg-[#DDEEFD] dark:hover:bg-[#203650] transition-colors"
                             title={`Ориентировочное время: ${child.estimatedTime} мин (нажмите для изменения)`}
                           >
-                            <Timer className="w-2.5 h-2.5 text-indigo-500" />
+                            <Timer className="w-2.5 h-2.5 text-[#2383E2]" />
                             {child.estimatedTime} мин
                           </button>
                         ) : (
@@ -6103,7 +6126,7 @@ export default function TaskDetailsPanel({
                                   }
                                 }
                             }}
-                            className="text-[9px] font-bold text-slate-400 dark:text-slate-505 bg-slate-50/50 dark:bg-slate-800/40 border border-dashed border-slate-300 dark:border-slate-700/60 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 cursor-pointer hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-all"
+                            className="text-[9.5px] font-medium text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-250 dark:border-slate-700/60 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 cursor-pointer hover:text-slate-700 hover:border-slate-400 dark:hover:text-slate-300 transition-all"
                             title="Нажмите, чтобы указать ориентировочное время работы"
                           >
                             <Timer className="w-2.5 h-2.5 text-slate-400" />
@@ -6115,7 +6138,7 @@ export default function TaskDetailsPanel({
                           const childStats = getPomoStatsForNode(child, allNodes);
                           return childStats.pomodoroTotalTime > 0 ? (
                             <span 
-                              className="text-[9px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/30 border border-rose-150/30 dark:border-rose-900/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 select-none"
+                              className="text-[9.5px] font-semibold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border border-rose-200/50 dark:border-rose-900/40 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 select-none"
                               title={`Проведено на Помидоре: ${formatTotalPomoTime(childStats.pomodoroTotalTime)}`}
                             >
                               🍅 {formatTotalPomoTime(childStats.pomodoroTotalTime)}
@@ -6124,14 +6147,14 @@ export default function TaskDetailsPanel({
                         })()}
                       </div>
 
-                      <div className="flex items-center gap-1 flex-shrink-0 transition-opacity">
+                      <div className="flex items-center gap-0.5 flex-shrink-0 transition-opacity">
                         {/* Open Subtask Details Button */}
                         {onSelectNode && (
                           <button
                             type="button"
                             onClick={() => onSelectNode(child.id)}
                             title="Открыть свойства подзадачи"
-                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
@@ -6143,7 +6166,7 @@ export default function TaskDetailsPanel({
                             type="button"
                             onClick={() => onSelectNode(child.id)}
                             title="Редактировать подзадачу"
-                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
@@ -6162,14 +6185,14 @@ export default function TaskDetailsPanel({
                             }
                           }}
                           title={confirmDeleteSubtaskId === child.id ? "Нажмите для подтверждения удаления подзадачи" : "Удалить подзадачу"}
-                          className={`p-1 rounded transition-all duration-200 cursor-pointer flex items-center gap-1 text-[10px] uppercase font-bold ${
+                          className={`p-1 rounded transition-all duration-200 cursor-pointer flex items-center gap-1 text-[10px] uppercase font-semibold ${
                             confirmDeleteSubtaskId === child.id
-                              ? "text-white bg-rose-600 hover:bg-rose-700 px-2 animate-pulse"
-                              : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-955/20"
+                              ? "text-white bg-rose-600 hover:bg-rose-700 px-2"
+                              : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20"
                           }`}
                         >
                           {confirmDeleteSubtaskId === child.id ? (
-                            <span>Удалить подзадачу?</span>
+                            <span>Удалить?</span>
                           ) : (
                             <Trash2 className="w-3.5 h-3.5" />
                           )}
@@ -6181,7 +6204,7 @@ export default function TaskDetailsPanel({
               );
             } else {
               return (
-                <p className="text-xs text-slate-400 dark:text-slate-505 italic mt-1 pl-1">
+                <p className="text-xs text-slate-400 dark:text-slate-500 italic mt-1 pl-1">
                   Нет дочерних подзадач.
                 </p>
               );
@@ -6203,8 +6226,8 @@ export default function TaskDetailsPanel({
                 </ul>
               </div>
             )}
-            <div className="flex items-center justify-between bg-[#FAFBFD] dark:bg-slate-800 p-3 rounded-lg border border-slate-200/50 dark:border-slate-850">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Статус выполнения:</span>
+            <div className="flex items-center justify-between bg-[#FBFBFA] dark:bg-[#202020] p-2.5 rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F]">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Статус выполнения:</span>
               <select
                 value={node.completed ? 'done' : (node.status === 'waiting' ? 'waiting' : (node.progress && node.progress > 0 ? 'progress' : 'todo'))}
                 disabled={hasActiveBlockers && !node.completed}
@@ -6239,7 +6262,7 @@ export default function TaskDetailsPanel({
                     });
                   }
                 }}
-                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold px-2 py-1 focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-700 dark:text-slate-200 cursor-pointer shadow-xs"
+                className="bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md text-xs font-medium px-2 py-1 focus:ring-1 focus:ring-slate-400 focus:outline-none text-slate-800 dark:text-slate-200 cursor-pointer shadow-2xs"
               >
                 <option value="todo">📋 План</option>
                 <option value="progress">▶ В работе</option>
@@ -6248,12 +6271,10 @@ export default function TaskDetailsPanel({
               </select>
             </div>
           </div>
-        )}
-
-        {/* EQUIPMENT & HARDWARE PROPERTIES CARD */}
-        <div className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-slate-900/5 dark:from-amber-950/20 dark:to-slate-900/40 p-3.5 rounded-xl border border-amber-500/30 dark:border-amber-500/20 shadow-xs space-y-3 text-left">
-          <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
-            <span className="text-xs font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+        )}        {/* EQUIPMENT & HARDWARE PROPERTIES CARD */}
+        <div className="bg-[#FBFBFA] dark:bg-[#202020] p-3.5 rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F] space-y-3 text-left">
+          <div className="flex items-center justify-between border-b border-[#E3E2E0] dark:border-[#2F2F2F] pb-2">
+            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
               <span className="text-sm">⚙️</span>
               Оборудование и Аппаратура
             </span>
@@ -6267,7 +6288,7 @@ export default function TaskDetailsPanel({
                     }
                   }}
                   title="Дублировать оборудование со всеми свойствами"
-                  className="text-[9px] font-extrabold uppercase py-0.5 px-2 rounded-full cursor-pointer transition-colors bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1 shrink-0"
+                  className="text-[10px] font-medium py-0.5 px-2 rounded cursor-pointer transition-colors bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1 shrink-0"
                 >
                   <Copy className="w-2.5 h-2.5" />
                   Дублировать
@@ -6284,10 +6305,10 @@ export default function TaskDetailsPanel({
                     updatedAt: new Date().toISOString()
                   });
                 }}
-                className={`text-[9px] font-extrabold uppercase py-0.5 px-2 rounded-full cursor-pointer transition-colors ${
+                className={`text-[10px] font-medium py-0.5 px-2 rounded cursor-pointer transition-colors border ${
                   node.isEquipment 
-                    ? 'bg-amber-500 text-white shadow-xs' 
-                    : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-amber-100'
+                    ? 'bg-amber-600/90 text-white border-amber-600 shadow-2xs' 
+                    : 'bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
                 }`}
               >
                 {node.isEquipment ? 'Оборудование ✓' : 'Сделать оборудованием'}
@@ -6297,7 +6318,7 @@ export default function TaskDetailsPanel({
 
           {/* Model */}
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide block">
               Модель (Model):
             </label>
             <input
@@ -6305,13 +6326,13 @@ export default function TaskDetailsPanel({
               value={node.equipmentModel || ''}
               onChange={(e) => handlePropChange('equipmentModel', e.target.value)}
               placeholder="Например: Siemens 1FK7060"
-              className="w-full text-xs font-semibold px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100"
+              className="w-full text-xs px-2.5 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md focus:outline-none focus:border-slate-400 text-slate-800 dark:text-slate-100"
             />
           </div>
 
           {/* Barcode (Barkod) */}
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide block">
               Штрихкод (Barkod):
             </label>
             <input
@@ -6319,13 +6340,13 @@ export default function TaskDetailsPanel({
               value={node.equipmentBarcode || ''}
               onChange={(e) => handlePropChange('equipmentBarcode', e.target.value)}
               placeholder="Например: 4820000123456"
-              className="w-full text-xs font-mono font-semibold px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100"
+              className="w-full text-xs font-mono px-2.5 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md focus:outline-none focus:border-slate-400 text-slate-800 dark:text-slate-100"
             />
           </div>
 
           {/* Stock code (Stok kod) */}
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide block">
               Складской код (Stok kod):
             </label>
             <input
@@ -6333,13 +6354,13 @@ export default function TaskDetailsPanel({
               value={node.equipmentStockCode || ''}
               onChange={(e) => handlePropChange('equipmentStockCode', e.target.value)}
               placeholder="Например: STK-2024-889"
-              className="w-full text-xs font-mono font-semibold px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100"
+              className="w-full text-xs font-mono px-2.5 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md focus:outline-none focus:border-slate-400 text-slate-800 dark:text-slate-100"
             />
           </div>
 
           {/* Note (Qeyd) */}
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide block">
               Заметка / Примечание (Qeyd):
             </label>
             <textarea
@@ -6347,14 +6368,14 @@ export default function TaskDetailsPanel({
               value={node.equipmentNote || ''}
               onChange={(e) => handlePropChange('equipmentNote', e.target.value)}
               placeholder="Примечания по установке, мотору, обслуживанию"
-              className="w-full text-xs font-sans px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 dark:text-slate-100 resize-none"
+              className="w-full text-xs font-sans px-2.5 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md focus:outline-none focus:border-slate-400 text-slate-800 dark:text-slate-100 resize-none"
             />
           </div>
 
           {/* Custom Dynamic Properties */}
-          <div className="space-y-2 pt-2 border-t border-amber-500/20">
+          <div className="space-y-2 pt-2 border-t border-[#E3E2E0] dark:border-[#2F2F2F]">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+              <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
                 Дополнительные свойства
               </span>
               <button
@@ -6364,7 +6385,7 @@ export default function TaskDetailsPanel({
                   const newProp = { id: generateId(), name: '', value: '' };
                   handlePropChange('customProperties', [...current, newProp]);
                 }}
-                className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                className="text-[10px] font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3 h-3" /> Добавить свойство
               </button>
@@ -6382,7 +6403,7 @@ export default function TaskDetailsPanel({
                     handlePropChange('customProperties', updated);
                   }}
                   placeholder="Свойство (н-р: Мощность)"
-                  className="w-1/2 text-xs font-bold px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-slate-800 dark:text-slate-100"
+                  className="w-1/2 text-xs font-medium px-2 py-1 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md focus:outline-none text-slate-800 dark:text-slate-100"
                 />
                 <input
                   type="text"
@@ -6394,7 +6415,7 @@ export default function TaskDetailsPanel({
                     handlePropChange('customProperties', updated);
                   }}
                   placeholder="Значение (н-р: 15кВт)"
-                  className="w-1/2 text-xs px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none text-slate-800 dark:text-slate-100"
+                  className="w-1/2 text-xs px-2 py-1 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md focus:outline-none text-slate-800 dark:text-slate-100"
                 />
                 <button
                   type="button"
@@ -6414,17 +6435,17 @@ export default function TaskDetailsPanel({
 
         {/* Container Properties Section */}
         {!node.isWorkflowRectangle && !node.isContainer && (
-          <div className="space-y-2.5 bg-[#FAFBFD]/60 dark:bg-slate-800/30 p-3.5 rounded-xl border border-slate-150 dark:border-slate-800">
+          <div className="space-y-2.5 bg-[#FBFBFA] dark:bg-[#202020] p-3 rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F]">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider block">
                 Свойства области задач
               </span>
               {node.parentId && allNodes.find(p => p.id === node.parentId && p.isContainer) ? (
-                <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-extrabold uppercase py-0.5 px-2 rounded-full tracking-wider border border-amber-500/20">
+                <span className="text-[10px] bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 font-medium uppercase py-0.5 px-2 rounded-md tracking-wider border border-amber-200/60 dark:border-amber-900/50">
                   Внутри области
                 </span>
               ) : (
-                <span className="text-[10px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 font-extrabold uppercase py-0.5 px-2 rounded-full tracking-wider">
+                <span className="text-[10px] bg-slate-100 text-slate-600 dark:bg-[#2A2A2A] dark:text-slate-400 font-medium uppercase py-0.5 px-2 rounded-md tracking-wider border border-slate-200/60 dark:border-slate-700">
                   Вне области
                 </span>
               )}
@@ -6433,7 +6454,7 @@ export default function TaskDetailsPanel({
             {/* Container Selector dropdown */}
             {onUpdateNodeParent && (
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block">
+                <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide block">
                   Переместить в область:
                 </span>
                 <select
@@ -6446,7 +6467,7 @@ export default function TaskDetailsPanel({
                       onUpdateNodeParent(node.id, val);
                     }
                   }}
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none dark:text-slate-100 cursor-pointer"
+                  className="w-full px-2.5 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md text-xs focus:ring-1 focus:ring-slate-400 focus:outline-none dark:text-slate-100 cursor-pointer"
                 >
                   <option value="no-container">📦 Вне области</option>
                   {allNodes
@@ -6461,29 +6482,29 @@ export default function TaskDetailsPanel({
             )}
 
             {node.containerPlace && (
-              <div className="pt-1.5 space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block">
+              <div className="pt-1 space-y-1">
+                <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide block">
                   Место добавления:
                 </span>
-                <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800/55 break-words">
+                <p className="text-xs font-mono font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-[#1E1E1E] p-2 rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] break-words">
                   📦 {node.containerPlace}
                 </p>
               </div>
             )}
 
             {node.mirrorParentText && (
-              <div className="pt-1.5 space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block">
+              <div className="pt-1 space-y-1">
+                <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide block">
                   Связано с родительской задачей:
                 </span>
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800/55 break-words flex items-center gap-1.5">
+                <p className="text-xs font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-[#1E1E1E] p-2 rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] break-words flex items-center gap-1.5">
                   <span>🔗</span>
                   <span className="truncate max-w-[200px]">{node.mirrorParentText}</span>
                   {node.mirrorParentId && allNodes.some(n => n.id === node.mirrorParentId) && (
                     <button
                       type="button"
                       onClick={() => onSelectNode && onSelectNode(node.mirrorParentId!)}
-                      className="ml-auto text-[10px] bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 font-extrabold px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                      className="ml-auto text-[10px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium px-2 py-0.5 rounded transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
                     >
                       Перейти
                     </button>
@@ -6498,8 +6519,8 @@ export default function TaskDetailsPanel({
                 : [];
               if (mirrorCopies.length === 0) return null;
               return (
-                <div className="pt-1.5 space-y-1">
-                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block">
+                <div className="pt-1 space-y-1">
+                  <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide block">
                     Зеркальные копии (переход):
                   </span>
                   <div className="space-y-1.5">
@@ -6510,17 +6531,17 @@ export default function TaskDetailsPanel({
                         : 'Свободная задача';
 
                       return (
-                        <div key={mCopy.id} className="text-xs font-semibold text-slate-700 dark:text-slate-300 bg-purple-500/5 dark:bg-purple-950/10 p-2 rounded-lg border border-purple-100/30 dark:border-purple-900/40 break-words flex items-center gap-1.5 font-sans">
+                        <div key={mCopy.id} className="text-xs font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-[#1E1E1E] p-2 rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] break-words flex items-center gap-1.5">
                           <span>🪞</span>
                           <div className="flex flex-col min-w-0 flex-1">
-                            <span className="truncate max-w-[170px] font-bold">{mCopy.text}</span>
-                            <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">{placeLabel}</span>
+                            <span className="truncate max-w-[170px] font-semibold">{mCopy.text}</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400">{placeLabel}</span>
                           </div>
                           {onSelectNode && (
                             <button
                               type="button"
                               onClick={() => onSelectNode(mCopy.id)}
-                              className="text-[10px] bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/40 dark:hover:bg-purple-800/40 text-purple-700 dark:text-purple-300 font-extrabold px-2 py-1 rounded transition-colors cursor-pointer shrink-0"
+                              className="text-[10px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium px-2 py-0.5 rounded transition-colors cursor-pointer shrink-0 border border-slate-200 dark:border-slate-700"
                             >
                               Перейти
                             </button>
@@ -6543,25 +6564,25 @@ export default function TaskDetailsPanel({
           const manualProgressVal = node.progress !== undefined ? node.progress : (node.completed ? 100 : 0);
 
           return (
-            <div className="space-y-2 bg-[#FAFBFD]/40 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80">
+            <div className="space-y-2 bg-[#FBFBFA] dark:bg-[#202020] p-3 rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F]">
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                   Прогресс задачи
                 </label>
-                <span className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                <span className="text-xs font-mono font-semibold text-slate-700 dark:text-slate-300">
                   {hasChildren ? `${calculatedProgressVal}%` : `${manualProgressVal}%`}
                 </span>
               </div>
 
               {hasChildren ? (
                 <div className="space-y-1.5">
-                  <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                  <div className="w-full bg-slate-200/70 dark:bg-[#2F2F2F] h-1.5 rounded-full overflow-hidden">
                     <div 
-                      className="bg-indigo-600 dark:bg-indigo-500 h-full transition-all duration-300"
+                      className="bg-slate-700 dark:bg-slate-300 h-full transition-all duration-300"
                       style={{ width: `${calculatedProgressVal}%` }}
                     />
                   </div>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 italic font-medium">
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 italic font-normal">
                     Рассчитывается автоматически на основе {descendantsCount} подзадач(и)
                   </p>
                 </div>
@@ -6584,7 +6605,7 @@ export default function TaskDetailsPanel({
                         completed: val === 100
                       });
                     }}
-                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:accent-indigo-505"
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-700 dark:accent-slate-300"
                   />
                   <div className="flex justify-between text-[9px] text-slate-400 dark:text-slate-500 font-medium">
                     <span>0% (Начало)</span>
@@ -6599,59 +6620,59 @@ export default function TaskDetailsPanel({
 
         {/* Pomodoro Timer Section */}
         {node.isContainer ? (
-          <div className="space-y-3 bg-emerald-500/10 dark:bg-emerald-950/10 p-4 rounded-xl border border-emerald-500/15 dark:border-emerald-500/10">
+          <div className="space-y-3 bg-[#FBFBFA] dark:bg-[#202020] p-3.5 rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F]">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Timer className="w-4 h-4 text-emerald-500 animate-pulse" />
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Timer className="w-3.5 h-3.5 text-slate-500" />
                 Время работы над проектом
               </span>
-              <span className="text-[9px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-extrabold uppercase py-0.5 px-2 rounded-full tracking-wider">
+              <span className="text-[10px] bg-slate-100 text-slate-600 dark:bg-[#2A2A2A] dark:text-slate-300 font-medium uppercase py-0.5 px-2 rounded-md tracking-wider border border-slate-200/60 dark:border-slate-700">
                 Проект / Область
               </span>
             </div>
 
-            <div className="text-xs space-y-2 py-3 px-3.5 bg-white/50 dark:bg-slate-900/40 rounded-lg border border-slate-100 dark:border-slate-800">
+            <div className="text-xs space-y-2 py-2.5 px-3 bg-white dark:bg-[#1E1E1E] rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F]">
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center text-slate-700 dark:text-slate-300">
-                  <span className="font-medium text-[11.5px]">
+                  <span className="font-medium text-xs">
                     Общее время по проекту:
                   </span>
-                  <span className="font-extrabold font-mono text-emerald-600 dark:text-emerald-400 text-[12px]">
+                  <span className="font-semibold font-mono text-slate-800 dark:text-slate-100 text-xs">
                     {formatTotalPomoTime(getPomoStatsForNode(node, allNodes).pomodoroTotalTime)}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-slate-500 dark:text-slate-500 text-[10.5px]">
+                <div className="flex justify-between items-center text-slate-500 dark:text-slate-400 text-[11px]">
                   <span>Всего завершенных сессий:</span>
-                  <span className="font-bold text-slate-700 dark:text-slate-300">
+                  <span className="font-medium text-slate-700 dark:text-slate-300">
                     {getPomoStatsForNode(node, allNodes).pomodoroSessionsCount}
                   </span>
                 </div>
               </div>
-              <div className="text-[10px] text-slate-450 dark:text-slate-500 border-t border-slate-100/80 dark:border-slate-800/60 pt-2 mt-2 leading-normal italic">
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 border-t border-[#E3E2E0] dark:border-[#2F2F2F] pt-2 mt-2 leading-normal italic">
                 💡 Это холст-контейнер. Время рассчитывается динамически как сумма накопленной фокусировки по всем вложенным в него задачам и подветвям.
               </div>
             </div>
           </div>
         ) : (
-          <div className="space-y-3 bg-[#FAFBFD] dark:bg-slate-800 p-4 rounded-xl border border-slate-150 dark:border-slate-800">
+          <div className="space-y-3 bg-[#FBFBFA] dark:bg-[#202020] p-3.5 rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F]">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <Timer className="w-4 h-4 text-rose-500 animate-pulse" />
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Timer className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
                 Фокусировка Pomodoro
               </span>
               {pomo.isRunning && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-450">
+                <span className="text-[10px] px-2 py-0.5 rounded-md font-medium uppercase bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200/50">
                   Фокус
                 </span>
               )}
             </div>
 
-            <div className="flex flex-col items-center justify-center py-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800/60 shadow-xs relative overflow-hidden">
+            <div className="flex flex-col items-center justify-center py-2.5 bg-white dark:bg-[#1E1E1E] rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] relative overflow-hidden">
               <div className="text-center z-10">
-                <div className="text-3xl font-extrabold font-mono tracking-tight text-slate-850 dark:text-slate-100 tabular-nums">
+                <div className="text-3xl font-bold font-mono tracking-tight text-slate-850 dark:text-slate-100 tabular-nums">
                   {formatPomoTime(pomo.timeLeft)}
                 </div>
-                <p className="text-[10px] text-slate-400 dark:text-slate-555 font-medium mt-0.5">
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">
                   {pomo.isRunning 
                     ? `Фокусировка на задаче 🎯` 
                     : `Таймер настроен на ${customPomoMinutes} мин`}
@@ -6669,7 +6690,7 @@ export default function TaskDetailsPanel({
             </div>
 
             {/* SESSIONS STATS / ACCUMULATED SAVED TIME */}
-            <div className="text-xs space-y-2 py-2 px-2.5 bg-rose-50/20 dark:bg-rose-950/5 rounded-lg border border-rose-100/30 dark:border-rose-950/20">
+            <div className="text-xs space-y-2 py-2 px-2.5 bg-white dark:bg-[#1E1E1E] rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F]">
               {!isEditingPomoTime ? (
                 <div className="space-y-1">
                   <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
@@ -6677,7 +6698,7 @@ export default function TaskDetailsPanel({
                       Накоплено времени задачи:
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <span className="font-bold font-mono text-rose-600 dark:text-rose-400 text-[11px]" title={getPomoStatsForNode(node, allNodes).isSummed ? "Включая подзадачи" : undefined}>
+                      <span className="font-semibold font-mono text-rose-600 dark:text-rose-400 text-[11px]" title={getPomoStatsForNode(node, allNodes).isSummed ? "Включая подзадачи" : undefined}>
                         {formatTotalPomoTime(getPomoStatsForNode(node, allNodes).pomodoroTotalTime)}
                         {getPomoStatsForNode(node, allNodes).isSummed && <span className="text-[9px] text-slate-400 dark:text-slate-500 ml-1 font-normal">(сумма)</span>}
                       </span>
@@ -6691,27 +6712,27 @@ export default function TaskDetailsPanel({
                           setEditPomoSessions(node.pomodoroSessionsCount || 0);
                           setIsEditingPomoTime(true);
                         }}
-                        className="p-1 hover:bg-rose-100/50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-450 rounded-md transition-all cursor-pointer"
+                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded transition-all cursor-pointer"
                         title="Редактировать время вручную"
                       >
                         <Edit className="w-2.5 h-2.5" />
                       </button>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center text-slate-500 dark:text-slate-500 text-[10px]">
+                  <div className="flex justify-between items-center text-slate-500 dark:text-slate-400 text-[10px]">
                     <span>Всего запусков («помидоров»):</span>
-                    <span className="font-semibold">{getPomoStatsForNode(node, allNodes).pomodoroSessionsCount}</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">{getPomoStatsForNode(node, allNodes).pomodoroSessionsCount}</span>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-2.5 py-0.5">
-                  <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                     Редактирование времени фокусировки
                   </div>
                   
                   <div className="grid grid-cols-3 gap-1.5">
                     <div className="space-y-1">
-                      <span className="text-[9px] text-slate-400 dark:text-slate-500 block text-center font-bold">ЧАСЫ</span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 block text-center font-semibold">ЧАСЫ</span>
                       <input
                         type="number"
                         min="0"
@@ -6719,11 +6740,11 @@ export default function TaskDetailsPanel({
                         value={editPomoHours === 0 ? '' : editPomoHours}
                         placeholder="0"
                         onChange={(e) => setEditPomoHours(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                        className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
+                        className="w-full px-1 py-0.5 text-center text-xs font-mono font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-slate-400 focus:outline-none text-slate-800 dark:text-slate-100"
                       />
                     </div>
                     <div className="space-y-1">
-                      <span className="text-[9px] text-slate-400 dark:text-slate-500 block text-center font-bold">МИН</span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 block text-center font-semibold">МИН</span>
                       <input
                         type="number"
                         min="0"
@@ -6731,11 +6752,11 @@ export default function TaskDetailsPanel({
                         value={editPomoMinutes === 0 ? '' : editPomoMinutes}
                         placeholder="0"
                         onChange={(e) => setEditPomoMinutes(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
-                        className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
+                        className="w-full px-1 py-0.5 text-center text-xs font-mono font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-slate-400 focus:outline-none text-slate-800 dark:text-slate-100"
                       />
                     </div>
                     <div className="space-y-1">
-                      <span className="text-[9px] text-slate-400 dark:text-slate-500 block text-center font-bold">СЕК</span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 block text-center font-semibold">СЕК</span>
                       <input
                         type="number"
                         min="0"
@@ -6743,7 +6764,7 @@ export default function TaskDetailsPanel({
                         value={editPomoSeconds === 0 ? '' : editPomoSeconds}
                         placeholder="0"
                         onChange={(e) => setEditPomoSeconds(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
-                        className="w-full px-1 py-0.5 text-center text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
+                        className="w-full px-1 py-0.5 text-center text-xs font-mono font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded focus:ring-1 focus:ring-slate-400 focus:outline-none text-slate-800 dark:text-slate-100"
                       />
                     </div>
                   </div>
@@ -6757,7 +6778,7 @@ export default function TaskDetailsPanel({
                       value={editPomoSessions === 0 ? '' : editPomoSessions}
                       placeholder="0"
                       onChange={(e) => setEditPomoSessions(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                      className="w-12 px-1 py-0.5 text-center text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-800 dark:text-slate-100"
+                      className="w-12 px-1 py-0.5 text-center text-xs font-mono font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:ring-1 focus:ring-slate-400 focus:outline-none text-slate-800 dark:text-slate-100"
                     />
                   </div>
 
@@ -6765,7 +6786,7 @@ export default function TaskDetailsPanel({
                     <button
                       type="button"
                       onClick={() => setIsEditingPomoTime(false)}
-                      className="px-2.5 py-1 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-755 text-slate-600 dark:text-slate-350 rounded-md transition-all cursor-pointer flex items-center gap-1"
+                      className="px-2.5 py-1 text-[10px] font-medium bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded transition-all cursor-pointer flex items-center gap-1"
                     >
                       <X className="w-2.5 h-2.5 text-red-500" /> Отмена
                     </button>
@@ -6780,7 +6801,7 @@ export default function TaskDetailsPanel({
                         });
                         setIsEditingPomoTime(false);
                       }}
-                      className="px-2.5 py-1 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                      className="px-2.5 py-1 text-[10px] font-medium bg-slate-800 hover:bg-slate-900 dark:bg-slate-200 dark:hover:bg-white text-white dark:text-slate-900 rounded transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
                     >
                       <Check className="w-2.5 h-2.5" /> Сохранить
                     </button>
@@ -6790,10 +6811,10 @@ export default function TaskDetailsPanel({
             </div>
 
             {pomo.isRunning && pomo.nodeId !== node.id && (
-              <div className="p-2 border border-dashed border-amber-200 dark:border-amber-905/60 bg-amber-50/40 dark:bg-amber-950/10 rounded-lg text-center">
+              <div className="p-2 border border-dashed border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/10 rounded-md text-center">
                 <p className="text-[10px] text-amber-700 dark:text-amber-400 font-medium leading-normal">
                   Запущен таймер для другой задачи:<br />
-                  <span className="font-bold">«{pomo.nodeText}»</span>
+                  <span className="font-semibold">«{pomo.nodeText}»</span>
                 </p>
               </div>
             )}
@@ -6801,8 +6822,8 @@ export default function TaskDetailsPanel({
             {/* CUSTOM TIME PICKER INPUT & PRESETS (ONLY WHEN NOT RUNNING) */}
             {!pomo.isRunning && (
               <div className="space-y-2">
-                <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-lg p-1.5 w-full">
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase pl-1.5 shrink-0">
+                <div className="flex items-center gap-2 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md p-1.5 w-full">
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold uppercase pl-1 shrink-0">
                     Время:
                   </span>
                   <input
@@ -6827,7 +6848,7 @@ export default function TaskDetailsPanel({
                         handleChangeCustomMinutes(25);
                       }
                     }}
-                    className="w-16 px-1.5 py-0.5 text-center text-xs font-bold font-mono bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none dark:text-slate-100"
+                    className="w-16 px-1.5 py-0.5 text-center text-xs font-semibold font-mono bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:ring-1 focus:ring-slate-400 focus:outline-none dark:text-slate-100"
                   />
                   <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                     минут
@@ -6841,10 +6862,10 @@ export default function TaskDetailsPanel({
                       key={mins}
                       type="button"
                       onClick={() => handleChangeCustomMinutes(mins)}
-                      className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
+                      className={`px-2 py-0.5 text-[10px] font-medium rounded border transition-all cursor-pointer ${
                         customPomoMinutes === mins
-                          ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-950/20 dark:text-rose-450 dark:border-rose-900'
-                          : 'bg-white dark:bg-slate-800 border-slate-200/60 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-755'
+                          ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900'
+                          : 'bg-white dark:bg-[#1E1E1E] border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
                       }`}
                     >
                       {mins}м
@@ -6860,7 +6881,7 @@ export default function TaskDetailsPanel({
                   <button
                     type="button"
                     onClick={() => handleStartFocus(customPomoMinutes * 60)}
-                    className="flex-1 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-medium text-xs rounded-md transition-all shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Play className="w-3.5 h-3.5" /> Запустить ({customPomoMinutes} мин)
                   </button>
@@ -6869,9 +6890,9 @@ export default function TaskDetailsPanel({
                     <button
                       type="button"
                       onClick={handleTogglePomoPause}
-                      className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                         pomo.isPaused 
-                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs' 
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs' 
                           : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-950/20 dark:hover:bg-amber-900/30 dark:text-amber-400 dark:border-amber-900'
                       }`}
                     >
@@ -6888,7 +6909,7 @@ export default function TaskDetailsPanel({
                     <button
                       type="button"
                       onClick={handleResetPomo}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-755 dark:text-slate-350 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center"
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center justify-center"
                       title="Сбросить таймер"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
@@ -6902,7 +6923,7 @@ export default function TaskDetailsPanel({
                 <button
                   type="button"
                   onClick={handleCompletePomoEarly}
-                  className="w-full py-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/10 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-450 border border-rose-200/50 dark:border-rose-900 text-[10.5px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
+                  className="w-full py-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/10 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-400 border border-rose-200/50 dark:border-rose-900 text-[10.5px] font-medium rounded-md transition-all cursor-pointer flex items-center justify-center gap-1"
                   title="Остановить таймер и сохранить накопленное время фокусировки"
                 >
                   💾 Завершить досрочно и сохранить время ({formatTotalPomoTime(pomo.duration - pomo.timeLeft)})
@@ -6913,33 +6934,33 @@ export default function TaskDetailsPanel({
         )}
 
         {/* Toggle to exclude task (not considered a task) */}
-        <div className="flex items-center justify-between p-3.5 bg-rose-500/5 dark:bg-rose-500/10 rounded-xl border border-rose-100/30 dark:border-rose-950/20">
+        <div className="flex items-center justify-between p-3 bg-[#FBFBFA] dark:bg-[#202020] rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F]">
           <div className="flex flex-col gap-0.5">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
               Исключить из задач
             </span>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed max-w-[190px]">
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed max-w-[200px]">
               Не учитывать как задачу и скрыть из всех видов, отчётов и календарей
             </span>
           </div>
           <button
             type="button"
             onClick={() => handlePropChange('isNotTask', !node.isNotTask)}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
               node.isNotTask ? 'bg-rose-600' : 'bg-slate-200 dark:bg-slate-700'
             }`}
           >
             <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                node.isNotTask ? 'translate-x-5' : 'translate-x-0'
+              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                node.isNotTask ? 'translate-x-4' : 'translate-x-0'
               }`}
             />
           </button>
         </div>
 
         {/* Priority buttons */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+        <div className="space-y-2 bg-[#FBFBFA] dark:bg-[#202020] p-3 rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F]">
+          <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider block">
             Приоритет задачи
           </label>
           <div className="grid grid-cols-4 gap-1.5">
@@ -6948,16 +6969,16 @@ export default function TaskDetailsPanel({
               let activeColor = '';
               if (p === 'low') {
                 label = 'Низкий';
-                activeColor = 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950/20 dark:text-teal-400';
+                activeColor = 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300';
               } else if (p === 'medium') {
                 label = 'Средний';
-                activeColor = 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/20 dark:text-blue-400';
+                activeColor = 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300';
               } else if (p === 'high') {
                 label = 'Высокий';
-                activeColor = 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400';
+                activeColor = 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300';
               } else if (p === 'urgent') {
                 label = 'Критич.';
-                activeColor = 'border-rose-500 bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400';
+                activeColor = 'border-rose-500 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300';
               }
 
               const isCurrent = node.priority === p;
@@ -6965,10 +6986,10 @@ export default function TaskDetailsPanel({
                 <button
                   key={p}
                   onClick={() => handlePropChange('priority', p)}
-                  className={`py-2 px-1 text-center text-[10px] font-medium rounded-lg border transition-all cursor-pointer ${
+                  className={`py-1.5 px-1 text-center text-xs font-medium rounded-md border transition-all cursor-pointer ${
                     isCurrent 
-                      ? `${activeColor} font-semibold border-2` 
-                      : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      ? `${activeColor} font-semibold border` 
+                      : 'border-[#E3E2E0] dark:border-[#2F2F2F] bg-white dark:bg-[#1E1E1E] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   {label}
@@ -7777,21 +7798,21 @@ export default function TaskDetailsPanel({
 
         {/* Notes with links insertion & preview tabs */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800 pb-1.5">
+          <div className="flex items-center justify-between border-b border-[#E3E2E0] dark:border-[#2F2F2F] pb-2">
             <div className="flex items-center gap-3">
-              <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+              <label className="text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
                 Заметки и описание
               </label>
               
               {/* Tab Toggles */}
-              <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 text-[10.5px]">
+              <div className="flex bg-[#EDEDEB] dark:bg-[#2C2C2C] rounded-md p-0.5 text-[11px]">
                 <button
                   type="button"
                   onClick={() => setNotesMode('edit')}
-                  className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                  className={`px-2 py-0.5 rounded transition font-medium cursor-pointer ${
                     notesMode === 'edit'
-                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-450 dark:hover:text-slate-300'
+                      ? 'bg-white dark:bg-[#383838] text-slate-800 dark:text-slate-100 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   Редактор
@@ -7799,10 +7820,10 @@ export default function TaskDetailsPanel({
                 <button
                   type="button"
                   onClick={() => setNotesMode('preview')}
-                  className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                  className={`px-2 py-0.5 rounded transition font-medium cursor-pointer ${
                     notesMode === 'preview'
-                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-450 dark:hover:text-slate-300'
+                      ? 'bg-white dark:bg-[#383838] text-slate-800 dark:text-slate-100 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   Предпросмотр
@@ -7815,15 +7836,15 @@ export default function TaskDetailsPanel({
               <button
                 type="button"
                 onClick={() => setIsInsertingLink(!isInsertingLink)}
-                className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                className="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 flex items-center gap-1 cursor-pointer"
                 title="Связать эту задачу ссылкой с другой задачей"
               >
                 <LinkIcon className="w-3 h-3" /> Связать задачу
               </button>
 
               {isInsertingLink && (
-                <div className="absolute right-0 top-6 z-50 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-3 space-y-2 animate-fade-in text-left">
-                  <div className="text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                <div className="absolute right-0 top-6 z-50 w-64 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-lg shadow-lg p-3 space-y-2 animate-fade-in text-left">
+                  <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
                     <span>Выберите задачу для ссылки</span>
                     <button
                       type="button"
@@ -7845,7 +7866,7 @@ export default function TaskDetailsPanel({
                       placeholder="Поиск по названию..."
                       value={linkSearchQuery}
                       onChange={(e) => setLinkSearchQuery(e.target.value)}
-                      className="w-full text-xs pl-7 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:text-slate-100"
+                      className="w-full text-xs pl-7 pr-3 py-1.5 bg-slate-50 dark:bg-[#202020] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
                       autoFocus
                     />
                   </div>
@@ -7865,9 +7886,9 @@ export default function TaskDetailsPanel({
                           key={item.id}
                           type="button"
                           onClick={() => handleInsertTaskLink(item.id, item.text)}
-                          className="w-full text-left px-2.5 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 truncate block border border-transparent hover:border-slate-105 dark:hover:border-slate-700 transition-all text-[11px] cursor-pointer"
+                          className="w-full text-left px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md text-slate-700 dark:text-slate-300 truncate block transition-all text-xs cursor-pointer"
                         >
-                          <span className="font-semibold block truncate text-slate-800 dark:text-slate-200">{item.text}</span>
+                          <span className="font-medium block truncate text-slate-800 dark:text-slate-200">{item.text}</span>
                           <span className="text-[9px] text-slate-400 font-mono truncate block">{item.id.slice(0, 8)}...</span>
                         </button>
                       ));
@@ -7892,7 +7913,7 @@ export default function TaskDetailsPanel({
                   recordHistoryVersion(originalText, originalNotes, 'Правка заметок');
                 }
               }}
-              className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100 font-sans"
+              className="w-full text-xs bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-lg px-3 py-2.5 focus:ring-1 focus:ring-slate-400 focus:outline-none dark:text-slate-100 font-sans shadow-2xs"
               rows={5}
               placeholder="Опишите задачу подробнее. Например, [[Название задачи]] или воспользуйтесь кнопкой «Связать задачу»..."
             />
@@ -7902,38 +7923,38 @@ export default function TaskDetailsPanel({
         </div>
 
         {/* Version History Section */}
-        <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mt-2 bg-[#FAFBFD]/30 dark:bg-slate-800/20">
+        <div className="border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-lg overflow-hidden mt-2 bg-[#FBFBFA] dark:bg-[#202020]">
           <button
             type="button"
             onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)}
-            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between text-left hover:bg-slate-100 dark:hover:bg-slate-850/80 transition-all select-none cursor-pointer"
+            className="w-full px-3.5 py-2.5 bg-[#FBFBFA] dark:bg-[#202020] border-b border-[#E3E2E0] dark:border-[#2F2F2F] flex items-center justify-between text-left hover:bg-slate-100/60 dark:hover:bg-[#262626] transition-all select-none cursor-pointer"
           >
             <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-indigo-500" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-350 uppercase tracking-wider">
+              <History className="w-3.5 h-3.5 text-slate-500" />
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 История изменений
               </span>
-              <span className="text-[10px] font-extrabold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 px-2 py-0.5 rounded-full font-mono">
+              <span className="text-[10px] font-medium bg-[#EDEDEB] dark:bg-[#2C2C2C] text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full font-mono">
                 {(node.history || []).length}
               </span>
             </div>
             {isHistorySectionOpen ? (
-              <ChevronDown className="w-4 h-4 text-slate-500" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
             ) : (
-              <ChevronRight className="w-4 h-4 text-slate-500" />
+              <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
             )}
           </button>
 
           {isHistorySectionOpen && (
-            <div className="p-4 space-y-4 bg-white dark:bg-slate-900 animate-fade-in">
-              <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
+            <div className="p-3 space-y-3 bg-white dark:bg-[#1E1E1E] animate-fade-in">
+              <div className="flex items-center justify-between gap-2 border-b border-[#E3E2E0] dark:border-[#2F2F2F] pb-2">
                 <span className="text-[10px] text-slate-400 dark:text-slate-500 italic leading-normal">
                   Автосохранение при выходе из полей названия и заметок.
                 </span>
                 <button
                   type="button"
                   onClick={handleSaveManualCheckpoint}
-                  className="px-2.5 py-1 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-950/30 dark:hover:bg-indigo-900/40 dark:text-indigo-400 rounded-md transition-all cursor-pointer shadow-2xs shrink-0"
+                  className="px-2 py-1 text-[10px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-[#2C2C2C] dark:hover:bg-[#383838] dark:text-slate-200 border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md transition-all cursor-pointer shadow-2xs shrink-0"
                   title="Сохранить текущую версию как снимок"
                 >
                   + Снимок
@@ -7941,7 +7962,7 @@ export default function TaskDetailsPanel({
               </div>
 
               {(node.history || []).length === 0 ? (
-                <div className="text-center py-4 text-xs text-slate-400 dark:text-slate-555 italic font-medium">
+                <div className="text-center py-4 text-xs text-slate-400 dark:text-slate-500 italic font-medium">
                   История изменений пока пуста
                 </div>
               ) : (
@@ -7953,11 +7974,11 @@ export default function TaskDetailsPanel({
                     return (
                       <div
                         key={ver.id}
-                        className="p-2.5 border border-slate-105 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 rounded-lg hover:border-slate-200 dark:hover:border-slate-700 transition-all flex flex-col gap-1.5"
+                        className="p-2 border border-[#E3E2E0] dark:border-[#2F2F2F] bg-[#FBFBFA] dark:bg-[#202020] rounded-md hover:border-slate-400 dark:hover:border-slate-600 transition-all flex flex-col gap-1.5"
                       >
                         <div className="flex items-start justify-between gap-1.5">
                           <div className="space-y-0.5">
-                            <div className="text-[11px] font-extrabold text-slate-700 dark:text-slate-300">
+                            <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
                               {ver.description || 'Правка'}
                             </div>
                             <div className="text-[9px] text-slate-400 font-medium font-mono">
@@ -7983,10 +8004,10 @@ export default function TaskDetailsPanel({
                               type="button"
                               disabled={!canRestore}
                               onClick={() => handleRestoreVersion(ver)}
-                              className={`px-1.5 py-0.5 text-[9px] font-extrabold rounded select-none cursor-pointer transition ${
+                              className={`px-1.5 py-0.5 text-[9px] font-medium rounded select-none cursor-pointer transition ${
                                 canRestore 
-                                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/30 dark:text-emerald-450 border border-emerald-200/45' 
-                                  : 'bg-slate-105 text-slate-405 dark:bg-slate-800 dark:text-slate-600 border border-transparent cursor-not-allowed'
+                                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200/45' 
+                                  : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600 border border-transparent cursor-not-allowed'
                               }`}
                               title={canRestore ? "Восстановить эту версию" : "Текущая версия совпадает"}
                             >
@@ -8006,22 +8027,22 @@ export default function TaskDetailsPanel({
 
                         {/* Collapsible Differences Preview */}
                         {isExpanded && (
-                          <div className="mt-1.5 pt-1.5 border-t border-slate-150/40 dark:border-slate-800/40 space-y-2">
+                          <div className="mt-1.5 pt-1.5 border-t border-[#E3E2E0] dark:border-[#2F2F2F] space-y-2">
                             <div className="space-y-0.5">
-                              <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest font-sans block">
+                              <span className="text-[8px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest font-sans block">
                                 Версия названия:
                               </span>
-                              <div className="bg-white dark:bg-slate-800/80 p-1.5 rounded text-[10px] font-medium text-slate-700 dark:text-slate-350 border border-slate-100 dark:border-slate-850 break-words font-mono line-clamp-3">
+                              <div className="bg-white dark:bg-[#1E1E1E] p-1.5 rounded text-[10px] font-medium text-slate-700 dark:text-slate-300 border border-[#E3E2E0] dark:border-[#2F2F2F] break-words font-mono line-clamp-3">
                                 {ver.text}
                               </div>
                             </div>
                             
                             {ver.notes ? (
                               <div className="space-y-0.5">
-                                <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest font-sans block">
+                                <span className="text-[8px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest font-sans block">
                                   Версия заметок:
                                 </span>
-                                <div className="bg-white dark:bg-slate-800/80 p-1.5 rounded text-[10px] font-medium text-slate-600 dark:text-slate-400 border border-slate-100 dark:border-slate-850 break-all font-mono line-clamp-4 whitespace-pre-wrap">
+                                <div className="bg-white dark:bg-[#1E1E1E] p-1.5 rounded text-[10px] font-medium text-slate-600 dark:text-slate-400 border border-[#E3E2E0] dark:border-[#2F2F2F] break-all font-mono line-clamp-4 whitespace-pre-wrap">
                                   {ver.notes}
                                 </div>
                               </div>
@@ -8043,7 +8064,7 @@ export default function TaskDetailsPanel({
                   <button
                     type="button"
                     onClick={handleClearHistory}
-                    className="text-[9px] font-bold text-rose-600 hover:underline transition-colors cursor-pointer"
+                    className="text-[10px] font-medium text-rose-600 hover:underline transition-colors cursor-pointer"
                   >
                     Очистить всю историю
                   </button>
@@ -8055,11 +8076,25 @@ export default function TaskDetailsPanel({
 
         {/* Files Attached list & input */}
         <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-            Файлы и вложения
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
+              Файлы и вложения
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setCameraCaptureTarget('attachment');
+                setIsCameraModalOpen(true);
+              }}
+              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-indigo-200/80 dark:border-indigo-800/60"
+              title="Сделать фото камерой"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>Сделать фото с камеры</span>
+            </button>
+          </div>
 
-          <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-800 transition-colors rounded-xl p-4 text-center cursor-pointer">
+          <div className="relative border border-dashed border-[#E3E2E0] dark:border-[#2F2F2F] hover:border-slate-400 dark:hover:border-slate-500 bg-[#FBFBFA] dark:bg-[#202020] transition-colors rounded-lg p-3.5 text-center cursor-pointer">
             <input
               type="file"
               onChange={handleFileUpload}
@@ -8075,11 +8110,11 @@ export default function TaskDetailsPanel({
               </div>
             ) : (
               <>
-                <Paperclip className="w-5 h-5 mx-auto text-slate-400" />
-                <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-1.5">
+                <Paperclip className="w-4 h-4 mx-auto text-slate-400" />
+                <p className="text-xs text-slate-700 dark:text-slate-300 font-medium mt-1">
                   Нажмите для выбора файла или вставьте из буфера обмена (Ctrl+V)
                 </p>
-                <p className="text-[10px] text-slate-400 mt-1 leading-normal">
+                <p className="text-[10px] text-slate-400 mt-0.5 leading-normal">
                   {googleToken 
                     ? "✓ Файл загрузится напрямую в облако на ваш Google Диск!"
                     : "До 1.5 МБ локально. Войдите через Google вверху для хранения файлов на Диске без лимитов!"}
@@ -8093,20 +8128,20 @@ export default function TaskDetailsPanel({
           )}
 
           {node.files && node.files.length > 0 ? (
-            <div className="space-y-1.5 mt-3">
+            <div className="space-y-1.5 mt-2">
               {node.files.map((file) => {
                 const isImg = file.type.startsWith('image/');
                 const isCloud = !!file.googleDriveId;
                 return (
                   <div 
                     key={file.id}
-                    className="flex items-center justify-between p-2 bg-[#FAFBFD]/60 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs"
+                    className="flex items-center justify-between p-2 bg-white dark:bg-[#1E1E1E] rounded-lg border border-[#E3E2E0] dark:border-[#2F2F2F] text-xs shadow-2xs"
                   >
-                    <div className="flex items-center gap-3 min-w-0 pr-2 flex-1">
+                    <div className="flex items-center gap-2.5 min-w-0 pr-2 flex-1">
                       {isImg ? (
                         <div 
                           onClick={() => setLightboxImage(file)}
-                          className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-slate-200/50 dark:border-slate-700 cursor-pointer group shadow-sm hover:scale-105 active:scale-95 transition-all"
+                          className="relative w-10 h-10 rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 border border-[#E3E2E0] dark:border-[#2F2F2F] cursor-pointer group shadow-2xs hover:scale-105 active:scale-95 transition-all"
                           title="Нажмите для предпросмотра"
                         >
                           {file.googleDriveId ? (
@@ -8127,27 +8162,27 @@ export default function TaskDetailsPanel({
                             />
                           )}
                           <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <Eye className="w-3.5 h-3.5 text-white drop-shadow-sm" />
+                            <Eye className="w-3 h-3 text-white drop-shadow-sm" />
                           </div>
                         </div>
                       ) : (
-                        <div className="w-12 h-12 rounded-lg bg-indigo-50/50 dark:bg-slate-800/50 flex items-center justify-center border border-slate-100/80 dark:border-slate-800 shrink-0">
-                          <FileText className="w-5 h-5 text-indigo-500" />
+                        <div className="w-10 h-10 rounded-md bg-slate-100 dark:bg-[#2C2C2C] flex items-center justify-center border border-[#E3E2E0] dark:border-[#2F2F2F] shrink-0">
+                          <FileText className="w-4 h-4 text-slate-500" />
                         </div>
                       )}
                       
                       <div className="min-w-0 flex-1">
                         <p 
                           onClick={isImg ? () => setLightboxImage(file) : undefined} 
-                          className={`text-slate-700 dark:text-slate-300 font-semibold truncate text-xs ${isImg ? 'hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer' : ''}`}
+                          className={`text-slate-700 dark:text-slate-300 font-medium truncate text-xs ${isImg ? 'hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer' : ''}`}
                           title={file.name}
                         >
                           {file.name}
                         </p>
-                        <p className="text-[10px] text-slate-450 dark:text-slate-500 flex items-center gap-1.5 mt-0.5">
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 flex items-center gap-1.5 mt-0.5">
                           <span>{formatFileSize(file.size)}</span>
                           {isCloud && (
-                            <span className="font-extrabold text-[8px] bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded px-1 py-0.2 select-none uppercase tracking-wide">
+                            <span className="font-semibold text-[8px] bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded px-1 py-0.2 select-none uppercase tracking-wide">
                               Google Drive
                             </span>
                           )}
@@ -8155,16 +8190,16 @@ export default function TaskDetailsPanel({
                       </div>
                     </div>
 
-                    <div className="flex gap-1.5 flex-shrink-0">
+                    <div className="flex gap-1 flex-shrink-0">
                       {isCloud && file.webViewLink && (
                         <a
                           href={file.webViewLink}
                           target="_blank"
                           rel="noreferrer"
-                          className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
+                          className="p-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-[#2C2C2C] dark:hover:bg-[#383838] text-slate-600 dark:text-slate-300 rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] shadow-2xs"
                           title="Просмотреть на Google Диске"
                         >
-                          <Eye className="w-3.5 h-3.5" />
+                          <Eye className="w-3 h-3" />
                         </a>
                       )}
                       {file.dataUrl && (
@@ -8173,18 +8208,18 @@ export default function TaskDetailsPanel({
                           target="_blank"
                           rel="noreferrer"
                           download={!isCloud ? file.name : undefined}
-                          className="p-1.5 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:text-indigo-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
+                          className="p-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-[#2C2C2C] dark:hover:bg-[#383838] text-slate-600 dark:text-slate-300 rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] shadow-2xs"
                           title={isCloud ? "Скачать с Google Диска" : "Скачать файл"}
                         >
-                          <Download className="w-3.5 h-3.5" />
+                          <Download className="w-3 h-3" />
                         </a>
                       )}
                       <button
                         onClick={() => handleRemoveFile(file.id)}
-                        className="p-1.5 bg-white dark:bg-slate-700 text-slate-400 hover:text-rose-600 rounded-lg border border-slate-200 dark:border-slate-600 shadow-xs"
+                        className="p-1.5 bg-slate-50 hover:bg-rose-50 dark:bg-[#2C2C2C] dark:hover:bg-rose-950/20 text-slate-400 hover:text-rose-600 rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] shadow-2xs cursor-pointer"
                         title={isCloud ? "Удалить вложение (также удалится с вашего Google Диска)" : "Удалить файл"}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
@@ -8244,7 +8279,7 @@ export default function TaskDetailsPanel({
           </div>
 
           {/* Comments List Scroll Panel */}
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto px-3.5 sm:px-5 py-3 sm:py-4 space-y-4">
             {(() => {
               const allComments = node.comments || [];
               const visibleComments = commentFilter === 'unresolved' 
@@ -8473,7 +8508,7 @@ export default function TaskDetailsPanel({
           </div>
 
           {/* Notion "Add a comment..." Composer Area */}
-          <div className="p-4 border-t border-[#EDEDEB] dark:border-[#2F2F2F] bg-[#FFFFFF] dark:bg-[#1E1E1E] shrink-0 space-y-2.5">
+          <div className="p-3 sm:p-4 border-t border-[#EDEDEB] dark:border-[#2F2F2F] bg-[#FFFFFF] dark:bg-[#1E1E1E] shrink-0 space-y-2.5">
             {/* Image Preview inside composer if uploaded */}
             {commentImagePreview && (
               <div className="relative inline-block border border-[#EDEDEB] dark:border-[#2F2F2F] rounded-lg p-1 bg-[#F7F6F3] dark:bg-[#252525] shrink-0">
@@ -8546,14 +8581,28 @@ export default function TaskDetailsPanel({
                     onClick={() => commentImageInputRef.current?.click()}
                     disabled={isUploadingCommentImage}
                     className="p-1.5 hover:bg-[#F7F6F3] dark:hover:bg-[#303030] rounded-md text-[#787774] hover:text-[#37352F] dark:text-[#9B9A97] dark:hover:text-[#ECECEC] transition flex items-center gap-1 text-xs cursor-pointer disabled:opacity-50"
-                    title="Прикрепить изображение (или вставьте скриншот через Ctrl+V)"
+                    title="Прикрепить изображение из файлов"
                   >
                     {isUploadingCommentImage ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
                     ) : (
                       <Paperclip className="w-3.5 h-3.5" />
                     )}
-                    <span className="text-[11px] hidden sm:inline">Фото</span>
+                    <span className="text-[11px] hidden sm:inline">Файл</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCameraCaptureTarget('comment');
+                      setIsCameraModalOpen(true);
+                    }}
+                    disabled={isUploadingCommentImage}
+                    className="p-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-md text-indigo-600 dark:text-indigo-400 transition flex items-center gap-1 text-xs cursor-pointer disabled:opacity-50"
+                    title="Сделать снимок камерой и прикрепить к комментарию"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span className="text-[11px] hidden sm:inline">Камера</span>
                   </button>
 
                   <input
@@ -8616,7 +8665,7 @@ export default function TaskDetailsPanel({
 
       {/* Dangerous/Root operations */}
       {activeTab === 'details' ? (
-        <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/60 flex items-stretch gap-2">
+        <div className="p-3 border-t border-[#E3E2E0] dark:border-[#2F2F2F] bg-[#FBFBFA] dark:bg-[#202020] flex items-stretch gap-2">
           {/* Archive / Restore Button */}
           <button
             onClick={() => {
@@ -8626,13 +8675,13 @@ export default function TaskDetailsPanel({
               });
               onClose();
             }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-1 border text-xs font-semibold rounded-lg transition-all duration-300 cursor-pointer ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 border text-xs font-medium rounded-md transition-all duration-200 cursor-pointer shadow-2xs ${
               node.archived
-                ? "border-amber-200 dark:border-amber-950/40 text-amber-700 dark:text-amber-400 bg-amber-50/30 hover:bg-amber-100/50 dark:bg-amber-950/10 dark:hover:bg-amber-950/20"
-                : "border-indigo-200 dark:border-indigo-950/40 text-indigo-600 dark:text-indigo-400 bg-indigo-50/30 hover:bg-indigo-100/50 dark:bg-indigo-950/10 dark:hover:bg-indigo-950/20"
+                ? "border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400 bg-amber-50/50 hover:bg-amber-100/60 dark:bg-amber-950/20"
+                : "border-[#E3E2E0] dark:border-[#2F2F2F] text-slate-700 dark:text-slate-300 bg-white dark:bg-[#1E1E1E] hover:bg-slate-50 dark:hover:bg-[#262626]"
             }`}
           >
-            <Archive className="w-3.5 h-3.5 shrink-0" />
+            <Archive className="w-3.5 h-3.5 shrink-0 text-slate-500" />
             <span className="truncate">{node.archived ? "Восстановить" : "В архив"}</span>
           </button>
 
@@ -8648,22 +8697,22 @@ export default function TaskDetailsPanel({
                 setTimeout(() => setConfirmDelete(false), 4000);
               }
             }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-1 border text-xs font-semibold rounded-lg transition-all duration-300 cursor-pointer ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 border text-xs font-medium rounded-md transition-all duration-200 cursor-pointer shadow-2xs ${
               confirmDelete
-                ? "bg-rose-600 border-rose-600 text-white font-bold animate-pulse scale-[1.02]"
-                : "border-rose-250 dark:border-rose-950 text-rose-600 bg-rose-50/50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40"
+                ? "bg-rose-600 border-rose-600 text-white font-semibold animate-pulse"
+                : "border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 bg-rose-50/50 hover:bg-rose-100/60 dark:bg-rose-950/20 dark:hover:bg-rose-950/40"
             }`}
           >
             <Trash2 className="w-3.5 h-3.5 shrink-0" /> 
             <span className="truncate">
               {confirmDelete 
                 ? 'Уверены?' 
-                : (node.isWorkflowRectangle ? 'Удалить workflow-шаг' : node.isContainer ? 'Удалить вложенное' : isCentralRootNode ? 'Удалить главную задачу' : 'Удалить текущую')}
+                : (node.isWorkflowRectangle ? 'Удалить шаг' : node.isContainer ? 'Удалить блок' : isCentralRootNode ? 'Удалить узел' : 'Удалить')}
             </span>
           </button>
         </div>
       ) : (
-        <div className="p-4 border-t border-slate-250/60 dark:border-slate-800 bg-[#FAFBFD]/20 text-center text-slate-400 dark:text-slate-500 text-[10px] font-mono select-none">
+        <div className="p-3 border-t border-[#E3E2E0] dark:border-[#2F2F2F] bg-[#FBFBFA] dark:bg-[#202020] text-center text-slate-400 dark:text-slate-500 text-[11px] select-none">
           Это корневой узел интеллект-карты. Его нельзя удалить.
         </div>
       )}
@@ -8673,17 +8722,17 @@ export default function TaskDetailsPanel({
     {/* Parameter Settings Modal Overlay */}
     {activeModalParam && (
       <div 
-        className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/75 backdrop-blur-xs flex items-center justify-center z-[200] p-4 animate-fade-in"
+        className="fixed inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-xs flex items-center justify-center z-[200] p-2 sm:p-4 animate-fade-in"
         onClick={() => setActiveModalParam(null)}
       >
         <div 
-          className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[85vh] overflow-hidden"
+          className="w-full max-w-md bg-white dark:bg-[#202020] rounded-xl shadow-2xl border border-[#E3E2E0] dark:border-[#2F2F2F] flex flex-col max-h-[92vh] sm:max-h-[85vh] overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Modal Header */}
-          <div className="px-5 py-4 border-b border-slate-150/40 dark:border-slate-800/30 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+          <div className="px-4 py-3 border-b border-[#E3E2E0] dark:border-[#2F2F2F] flex items-center justify-between bg-[#FBFBFA] dark:bg-[#202020] shrink-0">
             <div className="flex items-center gap-2">
-              <span className="text-lg">
+              <span className="text-base">
                 {activeModalParam === 'dates' && '📅'}
                 {activeModalParam === 'tags' && '🏷️'}
                 {activeModalParam === 'subtasks' && '🪜'}
@@ -8694,7 +8743,7 @@ export default function TaskDetailsPanel({
                 {activeModalParam === 'container' && '📦'}
                 {activeModalParam === 'priority_status' && '⚡'}
               </span>
-              <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider font-sans">
+              <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider font-sans">
                 {activeModalParam === 'dates' && 'Сроки и напоминания'}
                 {activeModalParam === 'tags' && 'Теги и категории'}
                 {activeModalParam === 'subtasks' && 'Подзадачи'}
@@ -8709,20 +8758,20 @@ export default function TaskDetailsPanel({
             <button
               type="button"
               onClick={() => setActiveModalParam(null)}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-[#2C2C2C] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
           {/* Modal Body */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-0 text-slate-700 dark:text-slate-200">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 text-slate-700 dark:text-slate-200">
             
             {/* 1. DATES MODAL */}
             {activeModalParam === 'dates' && (
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Ориентировочное время (мин):</label>
+                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Ориентировочное время (мин):</label>
                   <input
                     type="number"
                     min="0"
@@ -8730,58 +8779,58 @@ export default function TaskDetailsPanel({
                     placeholder={hasSubtaskWithTime ? "Сумма подзадач" : "Например: 30"}
                     value={node.estimatedTime !== undefined && node.estimatedTime !== null ? node.estimatedTime : ''}
                     onChange={(e) => handlePropChange('estimatedTime', e.target.value === '' ? undefined : parseFloat(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100"
+                    className="w-full px-3 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-800 dark:text-slate-100"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Дата и время начала:</label>
+                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Дата и время начала:</label>
                   <div className="flex gap-2">
                     <input
                       type="date"
                       value={node.startDate || ''}
                       onChange={(e) => handleTimePropChange('startDate', e.target.value)}
-                      className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100"
+                      className="flex-1 px-3 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md text-xs text-slate-800 dark:text-slate-100"
                     />
                     <input
                       type="time"
                       value={node.startTime || ''}
                       onChange={(e) => handleTimePropChange('startTime', e.target.value)}
-                      className="w-24 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100"
+                      className="w-24 px-3 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md text-xs text-slate-800 dark:text-slate-100 font-mono"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Срок (Дедлайн):</label>
+                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Срок (Дедлайн):</label>
                   <div className="flex gap-2">
                     <input
                       type="date"
                       value={node.dueDate || ''}
                       onChange={(e) => handleTimePropChange('dueDate', e.target.value)}
-                      className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100"
+                      className="flex-1 px-3 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md text-xs text-slate-800 dark:text-slate-100"
                     />
                     <input
                       type="time"
                       value={node.dueTime || ''}
                       onChange={(e) => handleTimePropChange('dueTime', e.target.value)}
-                      className="w-24 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100"
+                      className="w-24 px-3 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md text-xs text-slate-800 dark:text-slate-100 font-mono"
                     />
                   </div>
                 </div>
 
                 {/* Секция Напоминание в модальном окне */}
-                <div className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-slate-800/80">
-                  <label className="text-[10px] font-bold text-slate-450 uppercase flex items-center justify-between">
+                <div className="space-y-2.5 pt-3 border-t border-[#E3E2E0] dark:border-[#2F2F2F]">
+                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
-                      <Bell className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      <Bell className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                       Напоминание
                     </span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => playNotificationChime()}
-                        className="text-[9px] text-indigo-650 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
+                        className="text-[10px] text-slate-600 dark:text-slate-300 font-medium hover:underline cursor-pointer"
                         title="Воспроизвести тестовый сигнал и разблокировать звук в браузере"
                       >
                         Проверить звук 🔊
@@ -8800,7 +8849,7 @@ export default function TaskDetailsPanel({
                                 reminderDismissed: undefined
                               });
                             }}
-                            className="text-[9px] text-rose-550 dark:text-rose-400 font-bold hover:underline cursor-pointer"
+                            className="text-[10px] text-rose-500 dark:text-rose-400 font-medium hover:underline cursor-pointer"
                           >
                             Сбросить
                           </button>
@@ -8812,7 +8861,7 @@ export default function TaskDetailsPanel({
                   {/* Quick select buttons - only visible when a deadline is set */}
                   {node.dueDate && (
                     <div className="space-y-1">
-                      <span className="text-[9px] text-slate-400 dark:text-slate-505 font-medium block">
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
                         Быстрый выбор:
                       </span>
                       <div className="grid grid-cols-2 gap-1.5">
@@ -8829,10 +8878,10 @@ export default function TaskDetailsPanel({
                               key={item.label}
                               type="button"
                               onClick={() => handleSetRelativeReminder(item.val)}
-                              className={`py-1.5 px-2 text-[10px] rounded-lg border text-left cursor-pointer transition-colors ${
+                              className={`py-1 px-2 text-[11px] rounded-md border text-left cursor-pointer transition-colors ${
                                 isCurrent
-                                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-400 font-bold'
-                                  : 'border-slate-200 dark:border-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900'
+                                  ? 'border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-[#2C2C2C] text-slate-900 dark:text-slate-100 font-medium'
+                                  : 'border-[#E3E2E0] dark:border-[#2F2F2F] hover:bg-slate-50 dark:hover:bg-[#262626] text-slate-600 dark:text-slate-400 bg-white dark:bg-[#1E1E1E]'
                               }`}
                             >
                               {item.label}
@@ -8845,7 +8894,7 @@ export default function TaskDetailsPanel({
 
                   {/* Date and Time selectors for reminder */}
                   <div className="space-y-1">
-                    <span className="text-[9px] text-slate-400 dark:text-slate-505 font-medium block">
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
                       Назначить точные дату и время напоминания:
                     </span>
                     <div className="flex gap-2">
@@ -8860,7 +8909,7 @@ export default function TaskDetailsPanel({
                             reminderDismissed: false
                           });
                         }}
-                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100"
+                        className="flex-1 px-3 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md text-xs text-slate-800 dark:text-slate-100"
                       />
                       <input
                         type="time"
@@ -8873,16 +8922,16 @@ export default function TaskDetailsPanel({
                             reminderDismissed: false
                           });
                         }}
-                        className="w-24 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-850 dark:text-slate-100 font-mono"
+                        className="w-24 px-3 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md text-xs text-slate-800 dark:text-slate-100 font-mono"
                       />
                     </div>
                   </div>
 
                   {node.reminderDate && node.reminderTime && (
-                    <div className="p-2 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-100/40 dark:border-indigo-900/10 rounded-lg">
-                      <p className="text-[10px] text-indigo-650 dark:text-indigo-400 font-medium flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shrink-0" />
-                        <span>Напоминание сработает в {node.reminderDate} в {node.reminderTime}</span>
+                    <div className="p-2 bg-slate-50 dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md">
+                      <p className="text-[10px] text-slate-600 dark:text-slate-300 font-medium flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse shrink-0" />
+                        <span>Напоминание сработает {node.reminderDate} в {node.reminderTime}</span>
                       </p>
                     </div>
                   )}
@@ -8894,7 +8943,7 @@ export default function TaskDetailsPanel({
             {activeModalParam === 'tags' && (
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Цвет ветви:</label>
+                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Цвет ветви:</label>
                   <div className="flex flex-wrap gap-1.5">
                     {PASTEL_COLORS.map(col => (
                       <button
@@ -8902,7 +8951,7 @@ export default function TaskDetailsPanel({
                         type="button"
                         onClick={() => handlePropChange('color', col.value)}
                         className={`w-6 h-6 rounded-full border transition-transform cursor-pointer ${
-                          node.color === col.value ? 'ring-2 ring-indigo-500 scale-110 border-white' : 'border-slate-300'
+                          node.color === col.value ? 'ring-2 ring-slate-500 scale-110 border-white' : 'border-slate-300'
                         }`}
                         style={{ backgroundColor: col.value || '#cbd5e1' }}
                         title={col.name}
@@ -8911,23 +8960,23 @@ export default function TaskDetailsPanel({
                   </div>
                 </div>
 
-                <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
-                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Добавить тег:</label>
+                <div className="space-y-1.5 pt-2 border-t border-[#E3E2E0] dark:border-[#2F2F2F]">
+                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Добавить тег:</label>
                   <form onSubmit={handleAddTag} className="flex gap-1.5">
                     <input
                       type="text"
                       placeholder="Имя тега..."
                       value={tagInput}
                       onChange={(e) => setTagInput(e.target.value)}
-                      className="flex-1 px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500 text-slate-850 dark:text-slate-100"
+                      className="flex-1 px-2.5 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-800 dark:text-slate-100"
                     />
-                    <button type="submit" className="px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer">
+                    <button type="submit" className="px-3 bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium rounded-md cursor-pointer">
                       +
                     </button>
                   </form>
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     {node.tags && node.tags.map((t, idx) => (
-                      <span key={idx} className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700/50">
+                      <span key={idx} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-[#EDEDEB] dark:bg-[#2C2C2C] text-slate-700 dark:text-slate-300">
                         #{t}
                         <button type="button" onClick={() => handleRemoveTag(idx)} className="hover:text-rose-500 text-slate-400">×</button>
                       </span>
@@ -8935,13 +8984,13 @@ export default function TaskDetailsPanel({
                   </div>
                 </div>
 
-                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
-                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Быстрый выбор категорий:</label>
+                <div className="space-y-2 pt-2 border-t border-[#E3E2E0] dark:border-[#2F2F2F]">
+                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Быстрый выбор категорий:</label>
                   <div className="space-y-1.5">
                     {activeCategories.map(cat => (
-                      <div key={cat.id} className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-850 border border-slate-150 dark:border-slate-800">
-                        <div className="text-[9px] font-bold text-slate-455 mb-1 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                      <div key={cat.id} className="p-2 rounded-lg bg-[#FBFBFA] dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F]">
+                        <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
                           {cat.name}
                         </div>
                         <div className="flex flex-wrap gap-1">
@@ -8955,8 +9004,10 @@ export default function TaskDetailsPanel({
                                   const cur = node.tags || [];
                                   handlePropChange('tags', isAdded ? cur.filter(tg => tg !== t) : [...cur, t]);
                                 }}
-                                className={`px-1.5 py-0.5 text-[9px] font-bold rounded border transition-colors cursor-pointer ${
-                                  isAdded ? 'bg-slate-805 border-slate-805 text-white' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-650'
+                                className={`px-2 py-0.5 text-[10px] font-medium rounded-md border transition-colors cursor-pointer ${
+                                  isAdded 
+                                    ? 'bg-slate-800 dark:bg-white text-white dark:text-slate-900 border-slate-800 dark:border-white' 
+                                    : 'bg-white dark:bg-[#2C2C2C] border-[#E3E2E0] dark:border-[#383838] hover:bg-slate-50 text-slate-700 dark:text-slate-300'
                                 }`}
                               >
                                 #{t}
@@ -8974,13 +9025,13 @@ export default function TaskDetailsPanel({
             {/* 3. SUBTASKS MODAL */}
             {activeModalParam === 'subtasks' && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800/80">
-                  <span className="text-xs font-bold text-slate-450 uppercase">Список подзадач:</span>
+                <div className="flex items-center justify-between pb-1.5 border-b border-[#E3E2E0] dark:border-[#2F2F2F]">
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Список подзадач:</span>
                   {onAddChildNode && (
                     <button
                       type="button"
                       onClick={() => onAddChildNode(node.id, true)}
-                      className="py-1 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10.5px] font-bold rounded-lg cursor-pointer"
+                      className="py-1 px-2.5 bg-slate-800 hover:bg-slate-900 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-[11px] font-medium rounded-md cursor-pointer transition shadow-2xs"
                     >
                       + Добавить подзадачу
                     </button>
@@ -8993,14 +9044,14 @@ export default function TaskDetailsPanel({
                     return <p className="text-xs text-slate-400 italic text-center py-4">Нет подзадач. Вы можете создать их кнопкой выше!</p>;
                   }
                   return (
-                    <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                    <div className="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1">
                       {subtasks.map((child) => (
-                        <div key={child.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-150 dark:border-slate-800 gap-2">
+                        <div key={child.id} className="flex items-center justify-between p-2 bg-[#FBFBFA] dark:bg-[#1E1E1E] rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] gap-2">
                           <div className="flex items-center gap-1.5 flex-1 min-w-0">
                             <button
                               type="button"
                               onClick={() => onUpdateNode({ ...child, completed: !child.completed })}
-                              className="cursor-pointer text-slate-400 hover:text-indigo-600 shrink-0"
+                              className="cursor-pointer text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 shrink-0"
                             >
                               {child.completed ? '✓' : '○'}
                             </button>
@@ -9008,7 +9059,7 @@ export default function TaskDetailsPanel({
                               type="text"
                               value={child.text}
                               onChange={(e) => onUpdateNode({ ...child, text: e.target.value })}
-                              className={`text-xs font-medium bg-transparent border-0 focus:ring-0 p-0 w-full text-slate-700 dark:text-slate-200 ${child.completed ? 'line-through text-slate-400 italic' : ''}`}
+                              className={`text-xs font-normal bg-transparent border-0 focus:ring-0 p-0 w-full text-slate-700 dark:text-slate-200 ${child.completed ? 'line-through text-slate-400 italic' : ''}`}
                             />
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
@@ -9020,7 +9071,7 @@ export default function TaskDetailsPanel({
                                   onSelectNode(child.id);
                                 }}
                                 title="Свойства подзадачи"
-                                className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-800 rounded transition-colors cursor-pointer flex items-center justify-center"
+                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-800 rounded transition-colors cursor-pointer flex items-center justify-center"
                               >
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
@@ -9031,14 +9082,14 @@ export default function TaskDetailsPanel({
                                 const val = prompt("Укажите время подзадачи (мин):", child.estimatedTime?.toString() || "30");
                                 if (val !== null) onUpdateNode({ ...child, estimatedTime: val === "" ? undefined : parseFloat(val) || 0 });
                               }}
-                              className="text-[9px] font-bold text-indigo-600 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-750 cursor-pointer"
+                              className="text-[10px] font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-[#2C2C2C] px-1.5 py-0.5 rounded border border-[#E3E2E0] dark:border-[#383838] cursor-pointer"
                             >
                               ⏱️ {child.estimatedTime || 0}
                             </button>
                             <button
                               type="button"
                               onClick={() => onDeleteNode(child.id)}
-                              className="p-1 hover:text-rose-600 rounded cursor-pointer"
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
                             >
                               ×
                             </button>
@@ -9053,8 +9104,22 @@ export default function TaskDetailsPanel({
 
             {/* 4. FILES MODAL */}
             {activeModalParam === 'files' && (
-              <div className="space-y-4">
-                <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center cursor-pointer hover:border-indigo-400 bg-slate-50/50">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-1">
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Добавить вложение или фото</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCameraCaptureTarget('attachment');
+                      setIsCameraModalOpen(true);
+                    }}
+                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-indigo-200/80 dark:border-indigo-800/60"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Сделать снимок камерой</span>
+                  </button>
+                </div>
+                <div className="relative border border-dashed border-[#E3E2E0] dark:border-[#2F2F2F] rounded-lg p-5 text-center cursor-pointer hover:border-slate-400 bg-[#FBFBFA] dark:bg-[#1E1E1E]">
                   <input
                     type="file"
                     onChange={handleFileUpload}
@@ -9062,9 +9127,9 @@ export default function TaskDetailsPanel({
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   {isUploadingFile ? (
-                    <p className="text-xs text-indigo-500 font-bold animate-pulse">Загрузка...</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 font-medium animate-pulse">Загрузка...</p>
                   ) : (
-                    <p className="text-xs text-slate-500 font-bold">Нажмите для выбора файла</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Нажмите для выбора файла с устройства</p>
                   )}
                 </div>
 
@@ -9073,15 +9138,15 @@ export default function TaskDetailsPanel({
                 {node.files && node.files.length > 0 ? (
                   <div className="space-y-1.5 max-h-[35vh] overflow-y-auto">
                     {node.files.map((file) => (
-                      <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-150 dark:border-slate-850 text-xs gap-2">
-                        <span className="truncate font-semibold flex-1" title={file.name}>{file.name}</span>
+                      <div key={file.id} className="flex items-center justify-between p-2 bg-[#FBFBFA] dark:bg-[#1E1E1E] rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] text-xs gap-2">
+                        <span className="truncate font-medium flex-1 text-slate-700 dark:text-slate-300" title={file.name}>{file.name}</span>
                         <div className="flex gap-1">
                           {file.webViewLink && (
                             <a
                               href={file.webViewLink}
                               target="_blank"
                               rel="noreferrer"
-                              className="p-1 hover:text-indigo-600 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700"
+                              className="p-1 hover:text-slate-900 bg-white dark:bg-[#2C2C2C] rounded border border-[#E3E2E0] dark:border-[#2F2F2F]"
                               title="Открыть на Google Диске"
                             >
                               <Eye className="w-3.5 h-3.5" />
@@ -9092,7 +9157,7 @@ export default function TaskDetailsPanel({
                             download={!file.googleDriveId ? file.name : undefined}
                             target="_blank"
                             rel="noreferrer"
-                            className="p-1 hover:text-indigo-600 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700"
+                            className="p-1 hover:text-slate-900 bg-white dark:bg-[#2C2C2C] rounded border border-[#E3E2E0] dark:border-[#2F2F2F]"
                             title="Скачать файл"
                           >
                             <Download className="w-3.5 h-3.5" />
@@ -9100,7 +9165,7 @@ export default function TaskDetailsPanel({
                           <button
                             type="button"
                             onClick={() => handleRemoveFile(file.id)}
-                            className="p-1 hover:text-rose-600 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700"
+                            className="p-1 hover:text-rose-600 bg-white dark:bg-[#2C2C2C] rounded border border-[#E3E2E0] dark:border-[#2F2F2F]"
                             title="Удалить файл"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -9118,7 +9183,7 @@ export default function TaskDetailsPanel({
             {/* 5. POMODORO MODAL */}
             {activeModalParam === 'pomodoro' && (
               <div className="space-y-4 text-center">
-                <div className="text-3xl font-extrabold font-mono tracking-tight text-rose-600 dark:text-rose-400">
+                <div className="text-3xl font-bold font-mono tracking-tight text-rose-600 dark:text-rose-400">
                   {formatPomoTime(pomo.timeLeft)}
                 </div>
                 <div className="flex justify-center gap-2">
@@ -9126,7 +9191,7 @@ export default function TaskDetailsPanel({
                     <button
                       type="button"
                       onClick={() => handleStartFocus(customPomoMinutes * 60)}
-                      className="py-1.5 px-4 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                      className="py-1.5 px-4 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-md shadow-2xs transition-all cursor-pointer"
                     >
                       Старт
                     </button>
@@ -9135,14 +9200,14 @@ export default function TaskDetailsPanel({
                       <button
                         type="button"
                         onClick={handleTogglePomoPause}
-                        className="py-1.5 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                        className="py-1.5 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-md shadow-2xs transition-all cursor-pointer"
                       >
                         {pomo.isPaused ? 'Продолжить' : 'Пауза'}
                       </button>
                       <button
                         type="button"
                         onClick={handleResetPomo}
-                        className="py-1.5 px-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+                        className="py-1.5 px-3 bg-slate-100 dark:bg-[#2C2C2C] text-slate-700 dark:text-slate-300 text-xs font-medium rounded-md transition-all cursor-pointer border border-[#E3E2E0] dark:border-[#383838]"
                       >
                         Сбросить
                       </button>
@@ -9150,25 +9215,29 @@ export default function TaskDetailsPanel({
                   )}
                 </div>
 
-                <div className="flex gap-1.5 justify-center pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex gap-1.5 justify-center pt-2 border-t border-[#E3E2E0] dark:border-[#2F2F2F]">
                   {[15, 25, 45, 60].map(mins => (
                     <button
                       key={mins}
                       type="button"
                       onClick={() => handleChangeCustomMinutes(mins)}
-                      className={`px-2 py-1 text-[10.5px] rounded border transition-all cursor-pointer ${customPomoMinutes === mins ? 'bg-rose-50 text-rose-600 border-rose-400 font-bold dark:bg-rose-950/20' : 'bg-white dark:bg-slate-800 text-slate-600 border-slate-200 dark:border-slate-700'}`}
+                      className={`px-2.5 py-1 text-[11px] rounded-md border transition-all cursor-pointer ${
+                        customPomoMinutes === mins 
+                          ? 'bg-rose-50 text-rose-700 border-rose-300 font-medium dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-900' 
+                          : 'bg-white dark:bg-[#202020] text-slate-600 dark:text-slate-300 border-[#E3E2E0] dark:border-[#2F2F2F]'
+                      }`}
                     >
                       {mins} мин
                     </button>
                   ))}
                 </div>
 
-                <div className="bg-rose-50/10 p-2.5 rounded-lg border border-rose-100/30 text-left text-xs space-y-1">
-                  <div className="flex justify-between font-semibold">
-                    <span>Накоплено времени:</span>
-                    <span className="font-bold text-rose-600">{formatTotalPomoTime(getPomoStatsForNode(node, allNodes).pomodoroTotalTime)}</span>
+                <div className="bg-[#FBFBFA] dark:bg-[#1E1E1E] p-2.5 rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] text-left text-xs space-y-1">
+                  <div className="flex justify-between font-medium">
+                    <span className="text-slate-600 dark:text-slate-400">Накоплено времени:</span>
+                    <span className="font-semibold text-rose-600 dark:text-rose-400">{formatTotalPomoTime(getPomoStatsForNode(node, allNodes).pomodoroTotalTime)}</span>
                   </div>
-                  <div className="flex justify-between font-semibold text-[11px] text-slate-500">
+                  <div className="flex justify-between font-medium text-[11px] text-slate-500">
                     <span>Всего интервалов («помидоров»):</span>
                     <span>{getPomoStatsForNode(node, allNodes).pomodoroSessionsCount}</span>
                   </div>
@@ -9179,24 +9248,24 @@ export default function TaskDetailsPanel({
             {/* 6. BLOCKERS MODAL */}
             {activeModalParam === 'blockers' && (
               <div className="space-y-3">
-                <span className="text-[10px] font-bold text-slate-450 uppercase block">Активные блокировки:</span>
+                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Активные блокировки:</span>
                 {(() => {
                   const curBlockers = allNodes.filter(n => node.blockedBy?.includes(n.id));
                   if (curBlockers.length === 0) return <p className="text-xs text-slate-400 italic">Нет блокирующих задач. Свободно!</p>;
                   return (
                     <div className="space-y-1.5">
                       {curBlockers.map(b => (
-                        <div key={b.id} className="flex justify-between items-center p-2 bg-rose-50/10 border border-rose-150/50 rounded-xl text-xs gap-2">
-                          <span className="font-semibold truncate flex-1">{b.text}</span>
-                          <button type="button" onClick={() => handlePropChange('blockedBy', (node.blockedBy || []).filter(id => id !== b.id))} className="hover:text-rose-600">×</button>
+                        <div key={b.id} className="flex justify-between items-center p-2 bg-rose-50/30 border border-rose-200/50 rounded-md text-xs gap-2">
+                          <span className="font-medium truncate flex-1 text-slate-800 dark:text-slate-200">{b.text}</span>
+                          <button type="button" onClick={() => handlePropChange('blockedBy', (node.blockedBy || []).filter(id => id !== b.id))} className="hover:text-rose-600 text-slate-400">×</button>
                         </div>
                       ))}
                     </div>
                   );
                 })()}
 
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
-                  <label className="text-[10px] font-bold text-slate-450 uppercase block">Добавить зависимость:</label>
+                <div className="pt-2 border-t border-[#E3E2E0] dark:border-[#2F2F2F] space-y-2">
+                  <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Добавить зависимость:</label>
 
                   {/* Search box for blockers modal */}
                   <div className="relative mb-1.5">
@@ -9205,16 +9274,16 @@ export default function TaskDetailsPanel({
                       placeholder="Поиск задачи..."
                       value={blockerSearch}
                       onChange={(e) => setBlockerSearch(e.target.value)}
-                      className="w-full text-[11px] pl-7 pr-7 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-700 dark:text-slate-200"
+                      className="w-full text-xs pl-7 pr-7 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-700 dark:text-slate-200"
                     />
-                    <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                     {blockerSearch && (
                       <button
                         type="button"
                         onClick={() => setBlockerSearch('')}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650 cursor-pointer"
                       >
-                        <X className="w-3 h-3" />
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
@@ -9227,7 +9296,7 @@ export default function TaskDetailsPanel({
                         setBlockerSearch('');
                       }
                     }}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 text-xs rounded-lg text-slate-850 cursor-pointer"
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-[#1E1E1E] border border-[#E3E2E0] dark:border-[#2F2F2F] text-xs rounded-md text-slate-800 dark:text-slate-200 cursor-pointer"
                   >
                     <option value="">
                       {blockerSearch ? `Найдено задач: ${
@@ -9269,9 +9338,9 @@ export default function TaskDetailsPanel({
             {activeModalParam === 'history' && (
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-slate-450 uppercase">Бэкапы версий:</span>
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Бэкапы версий:</span>
                   {node.history && node.history.length > 0 && (
-                    <button type="button" onClick={handleClearHistory} className="text-[10px] text-rose-600 font-bold hover:underline">
+                    <button type="button" onClick={handleClearHistory} className="text-[10px] text-rose-600 font-medium hover:underline">
                       Очистить все
                     </button>
                   )}
@@ -9280,10 +9349,10 @@ export default function TaskDetailsPanel({
                 {!(node.history && node.history.length > 0) ? (
                   <p className="text-xs text-slate-400 italic text-center py-4">Нет сохраненной истории версий.</p>
                 ) : (
-                  <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+                  <div className="space-y-1.5 max-h-[40vh] overflow-y-auto">
                     {node.history.map((ver, idx) => (
-                      <div key={idx} className="p-2.5 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-150 text-xs">
-                        <div className="flex justify-between font-bold text-[9px] text-slate-450 mb-1">
+                      <div key={idx} className="p-2.5 bg-[#FBFBFA] dark:bg-[#1E1E1E] rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] text-xs">
+                        <div className="flex justify-between font-medium text-[10px] text-slate-500 dark:text-slate-400 mb-1">
                           <span>{ver.timestamp ? new Date(ver.timestamp).toLocaleString() : ''}</span>
                           <button
                             type="button"
@@ -9291,12 +9360,12 @@ export default function TaskDetailsPanel({
                               onUpdateNode({ ...node, text: ver.text, notes: ver.notes || '' });
                               setActiveModalParam(null);
                             }}
-                            className="text-indigo-600 hover:underline"
+                            className="text-slate-800 dark:text-slate-200 hover:underline font-semibold"
                           >
                             Применить
                           </button>
                         </div>
-                        <div className="font-bold truncate text-slate-700">{ver.text}</div>
+                        <div className="font-medium truncate text-slate-700 dark:text-slate-300">{ver.text}</div>
                       </div>
                     ))}
                   </div>
@@ -9314,11 +9383,11 @@ export default function TaskDetailsPanel({
                     allNodes={allNodes}
                     onSelectContainer={(containerId) => onUpdateNodeParent(node.id, containerId)}
                     label="Родительский контейнер:"
-                    accentColor="indigo"
+                    accentColor="slate"
                   />
                 )}
                 {node.containerPlace && (
-                  <p className="text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                  <p className="text-xs bg-[#FBFBFA] dark:bg-[#1E1E1E] p-2.5 rounded-md border border-[#E3E2E0] dark:border-[#2F2F2F] text-slate-700 dark:text-slate-300">
                      <strong>Место в структуре:</strong> {node.containerPlace}
                   </p>
                 )}
@@ -9329,7 +9398,7 @@ export default function TaskDetailsPanel({
             {activeModalParam === 'priority_status' && (
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-slate-450 uppercase block">Важность (Приоритет):</span>
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Важность (Приоритет):</span>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { val: 'low', label: 'Низкий 🟢' },
@@ -9341,7 +9410,11 @@ export default function TaskDetailsPanel({
                         key={item.val}
                         type="button"
                         onClick={() => handlePropChange('priority', item.val as any)}
-                        className={`p-2.5 rounded-xl border text-center font-bold text-xs cursor-pointer ${node.priority === item.val ? 'bg-slate-850 dark:bg-white text-white dark:text-slate-900 border-slate-850' : 'border-slate-200 bg-white dark:bg-slate-900 text-slate-600'}`}
+                        className={`p-2 rounded-md border text-center font-medium text-xs cursor-pointer transition ${
+                          node.priority === item.val 
+                            ? 'bg-slate-800 dark:bg-white text-white dark:text-slate-900 border-slate-800 dark:border-white shadow-2xs' 
+                            : 'border-[#E3E2E0] dark:border-[#2F2F2F] bg-white dark:bg-[#1E1E1E] text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#262626]'
+                        }`}
                       >
                         {item.label}
                       </button>
@@ -9349,8 +9422,8 @@ export default function TaskDetailsPanel({
                   </div>
                 </div>
 
-                <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
-                  <span className="text-xs font-bold text-slate-450 uppercase block">Статус выполнения:</span>
+                <div className="space-y-1.5 pt-2 border-t border-[#E3E2E0] dark:border-[#2F2F2F]">
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Статус выполнения:</span>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { val: 'todo', label: '📋 В планах', complete: false },
@@ -9370,7 +9443,11 @@ export default function TaskDetailsPanel({
                               onUpdateNode({ ...node, completed: false, status: st.val as any });
                             }
                           }}
-                          className={`p-2 rounded-xl border text-center text-xs font-bold cursor-pointer ${isSelected ? 'bg-indigo-600 text-white border-indigo-650' : 'border-slate-200 bg-white text-slate-600'}`}
+                          className={`p-2 rounded-md border text-center text-xs font-medium cursor-pointer transition ${
+                            isSelected 
+                              ? 'bg-slate-800 dark:bg-white text-white dark:text-slate-900 border-slate-800 dark:border-white shadow-2xs' 
+                              : 'border-[#E3E2E0] dark:border-[#2F2F2F] bg-white dark:bg-[#1E1E1E] text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#262626]'
+                          }`}
                         >
                           {st.label}
                         </button>
@@ -9484,6 +9561,20 @@ export default function TaskDetailsPanel({
         </div>
       </div>
     )}
+
+    {/* Camera Capture Modal */}
+    <CameraCaptureModal
+      isOpen={isCameraModalOpen}
+      onClose={() => setIsCameraModalOpen(false)}
+      onCapture={async (capturedFile) => {
+        if (cameraCaptureTarget === 'comment') {
+          await uploadCommentImage(capturedFile);
+        } else {
+          await uploadFile(capturedFile);
+        }
+      }}
+      title={cameraCaptureTarget === 'comment' ? 'Сделать фото для комментария' : 'Сделать фото для задачи'}
+    />
     </>
   );
 }
