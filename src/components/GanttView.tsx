@@ -146,9 +146,31 @@ export default function GanttView({
   const [showNewTaskInline, setShowNewTaskInline] = useState(false);
   const [showUnscheduledDrawer, setShowUnscheduledDrawer] = useState(false);
 
+  // Local date helpers to avoid UTC timezone shifts
+  const formatLocalDate = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const formatLocalTime = (d: Date) => {
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${h}:${min}`;
+  };
+
+  const parseLocalDate = (s: string) => {
+    const parts = s.split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    return new Date(s);
+  };
+
   // Real today
   const realToday = useMemo(() => new Date(), []);
-  const realTodayStr = useMemo(() => realToday.toISOString().split('T')[0], [realToday]);
+  const realTodayStr = useMemo(() => formatLocalDate(new Date()), []);
 
   // Timeline Base Date Configuration
   const [baseDate, setBaseDate] = useState(() => {
@@ -480,10 +502,30 @@ export default function GanttView({
       startStr = endStr;
     }
 
-    const sDate = new Date(startStr!);
-    sDate.setHours(0, 0, 0, 0);
-    const eDate = new Date(endStr!);
-    eDate.setHours(23, 59, 59, 999);
+    const sDate = parseLocalDate(startStr!);
+    const eDate = parseLocalDate(endStr!);
+
+    if (scaleMode === 'Minutes' || scaleMode === 'Hours') {
+      if (task.startTime) {
+        const [h, m] = task.startTime.split(':').map(Number);
+        sDate.setHours(isNaN(h) ? 0 : h, isNaN(m) ? 0 : m, 0, 0);
+      } else {
+        sDate.setHours(0, 0, 0, 0);
+      }
+
+      if (task.dueTime) {
+        const [h, m] = task.dueTime.split(':').map(Number);
+        eDate.setHours(isNaN(h) ? 23 : h, isNaN(m) ? 59 : m, 59, 999);
+      } else if (task.startTime && !task.dueDate) {
+        const [h, m] = task.startTime.split(':').map(Number);
+        eDate.setHours(isNaN(h) ? 1 : h + 1, isNaN(m) ? 0 : m, 0, 0);
+      } else {
+        eDate.setHours(23, 59, 59, 999);
+      }
+    } else {
+      sDate.setHours(0, 0, 0, 0);
+      eDate.setHours(23, 59, 59, 999);
+    }
 
     const sMs = sDate.getTime();
     const eMs = eDate.getTime();
@@ -495,21 +537,20 @@ export default function GanttView({
     const isOffscreenLeft = eMs < timelineStartMs;
     const isOffscreenRight = sMs > timelineEndMs;
 
-    // Minimum bar card width per scale
-    const minCardWidth = scaleMode === 'Minutes' ? 65 : scaleMode === 'Hours' ? 80 : scaleMode === 'Quarters' ? 95 : scaleMode === 'Months' ? 120 : scaleMode === 'Bi-weeks' ? 150 : scaleMode === 'Weeks' ? 170 : 210;
-    const computedWidth = Math.max(minCardWidth, endPx - startPx);
+    // Minimum bar width: at least 14px so handles are grab-able and block is visible
+    const computedWidth = Math.max(14, endPx - startPx);
 
     return {
       startMs: sMs,
       endMs: eMs,
       startPx,
       endPx,
-      computedLeft: Math.max(0, startPx),
+      computedLeft: startPx,
       computedWidth,
       isOffscreenLeft,
       isOffscreenRight,
-      startStr: sDate.toISOString().split('T')[0],
-      endStr: eDate.toISOString().split('T')[0]
+      startStr: formatLocalDate(sDate),
+      endStr: formatLocalDate(eDate)
     };
   };
 
@@ -524,14 +565,12 @@ export default function GanttView({
   } | null>(null);
 
   const activeDragRef = useRef<{
-    drag: {
-      taskId: string;
-      type: 'move' | 'resize-start' | 'resize-end';
-      initialStartMs: number;
-      initialEndMs: number;
-      currentStartMs: number;
-      currentEndMs: number;
-    };
+    taskId: string;
+    type: 'move' | 'resize-start' | 'resize-end';
+    initialStartMs: number;
+    initialEndMs: number;
+    currentStartMs: number;
+    currentEndMs: number;
     startX: number;
   } | null>(null);
   const dragHasMovedRef = useRef(false);
@@ -544,8 +583,17 @@ export default function GanttView({
     endMs: number
   ) => {
     if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+
+    // Do not start drag if user clicked an interactive child element (button, input, emoji trigger, popover)
+    if (type === 'move' && target.closest('button, input, [data-interactive="true"], [data-popover="true"], [data-popover-trigger="true"]')) {
+      return;
+    }
+
     e.stopPropagation();
-    e.preventDefault();
+    if (type === 'resize-start' || type === 'resize-end') {
+      e.preventDefault();
+    }
 
     dragHasMovedRef.current = false;
     const dragData = {
@@ -554,80 +602,110 @@ export default function GanttView({
       initialStartMs: startMs,
       initialEndMs: endMs,
       currentStartMs: startMs,
-      currentEndMs: endMs
-    };
-
-    activeDragRef.current = {
-      drag: dragData,
+      currentEndMs: endMs,
       startX: e.clientX
     };
-    setActiveDrag(dragData);
+
+    activeDragRef.current = dragData;
+    setActiveDrag({
+      taskId,
+      type,
+      initialStartMs: startMs,
+      initialEndMs: endMs,
+      currentStartMs: startMs,
+      currentEndMs: endMs
+    });
   };
 
   useEffect(() => {
-    if (!activeDrag) return;
-
     const handleMouseMove = (e: MouseEvent) => {
       const info = activeDragRef.current;
       if (!info) return;
 
       const dx = e.clientX - info.startX;
-      if (Math.abs(dx) > 3) {
+      if (!dragHasMovedRef.current && Math.abs(dx) > 3) {
         dragHasMovedRef.current = true;
       }
 
       if (dragHasMovedRef.current) {
+        e.preventDefault();
         const totalMs = timelineEndMs - timelineStartMs;
         const msPerPx = totalTimelinePxWidth > 0 ? totalMs / totalTimelinePxWidth : 86400000;
         const deltaMsRaw = dx * msPerPx;
+
         // Snap step according to scale mode
-        const snapMs = scaleMode === 'Minutes' ? 15 * 60 * 1000 : scaleMode === 'Hours' ? 60 * 60 * 1000 : 86400000;
+        const snapMs = scaleMode === 'Minutes' 
+          ? 15 * 60 * 1000 
+          : scaleMode === 'Hours' 
+            ? 60 * 60 * 1000 
+            : 86400000;
         const deltaMs = Math.round(deltaMsRaw / snapMs) * snapMs;
 
-        let newStartMs = info.drag.initialStartMs;
-        let newEndMs = info.drag.initialEndMs;
+        let newStartMs = info.initialStartMs;
+        let newEndMs = info.initialEndMs;
 
-        if (info.drag.type === 'move') {
-          const duration = info.drag.initialEndMs - info.drag.initialStartMs;
-          newStartMs = info.drag.initialStartMs + deltaMs;
+        if (info.type === 'move') {
+          const duration = info.initialEndMs - info.initialStartMs;
+          newStartMs = info.initialStartMs + deltaMs;
           newEndMs = newStartMs + duration;
-        } else if (info.drag.type === 'resize-start') {
-          newStartMs = Math.min(info.drag.initialEndMs - snapMs, info.drag.initialStartMs + deltaMs);
-        } else if (info.drag.type === 'resize-end') {
-          newEndMs = Math.max(info.drag.initialStartMs + snapMs, info.drag.initialEndMs + deltaMs);
+        } else if (info.type === 'resize-start') {
+          newStartMs = Math.min(info.initialEndMs - snapMs, info.initialStartMs + deltaMs);
+        } else if (info.type === 'resize-end') {
+          newEndMs = Math.max(info.initialStartMs + snapMs, info.initialEndMs + deltaMs);
         }
 
-        setActiveDrag(prev => prev ? { ...prev, currentStartMs: newStartMs, currentEndMs: newEndMs } : null);
+        info.currentStartMs = newStartMs;
+        info.currentEndMs = newEndMs;
+
+        setActiveDrag({
+          taskId: info.taskId,
+          type: info.type,
+          initialStartMs: info.initialStartMs,
+          initialEndMs: info.initialEndMs,
+          currentStartMs: newStartMs,
+          currentEndMs: newEndMs
+        });
       }
     };
 
     const handleMouseUp = () => {
       const info = activeDragRef.current;
+      const didMove = dragHasMovedRef.current;
       activeDragRef.current = null;
-      const currentDrag = activeDrag;
+      dragHasMovedRef.current = false;
       setActiveDrag(null);
 
-      if (info && dragHasMovedRef.current && currentDrag) {
-        const task = allTasks.find(t => t.id === info.drag.taskId);
+      if (info && didMove) {
+        const task = allTasks.find(t => t.id === info.taskId);
         if (task) {
-          const sDate = new Date(currentDrag.currentStartMs);
-          const eDate = new Date(currentDrag.currentEndMs);
+          const sDate = new Date(info.currentStartMs);
+          const eDate = new Date(info.currentEndMs);
+
+          const updateObj: Partial<TaskNode> = {
+            startDate: formatLocalDate(sDate),
+            dueDate: formatLocalDate(eDate)
+          };
+
+          if (scaleMode === 'Minutes' || scaleMode === 'Hours') {
+            updateObj.startTime = formatLocalTime(sDate);
+            updateObj.dueTime = formatLocalTime(eDate);
+          }
+
           onUpdateNode({
             ...task,
-            startDate: sDate.toISOString().split('T')[0],
-            dueDate: eDate.toISOString().split('T')[0]
+            ...updateObj
           });
         }
       }
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousemove', handleMouseMove, { passive: false });
     window.addEventListener('mouseup', handleMouseUp);
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [activeDrag, timelineStartMs, timelineEndMs, totalTimelinePxWidth, scaleMode, allTasks, onUpdateNode]);
+  }, [timelineStartMs, timelineEndMs, totalTimelinePxWidth, scaleMode, allTasks, onUpdateNode]);
 
   // Navigate timeline with proportional step according to current scale
   const shiftTimeline = (direction: -1 | 1) => {
@@ -714,14 +792,18 @@ export default function GanttView({
 
   // Close open popovers when clicking outside
   useEffect(() => {
-    const handleOutside = () => {
+    const handleOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-popover="true"]') || target.closest('[data-popover-trigger="true"]')) {
+        return;
+      }
       setShowScaleDropdown(false);
       setActiveTaskEmojiPickerId(null);
       setActiveTaskTagPickerId(null);
       setActivePriorityPickerTaskId(null);
     };
-    window.addEventListener('click', handleOutside);
-    return () => window.removeEventListener('click', handleOutside);
+    document.addEventListener('pointerdown', handleOutside);
+    return () => document.removeEventListener('pointerdown', handleOutside);
   }, []);
 
   return (
@@ -972,10 +1054,37 @@ export default function GanttView({
                     if (totalMs > 0) {
                       const dStartPx = ((activeDrag.currentStartMs - timelineStartMs) / totalMs) * totalTimelinePxWidth;
                       const dEndPx = ((activeDrag.currentEndMs - timelineStartMs) / totalMs) * totalTimelinePxWidth;
-                      cardLeftPx = Math.max(0, dStartPx);
-                      cardWidthPx = Math.max(range.computedWidth, dEndPx - dStartPx);
+                      cardLeftPx = dStartPx;
+                      cardWidthPx = Math.max(14, dEndPx - dStartPx);
                     }
                   }
+
+                  // Layout calculations for fitting content inside vs outside the task box
+                  const canFitEmojiInside = cardWidthPx >= 28;
+                  const titleNeededWidth = cleanTitle.length * 7.5;
+                  const hasTag = Boolean(visibleProps.tag && tag);
+                  const tagNeededWidth = hasTag ? 85 : 0;
+                  const hasPriority = Boolean(visibleProps.priority && task.priority && task.priority !== 'none');
+                  const priorityNeededWidth = hasPriority ? 30 : 0;
+
+                  // Title fits inside only if the bar is wide enough to show it clearly
+                  const canFitTitleInside = cardWidthPx >= Math.max(90, (canFitEmojiInside ? 26 : 0) + titleNeededWidth + 24);
+                  // Tags/Status fit inside only if both title and tags fit comfortably inside
+                  const canFitTagsInside = canFitTitleInside && (cardWidthPx >= (canFitEmojiInside ? 26 : 0) + titleNeededWidth + tagNeededWidth + priorityNeededWidth + 30);
+
+                  const showEmojiInside = canFitEmojiInside;
+                  const showEmojiOutside = !canFitEmojiInside;
+
+                  const showTitleInside = canFitTitleInside;
+                  const showTitleOutside = !canFitTitleInside;
+
+                  const showTagInside = canFitTagsInside && hasTag;
+                  const showTagOutside = !canFitTagsInside && hasTag;
+
+                  const showPriorityInside = canFitTagsInside && hasPriority;
+                  const showPriorityOutside = !canFitTagsInside && hasPriority;
+
+                  const hasOutsideContent = showEmojiOutside || showTitleOutside || showTagOutside || showPriorityOutside;
 
                   return (
                     <div
@@ -998,7 +1107,7 @@ export default function GanttView({
                         </div>
                       )}
 
-                      {/* Floating Card Item matching Notion screenshot */}
+                      {/* Floating Card Item strictly sized to assigned time span */}
                       <div
                         onClick={(e) => onSelectNode(task.id, e)}
                         onMouseDown={(e) => handleBarMouseDown(e, task.id, 'move', range.startMs, range.endMs)}
@@ -1006,130 +1115,158 @@ export default function GanttView({
                           left: `${cardLeftPx}px`,
                           width: `${cardWidthPx}px`
                         }}
-                        className={`absolute h-8.5 rounded-md border shadow-xs px-2.5 flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none transition-all ${
+                        className={`absolute h-8.5 rounded-md border shadow-xs flex items-center justify-between gap-1.5 cursor-grab active:cursor-grabbing select-none transition-all ${
+                          cardWidthPx < 32 ? 'px-1 justify-center' : 'px-2'
+                        } ${
                           isBeingDragged 
                             ? 'ring-2 ring-[#2383E2] shadow-md z-30 scale-[1.01] bg-white dark:bg-[#252525]' 
                             : isSelected
-                              ? 'bg-white dark:bg-[#222222] border-[#2383E2] ring-1 ring-[#2383E2]'
+                              ? 'bg-blue-50/70 dark:bg-blue-950/40 border-[#2383E2] ring-1 ring-[#2383E2]'
                               : task.completed
                                 ? 'bg-[#FAFAF9] dark:bg-[#202020] border-[#E9E9E7] dark:border-[#2F2F2F] opacity-75'
-                                : 'bg-white dark:bg-[#222222] border-[#E9E9E7] dark:border-[#2F2F2F] hover:border-[#D0D0CE] dark:hover:border-[#3F3F3F]'
+                                : 'bg-[#F7F7F5]/90 hover:bg-white dark:bg-[#222222] border-[#E9E9E7] dark:border-[#2F2F2F] hover:border-[#D0D0CE] dark:hover:border-[#3F3F3F]'
                         }`}
                         title={`${cleanTitle}\nПериод: ${range.startStr} - ${range.endStr}${tag ? `\nСтатус: ${tag.label}` : ''}`}
                       >
-                        
                         {/* Left Resize Handle */}
                         <div
                           onMouseDown={(e) => handleBarMouseDown(e, task.id, 'resize-start', range.startMs, range.endMs)}
-                          className="absolute left-0 top-0 bottom-0 w-2 hover:bg-[#2383E2]/30 cursor-ew-resize rounded-l group-hover/row:opacity-100 opacity-0 transition-opacity z-20"
+                          className="absolute left-0 top-0 bottom-0 w-3 hover:bg-[#2383E2]/50 active:bg-[#2383E2] cursor-ew-resize rounded-l group-hover/row:opacity-100 opacity-0 transition-opacity z-30"
                           title="Изменить дату начала"
                         />
 
-                        {/* Card Content: Emoji Icon + Title */}
+                        {/* Card Content inside bar: Emoji Icon + Title (if fits) */}
                         <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
-                          
-                          {/* Task Emoji Icon */}
-                          <div className="relative">
-                            <span 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveTaskEmojiPickerId(activeTaskEmojiPickerId === task.id ? null : task.id);
-                              }}
-                              className="text-[14px] cursor-pointer hover:scale-115 transition-transform shrink-0"
-                              title="Сменить иконку"
-                            >
-                              {emoji}
-                            </span>
-
-                            {activeTaskEmojiPickerId === task.id && (
-                              <div 
-                                onClick={(e) => e.stopPropagation()}
-                                className="absolute left-0 top-full mt-1.5 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-xl p-2 w-48 grid grid-cols-5 gap-1"
+                          {/* Task Emoji Icon inside */}
+                          {showEmojiInside && (
+                            <div className="relative shrink-0" data-interactive="true">
+                              <span 
+                                data-popover-trigger="true"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTaskEmojiPickerId(activeTaskEmojiPickerId === task.id ? null : task.id);
+                                  setActiveTaskTagPickerId(null);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="text-[14px] cursor-pointer hover:scale-125 transition-transform shrink-0 inline-block"
+                                title="Сменить иконку"
                               >
-                                {NOTION_EMOJIS.slice(0, 15).map(em => (
-                                  <button
-                                    key={em}
-                                    onClick={() => {
-                                      onUpdateNode({ ...task, icon: em });
-                                      setActiveTaskEmojiPickerId(null);
-                                    }}
-                                    className="text-base p-1 rounded hover:bg-[#F1F1EF] dark:hover:bg-[#333333] cursor-pointer flex items-center justify-center"
-                                  >
-                                    {em}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                                {emoji}
+                              </span>
 
-                          {/* Task Clean Title in Notion Font */}
-                          {editingTaskId === task.id ? (
-                            <input
-                              type="text"
-                              autoFocus
-                              value={editingTaskTitle}
-                              onChange={(e) => setEditingTaskTitle(e.target.value)}
-                              onBlur={() => {
-                                if (editingTaskTitle.trim()) {
-                                  onUpdateNode({ ...task, text: editingTaskTitle.trim() });
-                                }
-                                setEditingTaskId(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  if (editingTaskTitle.trim()) {
-                                    onUpdateNode({ ...task, text: editingTaskTitle.trim() });
-                                  }
-                                  setEditingTaskId(null);
-                                }
-                                if (e.key === 'Escape') setEditingTaskId(null);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-full bg-white dark:bg-[#191919] border border-[#2383e2] rounded px-1 text-[13px] text-[#37352F] dark:text-[#EBEBEB] focus:outline-none"
-                            />
-                          ) : (
-                            <span 
-                              onDoubleClick={(e) => {
-                                e.stopPropagation();
-                                setEditingTaskId(task.id);
-                                setEditingTaskTitle(cleanTitle);
-                              }}
-                              className={`text-[13px] font-medium text-[#37352F] dark:text-[#EBEBEB] group-hover/row:underline underline-offset-2 truncate transition-colors ${
-                                task.completed ? 'line-through opacity-60' : ''
-                              }`}
-                            >
-                              {cleanTitle}
-                            </span>
+                              {activeTaskEmojiPickerId === task.id && (
+                                <div 
+                                  data-popover="true"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  className="absolute left-0 top-full mt-1.5 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-xl p-2 w-52 grid grid-cols-5 gap-1.5"
+                                >
+                                  {NOTION_EMOJIS.map(em => (
+                                    <button
+                                      key={em}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onUpdateNode({ ...task, icon: em });
+                                        setActiveTaskEmojiPickerId(null);
+                                      }}
+                                      className="text-base p-1.5 rounded hover:bg-[#F1F1EF] dark:hover:bg-[#333333] cursor-pointer flex items-center justify-center transition-transform hover:scale-110"
+                                    >
+                                      {em}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Task Clean Title inside bar */}
+                          {showTitleInside && (
+                            <div className="truncate min-w-0 flex-1">
+                              {editingTaskId === task.id ? (
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  data-interactive="true"
+                                  value={editingTaskTitle}
+                                  onChange={(e) => setEditingTaskTitle(e.target.value)}
+                                  onBlur={() => {
+                                    if (editingTaskTitle.trim()) {
+                                      const emojiPrefix = task.icon ? '' : (task.text.match(/^[\p{Emoji}\u200d\uFE0F\uFE0E]+\s*/u)?.[0] || '');
+                                      onUpdateNode({ ...task, text: `${emojiPrefix}${editingTaskTitle.trim()}` });
+                                    }
+                                    setEditingTaskId(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      if (editingTaskTitle.trim()) {
+                                        const emojiPrefix = task.icon ? '' : (task.text.match(/^[\p{Emoji}\u200d\uFE0F\uFE0E]+\s*/u)?.[0] || '');
+                                        onUpdateNode({ ...task, text: `${emojiPrefix}${editingTaskTitle.trim()}` });
+                                      }
+                                      setEditingTaskId(null);
+                                    }
+                                    if (e.key === 'Escape') setEditingTaskId(null);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  className="w-full bg-white dark:bg-[#191919] border border-[#2383e2] rounded px-1 text-[13px] text-[#37352F] dark:text-[#EBEBEB] focus:outline-none"
+                                />
+                              ) : (
+                                <span 
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingTaskId(task.id);
+                                    setEditingTaskTitle(cleanTitle);
+                                  }}
+                                  className={`text-[13px] font-medium text-[#37352F] dark:text-[#EBEBEB] group-hover/row:underline underline-offset-2 truncate block transition-colors cursor-text ${
+                                    task.completed ? 'line-through opacity-60' : ''
+                                  }`}
+                                  title="Двойной клик — переименовать"
+                                >
+                                  {cleanTitle}
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
 
-                        {/* Status Tag Pill in Notion Pastel Color */}
-                        {visibleProps.tag && tag && (
-                          <div className="relative shrink-0 ml-1">
+                        {/* Status Tag Pill inside bar */}
+                        {showTagInside && tag && (
+                          <div className="relative shrink-0 ml-1" data-interactive="true">
                             <button
                               type="button"
+                              data-popover-trigger="true"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setActiveTaskTagPickerId(activeTaskTagPickerId === task.id ? null : task.id);
+                                setActiveTaskEmojiPickerId(null);
                               }}
+                              onMouseDown={(e) => e.stopPropagation()}
                               className={`text-[11px] font-medium px-2 py-0.5 rounded transition-transform hover:scale-105 cursor-pointer whitespace-nowrap ${tag.bg} ${tag.text} ${tag.darkBg} ${tag.darkText}`}
+                              title="Сменить статус"
                             >
                               {tag.label}
                             </button>
 
                             {activeTaskTagPickerId === task.id && (
                               <div 
+                                data-popover="true"
                                 onClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
                                 className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-lg p-1.5 w-44 flex flex-col gap-1 text-[12px]"
                               >
                                 {NOTION_STATUS_TAGS.map(t => (
                                   <button
                                     key={t.id}
-                                    onClick={() => {
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const isDone = t.id === 'posted' || t.id === 'ready';
                                       onUpdateNode({
                                         ...task,
+                                        status: t.id === 'posted' || t.id === 'ready' ? 'done' : t.id === 'in_progress' ? 'progress' : t.id === 'up_next' ? 'waiting' : 'todo',
                                         tags: [t.label],
-                                        completed: t.id === 'posted'
+                                        completed: isDone
                                       });
                                       setActiveTaskTagPickerId(null);
                                     }}
@@ -1144,8 +1281,8 @@ export default function GanttView({
                           </div>
                         )}
 
-                        {/* Priority Pill if enabled */}
-                        {visibleProps.priority && task.priority && task.priority !== 'none' && (
+                        {/* Priority Pill inside bar */}
+                        {showPriorityInside && task.priority && (
                           <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 shrink-0">
                             {task.priority === 'urgent' ? 'P1' : task.priority === 'high' ? 'P2' : task.priority === 'medium' ? 'P3' : 'P4'}
                           </span>
@@ -1154,10 +1291,170 @@ export default function GanttView({
                         {/* Right Resize Handle */}
                         <div
                           onMouseDown={(e) => handleBarMouseDown(e, task.id, 'resize-end', range.startMs, range.endMs)}
-                          className="absolute right-0 top-0 bottom-0 w-2 hover:bg-[#2383E2]/30 cursor-ew-resize rounded-r group-hover/row:opacity-100 opacity-0 transition-opacity z-20"
+                          className="absolute right-0 top-0 bottom-0 w-3 hover:bg-[#2383E2]/50 active:bg-[#2383E2] cursor-ew-resize rounded-r group-hover/row:opacity-100 opacity-0 transition-opacity z-30"
                           title="Изменить дату окончания"
                         />
                       </div>
+
+                      {/* Outside Content: Title, Status Tags & Priority placed to the right of the bar */}
+                      {hasOutsideContent && (
+                        <div
+                          style={{
+                            left: `${cardLeftPx + cardWidthPx + 8}px`
+                          }}
+                          className="absolute h-8.5 flex items-center gap-2 z-10 whitespace-nowrap select-none"
+                        >
+                          {/* Emoji Outside (if too narrow to fit in bar) */}
+                          {showEmojiOutside && (
+                            <div className="relative shrink-0" data-interactive="true">
+                              <span 
+                                data-popover-trigger="true"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTaskEmojiPickerId(activeTaskEmojiPickerId === task.id ? null : task.id);
+                                  setActiveTaskTagPickerId(null);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="text-[14px] cursor-pointer hover:scale-125 transition-transform inline-block"
+                                title="Сменить иконку"
+                              >
+                                {emoji}
+                              </span>
+                              {activeTaskEmojiPickerId === task.id && (
+                                <div 
+                                  data-popover="true"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  className="absolute left-0 top-full mt-1.5 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-xl p-2 w-52 grid grid-cols-5 gap-1.5"
+                                >
+                                  {NOTION_EMOJIS.map(em => (
+                                    <button
+                                      key={em}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onUpdateNode({ ...task, icon: em });
+                                        setActiveTaskEmojiPickerId(null);
+                                      }}
+                                      className="text-base p-1.5 rounded hover:bg-[#F1F1EF] dark:hover:bg-[#333333] cursor-pointer flex items-center justify-center transition-transform hover:scale-110"
+                                    >
+                                      {em}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Title Outside */}
+                          {showTitleOutside && (
+                            <div className="flex items-center">
+                              {editingTaskId === task.id ? (
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  data-interactive="true"
+                                  value={editingTaskTitle}
+                                  onChange={(e) => setEditingTaskTitle(e.target.value)}
+                                  onBlur={() => {
+                                    if (editingTaskTitle.trim()) {
+                                      const emojiPrefix = task.icon ? '' : (task.text.match(/^[\p{Emoji}\u200d\uFE0F\uFE0E]+\s*/u)?.[0] || '');
+                                      onUpdateNode({ ...task, text: `${emojiPrefix}${editingTaskTitle.trim()}` });
+                                    }
+                                    setEditingTaskId(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      if (editingTaskTitle.trim()) {
+                                        const emojiPrefix = task.icon ? '' : (task.text.match(/^[\p{Emoji}\u200d\uFE0F\uFE0E]+\s*/u)?.[0] || '');
+                                        onUpdateNode({ ...task, text: `${emojiPrefix}${editingTaskTitle.trim()}` });
+                                      }
+                                      setEditingTaskId(null);
+                                    }
+                                    if (e.key === 'Escape') setEditingTaskId(null);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  className="bg-white dark:bg-[#191919] border border-[#2383e2] rounded px-1.5 py-0.5 text-[13px] text-[#37352F] dark:text-[#EBEBEB] focus:outline-none min-w-[140px]"
+                                />
+                              ) : (
+                                <span 
+                                  onClick={(e) => onSelectNode(task.id, e)}
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingTaskId(task.id);
+                                    setEditingTaskTitle(cleanTitle);
+                                  }}
+                                  className={`text-[13px] font-medium text-[#37352F] dark:text-[#EBEBEB] hover:text-[#2383E2] hover:underline underline-offset-2 cursor-pointer transition-colors ${
+                                    task.completed ? 'line-through opacity-60' : ''
+                                  }`}
+                                  title="Дважды кликните, чтобы переименовать"
+                                >
+                                  {cleanTitle}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Status Tag Outside */}
+                          {showTagOutside && tag && (
+                            <div className="relative shrink-0" data-interactive="true">
+                              <button
+                                type="button"
+                                data-popover-trigger="true"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTaskTagPickerId(activeTaskTagPickerId === task.id ? null : task.id);
+                                  setActiveTaskEmojiPickerId(null);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className={`text-[11px] font-medium px-2 py-0.5 rounded transition-transform hover:scale-105 cursor-pointer whitespace-nowrap ${tag.bg} ${tag.text} ${tag.darkBg} ${tag.darkText}`}
+                                title="Сменить статус"
+                              >
+                                {tag.label}
+                              </button>
+
+                              {activeTaskTagPickerId === task.id && (
+                                <div 
+                                  data-popover="true"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-[#252525] border border-[#E9E9E7] dark:border-[#383838] shadow-xl rounded-lg p-1.5 w-44 flex flex-col gap-1 text-[12px]"
+                                >
+                                  {NOTION_STATUS_TAGS.map(t => (
+                                    <button
+                                      key={t.id}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const isDone = t.id === 'posted' || t.id === 'ready';
+                                        onUpdateNode({
+                                          ...task,
+                                          status: t.id === 'posted' || t.id === 'ready' ? 'done' : t.id === 'in_progress' ? 'progress' : t.id === 'up_next' ? 'waiting' : 'todo',
+                                          tags: [t.label],
+                                          completed: isDone
+                                        });
+                                        setActiveTaskTagPickerId(null);
+                                      }}
+                                      className={`px-2 py-1 rounded text-left font-medium ${t.bg} ${t.text} ${t.darkBg} ${t.darkText} hover:opacity-85 flex items-center justify-between cursor-pointer`}
+                                    >
+                                      <span>{t.label}</span>
+                                      {tag.label === t.label && <Check className="w-3.5 h-3.5" />}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Priority Outside */}
+                          {showPriorityOutside && task.priority && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 shrink-0">
+                              {task.priority === 'urgent' ? 'P1' : task.priority === 'high' ? 'P2' : task.priority === 'medium' ? 'P3' : 'P4'}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })

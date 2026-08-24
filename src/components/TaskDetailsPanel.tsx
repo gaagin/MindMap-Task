@@ -1536,12 +1536,23 @@ export default function TaskDetailsPanel({
   const handleCopyLink = () => {
     if (!node) return;
     try {
-      const taskLink = `${window.location.origin}${window.location.pathname}?task=${node.id}`;
+      const url = new URL(window.location.href);
+      url.searchParams.set('task', node.id);
+      url.searchParams.delete('action');
+      const taskLink = url.toString();
       navigator.clipboard.writeText(taskLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
       console.error('Failed to copy task link:', e);
+      try {
+        const taskLink = `${window.location.origin}${window.location.pathname}?task=${node.id}`;
+        navigator.clipboard.writeText(taskLink);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error(err);
+      }
     }
   };
 

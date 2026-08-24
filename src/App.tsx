@@ -916,10 +916,19 @@ export default function App() {
   }, [isDrawerOpen]);
 
   // Sync selectedNodeId with browser URL search parameters for easy sharing and home screen shortcutting
+  const initialUrlTaskHandledRef = useRef(false);
+
   useEffect(() => {
     try {
       const url = new URL(window.location.href);
-      const currentTask = url.searchParams.get('task') || url.searchParams.get('t');
+      const currentTask = url.searchParams.get('task') || url.searchParams.get('t') || url.searchParams.get('taskId');
+      
+      // If we are still in startup phase and there is a task param in the URL, don't wipe it out while selectedNodeId is temporarily resolving
+      if (!initialUrlTaskHandledRef.current && currentTask && !selectedNodeId) {
+        return;
+      }
+      initialUrlTaskHandledRef.current = true;
+
       if (selectedNodeId) {
         if (currentTask !== selectedNodeId) {
           url.searchParams.set('task', selectedNodeId);
@@ -929,6 +938,7 @@ export default function App() {
         if (currentTask) {
           url.searchParams.delete('task');
           url.searchParams.delete('t');
+          url.searchParams.delete('taskId');
           window.history.replaceState(null, '', url.toString());
         }
       }
@@ -2725,7 +2735,27 @@ export default function App() {
     localStorage.setItem('task_mindmap_dark', String(darkMode));
   }, [darkMode]);
 
-  // Load specified task URL link parameter on startup
+  // Helper to extract target task ID from URL (query parameters or hash)
+  const extractTaskIdFromUrl = (): string | null => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryTaskId = urlParams.get('task') || urlParams.get('t') || urlParams.get('taskId');
+      if (queryTaskId) return queryTaskId;
+
+      if (window.location.hash) {
+        const hash = window.location.hash.replace(/^#/, '');
+        const hashParams = new URLSearchParams(hash);
+        const hashTaskId = hashParams.get('task') || hashParams.get('t') || hashParams.get('taskId');
+        if (hashTaskId) return hashTaskId;
+        if (hash.startsWith('node-')) return hash;
+      }
+    } catch (e) {
+      console.error('Failed to extract task ID from URL:', e);
+    }
+    return null;
+  };
+
+  // Load specified task URL link parameter on startup or state updates
   useEffect(() => {
     if (hasCheckedUrlParamRef.current) return;
     
@@ -2811,6 +2841,7 @@ export default function App() {
 
           setSelectedNodeId(newTaskId);
           setIsDrawerOpen(true);
+          setDetailsPanelTab('details');
           setLastCreatedNodeId(newTaskId);
 
           // Clear action parameter from browser URL
@@ -2825,7 +2856,7 @@ export default function App() {
         }
       }
 
-      const urlTaskId = urlParams.get('task') || urlParams.get('t');
+      const urlTaskId = extractTaskIdFromUrl();
       if (!urlTaskId) {
         hasCheckedUrlParamRef.current = true;
         return;
@@ -2849,29 +2880,136 @@ export default function App() {
       if (targetProjectId && targetNode) {
         hasCheckedUrlParamRef.current = true;
         
-        // Match project
-        setState(prev => {
-          if (prev.activeProjectId === targetProjectId) return prev;
-          return { ...prev, activeProjectId: targetProjectId! };
-        });
-        
-        // Select the task/node and switch view to canvas
-        setSelectedNodeId(urlTaskId);
-        setIsDrawerOpen(false); // Do not open properties drawer by default; keep canvas visible
-        setViewMode('canvas'); // Explicitly open the mind map canvas view
+        // Find ancestor node IDs to auto-expand collapsed branches
+        const projectNodes = state.nodes[targetProjectId] || [];
+        const ancestorIds: string[] = [];
+        let currentAncestorId: string | null = targetNode.id;
+        while (currentAncestorId !== null) {
+          const currentItem: TaskNode | undefined = projectNodes.find(n => n.id === currentAncestorId);
+          if (currentItem && currentItem.parentId) {
+            ancestorIds.push(currentItem.parentId);
+            currentAncestorId = currentItem.parentId;
+          } else {
+            currentAncestorId = null;
+          }
+        }
 
-        // Calculate and set absolute coordinates to recenter the canvas on startup
+        // Check if inside a container
+        let closestContainerId: string | null = null;
+        let tempContainerSearchId: string | null = targetNode.id;
+        while (tempContainerSearchId !== null) {
+          const current = projectNodes.find(n => n.id === tempContainerSearchId);
+          if (current && current.parentId) {
+            const parent = projectNodes.find(n => n.id === current.parentId);
+            if (parent && (parent.isContainer || parent.isEquipment)) {
+              closestContainerId = parent.id;
+              break;
+            }
+            tempContainerSearchId = current.parentId;
+          } else {
+            tempContainerSearchId = null;
+          }
+        }
+
+        // Match project and uncollapse ancestors
+        setState(prev => {
+          const curProjectNodes = prev.nodes[targetProjectId!] || [];
+          let hasUncollapsedAny = false;
+          const updatedNodes = curProjectNodes.map(n => {
+            if (ancestorIds.includes(n.id) && n.collapsed) {
+              hasUncollapsedAny = true;
+              return { ...n, collapsed: false };
+            }
+            return n;
+          });
+
+          const nextNodes = hasUncollapsedAny ? { ...prev.nodes, [targetProjectId!]: updatedNodes } : prev.nodes;
+          return {
+            ...prev,
+            activeProjectId: targetProjectId!,
+            nodes: nextNodes
+          };
+        });
+
+        if (closestContainerId) {
+          setFocusedContainerId(closestContainerId);
+          setFocusedTaskId(null);
+        }
+        
+        // Select the task and OPEN task details drawer
+        setSelectedNodeId(urlTaskId);
+        setIsDrawerOpen(true);
+        setDetailsPanelTab('details');
+
+        // Center canvas coordinates on the target task
         if (targetNode.x !== undefined && targetNode.y !== undefined) {
           const targetZoom = 1.05;
           setPanX(-targetNode.x * targetZoom);
           setPanY(-targetNode.y * targetZoom);
           setZoom(targetZoom);
         }
+
+        // Scroll to card in active views if applicable
+        setTimeout(() => {
+          const kanbanCard = document.getElementById(`kanban-card-${urlTaskId}`);
+          if (kanbanCard) {
+            kanbanCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          const mobileCard = document.getElementById(`mobile-task-card-${urlTaskId}`);
+          if (mobileCard) {
+            mobileCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          const tableRow = document.getElementById(`table-row-${urlTaskId}`);
+          if (tableRow) {
+            tableRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 120);
       }
     } catch (err) {
       console.error('Failed to parse load URL parameters:', err);
     }
   }, [state.nodes]);
+
+  // Handle browser popstate / hashchange events for external navigation to tasks
+  useEffect(() => {
+    const handleUrlNavigation = () => {
+      try {
+        const taskId = extractTaskIdFromUrl();
+        if (!taskId) return;
+
+        const projectIds = Object.keys(state.nodes);
+        for (const projectId of projectIds) {
+          const nodeArray = state.nodes[projectId];
+          if (!nodeArray) continue;
+          const foundNode = nodeArray.find(n => n.id === taskId);
+          if (foundNode) {
+            if (state.activeProjectId !== projectId) {
+              setState(prev => ({ ...prev, activeProjectId: projectId }));
+            }
+            setSelectedNodeId(taskId);
+            setIsDrawerOpen(true);
+            setDetailsPanelTab('details');
+            if (foundNode.x !== undefined && foundNode.y !== undefined) {
+              const targetZoom = 1.05;
+              setPanX(-foundNode.x * targetZoom);
+              setPanY(-foundNode.y * targetZoom);
+              setZoom(targetZoom);
+            }
+            break;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to handle URL navigation event:', err);
+      }
+    };
+
+    window.addEventListener('popstate', handleUrlNavigation);
+    window.addEventListener('hashchange', handleUrlNavigation);
+    return () => {
+      window.removeEventListener('popstate', handleUrlNavigation);
+      window.removeEventListener('hashchange', handleUrlNavigation);
+    };
+  }, [state.nodes, state.activeProjectId]);
 
   // Back up history before doing node modifications
   const pushToUndo = (projectId: string, currentNodes: TaskNode[]) => {
