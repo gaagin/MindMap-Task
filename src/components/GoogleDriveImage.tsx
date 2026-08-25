@@ -145,7 +145,7 @@ export default function GoogleDriveImage({
     };
   }, [driveId, googleToken, sz, fallbackUrl, hasValidFallback]);
 
-  if (hasFailedAll && !src) {
+  if (!src || (typeof src === 'string' && src.trim() === '') || hasFailedAll) {
     return (
       <div className={`relative ${className} flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-400 p-2 text-center rounded-lg border border-slate-200 dark:border-slate-700`}>
         <ImageOff className="w-5 h-5 mb-1 opacity-60" />

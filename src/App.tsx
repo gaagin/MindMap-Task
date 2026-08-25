@@ -65,6 +65,7 @@ import CalendarView from './components/CalendarView';
 import GanttView from './components/GanttView';
 import TableView from './components/TableView';
 import EisenhowerMatrixView from './components/EisenhowerMatrixView';
+import CardsView from './components/CardsView';
 import GeminiAiConsole from './components/GeminiAiConsole';
 import NotionSync from './components/NotionSync';
 import NotionDatabaseBar, { SortField, SortOrder } from './components/NotionDatabaseBar';
@@ -1521,8 +1522,8 @@ export default function App() {
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
 
-  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'
-  type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
+  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'cards'
+  type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'cards';
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
 
   const viewModeRef = React.useRef(viewMode);
@@ -1799,6 +1800,10 @@ export default function App() {
               });
             }
 
+            // Ensure container property drawer is closed when entering container
+            setIsDrawerOpen(false);
+            setSelectedNodeId(null);
+
             let savedContainerMode: string | null = node.containerViewMode || (node.defaultView as string) || null;
             if (!savedContainerMode && typeof window !== 'undefined') {
               try {
@@ -1875,7 +1880,9 @@ export default function App() {
             } else if (searchQueryRef.current.trim() !== "" && (viewModeRef.current === 'canvas' || (!lastAppliedFocusIdRef.current && viewModeRef.current === 'canvas'))) {
               setViewMode('canvas');
             } else {
-              if (viewModeRef.current !== 'canvas') {
+              if (viewModeRef.current === 'cards') {
+                setViewMode('mobile-list');
+              } else if (viewModeRef.current !== 'canvas') {
                 // Keep the current view mode if we focused a node from outside the canvas (e.g. from GanttView zoom-focus)
               } else {
                 setViewMode('canvas');
@@ -1912,21 +1919,21 @@ export default function App() {
           setFilterCategoryId(savedFilters.filterCategoryId);
           setKanbanGroupBy(savedFilters.kanbanGroupBy);
           setKanbanContainerFilterId(savedFilters.kanbanContainerFilterId);
-          if (exitedContainerFocus) {
-            setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'canvas');
-          } else if (savedFilters.viewMode) {
+          if (savedFilters.viewMode) {
             setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : savedFilters.viewMode);
+          } else if (exitedContainerFocus) {
+            setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'cards');
           }
           setPreFocusFilters(null);
         } else if (exitedContainerFocus) {
-          setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'canvas');
+          setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'cards');
         }
         lastAppliedFocusIdRef.current = null;
       }
     } else {
       // If overall focusId did not change, but we exited container focus mode (e.g. nested transitions)
       if (exitedContainerFocus) {
-        setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'canvas');
+        setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : (preFocusFiltersRef.current?.viewMode || 'cards'));
       }
     }
     
@@ -3851,7 +3858,7 @@ export default function App() {
   const isDirectNodeMatched = (node: TaskNode): boolean => {
     if (filterStatus === "not_tasks") {
       if (!node.isNotTask) return false;
-    } else if (node.isNotTask && viewMode !== 'canvas') {
+    } else if (node.isNotTask && viewMode !== 'canvas' && !(viewMode === 'cards' && (node.isEquipment || node.isContainer || node.equipmentModel || node.equipmentBarcode || node.equipmentStockCode || node.tags?.some(t => ['оборудование', 'техника', 'прибор', 'инструмент', 'аппаратура', 'equipment'].includes(t.toLowerCase()))))) {
       return false;
     }
 
@@ -4104,9 +4111,34 @@ export default function App() {
         }
       }
 
+      // In cards view:
+      // - On the main screen (no focused container/task): ONLY containers from the main screen are visible
+      // - Inside a focused container/task: ONLY containers and equipment belonging to that focus are visible
+      if (viewMode === 'cards') {
+        const isFocusActive = !!(focusedContainerId || focusedTaskId);
+        if (!isFocusActive) {
+          const isParentAContainer = node.parentId ? activeNodes.some(p => p.id === node.parentId && p.isContainer) : false;
+          if (!node.isContainer || isParentAContainer) {
+            return false;
+          }
+        } else {
+          const isContainer = !!node.isContainer;
+          const isEquipment = !!(
+            node.isEquipment ||
+            node.equipmentModel ||
+            node.equipmentBarcode ||
+            node.equipmentStockCode ||
+            node.tags?.some(t => ['оборудование', 'техника', 'прибор', 'инструмент', 'аппаратура', 'equipment'].includes(t.toLowerCase()))
+          );
+          if (!isContainer && !isEquipment) {
+            return false;
+          }
+        }
+      }
+
       if (filterStatus === "not_tasks") {
         return !!node.isNotTask;
-      } else if (node.isNotTask && viewMode !== 'canvas') {
+      } else if (node.isNotTask && viewMode !== 'canvas' && !(viewMode === 'cards' && (node.isEquipment || node.isContainer || node.equipmentModel || node.equipmentBarcode || node.equipmentStockCode))) {
         return false;
       }
 
@@ -6409,6 +6441,7 @@ export default function App() {
   };
 
   const viewsList = [
+    { id: 'cards', name: 'Карточки', icon: Grid },
     { id: 'canvas', name: 'Холст', icon: Network },
     { id: 'kanban', name: 'Канбан', icon: Kanban },
     { id: 'mobile-list', name: 'Списки', icon: Smartphone },
@@ -6630,6 +6663,45 @@ export default function App() {
               }
             }}
             setViewMode={(newMode) => setViewMode(newMode)}
+          />
+        );
+
+      case 'cards':
+        return (
+          <CardsView
+            nodes={displayedNodesForViews}
+            allNodes={activeNodes}
+            tagCategories={activeProjectTags}
+            activeProjectId={state.activeProjectId}
+            selectedNodeId={selectedNodeId}
+            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
+            onSelectNode={handleSelectNode}
+            onUpdateNode={handleUpdateNode}
+            onDeleteNode={handleDeleteNode}
+            onCreateTask={(text, initialTags, priority, dueDate, parentId, extraFields) => {
+              handleCreateKanbanTask(text, initialTags || [], priority || 'none', parentId || null, dueDate, extraFields);
+            }}
+            selectedNodeIds={selectedNodeIds}
+            onToggleSelectNode={handleToggleSelectNode}
+            onToggleSelectAll={handleToggleSelectAll}
+            onBulkDelete={handleBulkDelete}
+            onBulkToggleCompleted={handleBulkToggleCompleted}
+            onFullScreenChange={setIsViewFullScreen}
+            focusedTaskId={focusedTaskId}
+            focusedContainerId={focusedContainerId}
+            onFocusedTaskIdChange={setFocusedTaskId}
+            onFocusedContainerIdChange={setFocusedContainerId}
+            collapseCompleted={state.globalSettings?.collapseCompleted ?? state.globalSettings?.kanbanCollapseCompleted}
+            onCollapseCompletedChange={handleCollapseCompletedChange}
+            projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Карточки'}
+            projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '🎴'}
+            onUpdateProjectName={(name) => {
+              if (state.activeProjectId) {
+                handleRenameProject(state.activeProjectId, name);
+              }
+            }}
+            setViewMode={(newMode) => setViewMode(newMode)}
+            searchQuery={searchQuery}
           />
         );
 
@@ -7306,7 +7378,7 @@ export default function App() {
                     
                     {currentUser && (
                       <div className="mt-3 flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/50 rounded-lg max-w-xs">
-                        {currentUser.photoURL ? (
+                        {currentUser.photoURL && currentUser.photoURL.trim() !== '' ? (
                           <img referrerPolicy="no-referrer" src={currentUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-slate-200" />
                         ) : (
                           <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 font-bold flex items-center justify-center text-[10px] text-indigo-700 dark:text-indigo-400">

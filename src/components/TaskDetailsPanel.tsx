@@ -4291,7 +4291,7 @@ export default function TaskDetailsPanel({
                       <div key={comment.id} className="group pb-3 border-b border-[#F2F1ED] dark:border-[#282828] last:border-b-0">
                         <div className="flex items-center justify-between gap-1.5 mb-1">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            {comment.userPhoto ? (
+                            {comment.userPhoto && comment.userPhoto.trim() !== '' ? (
                               <img
                                 src={comment.userPhoto}
                                 alt={comment.userName}
@@ -8119,14 +8119,14 @@ export default function TaskDetailsPanel({
                               className="w-full h-full"
                               fallbackUrl={file.dataUrl}
                             />
-                          ) : (
+                          ) : file.dataUrl && file.dataUrl.trim() !== '' ? (
                             <img 
                               src={file.dataUrl} 
                               alt={file.name} 
                               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                               referrerPolicy="no-referrer"
                             />
-                          )}
+                          ) : null}
                           <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <Eye className="w-3 h-3 text-white drop-shadow-sm" />
                           </div>
@@ -8287,7 +8287,7 @@ export default function TaskDetailsPanel({
                         {/* Comment Header: Avatar, Name, Time, Actions */}
                         <div className="flex items-center justify-between gap-2 mb-1.5">
                           <div className="flex items-center gap-2 min-w-0">
-                            {comment.userPhoto ? (
+                            {comment.userPhoto && comment.userPhoto.trim() !== '' ? (
                               <img
                                 src={comment.userPhoto}
                                 alt={comment.userName}
@@ -8424,14 +8424,14 @@ export default function TaskDetailsPanel({
                                   className="w-full max-h-56 object-cover"
                                   fallbackUrl={comment.imageUrl}
                                 />
-                              ) : (
+                              ) : comment.imageUrl && comment.imageUrl.trim() !== '' ? (
                                 <img
                                   src={comment.imageUrl}
                                   alt="Comment upload"
                                   className="w-full max-h-56 object-cover group-hover/img:scale-[1.02] transition-transform duration-300"
                                   referrerPolicy="no-referrer"
                                 />
-                              )}
+                              ) : null}
                               <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
                                 <Eye className="w-5 h-5 text-white drop-shadow" />
                               </div>
@@ -8476,7 +8476,7 @@ export default function TaskDetailsPanel({
           {/* Notion "Add a comment..." Composer Area */}
           <div className="p-3 sm:p-4 border-t border-[#EDEDEB] dark:border-[#2F2F2F] bg-[#FFFFFF] dark:bg-[#1E1E1E] shrink-0 space-y-2.5">
             {/* Image Preview inside composer if uploaded */}
-            {commentImagePreview && (
+            {commentImagePreview && commentImagePreview.trim() !== '' && (
               <div className="relative inline-block border border-[#EDEDEB] dark:border-[#2F2F2F] rounded-lg p-1 bg-[#F7F6F3] dark:bg-[#252525] shrink-0">
                 <div className="relative w-16 h-16 rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800">
                   <img
@@ -8508,7 +8508,7 @@ export default function TaskDetailsPanel({
             <div className="border border-[#E9E9E7] dark:border-[#333333] rounded-xl bg-[#FFFFFF] dark:bg-[#252525] focus-within:border-indigo-500 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/15 transition-all shadow-2xs p-2.5">
               <div className="flex items-start gap-2.5">
                 {/* Current User Avatar */}
-                {auth.currentUser?.photoURL ? (
+                {auth.currentUser?.photoURL && auth.currentUser.photoURL.trim() !== '' ? (
                   <img
                     src={auth.currentUser.photoURL}
                     alt="User"
@@ -9487,14 +9487,14 @@ export default function TaskDetailsPanel({
                 imgClassName="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10 cursor-grab active:cursor-grabbing"
                 fallbackUrl={lightboxImage.dataUrl}
               />
-            ) : (
+            ) : lightboxImage.dataUrl && lightboxImage.dataUrl.trim() !== '' ? (
               <img 
                 src={lightboxImage.dataUrl} 
                 alt={lightboxImage.name} 
                 className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10 cursor-grab active:cursor-grabbing"
                 referrerPolicy="no-referrer"
               />
-            )}
+            ) : null}
           </div>
         </div>
       </div>

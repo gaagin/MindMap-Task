@@ -8282,14 +8282,14 @@ export default function MindMapCanvas({
                     imgClassName="w-full h-auto select-none pointer-events-none max-h-[500px] object-contain"
                     fallbackUrl={imgFile.dataUrl}
                   />
-                ) : (
+                ) : imgUrl && imgUrl.trim() !== '' ? (
                   <img
                     src={imgUrl}
                     alt={node.text || 'Изображение'}
                     className="w-full h-auto select-none pointer-events-none max-h-[500px] object-contain"
                     referrerPolicy="no-referrer"
                   />
-                )}
+                ) : null}
                 
                 {/* Floating caption overlay at bottom */}
                 {node.text && (
@@ -10138,14 +10138,14 @@ export default function MindMapCanvas({
                                       imgClassName="w-full h-full object-cover"
                                       fallbackUrl={file.dataUrl}
                                     />
-                                  ) : (
+                                  ) : imgUrl && imgUrl.trim() !== '' ? (
                                     <img 
                                       src={imgUrl} 
                                       alt="" 
                                       className="w-full h-full object-cover" 
                                       referrerPolicy="no-referrer"
                                     />
-                                  )}
+                                  ) : null}
                                 </div>
                               ) : (
                                 <Paperclip className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
