@@ -62,7 +62,6 @@ interface MobileListViewProps {
   onUpdateTagCategory?: (id: string, name: string, color: string, tags: string[]) => void;
   onDeleteTagCategory?: (id: string) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
-  onFocusTaskOnCanvas?: (id: string) => void;
   onFocusedTaskIdChange?: (id: string | null) => void;
   collapseCompleted?: boolean;
   onCollapseCompletedChange?: (val: boolean) => void;
@@ -233,7 +232,6 @@ export default function MobileListView({
   onUpdateTagCategory,
   onDeleteTagCategory,
   onFullScreenChange,
-  onFocusTaskOnCanvas,
   onFocusedTaskIdChange,
   collapseCompleted: propsCollapseCompleted,
   onCollapseCompletedChange,
@@ -1041,19 +1039,6 @@ export default function MobileListView({
                       <Copy className="w-3.5 h-3.5 text-[#9B9A97]" />
                       <span>Дублировать</span>
                     </button>
-                    {onFocusTaskOnCanvas && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onFocusTaskOnCanvas(node.id);
-                          setActiveTaskMenuId(null);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded text-xs text-[#37352F] dark:text-[#EBEBEB] hover:bg-[#F7F7F5] dark:hover:bg-[#252525] flex items-center gap-2"
-                      >
-                        <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-                        <span>Открыть на холсте</span>
-                      </button>
-                    )}
                     <div className="h-px bg-[#E9E9E7] dark:bg-[#373737] my-1" />
                     <button
                       type="button"

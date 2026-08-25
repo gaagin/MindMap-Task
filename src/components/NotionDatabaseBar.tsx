@@ -138,11 +138,10 @@ export interface NotionDatabaseBarProps {
 }
 
 export const ALL_VIEW_MODES: { id: ViewMode; name: string; icon: any; notionType: string }[] = [
-  { id: 'table', name: 'Таблица', icon: Table, notionType: 'Table' },
   { id: 'kanban', name: 'Доска', icon: Kanban, notionType: 'Board' },
+  { id: 'table', name: 'Таблица', icon: Table, notionType: 'Table' },
   { id: 'calendar', name: 'Календарь', icon: Calendar, notionType: 'Calendar' },
   { id: 'gantt', name: 'График', icon: GanttChart, notionType: 'Timeline' },
-  { id: 'canvas', name: 'Холст', icon: Network, notionType: 'MindMap' },
   { id: 'eisenhower', name: 'Матрица', icon: LayoutGrid, notionType: 'Matrix' },
   { id: 'mobile-list', name: 'Списки', icon: Smartphone, notionType: 'List' },
 ];

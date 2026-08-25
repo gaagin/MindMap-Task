@@ -54,10 +54,9 @@ import {
   ArrowRight,
   ArrowLeft
 } from 'lucide-react';
-import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport } from './types';
+import { WorkspaceState, TaskNode, Folder, Project, Priority, TagCategory, SyncReport, ViewMode } from './types';
 import { loadWorkspace, saveWorkspace, generateId, syncCompletion, toggleNodeAndDescendants, toggleNodeArchive, playNotificationChime, pruneWorkspaceTaskHistories, runAutomatedBackup, suggestEstimatedTime, getTaskExternalLinks } from './utils';
 import Sidebar from './components/Sidebar';
-import MindMapCanvas from './components/MindMapCanvas';
 import TaskDetailsPanel from './components/TaskDetailsPanel';
 import KanbanView from './components/KanbanView';
 import MobileListView from './components/MobileListView';
@@ -1490,7 +1489,7 @@ export default function App() {
     filterCategoryId: string | null;
     kanbanGroupBy: 'status' | 'category' | 'priority' | 'container' | null;
     kanbanContainerFilterId: string | null;
-    viewMode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
+    viewMode: 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
   } | null>(null);
 
   const filtersRef = React.useRef({
@@ -1521,9 +1520,8 @@ export default function App() {
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
 
-  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'
-  type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
-  const [viewMode, setViewMode] = useState<ViewMode>('canvas');
+  // View Mode: 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower'
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
 
   const viewModeRef = React.useRef(viewMode);
   viewModeRef.current = viewMode;
@@ -1854,12 +1852,10 @@ export default function App() {
                 setViewMode('gantt');
               } else if (savedContainerMode === 'table') {
                 setViewMode('table');
-              } else if (savedContainerMode === 'canvas') {
-                setViewMode('canvas');
               } else if (savedContainerMode === 'eisenhower') {
                 setViewMode('eisenhower');
               } else {
-                setViewMode(savedContainerMode as ViewMode);
+                setViewMode('kanban');
               }
             } else if (isDelegate) {
               setViewMode('kanban');
@@ -1872,14 +1868,6 @@ export default function App() {
               setViewMode('gantt');
             } else if (isList) {
               setViewMode('mobile-list');
-            } else if (searchQueryRef.current.trim() !== "" && (viewModeRef.current === 'canvas' || (!lastAppliedFocusIdRef.current && viewModeRef.current === 'canvas'))) {
-              setViewMode('canvas');
-            } else {
-              if (viewModeRef.current !== 'canvas') {
-                // Keep the current view mode if we focused a node from outside the canvas (e.g. from GanttView zoom-focus)
-              } else {
-                setViewMode('canvas');
-              }
             }
             
             if (node.savedFilters) {
@@ -1913,20 +1901,20 @@ export default function App() {
           setKanbanGroupBy(savedFilters.kanbanGroupBy);
           setKanbanContainerFilterId(savedFilters.kanbanContainerFilterId);
           if (exitedContainerFocus) {
-            setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'canvas');
+            setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'kanban');
           } else if (savedFilters.viewMode) {
             setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : savedFilters.viewMode);
           }
           setPreFocusFilters(null);
         } else if (exitedContainerFocus) {
-          setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'canvas');
+          setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'kanban');
         }
         lastAppliedFocusIdRef.current = null;
       }
     } else {
       // If overall focusId did not change, but we exited container focus mode (e.g. nested transitions)
       if (exitedContainerFocus) {
-        setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'canvas');
+        setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'kanban');
       }
     }
     
@@ -6409,12 +6397,11 @@ export default function App() {
   };
 
   const viewsList = [
-    { id: 'canvas', name: 'Холст', icon: Network },
     { id: 'kanban', name: 'Канбан', icon: Kanban },
+    { id: 'table', name: 'Таблица', icon: Table },
     { id: 'mobile-list', name: 'Списки', icon: Smartphone },
     { id: 'calendar', name: 'Календарь', icon: Calendar },
     { id: 'gantt', name: 'Ганнт', icon: GanttChart },
-    { id: 'table', name: 'Таблица', icon: Table },
     { id: 'eisenhower', name: 'Матрица', icon: LayoutGrid },
   ];
 
@@ -6428,7 +6415,7 @@ export default function App() {
       return (
         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
           <p className="text-sm text-slate-400 font-serif max-w-sm">
-            Нет открытых интеллект-карт. Создайте новую карту в левой панели, чтобы развернуть интерактивный холст целей!
+            Нет открытых проектов. Создайте новый проект в левой панели!
           </p>
         </div>
       );
@@ -6453,10 +6440,6 @@ export default function App() {
             onUpdateTagCategory={handleUpdateTagCategory}
             onDeleteTagCategory={handleDeleteTagCategory}
             onFullScreenChange={setIsViewFullScreen}
-            onFocusTaskOnCanvas={(taskId) => {
-              setFocusedTaskId(taskId);
-              setViewMode('canvas');
-            }}
             onFocusedTaskIdChange={setFocusedTaskId}
             selectedNodeIds={selectedNodeIds}
             isMultiSelectMode={isMultiSelectMode}
@@ -6484,58 +6467,6 @@ export default function App() {
             }}
             setViewMode={(newMode) => setViewMode(newMode)}
             onOpenSidebar={() => setSidebarOpen(true)}
-          />
-        );
-
-      case 'kanban':
-        return (
-          <KanbanView
-            nodes={displayedNodesForViews}
-            tagCategories={activeProjectTags}
-            activeProjectId={state.activeProjectId}
-            selectedNodeId={selectedNodeId}
-            activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-            onSelectNode={handleSelectNode}
-            onUpdateNode={handleUpdateNode}
-            onDeleteNode={handleDeleteNode}
-            onCreateTask={handleCreateKanbanTask}
-            onCreateTagCategory={handleCreateTagCategory}
-            onUpdateTagCategory={handleUpdateTagCategory}
-            selectedNodeIds={selectedNodeIds}
-            onToggleSelectNode={handleToggleSelectNode}
-            searchQuery={searchQuery}
-            onFullScreenChange={setIsViewFullScreen}
-            selectedCategoryId={filterCategoryId}
-            onSelectCategoryId={setFilterCategoryId}
-            kanbanGroupBy={kanbanGroupBy}
-            onKanbanGroupByChange={setKanbanGroupBy}
-            kanbanContainerFilterId={kanbanContainerFilterId}
-            onKanbanContainerFilterIdChange={setKanbanContainerFilterId}
-            sortBy={state.globalSettings?.kanbanSortBy}
-            onSortByChange={handleKanbanSortByChange}
-            collapseCompleted={state.globalSettings?.collapseCompleted ?? state.globalSettings?.kanbanCollapseCompleted}
-            onCollapseCompletedChange={handleCollapseCompletedChange}
-            showSubtasks={state.globalSettings?.kanbanShowSubtasks}
-            onShowSubtasksChange={handleKanbanShowSubtasksChange}
-            isFiltersCollapsed={state.globalSettings?.kanbanFiltersCollapsed}
-            onFiltersCollapsedChange={handleKanbanFiltersCollapsedChange}
-            isCategoriesExpanded={state.globalSettings?.categoriesExpanded}
-            onCategoriesExpandedChange={handleCategoriesExpandedChange}
-            focusedContainerId={focusedContainerId}
-            focusedTaskId={focusedTaskId}
-            onFocusedTaskIdChange={setFocusedTaskId}
-            filterStatus={filterStatus}
-            filterPriority={filterPriority}
-            filterTag={filterTag}
-            filterDueDate={filterDueDate}
-            projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Project Workflow Kanban'}
-            projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '🗂️'}
-            onUpdateProjectName={(name) => {
-              if (state.activeProjectId) {
-                handleRenameProject(state.activeProjectId, name);
-              }
-            }}
-            setViewMode={(newMode) => setViewMode(newMode)}
           />
         );
 
@@ -6654,68 +6585,56 @@ export default function App() {
           />
         );
 
-      case 'canvas':
+      case 'kanban':
       default:
         return (
-          <MindMapCanvas
+          <KanbanView
             nodes={displayedNodesForViews}
-            darkMode={darkMode}
-            googleToken={googleToken}
+            tagCategories={activeProjectTags}
             activeProjectId={state.activeProjectId}
             selectedNodeId={selectedNodeId}
             activePomodoroNodeId={globalPomo && globalPomo.isRunning ? globalPomo.nodeId : null}
-            lastCreatedNodeId={lastCreatedNodeId}
-            onClearLastCreatedNodeId={() => setLastCreatedNodeId(null)}
-            onSelectNode={handleSelectCanvasNode}
-            selectedNodeIds={selectedNodeIds}
-            isMultiSelectMode={isMultiSelectMode}
-            onSelectNodes={(ids) => {
-              setSelectedNodeIds(ids);
-              setIsMultiSelectMode(ids.length > 0);
-            }}
-            onBulkDelete={handleBulkDelete}
-            onBulkToggleCompleted={handleBulkToggleCompleted}
-            onUpdateNodeCoordinates={handleUpdateNodeCoordinates}
-            onUpdateNodeParent={handleUpdateNodeParent}
-            onAddChildNode={handleAddChildNode}
-            onAddFloatingNode={handleAddFloatingNode}
-            onAddContainerNode={handleAddContainerNode}
-            onAddInboxTask={handleAddInboxTask}
-            onCopyNodes={(ids) => {
-              setCopySourceNodeIds(ids);
-              setIsCopyModalOpen(true);
-            }}
-            onDuplicateEquipment={handleDuplicateEquipment}
-            onDeleteNode={handleDeleteNode}
-            onToggleNodeCompleted={handleToggleNodeCompleted}
-            onToggleNodeCollapse={handleToggleNodeCollapse}
+            onSelectNode={handleSelectNode}
             onUpdateNode={handleUpdateNode}
-            panX={panX}
-            panY={panY}
-            zoom={zoom}
-            setPanX={setPanX}
-            setPanY={setPanY}
-            setZoom={setZoom}
-            onOpenSidebar={() => setSidebarOpen(true)}
-            onOpenDrawer={(initialFullscreen) => {
-              setIsDrawerOpen(true);
-              setDetailsPanelFullscreen(!!initialFullscreen);
-            }}
+            onDeleteNode={handleDeleteNode}
+            onCreateTask={handleCreateKanbanTask}
+            onCreateTagCategory={handleCreateTagCategory}
+            onUpdateTagCategory={handleUpdateTagCategory}
+            selectedNodeIds={selectedNodeIds}
+            onToggleSelectNode={handleToggleSelectNode}
+            searchQuery={searchQuery}
+            onFullScreenChange={setIsViewFullScreen}
+            selectedCategoryId={filterCategoryId}
+            onSelectCategoryId={setFilterCategoryId}
+            kanbanGroupBy={kanbanGroupBy}
+            onKanbanGroupByChange={setKanbanGroupBy}
+            kanbanContainerFilterId={kanbanContainerFilterId}
+            onKanbanContainerFilterIdChange={setKanbanContainerFilterId}
+            sortBy={state.globalSettings?.kanbanSortBy}
+            onSortByChange={handleKanbanSortByChange}
+            collapseCompleted={state.globalSettings?.collapseCompleted ?? state.globalSettings?.kanbanCollapseCompleted}
+            onCollapseCompletedChange={handleCollapseCompletedChange}
+            showSubtasks={state.globalSettings?.kanbanShowSubtasks}
+            onShowSubtasksChange={handleKanbanShowSubtasksChange}
+            isFiltersCollapsed={state.globalSettings?.kanbanFiltersCollapsed}
+            onFiltersCollapsedChange={handleKanbanFiltersCollapsedChange}
+            isCategoriesExpanded={state.globalSettings?.categoriesExpanded}
+            onCategoriesExpandedChange={handleCategoriesExpandedChange}
+            focusedContainerId={focusedContainerId}
+            focusedTaskId={focusedTaskId}
+            onFocusedTaskIdChange={setFocusedTaskId}
             filterStatus={filterStatus}
             filterPriority={filterPriority}
             filterTag={filterTag}
             filterDueDate={filterDueDate}
-            filterAttachments={filterAttachments}
-            filterNotes={filterNotes}
-            searchQuery={searchQuery}
-            tagCategories={activeProjectTags}
-            onContainerFocusChange={setIsContainerFocused}
-            onFullScreenChange={setIsViewFullScreen}
-            focusedTaskId={focusedTaskId}
-            onFocusedTaskIdChange={setFocusedTaskId}
-            focusedContainerId={focusedContainerId}
-            onFocusedContainerIdChange={setFocusedContainerId}
-            onFilterTagChange={(tag) => setFilterTag(tag)}
+            projectName={state.projects.find(p => p.id === state.activeProjectId)?.name || 'Project Workflow Kanban'}
+            projectIcon={state.projects.find(p => p.id === state.activeProjectId)?.icon || '🗂️'}
+            onUpdateProjectName={(name) => {
+              if (state.activeProjectId) {
+                handleRenameProject(state.activeProjectId, name);
+              }
+            }}
+            setViewMode={(newMode) => setViewMode(newMode)}
           />
         );
     }
@@ -7033,74 +6952,6 @@ export default function App() {
             />
           )}
 
-          {/* Floating Tag Navigation Banner on Canvas Mode */}
-          {state.activeProjectId && viewMode === 'canvas' && filterTag !== 'all' && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 animate-in slide-in-from-top-3 duration-200">
-              <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-indigo-200 dark:border-indigo-900/60 rounded-2xl shadow-xl p-2 px-3.5 flex items-center gap-2.5 text-xs select-none max-w-[95vw]">
-                {/* Tag Badge */}
-                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-extrabold rounded-xl border border-indigo-100 dark:border-indigo-900/40 shrink-0">
-                  <Tag className="w-3.5 h-3.5" />
-                  <span>#{filterTag}</span>
-                </div>
-
-                {/* Task Count & Preview */}
-                <div className="flex items-center gap-2 min-w-0">
-                  {tagFilteredNodes.length > 0 ? (
-                    <>
-                      <span className="text-[11px] font-mono font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/40 px-2 py-0.5 rounded-lg border border-indigo-100 dark:border-indigo-900/30 shrink-0">
-                        {tagFilterIndex + 1} из {tagFilteredNodes.length}
-                      </span>
-                      <span className="hidden sm:inline font-bold text-slate-700 dark:text-slate-200 max-w-[180px] md:max-w-[260px] truncate text-xs" title={tagFilteredNodes[tagFilterIndex]?.text}>
-                        {tagFilteredNodes[tagFilterIndex]?.text || 'Без названия'}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-slate-400 dark:text-slate-500 italic text-xs">Задач с этим тегом не найдено</span>
-                  )}
-                </div>
-
-                {/* Cycle Navigation */}
-                {tagFilteredNodes.length > 1 && (
-                  <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 ml-1">
-                    <button
-                      type="button"
-                      onClick={handlePrevTagFilteredNode}
-                      className="p-1 px-2 rounded-lg text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer font-bold flex items-center gap-1 text-[11px]"
-                      title="Предыдущая задача с этим тегом (Стрелка влево)"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                      <span className="hidden md:inline">Пред</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleNextTagFilteredNode}
-                      className="p-1 px-2 rounded-lg text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer font-bold flex items-center gap-1 text-[11px]"
-                      title="Следующая задача с этим тегом (Стрелка вправо)"
-                    >
-                      <span className="hidden md:inline">След</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
-                {/* Action Controls */}
-                <div className="flex items-center gap-1 shrink-0 ml-1">
-                  {/* Reset Tag Filter */}
-                  <button
-                    type="button"
-                    onClick={() => setFilterTag('all')}
-                    className="p-1.5 rounded-xl text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer text-xs font-bold flex items-center gap-1"
-                    title="Сбросить фильтр тегов"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Сбросить</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-          
           {renderViewComponent(viewMode)}
 
         </div>
