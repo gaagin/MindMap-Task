@@ -1481,6 +1481,16 @@ export default function App() {
     });
   };
 
+  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'cards'
+  type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'cards';
+  const [viewMode, setViewMode] = useState<ViewMode>('canvas');
+
+  const viewModeRef = React.useRef(viewMode);
+  viewModeRef.current = viewMode;
+
+  // Root entry view mode: remembers the exact view mode the user was in before entering any focus / drilldown
+  const rootEntryViewModeRef = React.useRef<ViewMode | null>(null);
+
   const [preFocusFilters, setPreFocusFilters] = useState<{
     filterStatus: string;
     filterPriority: string;
@@ -1491,7 +1501,7 @@ export default function App() {
     filterCategoryId: string | null;
     kanbanGroupBy: 'status' | 'category' | 'priority' | 'container' | null;
     kanbanContainerFilterId: string | null;
-    viewMode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower';
+    viewMode: ViewMode;
   } | null>(null);
 
   const filtersRef = React.useRef({
@@ -1521,13 +1531,6 @@ export default function App() {
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
-
-  // View Mode: 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'cards'
-  type ViewMode = 'canvas' | 'kanban' | 'mobile-list' | 'calendar' | 'gantt' | 'table' | 'eisenhower' | 'cards';
-  const [viewMode, setViewMode] = useState<ViewMode>('canvas');
-
-  const viewModeRef = React.useRef(viewMode);
-  viewModeRef.current = viewMode;
 
   const preFocusFiltersRef = React.useRef(preFocusFilters);
   preFocusFiltersRef.current = preFocusFilters;
@@ -1660,29 +1663,55 @@ export default function App() {
     }
   }, [focusedContainerId]);
 
-  // Track focus transitions to restore/apply filters
+  // Track focus transitions to restore/apply filters and view mode
   const lastAppliedFocusIdRef = React.useRef<string | null>(null);
   const prevFocusedContainerIdRef = React.useRef<string | null>(null);
   const lastProcessedFocusedTaskIdRef = React.useRef<string | null>(null);
-  const focusStackRef = React.useRef<{ id: string; type: 'container' | 'task' }[]>([]);
 
-  useEffect(() => {
-    const activeItem: { id: string; type: 'container' | 'task' } | null = 
-      focusedContainerId ? { id: focusedContainerId, type: 'container' } :
-      focusedTaskId ? { id: focusedTaskId, type: 'task' } : null;
+  interface FocusStackItem {
+    id: string;
+    type: 'container' | 'task';
+    entryViewMode: ViewMode;
+    targetViewMode?: ViewMode;
+    savedFilters?: {
+      filterStatus: string;
+      filterPriority: string;
+      filterTag: string;
+      filterDueDate: string;
+      filterAttachments: string;
+      filterNotes: string;
+      filterCategoryId: string | null;
+      kanbanGroupBy: 'status' | 'category' | 'priority' | 'container' | null;
+      kanbanContainerFilterId: string | null;
+      viewMode: ViewMode;
+    } | null;
+  }
+  const focusStackRef = React.useRef<FocusStackItem[]>([]);
 
-    if (activeItem) {
-      const stack = focusStackRef.current;
-      const existingIdx = stack.findIndex(item => item.id === activeItem.id && item.type === activeItem.type);
-      if (existingIdx !== -1) {
-        focusStackRef.current = stack.slice(0, existingIdx + 1);
-      } else {
-        focusStackRef.current = [...stack, activeItem];
-      }
-    } else {
-      focusStackRef.current = [];
+  const handleExitFocus = React.useCallback(() => {
+    const returnViewMode = rootEntryViewModeRef.current || preFocusFiltersRef.current?.viewMode || (focusStackRef.current[0]?.entryViewMode) || viewModeRef.current || 'canvas';
+    setFocusedContainerId(null);
+    setFocusedTaskId(null);
+    focusStackRef.current = [];
+
+    const savedFilters = preFocusFiltersRef.current;
+    if (savedFilters) {
+      setFilterStatus(savedFilters.filterStatus);
+      setFilterPriority(savedFilters.filterPriority);
+      setFilterTag(savedFilters.filterTag);
+      setFilterDueDate(savedFilters.filterDueDate);
+      setFilterAttachments(savedFilters.filterAttachments);
+      setFilterNotes(savedFilters.filterNotes);
+      setFilterCategoryId(savedFilters.filterCategoryId);
+      setKanbanGroupBy(savedFilters.kanbanGroupBy);
+      setKanbanContainerFilterId(savedFilters.kanbanContainerFilterId);
+      setPreFocusFilters(null);
     }
-  }, [focusedContainerId, focusedTaskId]);
+
+    setViewMode(returnViewMode);
+    rootEntryViewModeRef.current = null;
+    lastAppliedFocusIdRef.current = null;
+  }, []);
 
   const handleGoBackOneFocusLevel = React.useCallback(() => {
     const projectNodes = state.activeProjectId ? (state.nodes[state.activeProjectId] || []) : [];
@@ -1690,8 +1719,10 @@ export default function App() {
     // 1. First check focus history stack (e.g. entered Container -> Task -> Subtask)
     const stack = focusStackRef.current;
     if (stack.length > 1) {
-      const parentInStack = stack[stack.length - 2];
-      focusStackRef.current = stack.slice(0, stack.length - 1);
+      const newStack = stack.slice(0, stack.length - 1);
+      focusStackRef.current = newStack;
+      const parentInStack = newStack[newStack.length - 1];
+
       if (parentInStack.type === 'container') {
         setFocusedContainerId(parentInStack.id);
         setFocusedTaskId(null);
@@ -1699,10 +1730,16 @@ export default function App() {
         setFocusedTaskId(parentInStack.id);
         setFocusedContainerId(null);
       }
+
+      // Restore view mode for this parent focus level
+      const targetMode = parentInStack.targetViewMode || parentInStack.entryViewMode;
+      if (targetMode) {
+        setViewMode(targetMode);
+      }
       return;
     }
 
-    // 2. Structural hierarchy fallback if stack doesn't have a parent item
+    // 2. Structural hierarchy check if single element in stack
     if (focusedTaskId) {
       const focusedTask = projectNodes.find(n => n.id === focusedTaskId);
 
@@ -1722,7 +1759,7 @@ export default function App() {
         }
       }
 
-      // 2b. Check containing container bounds if parentId is not explicitly set on task
+      // 2b. Check containing container bounds
       if (focusedTask) {
         const containingContainer = projectNodes.find(c => {
           if (c.id === focusedTask.id || (!c.isContainer && !c.isEquipment)) return false;
@@ -1739,15 +1776,7 @@ export default function App() {
           return;
         }
       }
-
-      // 2c. Exit focus mode completely to main screen if at top level task
-      setFocusedTaskId(null);
-      setFocusedContainerId(null);
-      focusStackRef.current = [];
-      return;
-    }
-
-    if (focusedContainerId) {
+    } else if (focusedContainerId) {
       const containerNode = projectNodes.find(n => n.id === focusedContainerId);
       if (containerNode && containerNode.parentId) {
         const parentNode = projectNodes.find(n => n.id === containerNode.parentId);
@@ -1763,19 +1792,11 @@ export default function App() {
           }
         }
       }
-
-      // Exit focus mode completely to main screen if at top level container
-      setFocusedContainerId(null);
-      setFocusedTaskId(null);
-      focusStackRef.current = [];
-      return;
     }
 
-    // Default exit
-    setFocusedContainerId(null);
-    setFocusedTaskId(null);
-    focusStackRef.current = [];
-  }, [focusedContainerId, focusedTaskId, state.activeProjectId, state.nodes]);
+    // 3. Exit focus mode completely to root workspace and restore the exact view mode entered from
+    handleExitFocus();
+  }, [focusedContainerId, focusedTaskId, state.activeProjectId, state.nodes, handleExitFocus]);
 
   // Auto-switch viewMode and load/restore filters on focused node change
   useEffect(() => {
@@ -1792,8 +1813,9 @@ export default function App() {
           const activeProjectNodes = state.nodes[state.activeProjectId] || [];
           const node = activeProjectNodes.find(n => n.id === focusId);
           if (node) {
-            // If we were NOT in focus mode, save the current filters as pre-focus filters
+            // If we were NOT in focus mode, save the current filters and viewMode as root entry
             if (!lastAppliedFocusIdRef.current) {
+              rootEntryViewModeRef.current = viewModeRef.current;
               setPreFocusFilters({
                 ...filtersRef.current,
                 viewMode: viewModeRef.current
@@ -1848,45 +1870,69 @@ export default function App() {
               node.text.toLowerCase().includes('список')
             );
 
+            let targetMode: ViewMode = viewModeRef.current;
+
             if (savedContainerMode) {
               if (savedContainerMode === 'list' || savedContainerMode === 'mobile-list') {
-                setViewMode('mobile-list');
+                targetMode = 'mobile-list';
               } else if (savedContainerMode === 'kanban') {
-                setViewMode('kanban');
+                targetMode = 'kanban';
               } else if (savedContainerMode === 'calendar') {
-                setViewMode('calendar');
+                targetMode = 'calendar';
               } else if (savedContainerMode === 'gantt') {
-                setViewMode('gantt');
+                targetMode = 'gantt';
               } else if (savedContainerMode === 'table') {
-                setViewMode('table');
+                targetMode = 'table';
               } else if (savedContainerMode === 'canvas') {
-                setViewMode('canvas');
+                targetMode = 'canvas';
               } else if (savedContainerMode === 'eisenhower') {
-                setViewMode('eisenhower');
+                targetMode = 'eisenhower';
+              } else if (savedContainerMode === 'cards') {
+                targetMode = 'cards';
               } else {
-                setViewMode(savedContainerMode as ViewMode);
+                targetMode = savedContainerMode as ViewMode;
               }
             } else if (isDelegate) {
-              setViewMode('kanban');
+              targetMode = 'kanban';
               setKanbanGroupBy('category');
             } else if (isCalendar) {
-              setViewMode('calendar');
+              targetMode = 'calendar';
             } else if (isTable) {
-              setViewMode('table');
+              targetMode = 'table';
             } else if (isGantt) {
-              setViewMode('gantt');
+              targetMode = 'gantt';
             } else if (isList) {
-              setViewMode('mobile-list');
+              targetMode = 'mobile-list';
             } else if (searchQueryRef.current.trim() !== "" && (viewModeRef.current === 'canvas' || (!lastAppliedFocusIdRef.current && viewModeRef.current === 'canvas'))) {
-              setViewMode('canvas');
+              targetMode = 'canvas';
             } else {
               if (viewModeRef.current === 'cards') {
-                setViewMode('mobile-list');
+                targetMode = 'mobile-list';
               } else if (viewModeRef.current !== 'canvas') {
-                // Keep the current view mode if we focused a node from outside the canvas (e.g. from GanttView zoom-focus)
+                // Keep current view mode (e.g., Table, Kanban, Calendar, Gantt, Mobile-list, etc.)
+                targetMode = viewModeRef.current;
               } else {
-                setViewMode('canvas');
+                targetMode = 'canvas';
               }
+            }
+
+            setViewMode(targetMode);
+
+            // Update focus stack with entry & target modes
+            const stack = focusStackRef.current;
+            const existingIdx = stack.findIndex(item => item.id === focusId);
+            const stackEntry: FocusStackItem = {
+              id: focusId,
+              type: focusedContainerId ? 'container' : 'task',
+              entryViewMode: rootEntryViewModeRef.current || viewModeRef.current,
+              targetViewMode: targetMode,
+              savedFilters: preFocusFiltersRef.current
+            };
+
+            if (existingIdx !== -1) {
+              focusStackRef.current = [...stack.slice(0, existingIdx), stackEntry];
+            } else {
+              focusStackRef.current = [...stack, stackEntry];
             }
             
             if (node.savedFilters) {
@@ -1907,8 +1953,10 @@ export default function App() {
         }
       } else {
         // Exiting focus mode!
-        // Restore pre-focus filters if they exist
+        // Restore pre-focus filters and view mode
         const savedFilters = preFocusFiltersRef.current;
+        const returnViewMode = rootEntryViewModeRef.current || savedFilters?.viewMode || (focusStackRef.current[0]?.entryViewMode) || viewModeRef.current || 'canvas';
+
         if (savedFilters) {
           setFilterStatus(savedFilters.filterStatus);
           setFilterPriority(savedFilters.filterPriority);
@@ -1919,21 +1967,18 @@ export default function App() {
           setFilterCategoryId(savedFilters.filterCategoryId);
           setKanbanGroupBy(savedFilters.kanbanGroupBy);
           setKanbanContainerFilterId(savedFilters.kanbanContainerFilterId);
-          if (savedFilters.viewMode) {
-            setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : savedFilters.viewMode);
-          } else if (exitedContainerFocus) {
-            setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'cards');
-          }
           setPreFocusFilters(null);
-        } else if (exitedContainerFocus) {
-          setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : 'cards');
         }
+
+        setViewMode(returnViewMode);
+        rootEntryViewModeRef.current = null;
         lastAppliedFocusIdRef.current = null;
+        focusStackRef.current = [];
       }
     } else {
       // If overall focusId did not change, but we exited container focus mode (e.g. nested transitions)
       if (exitedContainerFocus) {
-        setViewMode(viewModeRef.current === 'gantt' ? 'gantt' : (preFocusFiltersRef.current?.viewMode || 'cards'));
+        setViewMode(rootEntryViewModeRef.current || preFocusFiltersRef.current?.viewMode || 'cards');
       }
     }
     
@@ -6788,6 +6833,7 @@ export default function App() {
             focusedContainerId={focusedContainerId}
             onFocusedContainerIdChange={setFocusedContainerId}
             onFilterTagChange={(tag) => setFilterTag(tag)}
+            onGoBackFocus={handleGoBackOneFocusLevel}
           />
         );
     }
@@ -6897,11 +6943,7 @@ export default function App() {
             focusedContainerId={focusedContainerId}
             focusedNode={focusedNode}
             onGoBackOneFocusLevel={handleGoBackOneFocusLevel}
-            onExitFocus={() => {
-              setFocusedContainerId(null);
-              setFocusedTaskId(null);
-              focusStackRef.current = [];
-            }}
+            onExitFocus={handleExitFocus}
             onToggleDefaultView={handleToggleDefaultView}
             tagCategories={state.projects.find(p => p.id === state.activeProjectId)?.tagCategories || []}
             selectedCategoryId={filterCategoryId}

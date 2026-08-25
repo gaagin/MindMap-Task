@@ -1509,9 +1509,6 @@ function ContainerCard({
     } else if (onFocusedTaskIdChange) {
       onFocusedTaskIdChange(node.id);
     }
-    if (setViewMode) {
-      setViewMode('mobile-list');
-    }
   };
 
   return (

@@ -114,6 +114,7 @@ interface MindMapCanvasProps {
   onDuplicateEquipment?: (id: string) => void;
   googleToken?: string | null;
   onFilterTagChange?: (tag: string) => void;
+  onGoBackFocus?: () => void;
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -399,7 +400,8 @@ export default function MindMapCanvas({
   onFocusedContainerIdChange,
   onDuplicateEquipment,
   googleToken,
-  onFilterTagChange
+  onFilterTagChange,
+  onGoBackFocus
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -5277,6 +5279,11 @@ export default function MindMapCanvas({
 
   // Unified function to navigate one level up from focus mode or return to main canvas screen
   const handleGoBackFocus = () => {
+    if (onGoBackFocus) {
+      onGoBackFocus();
+      return;
+    }
+
     if (focusedContainerId) {
       const focusedContainer = nodes.find(n => n.id === focusedContainerId);
 
