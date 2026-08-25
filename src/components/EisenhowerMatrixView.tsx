@@ -47,7 +47,6 @@ interface EisenhowerMatrixProps {
   searchQuery?: string;
   onFullScreenChange?: (isFullScreen: boolean) => void;
   onFocusedTaskIdChange?: (id: string | null) => void;
-  setViewMode?: (mode: any) => void;
   collapseCompleted?: boolean;
   onCollapseCompletedChange?: (collapsed: boolean) => void;
 }

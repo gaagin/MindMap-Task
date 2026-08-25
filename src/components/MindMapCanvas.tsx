@@ -114,7 +114,6 @@ interface MindMapCanvasProps {
   onDuplicateEquipment?: (id: string) => void;
   googleToken?: string | null;
   onFilterTagChange?: (tag: string) => void;
-  onGoBackFocus?: () => void;
 }
 
 // Tree helper: verify if candidate parent contains child, avoiding cyclical mapping bugs
@@ -400,8 +399,7 @@ export default function MindMapCanvas({
   onFocusedContainerIdChange,
   onDuplicateEquipment,
   googleToken,
-  onFilterTagChange,
-  onGoBackFocus
+  onFilterTagChange
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -5279,11 +5277,6 @@ export default function MindMapCanvas({
 
   // Unified function to navigate one level up from focus mode or return to main canvas screen
   const handleGoBackFocus = () => {
-    if (onGoBackFocus) {
-      onGoBackFocus();
-      return;
-    }
-
     if (focusedContainerId) {
       const focusedContainer = nodes.find(n => n.id === focusedContainerId);
 
@@ -5949,6 +5942,14 @@ export default function MindMapCanvas({
       }
     }
 
+    // Collapse/hide completed child nodes from mindmap canvas view so they collapse and don't obstruct the view (unless under a container list/kanban, or when searching/filtering)
+    if (node.completed && node.parentId !== null && filterStatus !== 'completed' && !isAnyFilterActive) {
+      const parentNode = nodes.find(n => n.id === node.parentId);
+      if (parentNode && !parentNode.isContainer) {
+        return false;
+      }
+    }
+
     // Filter by task focus mode: if a specific task is focused, show only that task and its descendants/subtasks
     if (focusedTaskId) {
       if (node.id === focusedTaskId) return true;
@@ -6611,9 +6612,8 @@ export default function MindMapCanvas({
                       });
                       setDragStart({ x: touch.clientX, y: touch.clientY });
                     }}
-                  >
-                    <title>Перетащите, чтобы изменить изгиб линии</title>
-                  </circle>
+                    title="Перетащите, чтобы изменить изгиб линии"
+                  />
 
                   {/* Midpoint overlay controls (Label input & Delete button) */}
                   <foreignObject
@@ -8282,14 +8282,14 @@ export default function MindMapCanvas({
                     imgClassName="w-full h-auto select-none pointer-events-none max-h-[500px] object-contain"
                     fallbackUrl={imgFile.dataUrl}
                   />
-                ) : imgUrl && imgUrl.trim() !== '' ? (
+                ) : (
                   <img
                     src={imgUrl}
                     alt={node.text || 'Изображение'}
                     className="w-full h-auto select-none pointer-events-none max-h-[500px] object-contain"
                     referrerPolicy="no-referrer"
                   />
-                ) : null}
+                )}
                 
                 {/* Floating caption overlay at bottom */}
                 {node.text && (
@@ -10138,14 +10138,14 @@ export default function MindMapCanvas({
                                       imgClassName="w-full h-full object-cover"
                                       fallbackUrl={file.dataUrl}
                                     />
-                                  ) : imgUrl && imgUrl.trim() !== '' ? (
+                                  ) : (
                                     <img 
                                       src={imgUrl} 
                                       alt="" 
                                       className="w-full h-full object-cover" 
                                       referrerPolicy="no-referrer"
                                     />
-                                  ) : null}
+                                  )}
                                 </div>
                               ) : (
                                 <Paperclip className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
