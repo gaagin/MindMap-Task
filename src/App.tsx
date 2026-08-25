@@ -1892,6 +1892,9 @@ export default function App() {
               } else {
                 targetMode = savedContainerMode as ViewMode;
               }
+            } else if (viewModeRef.current === 'canvas') {
+              // Stay in canvas view mode if currently on canvas unless a specific default view is configured
+              targetMode = 'canvas';
             } else if (isDelegate) {
               targetMode = 'kanban';
               setKanbanGroupBy('category');
@@ -1903,16 +1906,11 @@ export default function App() {
               targetMode = 'gantt';
             } else if (isList) {
               targetMode = 'mobile-list';
-            } else if (searchQueryRef.current.trim() !== "" && (viewModeRef.current === 'canvas' || (!lastAppliedFocusIdRef.current && viewModeRef.current === 'canvas'))) {
-              targetMode = 'canvas';
             } else {
-              if (viewModeRef.current === 'cards') {
+              if ((viewModeRef.current as string) === 'cards') {
                 targetMode = 'mobile-list';
-              } else if (viewModeRef.current !== 'canvas') {
-                // Keep current view mode (e.g., Table, Kanban, Calendar, Gantt, Mobile-list, etc.)
-                targetMode = viewModeRef.current;
               } else {
-                targetMode = 'canvas';
+                targetMode = viewModeRef.current;
               }
             }
 
@@ -4157,27 +4155,10 @@ export default function App() {
       }
 
       // In cards view:
-      // - On the main screen (no focused container/task): ONLY containers from the main screen are visible
-      // - Inside a focused container/task: ONLY containers and equipment belonging to that focus are visible
+      // - ONLY uncompleted tasks / containers / equipment are visible
       if (viewMode === 'cards') {
-        const isFocusActive = !!(focusedContainerId || focusedTaskId);
-        if (!isFocusActive) {
-          const isParentAContainer = node.parentId ? activeNodes.some(p => p.id === node.parentId && p.isContainer) : false;
-          if (!node.isContainer || isParentAContainer) {
-            return false;
-          }
-        } else {
-          const isContainer = !!node.isContainer;
-          const isEquipment = !!(
-            node.isEquipment ||
-            node.equipmentModel ||
-            node.equipmentBarcode ||
-            node.equipmentStockCode ||
-            node.tags?.some(t => ['оборудование', 'техника', 'прибор', 'инструмент', 'аппаратура', 'equipment'].includes(t.toLowerCase()))
-          );
-          if (!isContainer && !isEquipment) {
-            return false;
-          }
+        if (node.completed || node.status === 'done') {
+          return false;
         }
       }
 
@@ -8000,7 +7981,7 @@ export default function App() {
                         const isManual = b.id.startsWith('manual');
                         const foldersCount = b.state?.folders?.length || 0;
                         const projectsCount = b.state?.projects?.length || 0;
-                        const tasksCount = Object.values(b.state?.nodes || {}).reduce(
+                        const tasksCount: number = (Object.values(b.state?.nodes || {}) as any[]).reduce(
                           (acc: number, list: any) => acc + (Array.isArray(list) ? list.length : 0), 0
                         );
 

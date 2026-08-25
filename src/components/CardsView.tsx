@@ -64,7 +64,7 @@ export interface CardsViewProps {
   onToggleSelectNode?: (id: string) => void;
   onToggleSelectAll?: (ids: string[]) => void;
   onBulkDelete?: () => void;
-  onBulkToggleCompleted?: (completed: boolean) => void;
+  onBulkToggleCompleted?: (completed?: boolean) => void;
   onFullScreenChange?: (isFullScreen: boolean) => void;
   focusedTaskId?: string | null;
   focusedContainerId?: string | null;
@@ -214,53 +214,37 @@ export default function CardsView({
     if (onFullScreenChange) onFullScreenChange(next);
   };
 
-  // Node counts by kind (containers and equipment)
+  // Node counts by kind (tasks, containers and equipment)
   const counts = useMemo(() => {
     let containerCount = 0;
     let equipmentCount = 0;
-
-    if (isMainScreen) {
-      nodes.forEach(n => {
-        const isParentAContainer = n.parentId ? effectiveAllNodes.some(p => p.id === n.parentId && p.isContainer) : false;
-        if (n.isContainer && !isParentAContainer) {
-          containerCount++;
-        }
-      });
-      return {
-        all: containerCount,
-        containers: containerCount,
-        equipment: 0
-      };
-    }
+    let taskCount = 0;
 
     nodes.forEach(n => {
+      if (n.completed || n.status === 'done') return;
       const kind = getNodeKind(n);
       if (kind === 'container') containerCount++;
       else if (kind === 'equipment') equipmentCount++;
+      else taskCount++;
     });
 
     return {
-      all: containerCount + equipmentCount,
+      all: containerCount + equipmentCount + taskCount,
       containers: containerCount,
-      equipment: equipmentCount
+      equipment: equipmentCount,
+      tasks: taskCount
     };
-  }, [nodes, isMainScreen, effectiveAllNodes]);
+  }, [nodes]);
 
-  // Filtered nodes by type filter & search (exclusively containers and equipment)
+  // Filtered nodes by type filter & search (exclusively uncompleted tasks, containers and equipment)
   const filteredNodes = useMemo(() => {
     return nodes.filter(node => {
-      const kind = getNodeKind(node);
-
-      // On main screen: ONLY show containers from the main screen (top-level root containers)
-      if (isMainScreen) {
-        const isParentAContainer = node.parentId ? effectiveAllNodes.some(p => p.id === node.parentId && p.isContainer) : false;
-        if (kind !== 'container' || isParentAContainer) {
-          return false;
-        }
-      } else {
-        // Inside focused container: show containers and equipment
-        if (kind !== 'container' && kind !== 'equipment') return false;
+      // In cards view: ONLY uncompleted tasks and items are visible
+      if (node.completed || node.status === 'done') {
+        return false;
       }
+
+      const kind = getNodeKind(node);
 
       // Type filter
       if (typeFilter === 'containers' && kind !== 'container') return false;
@@ -289,7 +273,7 @@ export default function CardsView({
 
       return true;
     });
-  }, [nodes, isMainScreen, effectiveAllNodes, typeFilter, collapseCompleted, searchQuery]);
+  }, [nodes, typeFilter, collapseCompleted, searchQuery]);
 
   // Groups generation
   const groupedSections = useMemo((): GroupSection[] => {
@@ -726,7 +710,7 @@ export default function CardsView({
             {onBulkToggleCompleted && (
               <button
                 type="button"
-                onClick={onBulkToggleCompleted}
+                onClick={() => onBulkToggleCompleted()}
                 className="px-2.5 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1486,17 +1470,22 @@ function ContainerCard({
   onToggleSelectNode,
   tagCategories
 }: ContainerCardProps) {
-  // Nested subtasks calculation
-  const childTasks = useMemo(() => {
+  // All subtasks inside this container
+  const allChildTasks = useMemo(() => {
     return allNodes.filter(n => n.parentId === node.id && !n.archived);
   }, [allNodes, node.id]);
 
-  const completedCount = useMemo(() => {
-    return childTasks.filter(c => c.completed).length;
-  }, [childTasks]);
+  // Uncompleted child tasks only
+  const uncompletedChildTasks = useMemo(() => {
+    return allChildTasks.filter(n => !n.completed && n.status !== 'done');
+  }, [allChildTasks]);
 
-  const completionPercent = childTasks.length > 0 
-    ? Math.round((completedCount / childTasks.length) * 100)
+  const completedCount = useMemo(() => {
+    return allChildTasks.filter(c => c.completed || c.status === 'done').length;
+  }, [allChildTasks]);
+
+  const completionPercent = allChildTasks.length > 0 
+    ? Math.round((completedCount / allChildTasks.length) * 100)
     : 0;
 
   const handleEnterContainer = (e: React.MouseEvent) => {
@@ -1541,7 +1530,7 @@ function ContainerCard({
 
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-bold bg-white/20 px-1.5 py-0.2 rounded-full text-white">
-            {childTasks.length} {childTasks.length === 1 ? 'элемент' : 'элементов'}
+            {uncompletedChildTasks.length} {uncompletedChildTasks.length === 1 ? 'активная задача' : 'активных задач'}
           </span>
           {/* Quick Properties button if user specifically wants container details */}
           <button
@@ -1572,7 +1561,7 @@ function ContainerCard({
                 {node.text || 'Безымянный контейнер'}
               </h4>
               <p className="text-[10px] text-[#787774] dark:text-[#9B9A97]">
-                {completedCount} из {childTasks.length} выполнено ({completionPercent}%)
+                {completedCount} из {allChildTasks.length} выполнено ({completionPercent}%)
               </p>
             </div>
           </div>
@@ -1606,29 +1595,29 @@ function ContainerCard({
           </div>
         </div>
 
-        {/* Preview of first 3 child tasks */}
-        {childTasks.length > 0 ? (
+        {/* Preview of first 3 uncompleted child tasks */}
+        {uncompletedChildTasks.length > 0 ? (
           <div 
             onClick={handleEnterContainer}
             className="space-y-1.5 bg-white/80 dark:bg-[#1E1E1E]/80 rounded-lg p-2.5 border border-indigo-100/70 dark:border-indigo-900/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 transition-colors cursor-pointer"
             title="Нажмите, чтобы открыть список задач"
           >
             <div className="text-[10px] font-bold text-indigo-900/70 dark:text-indigo-300/70 uppercase tracking-wider flex items-center justify-between">
-              <span>Задачи в боксе:</span>
+              <span>Невыполненные задачи:</span>
               <span className="text-[9px] text-indigo-500 font-normal lowercase">открыть список →</span>
             </div>
             <div className="space-y-1">
-              {childTasks.slice(0, 3).map(task => (
+              {uncompletedChildTasks.slice(0, 3).map(task => (
                 <div key={task.id} className="flex items-center gap-1.5 text-xs text-[#37352F] dark:text-[#D4D4D4] truncate">
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${task.completed ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
-                  <span className={`truncate ${task.completed ? 'line-through text-slate-400' : ''}`}>
+                  <div className="w-2 h-2 rounded-full shrink-0 bg-indigo-500 dark:bg-indigo-400" />
+                  <span className="truncate">
                     {task.text}
                   </span>
                 </div>
               ))}
-              {childTasks.length > 3 && (
+              {uncompletedChildTasks.length > 3 && (
                 <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium pl-3.5">
-                  + ещё {childTasks.length - 3} задач...
+                  + ещё {uncompletedChildTasks.length - 3} невыполненных...
                 </div>
               )}
             </div>
@@ -1638,7 +1627,7 @@ function ContainerCard({
             onClick={handleEnterContainer}
             className="p-3 rounded-lg border border-dashed border-indigo-200 dark:border-indigo-900/60 bg-white/40 dark:bg-black/10 text-center text-[11px] text-indigo-600/70 dark:text-indigo-400/70 hover:bg-indigo-50/50 transition-colors cursor-pointer"
           >
-            Контейнер пуст (нажмите, чтобы открыть список)
+            {allChildTasks.length > 0 ? 'Все задачи выполнены 🎉 (открыть список)' : 'Контейнер пуст (нажмите, чтобы открыть список)'}
           </div>
         )}
 

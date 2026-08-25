@@ -9321,7 +9321,7 @@ export default function TaskDetailsPanel({
                     allNodes={allNodes}
                     onSelectContainer={(containerId) => onUpdateNodeParent(node.id, containerId)}
                     label="Родительский контейнер:"
-                    accentColor="slate"
+                    accentColor="indigo"
                   />
                 )}
                 {node.containerPlace && (

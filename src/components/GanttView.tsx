@@ -1543,8 +1543,8 @@ export default function GanttView({
                         <span className="text-base shrink-0">{emoji}</span>
                         <div className="flex-1 min-w-0">
                           <p className="text-[13px] font-medium text-[#37352F] dark:text-[#EBEBEB] truncate">{clean}</p>
-                          {task.description && (
-                            <p className="text-[11px] text-[#787774] dark:text-[#9B9A97] truncate mt-0.5">{task.description}</p>
+                          {task.notes && (
+                            <p className="text-[11px] text-[#787774] dark:text-[#9B9A97] truncate mt-0.5">{task.notes}</p>
                           )}
                         </div>
                       </div>

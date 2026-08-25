@@ -5949,14 +5949,6 @@ export default function MindMapCanvas({
       }
     }
 
-    // Collapse/hide completed child nodes from mindmap canvas view so they collapse and don't obstruct the view (unless under a container list/kanban, or when searching/filtering)
-    if (node.completed && node.parentId !== null && filterStatus !== 'completed' && !isAnyFilterActive) {
-      const parentNode = nodes.find(n => n.id === node.parentId);
-      if (parentNode && !parentNode.isContainer) {
-        return false;
-      }
-    }
-
     // Filter by task focus mode: if a specific task is focused, show only that task and its descendants/subtasks
     if (focusedTaskId) {
       if (node.id === focusedTaskId) return true;
@@ -6619,8 +6611,9 @@ export default function MindMapCanvas({
                       });
                       setDragStart({ x: touch.clientX, y: touch.clientY });
                     }}
-                    title="Перетащите, чтобы изменить изгиб линии"
-                  />
+                  >
+                    <title>Перетащите, чтобы изменить изгиб линии</title>
+                  </circle>
 
                   {/* Midpoint overlay controls (Label input & Delete button) */}
                   <foreignObject
